@@ -1,0 +1,314 @@
+object MainForm: TMainForm
+  Left = 302
+  Height = 840
+  Top = 117
+  Width = 793
+  BorderStyle = bsDialog
+  Caption = 'SMS video tiler'
+  ClientHeight = 840
+  ClientWidth = 793
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  Position = poScreenCenter
+  LCLVersion = '1.6.2.0'
+  object imgSource: TImage
+    Left = 272
+    Height = 384
+    Top = 8
+    Width = 512
+    Stretch = True
+  end
+  object imgDest: TImage
+    Left = 272
+    Height = 384
+    Top = 400
+    Width = 512
+    Stretch = True
+  end
+  object btnDoGlobalTiling: TButton
+    Left = 8
+    Height = 25
+    Top = 264
+    Width = 123
+    Caption = '3a - Global tiling'
+    OnClick = btnDoGlobalTilingClick
+    TabOrder = 10
+  end
+  object imgTiles: TImage
+    Left = 8
+    Height = 384
+    Top = 400
+    Width = 256
+  end
+  object btnLoad: TButton
+    Left = 8
+    Height = 25
+    Top = 232
+    Width = 123
+    Caption = '1 - Load'
+    OnClick = btnLoadClick
+    TabOrder = 8
+  end
+  object tbFrame: TTrackBar
+    Left = 272
+    Height = 25
+    Top = 808
+    Width = 512
+    Frequency = 25
+    Max = 0
+    OnChange = tbFrameChange
+    Position = 0
+    ShowSelRange = False
+    TickMarks = tmBoth
+    TickStyle = tsNone
+    TabOrder = 19
+  end
+  object chkPlay: TCheckBox
+    Left = 272
+    Height = 19
+    Top = 787
+    Width = 42
+    Caption = 'Play'
+    OnChange = chkPlayChange
+    TabOrder = 17
+  end
+  object lblTileCount: TLabel
+    Left = 8
+    Height = 15
+    Top = 787
+    Width = 157
+    AutoSize = False
+    ParentColor = False
+  end
+  object chkDithered: TCheckBox
+    Left = 336
+    Height = 19
+    Top = 787
+    Width = 96
+    Caption = 'Show dithered'
+    Checked = True
+    OnChange = tbFrameChange
+    State = cbChecked
+    TabOrder = 18
+  end
+  object btnDither: TButton
+    Left = 144
+    Height = 25
+    Top = 232
+    Width = 123
+    Caption = '2 - Dithering'
+    OnClick = btnDitherClick
+    TabOrder = 9
+  end
+  object Label2: TLabel
+    Left = 8
+    Height = 15
+    Top = 118
+    Width = 121
+    Caption = 'Average tiles per frame'
+    ParentColor = False
+  end
+  object seFrameCount: TSpinEdit
+    Left = 208
+    Height = 23
+    Top = 88
+    Width = 56
+    MaxValue = 10000
+    MinValue = 1
+    TabOrder = 3
+    Value = 118
+  end
+  object Label3: TLabel
+    Left = 8
+    Height = 15
+    Top = 92
+    Width = 67
+    Caption = 'Frame count'
+    ParentColor = False
+  end
+  object edInput: TEdit
+    Left = 88
+    Height = 23
+    Top = 10
+    Width = 176
+    TabOrder = 0
+    Text = 'c:\smsdev\nggyu\vidpics2\nggyu%.4d.bmp'
+  end
+  object Label4: TLabel
+    Left = 8
+    Height = 15
+    Top = 14
+    Width = 28
+    Caption = 'Input'
+    ParentColor = False
+  end
+  object btnSave: TButton
+    Left = 8
+    Height = 25
+    Top = 328
+    Width = 123
+    Caption = '6 - Save'
+    OnClick = btnSaveClick
+    TabOrder = 14
+  end
+  object btnRunAll: TButton
+    Left = 144
+    Height = 25
+    Top = 328
+    Width = 123
+    Caption = 'Run all (1-2-3-4-5-6)'
+    OnClick = btnRunAllClick
+    TabOrder = 15
+  end
+  object sePage: TSpinEdit
+    Left = 208
+    Height = 23
+    Top = 369
+    Width = 56
+    MaxValue = 227
+    OnChange = tbFrameChange
+    TabOrder = 16
+  end
+  object Label6: TLabel
+    Left = 8
+    Height = 15
+    Top = 373
+    Width = 77
+    Caption = 'Show tile page'
+    ParentColor = False
+  end
+  object btnReindex: TButton
+    Left = 8
+    Height = 25
+    Top = 296
+    Width = 123
+    Caption = '4 - Reindex'
+    OnClick = btnReindexClick
+    TabOrder = 12
+  end
+  object Label7: TLabel
+    Left = 8
+    Height = 15
+    Top = 145
+    Width = 100
+    Caption = 'Max tiles per frame'
+    ParentColor = False
+  end
+  object seMaxTPF: TSpinEdit
+    Left = 208
+    Height = 23
+    Top = 141
+    Width = 56
+    MaxValue = 207
+    TabOrder = 5
+    Value = 207
+  end
+  object btnDoFrameTiling: TButton
+    Left = 144
+    Height = 25
+    Top = 264
+    Width = 123
+    Caption = '3b - Frame tiling'
+    OnClick = btnDoFrameTilingClick
+    TabOrder = 11
+  end
+  object Label8: TLabel
+    Left = 8
+    Height = 15
+    Top = 172
+    Width = 110
+    Caption = 'KModes parallel runs'
+    ParentColor = False
+  end
+  object seKMRest: TSpinEdit
+    Left = 208
+    Height = 23
+    Top = 168
+    Width = 56
+    MinValue = 1
+    TabOrder = 6
+    Value = 6
+  end
+  object seAvgTPF: TSpinEdit
+    Left = 208
+    Height = 23
+    Top = 114
+    Width = 56
+    MaxValue = 1000
+    TabOrder = 4
+    Value = 200
+  end
+  object Label10: TLabel
+    Left = 8
+    Height = 15
+    Top = 66
+    Width = 69
+    Caption = 'WAV (mono)'
+    ParentColor = False
+  end
+  object edWAV: TEdit
+    Left = 88
+    Height = 23
+    Top = 62
+    Width = 176
+    TabOrder = 2
+  end
+  object Label1: TLabel
+    Left = 8
+    Height = 15
+    Top = 40
+    Width = 55
+    Caption = 'Output dir'
+    ParentColor = False
+  end
+  object edOutputDir: TEdit
+    Left = 88
+    Height = 23
+    Top = 36
+    Width = 176
+    TabOrder = 1
+    Text = 'c:\smsdev\nggyu\tiled'
+  end
+  object pbPalette: TPaintBox
+    Left = 8
+    Height = 32
+    Top = 805
+    Width = 256
+    Color = clBlack
+    ParentColor = False
+    OnClick = pbPaletteClick
+    OnPaint = pbPalettePaint
+  end
+  object Label9: TLabel
+    Left = 8
+    Height = 15
+    Top = 199
+    Width = 159
+    Caption = 'Temporal smoothing strength'
+    ParentColor = False
+  end
+  object seTempoSmoo: TSpinEdit
+    Left = 208
+    Height = 23
+    Top = 195
+    Width = 56
+    TabOrder = 7
+    Value = 5
+  end
+  object btnSmooth: TButton
+    Left = 144
+    Height = 25
+    Top = 296
+    Width = 123
+    Caption = '5 - Smoothing'
+    OnClick = btnSmoothClick
+    TabOrder = 13
+  end
+  object IdleTimer: TIdleTimer
+    Enabled = False
+    Interval = 80
+    OnTimer = IdleTimerTimer
+    left = 744
+    top = 744
+  end
+end
