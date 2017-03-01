@@ -33,7 +33,7 @@ const
   cTileIndexesDirectValue = 255;
   cTileIndexesDirectValueTerminator = 0;
   cTileMapIndicesOffset : array[0..1] of Integer = (49, 256 + 49);
-  cTileMapCacheBits = 4;
+  cTileMapCacheBits = 5;
   cTileMapCacheSize = 1 shl cTileMapCacheBits;
   cTileMapMaxRepeat = 4;
   cTileMapMaxSkip = 63;
@@ -43,8 +43,7 @@ const
   cTileMapTerminator = cTileMapCommandSkip; // skip zero
   cFrameSoundSize = 420.9962017804155;
 
-{$if false}
-  // JPEG standard
+  // JPEG standard quantization tables
 
   cLumaQuantisation: array[0..7, 0..7] of Single = (
     (16,  11,  10,  16,  24,  40,  51,  61),
@@ -67,33 +66,8 @@ const
     (99,  99,  99,  99,  99,  99,  99,  99),
     (99,  99,  99,  99,  99,  99,  99,  99)
   );
-{$else}
-  // better tables
 
-  cLumaQuantisation: array[0..7, 0..7] of Single = (
-    (16,11,12,15,21,32,50,66),
-    (11,12,13,18,24,46,62,73),
-    (12,13,16,23,38,56,73,75),
-    (15,18,23,29,53,75,83,80),
-    (21,24,38,53,68,95,103,94),
-    (32,46,56,75,95,104,117,96),
-    (50,62,73,83,103,117,120,102),
-    (66,73,75,80,94,96,102,87)
-  );
-
-  cChromaQuantisation: array[0..7, 0..7] of Single = (
-    (17,18,24,47,99,99,128,192),
-    (18,21,26,66,99,99,128,192),
-    (24,26,56,99,99,128,192,256),
-    (47,66,99,99,128,192,256,512),
-    (99,99,99,128,192,256,512,1024),
-    (99,99,128,192,256,512,1024,2048),
-    (128,128,192,256,512,1024,2048,4096),
-    (192,192,256,512,1024,2048,4096,8192)
-  );
-{$ifend}
-
-  cMap2 : array[0..8*8 - 1] of Byte = (
+  cDitheringMap2 : array[0..8*8 - 1] of Byte = (
      0, 48, 12, 60,  3, 51, 15, 63,
     32, 16, 44, 28, 35, 19, 47, 31,
      8, 56,  4, 52, 11, 59,  7, 55,
@@ -117,7 +91,7 @@ type
     PaletteRGB: array[0..(cTilePaletteSize - 1)] of Integer;
 
     Active: Boolean;
-    AveragedCount, TmpIndex: Integer;
+    UseCount, AveragedCount, TmpIndex: Integer;
   end;
 
   PTileMapItem = ^TTileMapItem;
@@ -217,7 +191,7 @@ type
     procedure ComputeTileDCT(ATile: PTile; FromPal, SpritePal, GammaCor: Boolean; const pal: array of Integer);
     function CompareTilesDCT(ATileA, ATileB: PTile; SpritePalA, SpritePalB: Boolean): Single;
 
-    // some algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
+    // Dithering algorithm ported from http://bisqwit.iki.fi/story/howto/dither/jy/
     function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
     procedure PreparePlan2(var Plan: TMixingPlan2; const pal: array of Integer);
     procedure DeviseBestMixingPlan2(var Plan: TMixingPlan2; r, g, b: Integer);
@@ -244,7 +218,7 @@ type
     procedure VMirrorPalTile(ATile: PTile; SpritePal: Boolean; KF: PKeyFrame);
     procedure DoFrameTiling(AFrame: PFrame; DesiredNbTiles, RestartCount: Integer);
 
-    function IsTileUsed(ATileIndex: Integer): Boolean;
+    function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
     procedure IndexFrameTiles(AFrame: PFrame);
     procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: Single);
@@ -547,7 +521,8 @@ procedure TMainForm.btnReindexClick(Sender: TObject);
 
   procedure DoPruneUnusedTiles(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FTiles[AIndex].Active := FTiles[AIndex].Active and IsTileUsed(AIndex);
+    FTiles[AIndex].UseCount := GetTileUseCount(AIndex);
+    FTiles[AIndex].Active := FTiles[AIndex].Active and (FTiles[AIndex].UseCount <> 0);
   end;
 
   procedure DoIndexFrameTiles(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -570,6 +545,7 @@ begin
   btnDoFrameTiling.Click;
   btnReindex.Click;
   btnSmooth.Click;
+  btnReindex.Click; // second time to account for smoothing
   btnSave.Click;
 end;
 
@@ -792,7 +768,7 @@ begin
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
     begin
-      map_value := cMap2[(x and (cTileWidth - 1)) + ((y and (cTileWidth - 1)) shl 3)];
+      map_value := cDitheringMap2[(x and (cTileWidth - 1)) + ((y and (cTileWidth - 1)) shl 3)];
       DeviseBestMixingPlan2(plan, ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2]);
       map_value := map_value * plan.Count div 64;
       ATile^.PalPixels[SpritePal, y,x] := plan.List[map_value];
@@ -1599,19 +1575,15 @@ begin
   end;
 end;
 
-function TMainForm.IsTileUsed(ATileIndex: Integer): Boolean;
+function TMainForm.GetTileUseCount(ATileIndex: Integer): Integer;
 var
   i, sx, sy: Integer;
 begin
-  Result := False;
+  Result := 0;
   for i := 0 to High(FFrames) do
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
-        if FFrames[i].TileMap[sy, sx].GlobalTileIndex = ATileIndex then
-        begin
-          Result := true;
-          Break;
-        end;
+        Inc(Result, Ord(FFrames[i].TileMap[sy, sx].GlobalTileIndex = ATileIndex));
 end;
 
 
@@ -1695,6 +1667,13 @@ begin
   end;
 end;
 
+function CompareTileUseCountRev(Item1, Item2, UserParameter:Pointer):Integer;
+begin
+  Result := CompareValue(PTile(Item2)^.UseCount, PTile(Item1)^.UseCount);
+  if Result = 0 then
+    Result := CompareValue(PTile(Item1)^.TmpIndex, PTile(Item2)^.TmpIndex);
+end;
+
 procedure TMainForm.ReindexTiles;
 var
   i, j, x, y, cnt: Integer;
@@ -1720,18 +1699,18 @@ begin
     end;
 
   SetLength(IdxMap, Length(FTiles));
-  FillChar(IdxMap[0], High(FTiles) * SizeOf(Integer), $ff);
+  FillDWord(IdxMap[0], High(FTiles), $ffffffff);
+
+  SetLength(FTiles, cnt);
+  QuickSort(FTiles[0], 0, High(FTiles), SizeOf(TTile), @CompareTileUseCountRev);
 
   for i := 0 to High(FTiles) do
-    if FTiles[i].Active then
-      IdxMap[FTiles[i].TmpIndex] := i;
+    IdxMap[FTiles[i].TmpIndex] := i;
 
   for i := 0 to High(FFrames) do
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
         FFrames[i].TileMap[y,x].GlobalTileIndex := IdxMap[FFrames[i].TileMap[y,x].GlobalTileIndex];
-
-  SetLength(FTiles, cnt);
 end;
 
 function CompareTilesIndexes(Item1, Item2, UserParameter:Pointer):Integer;
@@ -1914,58 +1893,6 @@ begin
     pp := ADataStream.Position;
     // tilemap
 
-    //skipCount := 0;
-    //awaitingNibble := -1;
-    //for y := 0 to cTileMapHeight - 1 do
-    //  for x := 0 to cTileMapWidth - 1 do
-    //  begin
-    //    tmi := @FFrames[i].TileMap[y, x];
-    //    rawTMI := (tmi^.FrameTileIndex + cTileMapIndicesOffset[i and 1]) and $1ff;
-    //    if tmi^.HMirror then rawTMI := rawTMI or $200;
-    //    if tmi^.VMirror then rawTMI := rawTMI or $400;
-    //    if tmi^.SpritePal then rawTMI := rawTMI or $800;
-    //
-    //    if tmi^.Smoothed and (skipCount < cTileMapMaxSkip) and
-    //      ((y <> cTileMapHeight - 1) or (x <> cTileMapWidth - 1)) then
-    //    begin
-    //      Inc(skipCount);
-    //    end
-    //    else
-    //    begin
-    //      if awaitingNibble >= 0 then
-    //      begin
-    //        if skipCount > 0 then
-    //        begin
-    //          ADataStream.WriteByte(awaitingNibble);
-    //          ADataStream.WriteByte(skipCount);
-    //          skipCount := 0;
-    //        end
-    //        else
-    //        begin
-    //          ADataStream.WriteByte(((rawTMI shr 4) and $f0) or awaitingNibble);
-    //          ADataStream.WriteByte(rawTMI and $ff);
-    //        end;
-    //        awaitingNibble := -1;
-    //      end
-    //      else
-    //      begin
-    //        if skipCount > 0 then
-    //        begin
-    //          ADataStream.WriteByte(skipCount);
-    //          awaitingNibble := 0;
-    //          skipCount := 0;
-    //        end
-    //        else
-    //        begin
-    //          ADataStream.WriteByte(rawTMI and $ff);
-    //          awaitingNibble := rawTMI shr 8;
-    //        end;
-    //      end;
-    //    end;
-    //  end;
-    //
-    //ADataStream.WriteByte(cTileMapTerminator);
-
     for j := 0 to High(tmiCache) do
     begin
       tmiCache[j].UsedCount := 0;
@@ -2008,7 +1935,6 @@ begin
       else
       begin
         smoothed := FFrames[i].TileMap[j div cTileMapWidth, j mod cTileMapWidth].Smoothed;
-        smoothed := False;
         rawTMI := rawTMIs[j];
 
         tmiCacheIdx := -1;

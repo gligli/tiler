@@ -116,7 +116,7 @@ object MainForm: TMainForm
     MaxValue = 10000
     MinValue = 1
     TabOrder = 3
-    Value = 118
+    Value = 10
   end
   object Label3: TLabel
     Left = 8
@@ -227,7 +227,7 @@ object MainForm: TMainForm
     Width = 56
     MinValue = 1
     TabOrder = 6
-    Value = 6
+    Value = 12
   end
   object seAvgTPF: TSpinEdit
     Left = 208
@@ -236,7 +236,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 1000
     TabOrder = 4
-    Value = 200
+    Value = 100
   end
   object Label10: TLabel
     Left = 8
@@ -293,7 +293,7 @@ object MainForm: TMainForm
     Top = 195
     Width = 56
     TabOrder = 7
-    Value = 5
+    Value = 7
   end
   object btnSmooth: TButton
     Left = 144
