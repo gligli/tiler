@@ -29,9 +29,11 @@ const
 
   // Video player consts
   cTileIndexesTileOffset = cTilesPerBank * 1;
-  cTileIndexesRepeat = 0;
-  cTileIndexesDirectValue = 255;
-  cTileIndexesDirectValueTerminator = 0;
+  cTileIndexesMaxDiff = 223;
+  cTileIndexesRepeatStart = 225;
+  cTileIndexesMaxRepeat = 32;
+  cTileIndexesDirectValue = 0;
+  cTileIndexesTerminator = 224;
   cTileMapIndicesOffset : array[0..1] of Integer = (49, 256 + 49);
   cTileMapCacheBits = 5;
   cTileMapCacheSize = 1 shl cTileMapCacheBits;
@@ -1845,17 +1847,13 @@ begin
     begin
       diffTileIndex := FFrames[i].TilesIndexes[j] - prevTileIndex;
 
-      if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or (diffTileIndex >= cTileIndexesDirectValue) then
+      if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
+          (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) then
       begin
         if sameCount = 1 then
-        begin
-          ADataStream.WriteByte(prevDTI);
-        end
+          ADataStream.WriteByte(prevDTI)
         else if sameCount <> 0 then
-        begin
-          ADataStream.WriteByte(cTileIndexesRepeat);
-          ADataStream.WriteByte(sameCount);
-        end;
+          ADataStream.WriteByte(cTileIndexesRepeatStart + sameCount - 2);
 
         sameCount := 1;
       end
@@ -1864,7 +1862,7 @@ begin
         Inc(sameCount);
       end;
 
-      if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesDirectValue) or (diffTileIndex < 0)  then
+      if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0)  then
       begin
         ADataStream.WriteByte(cTileIndexesDirectValue);
         ADataStream.WriteWord(FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset);
@@ -1877,17 +1875,11 @@ begin
     end;
 
     if sameCount = 1 then
-    begin
-      ADataStream.WriteByte(prevDTI);
-    end
+      ADataStream.WriteByte(prevDTI)
     else if sameCount <> 0 then
-    begin
-      ADataStream.WriteByte(cTileIndexesRepeat);
-      ADataStream.WriteByte(sameCount);
-    end;
+      ADataStream.WriteByte(cTileIndexesRepeatStart + sameCount - 2);
 
-    ADataStream.WriteByte(cTileIndexesDirectValue);
-    ADataStream.WriteWord(cTileIndexesDirectValueTerminator);
+    ADataStream.WriteByte(cTileIndexesTerminator);
 
     DebugLn(['TileIndexes size: ', ADataStream.Position - pp]);
     pp := ADataStream.Position;
