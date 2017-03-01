@@ -11,8 +11,10 @@ uses
 const
   // Tweakable params
   cKeyframeFixedColors = 2;
-  cGamma = 1.8;
+  cGamma = 2.2;
+  cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
+  cGammaCorrectSmoothing = False;
 
   // SMS consts
   cTotalColors = 64;
@@ -214,10 +216,8 @@ type
     procedure MergeTilesByPaletteIndexes(const TileIndexes: array of Integer; TileCount: Integer);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
-    procedure HMirrorRGBTile(ATile: PTile);
-    procedure VMirrorRGBTile(ATile: PTile);
-    procedure HMirrorPalTile(ATile: PTile; SpritePal: Boolean; KF: PKeyFrame);
-    procedure VMirrorPalTile(ATile: PTile; SpritePal: Boolean; KF: PKeyFrame);
+    procedure HMirrorPalTile(ATile: PTile; SpritePal: Boolean);
+    procedure VMirrorPalTile(ATile: PTile; SpritePal: Boolean);
     procedure DoFrameTiling(AFrame: PFrame; DesiredNbTiles, RestartCount: Integer);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
@@ -257,7 +257,7 @@ begin
     GammaCorLut[i] := power(i / 255.0, cGamma);
 
   for i := 0 to High(GammaUncorLut) do
-    GammaUncorLut[i] := EnsureRange(Round(power(i / 65536.0, 1 / cGamma) * 255.0), 0, 255);
+    GammaUncorLut[i] := EnsureRange(Round(power(i / Single(High(GammaUncorLut)), 1 / cGamma) * 255.0), 0, 255);
 end;
 
 function GammaCorrect(x: Byte): Single; inline;
@@ -267,7 +267,7 @@ end;
 
 function GammaUnCorrect(x: Single): Integer; inline;
 begin
-  Result := GammaUncorLut[EnsureRange(Round(x * 65536.0), 0, High(Word))];
+  Result := GammaUncorLut[EnsureRange(Round(x * Single(High(GammaUncorLut))), 0, High(GammaUncorLut))];
 end;
 
 Const
@@ -877,7 +877,9 @@ begin
       idx := (i - cKeyframeFixedColors) * 2 + cKeyframeFixedColors;
       idx2 := idx + 1;
     end;
-    idx2 := (cTilePaletteSize - cKeyframeFixedColors) * 2 - 1 - idx; // invert second palette
+
+    if cInvertSpritePalette then
+      idx2 := (cTilePaletteSize - cKeyframeFixedColors) * 2 - 1 - idx; // invert second palette
 
     AKeyFrame^.PaletteIndexes[False, i] := CMUsage[idx].Index;
     AKeyFrame^.PaletteIndexes[True, i] := CMUsage[idx2].Index;
@@ -918,12 +920,12 @@ begin
 
       SpritePal := cmp[True] < cmp[False];
 
-      AFrame^.TileMap[sy, sx].SpritePal := SpritePal;
-      AFrame^.Tiles[sx + sy * cTileMapWidth] := Tile_^;
-
       Move(KF^.PaletteIndexes[SpritePal], Tile_^.PaletteIndexes, SizeOf(Tile_^.PaletteIndexes));
       Move(KF^.PaletteRGB[SpritePal], Tile_^.PaletteRGB, SizeOf(Tile_^.PaletteRGB));
       Move(Tile_^.PalPixels[SpritePal, 0, 0], Tile_^.PalPixels[not SpritePal, 0, 0], cTileWidth * cTileWidth);
+
+      AFrame^.TileMap[sy, sx].SpritePal := SpritePal;
+      AFrame^.Tiles[sx + sy * cTileMapWidth] := Tile_^;
     end;
 end;
 
@@ -1032,43 +1034,13 @@ begin
         if cpn = 0 then
           coeff := coeff * 255.0 / cLumaQuantisation[v,u]
         else
-          coeff := coeff * 255.0 / cChromaQuantisation[v,u];
+          coeff := coeff * 255.0 / (cChromaQuantisation[v,u] * 1.5);
 
         ATile^.DCTCoeffs[SpritePal,v,u,cpn] := coeff;
 	    end;
 end;
 
-procedure TMainForm.HMirrorRGBTile(ATile: PTile);
-var
-  i, j: Integer;
-  v: array[0..2] of Integer;
-begin
-  for i := 0 to cTileWidth div 2 - 1  do
-    for j := 0 to cTileWidth - 1 do
-    begin
-      v := ATile^.RGBPixels[i, j];
-      ATile^.RGBPixels[i, j] := ATile^.RGBPixels[cTileWidth - 1 - i, j];
-      ATile^.RGBPixels[cTileWidth - 1 - i, j] := v;
-    end;
-  ComputeTileDCT(ATile, False, False, cGammaCorrectFrameTiling, []);
-end;
-
-procedure TMainForm.VMirrorRGBTile(ATile: PTile);
-var
-  i, j: Integer;
-  v: array[0..2] of Integer;
-begin
-  for i := 0 to cTileWidth div 2 - 1  do
-    for j := 0 to cTileWidth - 1 do
-    begin
-      v := ATile^.RGBPixels[j, i];
-      ATile^.RGBPixels[j, i] := ATile^.RGBPixels[j, cTileWidth - 1 - i];
-      ATile^.RGBPixels[j, cTileWidth - 1 - i] := v;
-    end;
-  ComputeTileDCT(ATile, False, False, cGammaCorrectFrameTiling, []);
-end;
-
-procedure TMainForm.HMirrorPalTile(ATile: PTile; SpritePal: Boolean; KF: PKeyFrame);
+procedure TMainForm.HMirrorPalTile(ATile: PTile; SpritePal: Boolean);
 var
   i, j: Integer;
   v: Byte;
@@ -1080,11 +1052,9 @@ begin
       ATile^.PalPixels[SpritePal, i, j] := ATile^.PalPixels[SpritePal, cTileWidth - 1 - i, j];
       ATile^.PalPixels[SpritePal, cTileWidth - 1 - i, j] := v;
     end;
-  if Assigned(KF) then
-    ComputeTileDCT(ATile, True, SpritePal, cGammaCorrectFrameTiling, KF^.PaletteRGB[SpritePal]);
 end;
 
-procedure TMainForm.VMirrorPalTile(ATile: PTile; SpritePal: Boolean; KF: PKeyFrame);
+procedure TMainForm.VMirrorPalTile(ATile: PTile; SpritePal: Boolean);
 var
   i, j: Integer;
   v: Byte;
@@ -1096,8 +1066,6 @@ begin
       ATile^.PalPixels[SpritePal, j, i] := ATile^.PalPixels[SpritePal, j, cTileWidth - 1 - i];
       ATile^.PalPixels[SpritePal, j, cTileWidth - 1 - i] := v;
     end;
-  if Assigned(KF) then
-    ComputeTileDCT(ATile, True, SpritePal, cGammaCorrectFrameTiling, KF^.PaletteRGB[SpritePal]);
 end;
 
 function TMainForm.CompareTilesDCT(ATileA, ATileB: PTile; SpritePalA, SpritePalB: Boolean): Single;
@@ -1378,7 +1346,7 @@ var
     Tile: PTile;
   end;
 
-  function FindBestComparison(ATile: PTile; out GlobalIndex: Integer; out SpritePal: Boolean): Single;
+  function FindBestComparison(FrameTile: PTile; out GlobalIndex: Integer; out SpritePal: Boolean): Single;
   var
     i, gi: Integer;
     cmp: Single;
@@ -1391,7 +1359,7 @@ var
       if TilesRepo[i].GlobalIndex >= 0 then
         for isp := False to True do
         begin
-          cmp := CompareTilesDCT(ATile, TilesRepo[i].Tile, isp, isp);
+          cmp := CompareTilesDCT(FrameTile, TilesRepo[i].Tile, False, isp);
           if cmp < Result then
           begin
             Result := cmp;
@@ -1406,7 +1374,7 @@ var
 
 var
   Cnt, i, j, k, sy, sx, ty, tx: Integer;
-  FrameTile: PTile;
+  FrameTile: TTile;
   cmp, cmpH, cmpV, cmpHV, rcmp: Single;
   idx, idxH, idxV, idxHV: Integer;
   pass, sp, spH, spV, spHV, isp: Boolean;
@@ -1430,26 +1398,22 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        FrameTile := @AFrame^.Tiles[sx + sy * cTileMapWidth];
+        FrameTile := AFrame^.Tiles[sx + sy * cTileMapWidth];
 
-        for isp := False to True do
-          ComputeTileDCT(FrameTile, True, isp, cGammaCorrectFrameTiling, AFrame^.KeyFrame^.PaletteRGB[isp]);
-        cmp := FindBestComparison(FrameTile, idx, sp);
+        ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
+        cmp := FindBestComparison(@FrameTile, idx, sp);
 
-        for isp := False to True do
-          HMirrorPalTile(FrameTile, isp, AFrame^.KeyFrame);
-        cmpH := FindBestComparison(FrameTile, idxH, spH);
+        HMirrorPalTile(@FrameTile, False);
+        ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
+        cmpH := FindBestComparison(@FrameTile, idxH, spH);
 
-        for isp := False to True do
-          VMirrorPalTile(FrameTile, isp, AFrame^.KeyFrame);
-        cmpHV := FindBestComparison(FrameTile, idxHV, spHV);
+        VMirrorPalTile(@FrameTile, False);
+        ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
+        cmpHV := FindBestComparison(@FrameTile, idxHV, spHV);
 
-        for isp := False to True do
-          HMirrorPalTile(FrameTile, isp, AFrame^.KeyFrame);
-        cmpV := FindBestComparison(FrameTile, idxV, spV);
-
-        for isp := False to True do
-          VMirrorPalTile(FrameTile, isp, AFrame^.KeyFrame);
+        HMirrorPalTile(@FrameTile, False);
+        ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
+        cmpV := FindBestComparison(@FrameTile, idxV, spV);
 
         rcmp := minvalue([cmp, cmpH, cmpHV, cmpV]);
 
@@ -1555,13 +1519,13 @@ begin
     PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]];
     Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]];
 
-    if PrevTMI^.HMirror then HMirrorPalTile(@PrevTile, False, nil);
-    if PrevTMI^.VMirror then VMirrorPalTile(@PrevTile, False, nil);
-    if TMI^.HMirror then HMirrorPalTile(@Tile_, False, nil);
-    if TMI^.VMirror then VMirrorPalTile(@Tile_, False, nil);
+    if PrevTMI^.HMirror then HMirrorPalTile(@PrevTile, False);
+    if PrevTMI^.VMirror then VMirrorPalTile(@PrevTile, False);
+    if TMI^.HMirror then HMirrorPalTile(@Tile_, False);
+    if TMI^.VMirror then VMirrorPalTile(@Tile_, False);
 
-    ComputeTileDCT(@PrevTile, True, False, False, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal]);
-    ComputeTileDCT(@Tile_, True, False, False, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal]);
+    ComputeTileDCT(@PrevTile, True, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal]);
+    ComputeTileDCT(@Tile_, True, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal]);
 
     cmp := CompareTilesDCT(@Tile_, @PrevTile, False, False);
 

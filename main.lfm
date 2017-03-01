@@ -293,7 +293,7 @@ object MainForm: TMainForm
     Top = 195
     Width = 56
     TabOrder = 7
-    Value = 7
+    Value = 5
   end
   object btnSmooth: TButton
     Left = 144
