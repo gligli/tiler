@@ -152,6 +152,7 @@ function CountUniqueRows(const X: TByteDynArray2): Integer;
 var
   i, Cnt: Integer;
   nattrs: Integer;
+  unique: TByteDynArray2;
 begin
   Result := 0;
 
@@ -160,11 +161,12 @@ begin
 
   nattrs := Length(X[0]);
 
-  QuickSort(X[0], 0, High(X), SizeOf(TByteDynArray), @CompareLines, Pointer(nattrs));
+  unique := Copy(X);
+  QuickSort(unique[0], 0, High(unique), SizeOf(TByteDynArray), @CompareLines, Pointer(nattrs));
 
-  Cnt := Length(X);
-  for i := High(X) - 1 downto 0 do
-    if CompareByte(X[i, 0], X[i + 1, 0], nattrs) = 0 then
+  Cnt := Length(unique);
+  for i := High(unique) - 1 downto 0 do
+    if CompareByte(unique[i, 0], unique[i + 1, 0], nattrs) = 0 then
       Dec(Cnt);
   Result := Cnt;
 end;
@@ -273,7 +275,7 @@ begin
     Dissim[i] := MatchingDissim(a[i], b);
 end;
 
-function CountClusterMembers(cluster: Integer; var membship: TIntegerDynArray): Integer;
+function CountClusterMembers(cluster: Integer; const membship: TIntegerDynArray): Integer;
 var
   i: Integer;
   pm: PInteger;
@@ -420,8 +422,8 @@ begin
 
     if CountClusterMembers(old_clust, membship) = 0 then
     begin
-      SetLength(clsize, Length(membship));
-      for ik := 0 to High(membship) do
+      SetLength(clsize, Length(centroids));
+      for ik := 0 to High(clsize) do
         clsize[ik] := CountClusterMembers(ik, membship);
       from_clust := GetMaxValueIndex(clsize);
 
@@ -528,6 +530,7 @@ begin
   if npoints > 0 then
     nattrs := Length(X[0]);
 
+  init := nil;
   if CountUniqueRows(X) <= n_clusters then
   begin
     max_iter := 0;
