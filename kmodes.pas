@@ -185,83 +185,44 @@ end;
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): Byte;
 begin
   asm
-    xor rax, rax
+    // SIMD for 64 items
 
-    // Unrolled for 64 items
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
+    movdqu xmm0, oword ptr [rcx]
+    movdqu xmm1, oword ptr [rdx]
+    lea rcx, [rcx + $10]
+    lea rdx, [rdx + $10]
+    movdqu xmm2, oword ptr [rcx]
+    movdqu xmm3, oword ptr [rdx]
+    lea rcx, [rcx + $10]
+    lea rdx, [rdx + $10]
+    movdqu xmm4, oword ptr [rcx]
+    movdqu xmm5, oword ptr [rdx]
+    lea rcx, [rcx + $10]
+    lea rdx, [rdx + $10]
+    movdqu xmm6, oword ptr [rcx]
+    movdqu xmm7, oword ptr [rdx]
 
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
+    pcmpeqb xmm0, xmm1
+    pcmpeqb xmm2, xmm3
+    pcmpeqb xmm4, xmm5
+    pcmpeqb xmm6, xmm7
 
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
+    pmovmskb r8d, xmm0
+    mov rax, r8
+    pmovmskb r8d, xmm2
+    rol rax, 16
+    or rax, r8
+    pmovmskb r8d, xmm4
+    rol rax, 16
+    or rax, r8
+    pmovmskb r8d, xmm6
+    rol rax, 16
+    or rax, r8
 
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
+    not rax
+    popcnt rax, rax
 
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-    mov r8b, byte ptr [rcx]; inc rcx; mov r9b, byte ptr [rdx]; inc rdx; cmp r8b, r9b; setnz ah; add al, ah
-
-    xor ah, ah
-  end ['r8b', 'r9b'];
+  end ['r8', 'xmm0', 'xmm1', 'xmm2', 'xmm3', 'xmm4', 'xmm5', 'xmm6', 'xmm7'];
 end;
 {$ifend}
 
