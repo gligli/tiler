@@ -362,7 +362,20 @@ TilesUploadEnd:
 
     jp TilemapUnpackStart
 
-.section "Tilemap upload section" align 256 returnorg ; align first TMUploadOne
+.section "Tilemap upload section" align 256 returnorg ; align LUT and first TMUploadOne
+TMUploadLUT:
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+.db 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 20, 20,
+.db 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+.db 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 30, 30, 30, 30, 30, 30, 30, 30,
+.db 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+.db 30, 30, 30, 30, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
+.db 10, 10, 10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
+.db 20, 20, 20, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
 TMUploadJumpTable:
     .macro TMUploadOne
             ; /!\ This macro must stay 10 bytes long
@@ -415,17 +428,10 @@ TilemapUnpackStart:
     inc hl
     ld d, (hl)
 
-        ; compute jump table offset from command repeat bits
-    ld a, b
-    .repeat 2
-        rrca
-    .endr
-    and %00011000
-    ld l, a
-    rrca
-    rrca
-    add a, l
-    ld l, a
+        ; compute jump table offset from command repeat bits using LUT
+    ld l, b
+    ld h, >TMUploadLUT
+    ld l, (hl)
     ld h, >TMUploadJumpTable
 
         ; jump to tilemap upload table
@@ -446,7 +452,7 @@ TMUCommands80:
     ld b, 0
     ld c, a
     add iy, bc
-        
+
         ; restore c
     ld c, VDPData
 
@@ -473,13 +479,9 @@ TMUCommandRaw:
     push hl
 
         ; compute jump table offset from command repeat bits
-    rra
-    and %00011000
     ld l, a
-    rrca
-    rrca
-    add a, l
-    ld l, a
+    ld h, >TMUploadLUT
+    ld l, (hl)
     ld h, >TMUploadJumpTable
 
         ; jump to tilemap upload table
