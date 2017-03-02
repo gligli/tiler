@@ -574,8 +574,8 @@ procedure TMainForm.btnSmoothClick(Sender: TObject);
   procedure DoSmoothing(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var i: Integer;
   begin
-    for i := 1 to High(FFrames) do
-      DoTemporalSmoothing(@FFrames[i], @FFrames[i - 1], AIndex, seTempoSmoo.Value / 10);
+    for i := 2 to High(FFrames) do
+      DoTemporalSmoothing(@FFrames[i], @FFrames[i - 2], AIndex, seTempoSmoo.Value / 10);
   end;
 begin
   ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, cTileMapHeight - 1);
