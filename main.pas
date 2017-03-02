@@ -1035,7 +1035,7 @@ begin
         if cpn = 0 then
           coeff := coeff * 255.0 / cLumaQuantisation[v,u]
         else
-          coeff := coeff * 255.0 / (cChromaQuantisation[v,u] * 1.5);
+          coeff := coeff * 255.0 / cChromaQuantisation[v,u];
 
         ATile^.DCTCoeffs[SpritePal,v,u,cpn] := coeff;
 	    end;
