@@ -56,25 +56,31 @@ banks 1
 ;==============================================================
 
 .enum $c000 export
+    TileMapCache      dsb 64 ; must stay first
+    LocalPalette      dsb TilePaletteSize * 2
     CurFrameIdx       dw
     CurVBlankIdx      dw
-    TMCachePointer    dw
-    LocalPalette      dsb TilePaletteSize * 2
 .ende
 
 .bank 0 slot 0
 .org $0000
-;==============================================================
-; Boot section
-;==============================================================
+.section "Boot section" force
     di              ; disable interrupts
     im 1            ; Interrupt mode 1
-    jp init         ; jump to mapper init
+    ; This maps the first 48K of ROM to $0000-$BFFF
+    ld de, $FFFC
+    ld hl, init_tab
+    ld bc, $0004
+    ldir
+
+    jp main
+
+init_tab: ; Table must exist within first 1K of ROM
+    .db $00, $00, $01, $02
+.ends
 
 .org $0038
-;==============================================================
-; VDP int handler
-;==============================================================
+.section "VDP int handler" force
     ex af, af' ; 4
 
     ; VDP int ack
@@ -89,32 +95,13 @@ banks 1
 
     ei
     reti
+.ends
 
 .org $0066
-;==============================================================
-; Pause button handler
-;==============================================================
+.section "Pause button handler" force
     retn
+.ends
 
-.org $0080
-;==============================================================
-; Mapper init
-;==============================================================
-init:
-    ; This maps the first 48K of ROM to $0000-$BFFF
-    ld de, $FFFC
-    ld hl, init_tab
-    ld bc, $0004
-    ldir
-
-    jp main
-
-init_tab: ; Table must exist within first 1K of ROM
-    .db $00, $00, $01, $02
-
-;==============================================================
-; Main program
-;==============================================================
 main:
     ld sp, $dff0
 
@@ -195,12 +182,28 @@ InitPlayer:
 
 NextFrameLoad:
 
+        ; are we using slot 2?
+    bit 7, h
+    jr z, +
+
+        ; if so, move to next bank
+    ld a, (MapperSlot2)
+    ld (MapperSlot1), a
+    inc a
+    ld (MapperSlot2), a
+        
+        ; rewind to slot 1
+    ld a, h
+    sub $40
+    ld h, a
+
++:
     ; Load palette if frame contains one
     ld de, LocalPalette
     ld a, (hl)
     inc hl
     cp $00
-    jp z, NoFramePalette
+    jr z, NoFramePalette
 
     .repeat TilePaletteSize * 2
         ldi
@@ -224,7 +227,7 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
         ; Save current mapper slot
     ld a, (MapperSlot1)
-    ld b, a
+    ld ixl, a
 
     jp TilesUploadUnpackStart
 
@@ -235,7 +238,7 @@ TilesUploadUnpackAgain
 
 TilesUploadUnpackStart:
         ; Restore mapper slot
-    ld a, b
+    ld a, ixl
     ld (MapperSlot1), a
 
     ld a, (hl)
@@ -335,17 +338,11 @@ TilesUploadSlow:
 
 TilesUploadEnd:
 
-    .macro TMRUploadOne
-            ; low byte of tilemap item
-        ld a, e
-        out (VDPData), a
-            ; update local VRAM pointer (done here now to keep >= 26 cycles between writes)
-        inc bc
-        inc bc
-            ; high byte of tilemap item
-        ld a, d
-        out (VDPData), a
-    .endm
+        ;copy tilemap cache into ram
+    ld de, TileMapCache
+    .repeat 64
+        ldi
+    .endr
 
         ; Set tilemap VRAM pointer (stored into bc)
     xor a
@@ -361,74 +358,94 @@ TilesUploadEnd:
     ld b, a
     out (VDPControl), a
 
-        ; store a pointer to the tile cache
-    ld (TMCachePointer), hl
+    jp TilemapUnpackStart
 
-        ; point de to start of tilemap commands
-    ld de, 64
-    add hl, de
+.section "Tilemap upload section" align 256 returnorg
+TMUploadJumpTable:
+    .macro TMUploadOne
+            ; /!\ This macro must stay 8 bytes long
 
-TilemapUnpackStart
+            ; low byte of tilemap item
+        ld a, e
+        out (VDPData), a
+            ; ensure 26 cycles between VRAM writes (no effect because writing ROM)
+        inc (hl)
+            ; high byte of tilemap item
+        ld a, d
+        out (VDPData), a
+        inc (hl)
+    .endm
 
+    .repeat 4
+        TMUploadOne
+    .endr
+    
+    ld a, h
+    rra
+    rra
+    add a, 2
+    add a, c
+    ld c, a
+    adc a, b
+    sub c
+    ld b, a
+
+        ; restore command pointer into hl
+    pop hl
+
+TilemapUnpackStart:
         ; read next command
     ld a, (hl)
     inc hl
 
     or a ; to update S flag
-    jp m, +
+    jp m, TMUCommands80
 
-        ; cTileMapCommandCache
+        ; *** cTileMapCommandCache ***
 
-        ; get tile cache pointer into hl
-    ex de, hl
-    ld hl, (TMCachePointer)
+        ; save command pointer
+    push hl
+
+        ; store for repeat
+    ld ixl, a
 
         ; compute cache offset
     rlca
-    ld ixl, a ; store for repeat
     and $3e
 
         ; add cache offset to cache pointer
-    add a, l
     ld l, a
-    adc a, h
-    sub l
-    ld h, a
+    ld h, >TileMapCache
 
-        ; load tilemap item from cache
-    ld a, (hl)
+        ; load tilemap item from cache into de
+    ld e, (hl)
     inc hl
-    ld h, (hl)
-    ld l, a
+    ld d, (hl)
 
-        ; proper repeat count into ixl
+        ; compute jump table offset from command repeat bits (%0ab00000 -> %000ab000)
     ld a, ixl
-    rlca
-    rlca
-    and 3
-    ld ixl, a
-
-        ; get tilemap itme into de and restore hl
-    ex de, hl
-
-    .repeat 3
-        TMRUploadOne
-        dec ixl
-        jp m, TilemapUnpackStart
+    .repeat 2
+        rrca
     .endr
-    TMRUploadOne
-    jp TilemapUnpackStart
+    and %00011000
+    ld l, a
+    ld h, >TMUploadJumpTable
 
-+:
-    sla a
-    jp m, +
+        ; jump to tilemap upload table
+    jp (hl)
 
-        ; cTileMapCommandSkip
+TMUCommands80:
+    cp $c0
+    jr nc, TMUCommandRaw
+
+        ; *** cTileMapCommandSkip ***
 
         ; a skip of zero is termination
-    jr z, TilemapUnpackEnd
+    and $3f
+    jp z, TilemapUnpackEnd
 
-        ; command is skip * 2 directly, so add it to local VRAM pointer
+        ; command is skip count, so double it and add it to local VRAM pointer
+    rlca
     add a, c
     ld c, a
     adc a, b
@@ -442,32 +459,31 @@ TilemapUnpackStart
     out (VDPControl), a
 
     jp TilemapUnpackStart
-+:
 
-        ; cTileMapCommandRaw
+TMUCommandRaw:
+
+        ; *** cTileMapCommandRaw ***
 
         ; high byte of tilemap item from command
     ld d, a
-    rrc d
 
         ; low byte of tilemap item
     ld e, (hl)
     inc hl
 
-        ; get repeat count
-    rlca
-    rlca
-    rlca
-    and 3
-    ld ixl, a
+        ; save command pointer
+    push hl
 
-    .repeat 3
-        TMRUploadOne
-        dec ixl
-        jp m, TilemapUnpackStart
-    .endr
-    TMRUploadOne
-    jp TilemapUnpackStart
+        ; compute jump table offset from command repeat bits %11ab0000 -> %000ab000
+    rra
+    and %00011000
+    ld l, a
+    ld h, >TMUploadJumpTable
+
+        ; jump to tilemap upload table
+    jp (hl)
+
+.ends
 
 TilemapUnpackEnd:
 
@@ -520,10 +536,8 @@ p4: ; Advance to next frame
     ld (CurFrameIdx), bc
     pop hl
     jp NextFrameLoad
-    
-;==============================================================
-; Data
-;==============================================================
+
+.section "Data" free
 
 ; VDP initialisation data
 VDPInitData:
@@ -532,3 +546,5 @@ VDPInitDataEnd:
 
 VideoDataIndex:
 .incbin "tiled/index.bin"
+
+.ends
