@@ -267,7 +267,7 @@ object MainForm: TMainForm
     Top = 36
     Width = 176
     TabOrder = 1
-    Text = 'c:\smsdev\nggyu\tiled'
+    Text = 'c:\smsdev\tiler\sms\tiled'
   end
   object pbPalette: TPaintBox
     Left = 8
