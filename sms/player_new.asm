@@ -346,7 +346,7 @@ TilesUploadEnd:
 
         ; Set tilemap VRAM pointer (stored into bc)
     xor a
-    ld c, a
+    ld iyl, a
     out (VDPControl), a
     ld a, (CurFrameIdx)
     ; we want to move bit 0 to bit 5
@@ -355,40 +355,33 @@ TilesUploadEnd:
     rrca
     and %00100000
     or VRAMWrite >> 8
-    ld b, a
+    ld iyh, a
     out (VDPControl), a
+
+    ld c, VDPData
 
     jp TilemapUnpackStart
 
-.section "Tilemap upload section" align 256 returnorg
+.section "Tilemap upload section" align 256 returnorg ; align first TMUploadOne
 TMUploadJumpTable:
     .macro TMUploadOne
-            ; /!\ This macro must stay 8 bytes long
+            ; /!\ This macro must stay 10 bytes long
 
             ; low byte of tilemap item
-        ld a, e
-        out (VDPData), a
-            ; ensure 26 cycles between VRAM writes (no effect because writing ROM)
-        inc (hl)
+        out (c), e
+            ; update local VRAM pointer
+        inc iy
+            ; to ensure min 26 cycles between VRAM writes (no effect)
+        nop
             ; high byte of tilemap item
-        ld a, d
-        out (VDPData), a
-        inc (hl)
+        out (c), d
+        inc iy
+        nop
     .endm
 
     .repeat 4
         TMUploadOne
     .endr
-    
-    ld a, h
-    rra
-    rra
-    add a, 2
-    add a, c
-    ld c, a
-    adc a, b
-    sub c
-    ld b, a
 
         ; restore command pointer into hl
     pop hl
@@ -407,7 +400,7 @@ TilemapUnpackStart:
     push hl
 
         ; store for repeat
-    ld ixl, a
+    ld b, a
 
         ; compute cache offset
     rlca
@@ -422,12 +415,16 @@ TilemapUnpackStart:
     inc hl
     ld d, (hl)
 
-        ; compute jump table offset from command repeat bits (%0ab00000 -> %000ab000)
-    ld a, ixl
+        ; compute jump table offset from command repeat bits
+    ld a, b
     .repeat 2
         rrca
     .endr
     and %00011000
+    ld l, a
+    rrca
+    rrca
+    add a, l
     ld l, a
     ld h, >TMUploadJumpTable
 
@@ -446,16 +443,17 @@ TMUCommands80:
 
         ; command is skip count, so double it and add it to local VRAM pointer
     rlca
-    add a, c
+    ld b, 0
     ld c, a
-    adc a, b
-    sub c
-    ld b, a
+    add iy, bc
+        
+        ; restore c
+    ld c, VDPData
 
         ; update the VRAM pointer
-    ld a, c
+    ld a, iyl
     out (VDPControl), a
-    ld a, b
+    ld a, iyh
     out (VDPControl), a
 
     jp TilemapUnpackStart
@@ -474,9 +472,13 @@ TMUCommandRaw:
         ; save command pointer
     push hl
 
-        ; compute jump table offset from command repeat bits %11ab0000 -> %000ab000
+        ; compute jump table offset from command repeat bits
     rra
     and %00011000
+    ld l, a
+    rrca
+    rrca
+    add a, l
     ld l, a
     ld h, >TMUploadJumpTable
 
