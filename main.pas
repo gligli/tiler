@@ -548,7 +548,6 @@ begin
   btnDoFrameTiling.Click;
   btnReindex.Click;
   btnSmooth.Click;
-  btnReindex.Click; // second time to account for smoothing
   btnSave.Click;
 end;
 
