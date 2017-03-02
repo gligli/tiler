@@ -1922,14 +1922,14 @@ begin
 
           if awaitingCount >= cTileMapMaxRepeat then
           begin
-            if awaitingCacheIdx < -1 then
+            if awaitingCacheIdx < 0 then
             begin
-              ADataStream.WriteByte(cTileMapCommandRaw or ((-awaitingCacheIdx) shr 8) or ((awaitingCount - 1) shl 4));
+              ADataStream.WriteByte(cTileMapCommandRaw or ((-awaitingCacheIdx) shr 8) or ((cTileMapMaxRepeat - awaitingCount) shl 4));
               ADataStream.WriteByte((-awaitingCacheIdx) and $ff);
             end
-            else if awaitingCacheIdx >= 0 then
+            else
             begin
-              ADataStream.WriteByte(cTileMapCommandCache or awaitingCacheIdx or ((awaitingCount - 1) shl 5));
+              ADataStream.WriteByte(cTileMapCommandCache or awaitingCacheIdx or ((cTileMapMaxRepeat - awaitingCount) shl 5));
             end;
 
             awaitingCacheIdx := -1;
@@ -1938,14 +1938,14 @@ begin
         end
         else if awaitingCacheIdx <> -1 then
         begin
-          if awaitingCacheIdx < -1 then
+          if awaitingCacheIdx < 0 then
           begin
-            ADataStream.WriteByte(cTileMapCommandRaw or ((-awaitingCacheIdx) shr 8) or ((awaitingCount - 1) shl 4));
+            ADataStream.WriteByte(cTileMapCommandRaw or ((-awaitingCacheIdx) shr 8) or ((cTileMapMaxRepeat - awaitingCount) shl 4));
             ADataStream.WriteByte((-awaitingCacheIdx) and $ff);
           end
-          else if awaitingCacheIdx >= 0 then
+          else
           begin
-            ADataStream.WriteByte(cTileMapCommandCache or awaitingCacheIdx or ((awaitingCount - 1) shl 5));
+            ADataStream.WriteByte(cTileMapCommandCache or awaitingCacheIdx or ((cTileMapMaxRepeat - awaitingCount) shl 5));
           end;
 
           awaitingCacheIdx := tmiCacheIdx;
