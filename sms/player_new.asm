@@ -358,46 +358,54 @@ TilesUploadEnd:
     ld iyh, a
     out (VDPControl), a
 
-    ld c, VDPData
-
     jp TilemapUnpackStart
 
 .section "Tilemap upload section" align 256 returnorg ; align LUT and first TMUploadOne
+.define TMS 12
 TMUploadLUT:
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-.db 0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-.db 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10, 20, 20,
-.db 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
-.db 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 30, 30, 30, 30, 30, 30, 30, 30,
-.db 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
-.db 30, 30, 30, 30, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10,
-.db 10, 10, 10, 10, 10, 10, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20, 20,
-.db 20, 20, 20, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30, 30,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS,
+.db TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS,
+.db TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2,
+.db TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2,
+.db TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3,
+.db TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+.db TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS,TMS, TMS, TMS, TMS, TMS, TMS,
+.db TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2,
+.db TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3,
+
 TMUploadJumpTable:
-    .macro TMUploadOne
-            ; /!\ This macro must stay 10 bytes long
+    .macro TMUploadOne args end
+            ; /!\ TMS must stay equal to this macro length
 
             ; low byte of tilemap item
-        out (c), e
+        ld a, c
+        out (VDPData), a
             ; update local VRAM pointer
         inc iy
-            ; to ensure min 26 cycles between VRAM writes (no effect)
-        nop
             ; high byte of tilemap item
-        out (c), d
+        ld a, ixl
+        out (VDPData), a
         inc iy
-        nop
+
+        .ifeq end 1
+            ex de, hl ; restore command pointer into hl
+        .else
+            nop
+        .endif
+
     .endm
 
-    .repeat 4
-        TMUploadOne
-    .endr
-
-        ; restore command pointer into hl
-    pop hl
+    TMUploadOne 0
+    TMUploadOne 0
+    TMUploadOne 0
+    TMUploadOne 1
 
 TilemapUnpackStart:
         ; read next command
@@ -409,8 +417,8 @@ TilemapUnpackStart:
 
         ; *** cTileMapCommandCache ***
 
-        ; save command pointer
-    push hl
+        ; save command pointer into de
+    ex de, hl
 
         ; store for repeat
     ld b, a
@@ -423,16 +431,17 @@ TilemapUnpackStart:
     ld l, a
     ld h, >TileMapCache
 
-        ; load tilemap item from cache into de
-    ld e, (hl)
+        ; load tilemap item from cache into ixl / c
+    ld c, (hl)
     inc hl
-    ld d, (hl)
+    ld a, (hl)
+    ld ixl, a
 
         ; compute jump table offset from command repeat bits using LUT
     ld l, b
     ld h, >TMUploadLUT
     ld l, (hl)
-    ld h, >TMUploadJumpTable
+    inc h ; = >TMUploadJumpTable
 
         ; jump to tilemap upload table
     jp (hl)
@@ -453,9 +462,6 @@ TMUCommands80:
     ld c, a
     add iy, bc
 
-        ; restore c
-    ld c, VDPData
-
         ; update the VRAM pointer
     ld a, iyl
     out (VDPControl), a
@@ -469,20 +475,20 @@ TMUCommandRaw:
         ; *** cTileMapCommandRaw ***
 
         ; high byte of tilemap item from command
-    ld d, a
+    ld ixl, a
 
         ; low byte of tilemap item
-    ld e, (hl)
+    ld c, (hl)
     inc hl
 
-        ; save command pointer
-    push hl
+        ; save command pointer into de
+    ex de, hl
 
         ; compute jump table offset from command repeat bits
     ld l, a
     ld h, >TMUploadLUT
     ld l, (hl)
-    ld h, >TMUploadJumpTable
+    inc h ; = >TMUploadJumpTable
 
         ; jump to tilemap upload table
     jp (hl)
