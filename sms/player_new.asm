@@ -58,6 +58,7 @@ banks 1
 .enum $c000 export
     CurFrameIdx       dw
     CurVBlankIdx      dw
+    TMCachePointer    dw
     LocalPalette      dsb TilePaletteSize * 2
 .ende
 
@@ -360,8 +361,8 @@ TilesUploadEnd:
     ld b, a
     out (VDPControl), a
 
-        ; store a pointer to the tile cache on stack
-    push hl
+        ; store a pointer to the tile cache
+    ld (TMCachePointer), hl
 
         ; point de to start of tilemap commands
     ld de, 64
@@ -378,10 +379,9 @@ TilemapUnpackStart
 
         ; cTileMapCommandCache
 
-        ; get tile cache pointer
-    pop de
-        ; store it again
-    push de
+        ; get tile cache pointer into hl
+    ex de, hl
+    ld hl, (TMCachePointer)
 
         ; compute cache offset
     rlca
@@ -389,19 +389,17 @@ TilemapUnpackStart
     and $3e
 
         ; add cache offset to cache pointer
-    add a, e
-    ld e, a
-    adc a, d
-    sub e
-    ld d, a
+    add a, l
+    ld l, a
+    adc a, h
+    sub l
+    ld h, a
 
         ; load tilemap item from cache
-    ld a, (de)
-    ld ixh, a
-    inc de
-    ld a, (de)
-    ld e, ixh
-    ld d, a
+    ld a, (hl)
+    inc hl
+    ld h, (hl)
+    ld l, a
 
         ; proper repeat count into ixl
     ld a, ixl
@@ -409,6 +407,9 @@ TilemapUnpackStart
     rlca
     and 3
     ld ixl, a
+
+        ; get tilemap itme into de and restore hl
+    ex de, hl
 
     .repeat 3
         TMRUploadOne
@@ -425,7 +426,7 @@ TilemapUnpackStart
         ; cTileMapCommandSkip
 
         ; a skip of zero is termination
-    jp z, TilemapUnpackEnd
+    jr z, TilemapUnpackEnd
 
         ; command is skip * 2 directly, so add it to local VRAM pointer
     add a, c
@@ -469,7 +470,6 @@ TilemapUnpackStart
     jp TilemapUnpackStart
 
 TilemapUnpackEnd:
-    pop de
 
 p2: ; Wait 4 VBlanks per frame (12.5 PAL fps)
 -:  halt
