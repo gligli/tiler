@@ -446,7 +446,7 @@ p4: ; Advance to next frame
 
         ; compute jump table offset from command repeat bits using LUT
     ld l, b
-    inc h ; = >TMUploadLUT
+    inc h ; = >TMCommandCacheLUT
     ld l, (hl)
     inc h ; = >TMUploadCacheJumpTable
 
@@ -455,6 +455,23 @@ p4: ; Advance to next frame
 
         ; jump to tilemap upload table
     jp (hl)
+.endm
+
+.macro TMUploadCacheMacro
+        ; /!\ TMCS must stay equal to this macro length
+
+        ; low byte of tilemap item
+    ld a, (bc)
+    out (VDPData), a
+    inc c
+    ld l, a
+
+        ; high byte of tilemap item
+    ld a, (bc)
+    dec c
+    ld h, a
+    out (VDPData), a
+    push hl ; store tilemap item into LocalTileMap
 .endm
 
 .macro TMCommandSkipMacro
@@ -495,31 +512,16 @@ p4: ; Advance to next frame
 
         ; compute jump table offset from command repeat bits
     ld l, b
-    inc h ; = >TMUploadLUT
+    ld h, >TMCommandRawLUT
     ld l, (hl)
-    ld h, >TMUploadRawJumpTable
+    inc h ; = >TMUploadRawJumpTable
 
         ; jump to tilemap upload table
     jp (hl)
 .endm
 
-.macro TMUploadCacheMacro args end
-        ; /!\ TMS must stay equal to this macro length
-
-        ; low byte of tilemap item
-    ld a, (bc)
-    out (VDPData), a
-inc c    ;ld l, a
-
-        ; high byte of tilemap item
-    ld a, (bc)
-dec c    ;ld h, a
-    out (VDPData), a
-    push hl ; store tilemap item into LocalTileMap
-.endm
-
 .macro TMUploadRawMacro args end
-        ; /!\ TMS must stay equal to this macro length
+        ; /!\ TMRS must stay equal to this macro length
 
         ; low byte of tilemap item
     ld a, (de)
@@ -553,48 +555,43 @@ dec c    ;ld h, a
     jp (hl)
 .endm
 
-.org $3c00
+.org $3b00
 TMCommandsJumpTable:
     TMCommandCacheMacro
 
-.org $3c40
+.org $3b40
     TMCommandCacheMacro
 
-.org $3c80
+.org $3b80
     TMCommandSkipMacro
 
-.org $3cc0
+.org $3bc0
     TMCommandRawMacro
 
-.org $3d00
-    .define TMS 9
-TMUploadLUT:
-    .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    .db TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS,
-    .db TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS,
-    .db TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2,
-    .db TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2,
-    .db TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3,
-    .db TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3,
-    .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    .db TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS, TMS,TMS, TMS, TMS, TMS, TMS, TMS,
-    .db TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2, TMS*2,
-    .db TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3, TMS*3,
+.org $3c00
+    .define TMCS 11
+TMCommandCacheLUT:
+    .dsb 32, 0
+    .dsb 32, TMCS
+    .dsb 32, TMCS*2
+    .dsb 32, TMCS*3
 
-.org $3e00
+.org $3d00
 TMUploadCacheJumpTable:
-    TMUploadCacheMacro 0
-    TMUploadCacheMacro 0
-    TMUploadCacheMacro 0
-    TMUploadCacheMacro 1
+    .repeat 4
+        TMUploadCacheMacro
+    .endr
 
 TilemapUnpackStart:
     TMProcessNextCommand
+
+.org $3e00
+    .define TMRS 9
+TMCommandRawLUT:
+    .dsb 208, 0
+    .dsb 16, TMRS
+    .dsb 16, TMRS*2
+    .dsb 16, TMRS*3
 
 .org $3f00
 TMUploadRawJumpTable:
