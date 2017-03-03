@@ -43,11 +43,138 @@ banks 1
 .define DblBufTileOffset 49 * TileSize
 
 .macro SetVDPAddress args addr
-; Sets the VDP address
+        ; Sets the VDP address
     ld a, <addr
     out (VDPControl),a
     ld a, >addr
     out (VDPControl),a
+.endm
+
+.macro TMProcessNextCommand
+        ; read next command
+    ld a, (de)
+    inc de
+
+        ; store raw command into c
+    ld c, a
+        ; compute jump table offset
+    and $c0
+    ld l, a
+    ld h, >TMCommandsJumpTable
+
+        ; jump to commands table
+    jp (hl)
+.endm
+
+.macro TMCommandCacheMacro
+        ; cache pointer upper byte
+    ld b, >TileMapCache
+
+        ; compute cache offset and jump table offset from command using LUTs
+    ld l, c
+    inc h ; = >TMCommandCacheOffsetLUT
+    ld c, (hl)
+    inc h ; = >TMCommandCacheRepeatLUT
+    ld l, (hl)
+    inc h ; = >TMUploadCacheJumpTable
+
+        ; jump to tilemap upload table
+    jp (hl)
+.endm
+
+.define TMCS 11
+.macro TMUploadCacheMacro args idx
+        ; /!\ TMCS must stay equal to this macro length
+
+        ; low byte of tilemap item
+    ld a, (bc)
+    out (VDPData), a
+    inc c
+    ld h, a
+
+        ; high byte of tilemap item
+    ld a, (bc)
+    .ifneq idx 3
+        dec c
+    .endif
+    ld l, a
+    out (VDPData), a
+    push hl ; store tilemap item into LocalTileMap
+.endm
+
+.macro TMCommandSkipMacro
+        ; command is skip count
+    ld a, c
+    and $3f
+
+        ; a skip of zero is termination
+    jp z, TilemapUnpackEnd
+
+        ; local tilemap pointer
+    ld hl, -1
+    add hl, sp
+        ; loop counter (decremented x2 per loop)
+    rlca
+    ld b, a
+        ; target register
+    ld c, VDPData
+
+        ; depending on VRAM "half", will call TMUploadSkipMacro 0 or 1
+    jp (ix)
+.endm
+
+.macro TMUploadSkipMacro args half
+        ; upload "skip count" prev items from local tilemap
+-:
+        ; tilemap item low byte
+    outd
+        ; tilemap item high byte
+    ld a, (hl)
+    .ifeq half 1
+        or $01
+    .else
+        and $fe
+    .endif
+    dec hl
+    out (VDPData), a
+    djnz -
+
+        ; sp (reverse local tilemap pointer) must be updated too
+    ld sp, hl
+    inc sp
+
+    TMProcessNextCommand
+.endm
+
+.macro TMCommandRawMacro
+        ; compute jump table offset from command repeat bits
+    ld l, c
+    ld h, >TMCommandRawLUT
+    ld l, (hl)
+    inc h ; = >TMUploadRawJumpTable
+
+        ; jump to tilemap upload table
+    jp (hl)
+.endm
+
+.define TMRS 9
+.macro TMUploadRawMacro args idx
+        ; /!\ TMRS must stay equal to this macro length
+
+        ; low byte of tilemap item
+    ld a, (de)
+    ld b, a
+    out (VDPData), a
+    push bc ; store tilemap item into LocalTileMap
+
+        ; high byte of tilemap item
+    ld a, c
+    out (VDPData), a
+    .ifneq idx 3
+        nop
+    .else
+        inc de
+    .endif
 .endm
 
 ;==============================================================
@@ -358,18 +485,20 @@ TilesUploadEnd:
     or VRAMWrite >> 8
     out (VDPControl), a
 
+        ; prepare (ix) jump table
+    ld ixh, >TMUploadSkipJumpTable
+
         ; save command pointer into de
     ex de, hl
 
-tm0:
         ; save stack pointer
     ld (SPSave), sp
     
         ; sp will be used as a pointer on a reversed local tilemap
     ld sp, LocalTileMapEnd
 
-        ; tilemap unpack code is at end of source
-    jp TilemapUnpackStart
+        ; start unpacking tilemap
+    TMProcessNextCommand
 
 TilemapUnpackEnd:
 
@@ -426,157 +555,25 @@ p4: ; Advance to next frame
         ; restore command pointer into hl
     ex de, hl
     jp NextFrameLoad
+    
+;==============================================================
+; Tilemap upload fixed sequences (jump tables, LUTs)
+;==============================================================
 
-
-
-.macro TMCommandCacheMacro
-
-        ; cache pointer upper byte
-    ld b, >TileMapCache
-
-        ; compute cache offset and jump table offset from command using LUTs
-    ld l, c
-    inc h ; = >TMCommandCacheOffsetLUT
-    ld c, (hl)
-    inc h ; = >TMCommandCacheRepeatLUT
-    ld l, (hl)
-    inc h ; = >TMUploadCacheJumpTable
-
-        ; jump to tilemap upload table
-    jp (hl)
-.endm
-
-.define TMCS 11
-.macro TMUploadCacheMacro args idx
-        ; /!\ TMCS must stay equal to this macro length
-
-        ; low byte of tilemap item
-    ld a, (bc)
-    out (VDPData), a
-    inc c
-    ld h, a
-
-        ; high byte of tilemap item
-    ld a, (bc)
-    .ifneq idx 3
-        dec c
-    .endif
-    ld l, a
-    out (VDPData), a
-    push hl ; store tilemap item into LocalTileMap
-.endm
-
-.macro TMCommandSkipMacro
-        ; command is skip count
-    ld a, c
-    and $3f
-
-        ; a skip of zero is termination
-    jp z, TilemapUnpackEnd
-
-        ; local tilemap pointer
-    ld hl, -1
-    add hl, sp
-        ; loop counter (decremented x2 per loop)
-    rlca
-    ld b, a
-        ; target register
-    ld c, VDPData
-
-        ; VRAM second "half" ? (bit 7 is clear in a)
-    or ixl
-    jp m, +
-    TMUploadSkipMacro 0
-+:
-    TMUploadSkipMacro 1
-.endm
-
-.macro TMUploadSkipMacro args half
-
-        ; upload "skip count" prev items from local tilemap
--:
-        ; tilemap item low byte
-    outd
-        ; tilemap item high byte
-    ld a, (hl)
-    .ifeq half 1
-        or $01
-    .else
-        and $fe
-    .endif
-    dec hl
-    out (VDPData), a
-    djnz -
-
-        ; sp (reverse local tilemap pointer) must be updated too
-    ld sp, hl
-    inc sp
-
-    TMProcessNextCommand
-.endm
-
-.macro TMCommandRawMacro
-
-        ; compute jump table offset from command repeat bits
-    ld l, c
-    ld h, >TMCommandRawLUT
-    ld l, (hl)
-    inc h ; = >TMUploadRawJumpTable
-
-        ; jump to tilemap upload table
-    jp (hl)
-.endm
-
-.define TMRS 9
-.macro TMUploadRawMacro args idx
-        ; /!\ TMRS must stay equal to this macro length
-
-        ; low byte of tilemap item
-    ld a, (de)
-    ld b, a
-    out (VDPData), a
-    push bc ; store tilemap item into LocalTileMap
-
-        ; high byte of tilemap item
-    ld a, c
-    out (VDPData), a
-    .ifneq idx 3
-        nop
-    .else
-        inc de
-    .endif
-.endm
-
-.macro TMProcessNextCommand
-        ; read next command
-    ld a, (de)
-    inc de
-
-        ; store raw command into c
-    ld c, a
-        ; compute jump table offset
-    and $c0
-    ld l, a
-    ld h, >TMCommandsJumpTable
-
-        ; jump to commands table
-    jp (hl)
-.endm
-
-.org $3a00
+.org $3900
 TMCommandsJumpTable:
     TMCommandCacheMacro
 
-.org $3a40
+.org $3940
     TMCommandCacheMacro
 
-.org $3a80
+.org $3980
     TMCommandSkipMacro
 
-.org $3ac0
+.org $39c0
     TMCommandRawMacro
 
-.org $3b00
+.org $3a00
 TMCommandCacheOffsetLUT:
     .repeat 4
         .repeat 32 index idx
@@ -584,20 +581,27 @@ TMCommandCacheOffsetLUT:
         .endr
     .endr
 
-.org $3c00
+.org $3b00
 TMCommandCacheRepeatLUT:
     .dsb 32, 0
     .dsb 32, TMCS
     .dsb 32, TMCS*2
     .dsb 32, TMCS*3
 
-.org $3d00
+.org $3c00
 TMUploadCacheJumpTable:
     .repeat 4 index idx
         TMUploadCacheMacro idx
     .endr
+    TMProcessNextCommand
 
-TilemapUnpackStart:
+.org $3d00
+TMUploadSkipJumpTable:
+    TMUploadSkipMacro 0
+    TMProcessNextCommand
+
+.org $3d80
+    TMUploadSkipMacro 1
     TMProcessNextCommand
 
 .org $3e00
@@ -612,7 +616,6 @@ TMUploadRawJumpTable:
     .repeat 4 index idx
         TMUploadRawMacro idx
     .endr
-
     TMProcessNextCommand
 
 .section "Data" free
