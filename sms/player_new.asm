@@ -415,6 +415,7 @@ TilemapUnpackStart:
     or a ; to update S flag
     jp m, TMUCommands80
 
+;jp TilemapUnpackStart
         ; *** cTileMapCommandCache ***
 
         ; save command pointer into de
@@ -433,7 +434,7 @@ TilemapUnpackStart:
 
         ; load tilemap item from cache into ixl / c
     ld c, (hl)
-    inc hl
+    inc l
     ld a, (hl)
     ld ixl, a
 
@@ -456,6 +457,7 @@ TMUCommands80:
     and $3f
     jp z, TilemapUnpackEnd
 
+;jp TilemapUnpackStart
         ; command is skip count, so double it and add it to local VRAM pointer
     rlca
     ld b, 0
@@ -481,6 +483,7 @@ TMUCommandRaw:
     ld c, (hl)
     inc hl
 
+;jp TilemapUnpackStart
         ; save command pointer into de
     ex de, hl
 
