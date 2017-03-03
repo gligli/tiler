@@ -521,8 +521,7 @@ p4: ; Advance to next frame
     ld sp, hl
     inc sp
 
-    jp TilemapUnpackStart
-
+    TMProcessNextCommand
 .endm
 
 .macro TMCommandRawMacro
