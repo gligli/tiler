@@ -430,7 +430,6 @@ p4: ; Advance to next frame
 
 
 .macro TMCommandCacheMacro
-;jp TilemapUnpackStart
 
         ; compute jump table offset from command repeat bits using LUT
     ld l, c
@@ -452,7 +451,7 @@ p4: ; Advance to next frame
 .endm
 
 .define TMCS 11
-.macro TMUploadCacheMacro
+.macro TMUploadCacheMacro args end
         ; /!\ TMCS must stay equal to this macro length
 
         ; low byte of tilemap item
@@ -463,7 +462,9 @@ p4: ; Advance to next frame
 
         ; high byte of tilemap item
     ld a, (bc)
-    dec c
+    .ifeq end 0
+        dec c
+    .endif
     ld l, a
     out (VDPData), a
     push hl ; store tilemap item into LocalTileMap
@@ -476,8 +477,6 @@ p4: ; Advance to next frame
 
         ; a skip of zero is termination
     jp z, TilemapUnpackEnd
-
-;jp TilemapUnpackStart
 
         ; local tilemap pointer
     ld hl, -1
@@ -590,9 +589,10 @@ TMCommandCacheLUT:
 
 .org $3d00
 TMUploadCacheJumpTable:
-    .repeat 4
-        TMUploadCacheMacro
-    .endr
+    TMUploadCacheMacro 0
+    TMUploadCacheMacro 0
+    TMUploadCacheMacro 0
+    TMUploadCacheMacro 1
 
 TilemapUnpackStart:
     TMProcessNextCommand
