@@ -56,10 +56,13 @@ banks 1
 ;==============================================================
 
 .enum $c000 export
-    TileMapCache      dsb 64 ; must stay first
+    LocalTileMap      dsb TileMapSize
+    LocalTileMapEnd   .
+    TileMapCache      dsb 64 ; must be aligned on 256
     LocalPalette      dsb TilePaletteSize * 2
     CurFrameIdx       dw
     CurVBlankIdx      dw
+    SPSave            dw
 .ende
 
 .bank 0 slot 0
@@ -345,10 +348,7 @@ TilesUploadEnd:
         ldi
     .endr
 
-        ; save command pointer into de
-    ex de, hl
-
-        ; Set tilemap VRAM pointer (stored into bc)
+        ; Set tilemap VRAM pointer (also store it into ix)
     xor a
     ld ixl, a
     out (VDPControl), a
@@ -362,12 +362,26 @@ TilesUploadEnd:
     ld ixh, a
     out (VDPControl), a
 
-        ; tilemap unpack code is at end of source
+        ; save command pointer into de
+    ex de, hl
+
 tm0:
-    call TilemapUnpackStart
-tm1:
+        ; save stack pointer
+    ld (SPSave), sp
+    
+        ; sp will be used as a pointer on a reversed local tilemap
+    ld sp, LocalTileMapEnd
+
+        ; tilemap unpack code is at end of source
+    jp TilemapUnpackStart
+
+TilemapUnpackEnd:
+
         ; restore command pointer into hl
     ex de, hl
+
+        ; restore stack pointer
+    ld sp, (SPSave)
 
 p2: ; Wait 4 VBlanks per frame (12.5 PAL fps)
 -:  halt
@@ -449,19 +463,29 @@ p4: ; Advance to next frame
     and $3f
 
         ; a skip of zero is termination
-    ret z
+    jp z, TilemapUnpackEnd
 
 ;jp TilemapUnpackStart
-        ; double skip count and add it to local VRAM pointer
-    rlca
-    ld b, 0
-    ld c, a
-    add ix, bc
+        ; subtract skip offset from sp (reverse local tilemap pointer)
+    rlca ; skip offset is skip count * 2
+    neg
+    ld h, $ff
+    ld l, a
+    add hl, sp
+    ld sp, hl
+
+        ; compute the new VRAM pointer from sp
+    ld hl, LocalTileMapEnd
+    ld b, ixh
+    ld c, ixl
+    add hl, bc
+    ccf
+    sbc hl, sp
 
         ; update the VRAM pointer
-    ld a, ixl
+    ld a, l
     out (VDPControl), a
-    ld a, ixh
+    ld a, h
     out (VDPControl), a
 
     jp TilemapUnpackStart
@@ -485,16 +509,13 @@ p4: ; Advance to next frame
         ; low byte of tilemap item
     ld a, (bc)
     out (VDPData), a
-        ; update local VRAM pointer
-    inc ix
-    inc c
+inc c    ;ld l, a
+
         ; high byte of tilemap item
     ld a, (bc)
+dec c    ;ld h, a
     out (VDPData), a
-    inc ix
-    .ifeq end 0
-        dec c
-    .endif
+    push hl ; store tilemap item into LocalTileMap
 .endm
 
 .macro TMUploadRawMacro args end
@@ -502,15 +523,13 @@ p4: ; Advance to next frame
 
         ; low byte of tilemap item
     ld a, (de)
+    ld c, a
     out (VDPData), a
-        ; update local VRAM pointer
-    inc ix
-        ; encure 26 cycles between VRAM writes
-    nop
+    push bc ; store tilemap item into LocalTileMap
+
         ; high byte of tilemap item
     ld a, b
     out (VDPData), a
-    inc ix
     .ifeq end 0
         nop
     .else
@@ -548,7 +567,7 @@ TMCommandsJumpTable:
     TMCommandRawMacro
 
 .org $3d00
-    .define TMS 12
+    .define TMS 9
 TMUploadLUT:
     .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     .db 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
