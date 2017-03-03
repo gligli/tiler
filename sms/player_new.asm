@@ -431,27 +431,23 @@ p4: ; Advance to next frame
 
 .macro TMCommandCacheMacro
 
-        ; compute jump table offset from command repeat bits using LUT
-    ld l, c
-    inc h ; = >TMCommandCacheLUT
-    ld l, (hl)
-    inc h ; = >TMUploadCacheJumpTable
-
-        ; compute cache pointer lower byte
-    ld a, c
-    rlca
-    and $3e
-    ld c, a
-
         ; cache pointer upper byte
     ld b, >TileMapCache
+
+        ; compute cache offset and jump table offset from command using LUTs
+    ld l, c
+    inc h ; = >TMCommandCacheOffsetLUT
+    ld c, (hl)
+    inc h ; = >TMCommandCacheRepeatLUT
+    ld l, (hl)
+    inc h ; = >TMUploadCacheJumpTable
 
         ; jump to tilemap upload table
     jp (hl)
 .endm
 
 .define TMCS 11
-.macro TMUploadCacheMacro args end
+.macro TMUploadCacheMacro args idx
         ; /!\ TMCS must stay equal to this macro length
 
         ; low byte of tilemap item
@@ -462,7 +458,7 @@ p4: ; Advance to next frame
 
         ; high byte of tilemap item
     ld a, (bc)
-    .ifeq end 0
+    .ifneq idx 3
         dec c
     .endif
     ld l, a
@@ -532,7 +528,7 @@ p4: ; Advance to next frame
 .endm
 
 .define TMRS 9
-.macro TMUploadRawMacro args end
+.macro TMUploadRawMacro args idx
         ; /!\ TMRS must stay equal to this macro length
 
         ; low byte of tilemap item
@@ -544,7 +540,7 @@ p4: ; Advance to next frame
         ; high byte of tilemap item
     ld a, c
     out (VDPData), a
-    .ifeq end 0
+    .ifneq idx 3
         nop
     .else
         inc de
@@ -567,21 +563,29 @@ p4: ; Advance to next frame
     jp (hl)
 .endm
 
-.org $3b00
+.org $3a00
 TMCommandsJumpTable:
     TMCommandCacheMacro
 
-.org $3b40
+.org $3a40
     TMCommandCacheMacro
 
-.org $3b80
+.org $3a80
     TMCommandSkipMacro
 
-.org $3bc0
+.org $3ac0
     TMCommandRawMacro
 
+.org $3b00
+TMCommandCacheOffsetLUT:
+    .repeat 4
+        .repeat 32 index idx
+            .db idx * 2
+        .endr
+    .endr
+
 .org $3c00
-TMCommandCacheLUT:
+TMCommandCacheRepeatLUT:
     .dsb 32, 0
     .dsb 32, TMCS
     .dsb 32, TMCS*2
@@ -589,10 +593,9 @@ TMCommandCacheLUT:
 
 .org $3d00
 TMUploadCacheJumpTable:
-    TMUploadCacheMacro 0
-    TMUploadCacheMacro 0
-    TMUploadCacheMacro 0
-    TMUploadCacheMacro 1
+    .repeat 4 index idx
+        TMUploadCacheMacro idx
+    .endr
 
 TilemapUnpackStart:
     TMProcessNextCommand
@@ -606,10 +609,9 @@ TMCommandRawLUT:
 
 .org $3f00
 TMUploadRawJumpTable:
-    TMUploadRawMacro 0
-    TMUploadRawMacro 0
-    TMUploadRawMacro 0
-    TMUploadRawMacro 1
+    .repeat 4 index idx
+        TMUploadRawMacro idx
+    .endr
 
     TMProcessNextCommand
 
