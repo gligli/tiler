@@ -350,7 +350,6 @@ TilesUploadEnd:
 
         ; Set tilemap VRAM pointer (also store it into ix)
     xor a
-    ld ixl, a
     out (VDPControl), a
     ld a, (CurFrameIdx)
     ; we want to move bit 0 to bit 5
@@ -359,7 +358,6 @@ TilesUploadEnd:
     rrca
     and %00100000
     or VRAMWrite >> 8
-    ld ixh, a
     out (VDPControl), a
 
         ; save command pointer into de
@@ -464,12 +462,12 @@ p4: ; Advance to next frame
     ld a, (bc)
     out (VDPData), a
     inc c
-    ld l, a
+    ld h, a
 
         ; high byte of tilemap item
     ld a, (bc)
     dec c
-    ld h, a
+    ld l, a
     out (VDPData), a
     push hl ; store tilemap item into LocalTileMap
 .endm
@@ -483,29 +481,48 @@ p4: ; Advance to next frame
     jp z, TilemapUnpackEnd
 
 ;jp TilemapUnpackStart
-        ; subtract skip offset from sp (reverse local tilemap pointer)
-    rlca ; skip offset is skip count * 2
-    neg
-    ld h, $ff
-    ld l, a
+
+        ; local tilemap pointer
+    ld hl, -1
     add hl, sp
+        ; loop counter (decremented x2 per loop)
+    rlca
+    ld b, a
+        ; target register
+    ld c, VDPData
+        ; VRAM "half"
+    ld a, (CurFrameIdx)
+    and 1
+
+    jr nz, +
+    TMUploadSkipMacro 0
++:
+    TMUploadSkipMacro 1
+.endm
+
+.macro TMUploadSkipMacro args half
+
+        ; upload "skip count" prev items from local tilemap
+-:
+        ; tilemap item low byte
+    outd
+        ; tilemap item high byte
+    ld a, (hl)
+    .ifeq half 1
+        or $01
+    .else
+        and $fe
+    .endif
+    dec hl
+    out (VDPData), a
+    djnz -
+
+        ; sp (reverse local tilemap pointer) must be updated too
     ld sp, hl
-
-        ; compute the new VRAM pointer from sp
-    ld hl, LocalTileMapEnd
-    ld b, ixh
-    ld c, ixl
-    add hl, bc
-    ccf
-    sbc hl, sp
-
-        ; update the VRAM pointer
-    ld a, l
-    out (VDPControl), a
-    ld a, h
-    out (VDPControl), a
+    inc sp
 
     jp TilemapUnpackStart
+
 .endm
 
 .macro TMCommandRawMacro
@@ -516,6 +533,9 @@ p4: ; Advance to next frame
     ld l, (hl)
     inc h ; = >TMUploadRawJumpTable
 
+        ; upload needs high byte into c
+    ld c, b
+
         ; jump to tilemap upload table
     jp (hl)
 .endm
@@ -525,12 +545,12 @@ p4: ; Advance to next frame
 
         ; low byte of tilemap item
     ld a, (de)
-    ld c, a
+    ld b, a
     out (VDPData), a
     push bc ; store tilemap item into LocalTileMap
 
         ; high byte of tilemap item
-    ld a, b
+    ld a, c
     out (VDPData), a
     .ifeq end 0
         nop

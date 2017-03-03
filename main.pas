@@ -30,7 +30,7 @@ const
   cTilesPerBank = cBankSize div cTileSize;
 
   // Video player consts
-  cSmoothingPrevFrame = 2;
+  cSmoothingPrevFrame = 1;
   cTileIndexesTileOffset = cTilesPerBank * 1;
   cTileIndexesMaxDiff = 223;
   cTileIndexesRepeatStart = 225;
