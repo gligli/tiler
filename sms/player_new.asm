@@ -259,7 +259,7 @@ TilesUploadUnpackStart:
 +:
     cp 224
     jp c, +
-        
+
         ; value 224 is terminator
     jp z, TilesUploadEnd
 
@@ -362,12 +362,10 @@ TilesUploadEnd:
     ld ixh, a
     out (VDPControl), a
 
-    jp TilemapUnpackStart
-
-    ; tilemap unpack code is at end of ROM
-
-TilemapUnpackEnd:
-
+        ; tilemap unpack code is at end of source
+tm0:
+    call TilemapUnpackStart
+tm1:
         ; restore command pointer into hl
     ex de, hl
 
@@ -435,7 +433,6 @@ p4: ; Advance to next frame
         ; compute jump table offset from command repeat bits using LUT
     ld l, b
     inc h ; = >TMUploadLUT
-    ld h, >TMUploadLUT
     ld l, (hl)
     inc h ; = >TMUploadCacheJumpTable
 
@@ -452,7 +449,7 @@ p4: ; Advance to next frame
     and $3f
 
         ; a skip of zero is termination
-    jp z, TilemapUnpackEnd
+    ret z
 
 ;jp TilemapUnpackStart
         ; double skip count and add it to local VRAM pointer
