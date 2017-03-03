@@ -518,6 +518,22 @@ p4: ; Advance to next frame
     .endif
 .endm
 
+.macro TMProcessNextCommand
+        ; read next command
+    ld a, (de)
+    inc de
+
+        ; store raw command into b
+    ld b, a
+        ; compute jump table offset
+    and $c0
+    ld l, a
+    ld h, >TMCommandsJumpTable
+
+        ; jump to commands table
+    jp (hl)
+.endm
+
 .org $3c00
 TMCommandsJumpTable:
     TMCommandCacheMacro
@@ -559,19 +575,7 @@ TMUploadCacheJumpTable:
     TMUploadCacheMacro 1
 
 TilemapUnpackStart:
-     ; read next command
-    ld a, (de)
-    inc de
-
-        ; store raw command into b
-    ld b, a
-        ; compute jump table offset
-    and $c0
-    ld l, a
-    ld h, >TMCommandsJumpTable
-
-        ; jump to commands table
-    jp (hl)
+    TMProcessNextCommand
 
 .org $3f00
 TMUploadRawJumpTable:
@@ -580,7 +584,7 @@ TMUploadRawJumpTable:
     TMUploadRawMacro 0
     TMUploadRawMacro 1
 
-    jp TilemapUnpackStart
+    TMProcessNextCommand
 
 .section "Data" free
 
