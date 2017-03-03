@@ -437,17 +437,17 @@ p4: ; Advance to next frame
 .macro TMCommandCacheMacro
 ;jp TilemapUnpackStart
 
-        ; compute cache offset lower byte
-    ld a, b
-    rlca
-    and $3e
-    ld c, a
-
         ; compute jump table offset from command repeat bits using LUT
-    ld l, b
+    ld l, c
     inc h ; = >TMCommandCacheLUT
     ld l, (hl)
     inc h ; = >TMUploadCacheJumpTable
+
+        ; compute cache pointer lower byte
+    ld a, c
+    rlca
+    and $3e
+    ld c, a
 
         ; cache pointer upper byte
     ld b, >TileMapCache
@@ -475,7 +475,7 @@ p4: ; Advance to next frame
 
 .macro TMCommandSkipMacro
         ; command is skip count
-    ld a, b
+    ld a, c
     and $3f
 
         ; a skip of zero is termination
@@ -527,13 +527,10 @@ p4: ; Advance to next frame
 .macro TMCommandRawMacro
 
         ; compute jump table offset from command repeat bits
-    ld l, b
+    ld l, c
     ld h, >TMCommandRawLUT
     ld l, (hl)
     inc h ; = >TMUploadRawJumpTable
-
-        ; upload needs high byte into c
-    ld c, b
 
         ; jump to tilemap upload table
     jp (hl)
@@ -563,8 +560,8 @@ p4: ; Advance to next frame
     ld a, (de)
     inc de
 
-        ; store raw command into b
-    ld b, a
+        ; store raw command into c
+    ld c, a
         ; compute jump table offset
     and $c0
     ld l, a
