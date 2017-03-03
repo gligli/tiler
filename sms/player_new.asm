@@ -42,12 +42,11 @@ banks 1
 
 .define DblBufTileOffset 49 * TileSize
 
-.macro SetVDPAddress
+.macro SetVDPAddress args addr
 ; Sets the VDP address
-; Parameters: de = address
-    ld a,e
+    ld a, <addr
     out (VDPControl),a
-    ld a,d
+    ld a, >addr
     out (VDPControl),a
 .endm
 
@@ -116,8 +115,7 @@ main:
     ; Clear VRAM
 
     ; 1. Set VRAM write address to $0000
-    ld de, $0000 | VRAMWrite
-    SetVDPAddress
+    SetVDPAddress $0000 | VRAMWrite
     ; 2. Output 16KB of zeroes
     ld bc, $4000     ; Counter for 16KB of VRAM
 -:  xor a
@@ -128,8 +126,7 @@ main:
     jr nz, -
 
     ; Dummy Sprite table
-    ld de, $600 | VRAMWrite
-    SetVDPAddress
+    SetVDPAddress $600 | VRAMWrite
     ld a, $d0
     out (VDPData), a
     ld a, $06 << 1
@@ -376,8 +373,7 @@ tm0:
 
 TilemapUnpackEnd:
 
-        ; restore command pointer into hl
-    ex de, hl
+    ; command pointer still into de
 
         ; restore stack pointer
     ld sp, (SPSave)
@@ -389,8 +385,6 @@ p2: ; Wait 4 VBlanks per frame (12.5 PAL fps)
     jr nz, -
 
 p3:
-    push hl
-
     ; Tilemap swap
 
     ld a, (CurFrameIdx)
@@ -407,8 +401,7 @@ p3:
 
     ; Upload local palette to VDP
 
-    ld de, $0000 | CRAMWrite
-    SetVDPAddress
+    SetVDPAddress $0000 | CRAMWrite
     ld hl, LocalPalette
     .repeat TilePaletteSize * 2
         outi
@@ -424,12 +417,14 @@ p4: ; Advance to next frame
     ; If we're past last frame, rewind to first frame
     ld bc, 0
     ld (CurFrameIdx), bc
-    pop hl
+        ; restore command pointer into hl
+    ex de, hl
     jp InitPlayer
 
 +:
     ld (CurFrameIdx), bc
-    pop hl
+        ; restore command pointer into hl
+    ex de, hl
     jp NextFrameLoad
 
 
@@ -456,6 +451,7 @@ p4: ; Advance to next frame
     jp (hl)
 .endm
 
+.define TMCS 11
 .macro TMUploadCacheMacro
         ; /!\ TMCS must stay equal to this macro length
 
@@ -536,6 +532,7 @@ p4: ; Advance to next frame
     jp (hl)
 .endm
 
+.define TMRS 9
 .macro TMUploadRawMacro args end
         ; /!\ TMRS must stay equal to this macro length
 
@@ -585,7 +582,6 @@ TMCommandsJumpTable:
     TMCommandRawMacro
 
 .org $3c00
-    .define TMCS 11
 TMCommandCacheLUT:
     .dsb 32, 0
     .dsb 32, TMCS
@@ -602,7 +598,6 @@ TilemapUnpackStart:
     TMProcessNextCommand
 
 .org $3e00
-    .define TMRS 9
 TMCommandRawLUT:
     .dsb 208, 0
     .dsb 16, TMRS
