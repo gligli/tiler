@@ -352,11 +352,12 @@ TilesUploadEnd:
     xor a
     out (VDPControl), a
     ld a, (CurFrameIdx)
+    and 1
     ; we want to move bit 0 to bit 5
     rrca
+    ld ixl, a ; VRAM "half" in ixl bit 7
     rrca
     rrca
-    and %00100000
     or VRAMWrite >> 8
     out (VDPControl), a
 
@@ -490,11 +491,10 @@ p4: ; Advance to next frame
     ld b, a
         ; target register
     ld c, VDPData
-        ; VRAM "half"
-    ld a, (CurFrameIdx)
-    and 1
 
-    jr nz, +
+        ; VRAM second "half" ? (bit 7 is clear in a)
+    or ixl
+    jp m, +
     TMUploadSkipMacro 0
 +:
     TMUploadSkipMacro 1
