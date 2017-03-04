@@ -51,7 +51,20 @@ banks 1
     out (VDPControl),a
 .endm
 
+.macro TilesUploadTileToVRAM args slow
+    set 5, b ; fixup for outi corrupting b (add TileSize)
+    .repeat TileSize - 1
+        outi
+        .ifeq slow 1
+            ld (hl), 0 ; no effect (writes ROM)
+        .endif
+    .endr
+    outi
+.endm
+
 .macro TilesUploadPointOnTile
+        ; Get a pointer on tile data from tile index
+
     ld l, e
 
         ; Upper bits of tile index select a rom bank
@@ -74,32 +87,17 @@ banks 1
     ld h, a
 .endm
 
-.macro TilesUploadOne
-        ; Get a pointer on tile data from tile index
-    TilesUploadPointOnTile
-
+.macro TilesUploadScanlineJumpTable args many
         ; Jump to tile upload code (fast unrolled during VBlank, slower during display)
     in a, (VDPScanline)
     and $fc
-    ld iyl, a
-    jp (iy)
-.endm
-
-.macro TilesUploadMany
-        ; to next tile
-    inc de
-
-        ; fixup for outi corrupting b (add TileSize)
-    set 5, b
-
-        ; Get a pointer on tile data from tile index
-    TilesUploadPointOnTile
-
-        ; Jump to tile upload code (fast unrolled during VBlank, slower during display)
-    in a, (VDPScanline)
-    and $fc
-    ld ixl, a
-    jp (ix)
+    .ifeq many 1
+        ld ixl, a
+        jp (ix)
+    .else
+        ld iyl, a
+        jp (iy)
+    .endif
 .endm
 
 .macro TilesUploadUnpack
@@ -114,7 +112,7 @@ banks 1
 
     ld a, (hl)
     cp 0
-    jp nz, +
+    jr nz, +
 
         ; direct value, load tile index from tile index pointer
     inc hl
@@ -123,11 +121,12 @@ banks 1
     ld d, (hl)
 
     ld sp, hl
-    TilesUploadOne
+    TilesUploadPointOnTile
+    TilesUploadScanlineJumpTable 0
 
 +:
     cp 224
-    jp c, +
+    jr c, +
 
         ; value 224 is terminator
     jp z, TilesUploadEnd
@@ -136,8 +135,22 @@ banks 1
     sub 223
     ld b, a
 
+        ; increment tile index once for TilesUploadPointOnTile
+    inc de
+
     ld sp, hl
-    TilesUploadMany
+    TilesUploadPointOnTile
+
+        ; add remainder of repeat count to tile index
+    ld a, b
+    dec a
+    add a, e
+    ld e, a
+    adc a, d
+    sub e
+    ld d, a
+
+    TilesUploadScanlineJumpTable 1
 
 +:
         ; standard case, increment tile index
@@ -148,7 +161,8 @@ banks 1
     ld d, a
 
     ld sp, hl
-    TilesUploadOne
+    TilesUploadPointOnTile
+    TilesUploadScanlineJumpTable 0
 .endm
 
 .macro TMProcessNextCommand
@@ -465,35 +479,25 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
     TilesUploadUnpack
 
 TilesUploadManySlow:
-    .repeat TileSize
-        outi
-        ld (hl), 0 ; no effect (writes ROM)
-    .endr
+    TilesUploadTileToVRAM 1
     djnz TUMSRedo
     TilesUploadUnpack
 TUMSRedo:
-    TilesUploadMany
+    TilesUploadScanlineJumpTable 1
 
 TilesUploadManyFast:
-    .repeat TileSize
-        outi
-    .endr
+    TilesUploadTileToVRAM 0
     djnz TUMFRedo
     TilesUploadUnpack
 TUMFRedo:
-    TilesUploadMany
+    TilesUploadScanlineJumpTable 1
 
 TilesUploadOneSlow:
-    .repeat TileSize
-        outi
-        ld (hl), 0 ; no effect (writes ROM)
-    .endr
+    TilesUploadTileToVRAM 1
     TilesUploadUnpack
 
 TilesUploadOneFast:
-    .repeat TileSize
-        outi
-    .endr
+    TilesUploadTileToVRAM 0
     TilesUploadUnpack
 
 TilesUploadEnd:

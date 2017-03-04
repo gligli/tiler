@@ -1848,7 +1848,8 @@ begin
       diffTileIndex := FFrames[i].TilesIndexes[j] - prevTileIndex;
 
       if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
-          (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) then
+          (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
+          ((FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then
       begin
         if sameCount = 1 then
           ADataStream.WriteByte(prevDTI)
