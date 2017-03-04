@@ -101,68 +101,21 @@ banks 1
 .endm
 
 .macro TilesUploadUnpack
-        ; restore frame data pointer into hl
-    ld hl, 1 ; fix hl off by one
-    add hl, sp
-
         ; restore mapper slot
     ld a, (MapperSlot2)
     dec a
     ld (MapperSlot1), a
 
-    ld a, (hl)
-    cp 0
-    jr nz, +
+        ; get next packed data
+    pop hl
+    ld a, l ; we need the data into a
+    dec sp ; we actually needed only one byte unpacked
 
-        ; direct value, load tile index from tile index pointer
-    inc hl
-    ld e, (hl)
-    inc hl
-    ld d, (hl)
-
-    ld sp, hl
-    TilesUploadPointOnTile
-    TilesUploadScanlineJumpTable 0
-
-+:
-    cp 224
-    jr c, +
-
-        ; value 224 is terminator
-    jp z, TilesUploadEnd
-
-        ; repeat, value - 223 times
-    sub 223
-    ld b, a
-
-        ; increment tile index once for TilesUploadPointOnTile
-    inc de
-
-    ld sp, hl
-    TilesUploadPointOnTile
-
-        ; add remainder of repeat count to tile index
-    ld a, b
-    dec a
-    add a, e
-    ld e, a
-    adc a, d
-    sub e
-    ld d, a
-
-    TilesUploadScanlineJumpTable 1
-
-+:
-        ; standard case, increment tile index
-    add a, e
-    ld e, a
-    adc a, d
-    sub e
-    ld d, a
-
-    ld sp, hl
-    TilesUploadPointOnTile
-    TilesUploadScanlineJumpTable 0
+        ;  use jump table to handle it
+    ld h, >TUUnpackJumpTable
+    ld h, (hl)
+    ld l, 0
+    jp (hl)
 .endm
 
 .macro TMProcessNextCommand
@@ -471,9 +424,8 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
         ; save stack pointer
     ld (SPSave), sp
 
-        ; frame data pointer - 1 into sp
+        ; frame data pointer into sp
     ld sp, hl
-    dec sp
 
         ; start unpacking tile indexes
     TilesUploadUnpack
@@ -501,12 +453,6 @@ TilesUploadOneFast:
     TilesUploadUnpack
 
 TilesUploadEnd:
-
-        ; fix frame data pointer off by one
-    inc hl
-
-        ; restore stack pointer
-    ld sp, (SPSave)
 
         ;copy tilemap cache into ram
     ld de, TileMapCache
@@ -601,6 +547,75 @@ p4: ; Advance to next frame
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
+.org $3200
+TUDoDirectValue:
+        ; direct value, load tile index from tile index pointer
+
+    pop de
+
+    TilesUploadPointOnTile
+    TilesUploadScanlineJumpTable 0
+
+.org $3300
+TUDoStandard:
+        ; standard case, increment tile index
+
+    add a, e
+    ld e, a
+    adc a, d
+    sub e
+    ld d, a
+
+    TilesUploadPointOnTile
+    TilesUploadScanlineJumpTable 0
+
+.org $3400
+TUDoTerminator:
+        ; value 224 is terminator
+
+        ; frame data pointer from sp to hl
+    ld hl, 0
+    add hl, sp
+
+        ; restore stack pointer
+    ld sp, (SPSave)
+
+    jp TilesUploadEnd
+
+.org $3500
+TUDoRepeat:
+        ; repeat, value - 223 times
+    sub 223
+    ld b, a
+
+        ; increment tile index once for TilesUploadPointOnTile
+    inc de
+
+    TilesUploadPointOnTile
+
+        ; remainder of repeat count
+    ld a, b
+    dec a
+        ; add to tile index
+    add a, e
+    ld e, a
+    adc a, d
+    sub e
+    ld d, a
+
+    TilesUploadScanlineJumpTable 1
+
+.org $3600
+TUUnpackJumpTable:
+    .db >TUDoDirectValue
+    .repeat 224 - 1
+        .db >TUDoStandard
+    .endr
+    .db >TUDoTerminator
+    .repeat 256 - 1 - 224
+        .db >TUDoRepeat
+    .endr
+
 .org $3700
 TUScanlineManyJumpTable:
     .repeat 192 / 4
@@ -632,7 +647,7 @@ TUScanlineOneJumpTable:
 .org $3900
 TMCommandsJumpTable:
     TMCommandCacheMacro
-
+     
 .org $3940
     TMCommandCacheMacro
 
