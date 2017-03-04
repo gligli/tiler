@@ -50,6 +50,59 @@ banks 1
     out (VDPControl),a
 .endm
 
+.macro TilesUploadPointOnTile
+    ld l, e
+
+        ; Upper bits of tile index select a rom bank
+    ld a, d
+    rra ; incoming carry will always be 0; pushes low bit into carry for use below
+
+    ld (MapperSlot1), a
+
+        ; Lower bits select an offset in that bank
+        ; we want the low 9 bits of hl, x32, +$4000, in hl
+        ; %-------a bcdefghi
+        ;   to
+        ; %01abcdef ghi00000
+    ld a, l
+    ld l, 1 ; to get the 01 high bits we need
+    .repeat 3
+        rra     ; then rotate carry - a - l right three times
+        rr l
+    .endr
+    ld h, a
+.endm
+
+.macro TilesUploadOne
+        ; Get a pointer on tile data from tile index
+    TilesUploadPointOnTile
+
+        ; Jump to tile upload code (fast unrolled during VBlank, slower during display)
+    in a, (VDPScanline)
+    and $fc
+    ld iyl, a
+    jp (iy)
+.endm
+
+.macro TilesUploadMany
+        ; to next tile
+    inc de
+        
+        ; fixup for outi corrupting b
+    ld a, b
+    add a, TileSize
+    ld b, a
+
+        ; Get a pointer on tile data from tile index
+    TilesUploadPointOnTile
+
+        ; Jump to tile upload code (fast unrolled during VBlank, slower during display)
+    in a, (VDPScanline)
+    and $fc
+    ld ixl, a
+    jp (ix)
+.endm
+
 .macro TMProcessNextCommand
         ; read next command
     ld a, (de)
@@ -191,9 +244,12 @@ banks 1
     SPSave            dw
 .ende
 
+;==============================================================
+; Code
+;==============================================================
+
 .bank 0 slot 0
 .org $0000
-.section "Boot section" force
     di              ; disable interrupts
     im 1            ; Interrupt mode 1
     ; This maps the first 48K of ROM to $0000-$BFFF
@@ -206,28 +262,25 @@ banks 1
 
 init_tab: ; Table must exist within first 1K of ROM
     .db $00, $00, $01, $02
-.ends
 
 .org $0038
-.section "VDP int handler" force
     ex af, af' ; 4
 
     ; VDP int ack
     in a, (VDPControl) ; 11
 
     ; CurVBlankIdx update
-    inc (iy + 0) ; 26
+    ld a, (CurVBlankIdx)
+    inc a
+    ld (CurVBlankIdx), a
 
     ex af, af' ; 4
 
     ei
     reti
-.ends
 
 .org $0066
-.section "Pause button handler" force
     retn
-.ends
 
 main:
     ld sp, $dff0
@@ -353,11 +406,43 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
     or (DblBufTileOffset | VRAMWrite) >> 8
     out (VDPControl), a
 
-        ; Save current mapper slot
-    ld a, (MapperSlot1)
-    ld ixl, a
+        ; Prepare jump tables offsets
+    ld ixh, >TUScanlineManyJumpTable
+    ld iyh, >TUScanlineOneJumpTable
+
+        ; Prepare VRAM write register
+    ld c, VDPData
 
     jp TilesUploadUnpackStart
+
+TilesUploadManySlow:
+    .repeat TileSize
+        outi
+        ld (hl), 0 ; no effect (writes ROM)
+    .endr
+    dec b
+    jp z, TilesUploadUnpackAgain
+    TilesUploadMany
+
+TilesUploadManyFast:
+    .repeat TileSize
+        outi
+    .endr
+    dec b
+    jp z, TilesUploadUnpackAgain
+    TilesUploadMany
+
+TilesUploadOneSlow:
+    .repeat TileSize
+        outi
+        ld (hl), 0 ; no effect (writes ROM)
+    .endr
+    jp TilesUploadUnpackAgain
+
+TilesUploadOneFast:
+    .repeat TileSize
+        outi
+    .endr
 
 TilesUploadUnpackAgain
 
@@ -366,7 +451,8 @@ TilesUploadUnpackAgain
 
 TilesUploadUnpackStart:
         ; Restore mapper slot
-    ld a, ixl
+    ld a, (MapperSlot2)
+    dec a
     ld (MapperSlot1), a
 
     ld a, (hl)
@@ -379,9 +465,9 @@ TilesUploadUnpackStart:
     inc hl
     ld d, (hl)
     inc hl
-       ; count = 1
-    ld c, 1
-    jp ++
+
+    push hl
+    TilesUploadOne
 
 +:
     cp 224
@@ -392,9 +478,10 @@ TilesUploadUnpackStart:
 
         ; repeat, value - 223 times
     sub 223
-    ld c, a
-    inc de
-    jp ++
+    ld b, a
+
+    push hl
+    TilesUploadMany
 
 +:
         ; standard case, increment tile index
@@ -403,66 +490,9 @@ TilesUploadUnpackStart:
     adc a, d
     sub e
     ld d, a
-       ; count = 1
-    ld c, 1
 
-++:
     push hl
-    jp TilesUploadLoopStart
-
-TilesUploadLoopAgain:
-    ld c, a ; restore c
-    dec c
-    jr z, TilesUploadUnpackAgain
-
-        ; to next tile
-    inc de
-
-TilesUploadLoopStart:
-
-    ld l, e
-
-        ; Upper bits of tile index select a rom bank
-    ld a, d
-    rra ; incoming carry will always be 0; pushes low bit into carry for use below
-
-    ld (MapperSlot1), a
-
-        ; Lower bits select an offset in that bank
-        ; we want the low 9 bits of hl, x32, +$4000, in hl
-        ; %-------a bcdefghi
-        ;   to
-        ; %01abcdef ghi00000
-    ld a, l
-    ld l, 1 ; to get the 01 high bits we need
-    .repeat 3
-        rra     ; then rotate carry - a - l right three times
-        rr l
-    .endr
-    ld h, a
-
-        ; Upload tile to VRAM (fast unrolled during VBlank, slower during display)
-
-    in a, (VDPScanline)
-    ld a, c ; save c
-    ld c, VDPData
-    cp 192
-    jr c, TilesUploadSlow
-    cp 253
-    jr nc, TilesUploadSlow
-
-TilesUploadFast:
-    .repeat TileSize
-        outi
-    .endr
-    jp TilesUploadLoopAgain
-
-TilesUploadSlow:
-    .repeat TileSize
-        outi
-        ld (hl), 0 ; no effect (writes ROM)
-    .endr
-    jp TilesUploadLoopAgain
+    TilesUploadOne
 
 TilesUploadEnd:
 
@@ -557,6 +587,35 @@ p4: ; Advance to next frame
     jp NextFrameLoad
     
 ;==============================================================
+; Tiles upload fixed sequences (jump tables, LUTs)
+;==============================================================
+
+
+.org $3700
+TUScanlineManyJumpTable:
+    .repeat 192 / 4
+        jp TilesUploadManySlow
+        nop
+    .endr
+    .repeat (252 - 192) / 4
+        jp TilesUploadManyFast
+        nop
+    .endr
+    jp TilesUploadManySlow
+
+.org $3800
+TUScanlineOneJumpTable:
+    .repeat 192 / 4
+        jp TilesUploadOneSlow
+        nop
+    .endr
+    .repeat (252 - 192) / 4
+        jp TilesUploadOneFast
+        nop
+    .endr
+    jp TilesUploadOneSlow
+
+;==============================================================
 ; Tilemap upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
@@ -618,7 +677,9 @@ TMUploadRawJumpTable:
     .endr
     TMProcessNextCommand
 
-.section "Data" free
+;==============================================================
+; Data
+;==============================================================
 
 ; VDP initialisation data
 VDPInitData:
@@ -627,5 +688,3 @@ VDPInitDataEnd:
 
 VideoDataIndex:
 .incbin "tiled/index.bin"
-
-.ends
