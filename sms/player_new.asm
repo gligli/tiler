@@ -102,14 +102,14 @@ banks 1
 
 .macro TilesUploadUnpack
         ; restore mapper slot
-    ld a, (MapperSlot2)
-    dec a
+    ex af, af'
     ld (MapperSlot1), a
+    ex af, af'
 
         ; get next packed data
     pop hl
     ld a, l ; we need the data into a
-    dec sp ; we actually needed only one byte unpacked
+    dec sp ; we actually needed to pop only one byte
 
         ;  use jump table to handle it
     ld h, >TUUnpackJumpTable
@@ -426,6 +426,11 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
         ; frame data pointer into sp
     ld sp, hl
+    
+        ; slot1 bank into a'
+    ex af, af'
+    ld a, (MapperSlot1)
+    ex af, af'
 
         ; start unpacking tile indexes
     TilesUploadUnpack
