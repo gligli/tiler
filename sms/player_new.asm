@@ -461,8 +461,6 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
     ld sp, hl
     dec sp
 
-TilesUploadUnpackStart:
-
         ; start unpacking tile indexes
     TilesUploadUnpack
 
@@ -471,16 +469,18 @@ TilesUploadManySlow:
         outi
         ld (hl), 0 ; no effect (writes ROM)
     .endr
-    dec b
-    jp z, TilesUploadUnpackStart
+    djnz TUMSRedo
+    TilesUploadUnpack
+TUMSRedo:
     TilesUploadMany
 
 TilesUploadManyFast:
     .repeat TileSize
         outi
     .endr
-    dec b
-    jp z, TilesUploadUnpackStart
+    djnz TUMFRedo
+    TilesUploadUnpack
+TUMFRedo:
     TilesUploadMany
 
 TilesUploadOneSlow:
