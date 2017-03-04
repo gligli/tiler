@@ -35,6 +35,7 @@ banks 1
 .define TileSize 32
 .define TileMapSize 1536
 .define TilePaletteSize 16
+.define BankSize_ 16384
 
 ;==============================================================
 ; Program defines
@@ -239,6 +240,7 @@ banks 1
     LocalTileMapEnd   .
     TileMapCache      dsb 64 ; must be aligned on 256
     LocalPalette      dsb TilePaletteSize * 2
+    FrameCount        dw
     CurFrameIdx       dw
     CurVBlankIdx      dw
     SPSave            dw
@@ -341,17 +343,22 @@ main:
     ei
 
 InitPlayer:
+    ; Map slot 1 to beginning of video data
+    ld a, 1
+    ld (MapperSlot1), a
 
     ; Get first frame data pointers offset
-    ld hl, VideoDataIndex + $02
+    ld hl, BankSize_
+    
+    ; Load frame count
+    ld de, FrameCount
+    ldi
+    ldi
 
-    ; Map slot 1 & 2 to current frame data
+    ; Load first frame bank index
     ld a, (hl)
     inc hl
     inc hl
-    ld (MapperSlot1), a
-    inc a
-    ld (MapperSlot2), a
 
     ; Load frame data address into hl
     ld e, (hl)
@@ -360,6 +367,11 @@ InitPlayer:
     inc hl
     set 6, d; Add $4000
     ex de, hl
+
+    ; Map slot 1 & 2 to first frame data
+    ld (MapperSlot1), a
+    inc a
+    ld (MapperSlot2), a
 
 NextFrameLoad:
 
@@ -569,7 +581,7 @@ p3:
 p4: ; Advance to next frame
     ld bc, (CurFrameIdx)
     inc bc
-    ld hl, (VideoDataIndex)
+    ld hl, (FrameCount)
     sbc hl, bc
     jr nz, +
 
@@ -685,6 +697,3 @@ TMUploadRawJumpTable:
 VDPInitData:
 .db $04,$80,$00,$81,$f9,$82,$ff,$85,$ff,$86,$ff,$87,$00,$88,$00,$89,$ff,$8a
 VDPInitDataEnd:
-
-VideoDataIndex:
-.incbin "tiled/index.bin"

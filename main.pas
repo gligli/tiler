@@ -31,7 +31,7 @@ const
 
   // Video player consts
   cSmoothingPrevFrame = 1;
-  cTileIndexesTileOffset = cTilesPerBank * 1;
+  cTileIndexesTileOffset = cTilesPerBank + 1;
   cTileIndexesMaxDiff = 223;
   cTileIndexesRepeatStart = 225;
   cTileIndexesMaxRepeat = 32;
@@ -228,7 +228,7 @@ type
 
     function DoExternalPCMEnc(AFN: String; Volume: Integer): String;
 
-    procedure Save(AIndexStream, ADataStream, ASoundStream: TStream);
+    procedure Save(ADataStream, ASoundStream: TStream);
  public
     { public declarations }
   end;
@@ -553,17 +553,15 @@ end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
 var
-  indexFS, dataFS, soundFS: TFileStream;
+  dataFS, soundFS: TFileStream;
 begin
-  indexFS := TFileStream.Create(IncludeTrailingPathDelimiter(edOutputDir.Text) + 'index.bin', fmCreate);
   dataFS := TFileStream.Create(IncludeTrailingPathDelimiter(edOutputDir.Text) + 'data.bin', fmCreate);
   soundFS := nil;
   if Trim(edWAV.Text) <> '' then
     soundFS := TFileStream.Create(DoExternalPCMEnc(edWAV.Text, 100), fmOpenRead or fmShareDenyWrite);
   try
-    Save(indexFS, dataFS, soundFS);
+    Save(dataFS, soundFS);
   finally
-    indexFS.Free;
     dataFS.Free;
     if Assigned(soundFS) then
       soundFS.Free;
@@ -1751,7 +1749,7 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TMainForm.Save(AIndexStream, ADataStream, ASoundStream: TStream);
+procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
 var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, prevDTI, sameCount, skipCount: Integer;
     rawTMI, tmiCacheIdx, best, awaitingCacheIdx, awaitingCount: Integer;
     smoothed: Boolean;
@@ -1779,6 +1777,11 @@ var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, p
   end;
 
 begin
+  // leave the size of one tile for index
+
+  for x := 0 to cTileWidth - 1 do
+    ADataStream.WriteDWord(0);
+
   // tiles
 
   for i := 0 to High(FTiles) do
@@ -1799,13 +1802,18 @@ begin
     end;
   end;
 
+  DebugLn(['Total tiles size: ', ADataStream.Position]);
   pp2 := ADataStream.Position;
+
   // index
 
-  frameStart := ADataStream.Position + cTileIndexesTileOffset * cTileSize;
-  AIndexStream.WriteWord(Length(FFrames));
-  AIndexStream.WriteWord(frameStart div cBankSize);
-  AIndexStream.WriteWord(frameStart mod cBankSize);
+  frameStart := ADataStream.Position + cBankSize;
+  i := ADataStream.Position;
+  ADataStream.Position := 0;
+  ADataStream.WriteWord(Length(FFrames));
+  ADataStream.WriteWord(frameStart div cBankSize);
+  ADataStream.WriteWord(frameStart mod cBankSize);
+  ADataStream.Position := i;
 
   prevKF := nil;
   for i := 0 to High(FFrames) do
@@ -1960,7 +1968,7 @@ begin
 
     ADataStream.WriteByte(cTileMapTerminator);
 
-    DebugLn(['TM Size: ', ADataStream.Position - pp]);
+    DebugLn(['TM size: ', ADataStream.Position - pp]);
     // sound
 
     if Assigned(ASoundStream) then
@@ -1972,7 +1980,7 @@ begin
     prevKF := FFrames[i].KeyFrame;
   end;
 
-  DebugLn(['Total Size: ', ADataStream.Position - pp2]);
+  DebugLn(['Total frames size: ', ADataStream.Position - pp2]);
 end;
 
 initialization
