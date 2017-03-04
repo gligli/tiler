@@ -89,10 +89,8 @@ banks 1
         ; to next tile
     inc de
 
-        ; fixup for outi corrupting b
-    ld a, b
-    add a, TileSize
-    ld b, a
+        ; fixup for outi corrupting b (add TileSize)
+    set 5, b
 
         ; Get a pointer on tile data from tile index
     TilesUploadPointOnTile

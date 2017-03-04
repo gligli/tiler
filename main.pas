@@ -34,7 +34,7 @@ const
   cTileIndexesTileOffset = cTilesPerBank + 1;
   cTileIndexesMaxDiff = 223;
   cTileIndexesRepeatStart = 225;
-  cTileIndexesMaxRepeat = 32;
+  cTileIndexesMaxRepeat = 31;
   cTileIndexesDirectValue = 0;
   cTileIndexesTerminator = 224;
   cTileMapIndicesOffset : array[0..1] of Integer = (49, 256 + 49);
