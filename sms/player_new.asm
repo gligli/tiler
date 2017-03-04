@@ -88,7 +88,7 @@ banks 1
 .macro TilesUploadMany
         ; to next tile
     inc de
-        
+
         ; fixup for outi corrupting b
     ld a, b
     add a, TileSize
@@ -102,6 +102,55 @@ banks 1
     and $fc
     ld ixl, a
     jp (ix)
+.endm
+
+.macro TilesUploadUnpack
+        ; restore frame data pointer into hl
+    ld hl, 1 ; fix hl off by one
+    add hl, sp
+
+        ; restore mapper slot
+    ld a, (MapperSlot2)
+    dec a
+    ld (MapperSlot1), a
+
+    ld a, (hl)
+    cp 0
+    jp nz, +
+
+        ; direct value, load tile index from tile index pointer
+    inc hl
+    ld e, (hl)
+    inc hl
+    ld d, (hl)
+
+    ld sp, hl
+    TilesUploadOne
+
++:
+    cp 224
+    jp c, +
+
+        ; value 224 is terminator
+    jp z, TilesUploadEnd
+
+        ; repeat, value - 223 times
+    sub 223
+    ld b, a
+
+    ld sp, hl
+    TilesUploadMany
+
++:
+        ; standard case, increment tile index
+    add a, e
+    ld e, a
+    adc a, d
+    sub e
+    ld d, a
+
+    ld sp, hl
+    TilesUploadOne
 .endm
 
 .macro TMProcessNextCommand
@@ -242,7 +291,6 @@ banks 1
     LocalPalette      dsb TilePaletteSize * 2
     FrameCount        dw
     CurFrameIdx       dw
-    CurVBlankIdx      dw
     SPSave            dw
 .ende
 
@@ -266,18 +314,6 @@ init_tab: ; Table must exist within first 1K of ROM
     .db $00, $00, $01, $02
 
 .org $0038
-    ex af, af' ; 4
-
-    ; VDP int ack
-    in a, (VDPControl) ; 11
-
-    ; CurVBlankIdx update
-    ld a, (CurVBlankIdx)
-    inc a
-    ld (CurVBlankIdx), a
-
-    ex af, af' ; 4
-
     ei
     reti
 
@@ -320,11 +356,9 @@ main:
     xor a
     ld (CurFrameIdx), a
     ld (CurFrameIdx + $01), a
-    ld (CurVBlankIdx), a
-    ld (CurVBlankIdx + $01), a
 
     ; Turn screen on
-    ld a, %1100000
+    ld a, %1000000
 ;          ||||||`- Zoomed sprites -> 16x16 pixels
 ;          |||||`-- Doubled sprites -> 2 tiles per sprite, 8x16
 ;          ||||`--- Mega Drive mode 5 enable
@@ -335,9 +369,6 @@ main:
     out (VDPControl), a
     ld a, $81
     out (VDPControl), a
-
-        ; will be incremented by VBlank int
-    ld iy, CurVBlankIdx
 
     ; Enable ints
     ei
@@ -425,7 +456,17 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
         ; Prepare VRAM write register
     ld c, VDPData
 
-    jp TilesUploadUnpackStart
+        ; save stack pointer
+    ld (SPSave), sp
+
+        ; frame data pointer - 1 into sp
+    ld sp, hl
+    dec sp
+
+TilesUploadUnpackStart:
+
+        ; start unpacking tile indexes
+    TilesUploadUnpack
 
 TilesUploadManySlow:
     .repeat TileSize
@@ -433,7 +474,7 @@ TilesUploadManySlow:
         ld (hl), 0 ; no effect (writes ROM)
     .endr
     dec b
-    jp z, TilesUploadUnpackAgain
+    jp z, TilesUploadUnpackStart
     TilesUploadMany
 
 TilesUploadManyFast:
@@ -441,7 +482,7 @@ TilesUploadManyFast:
         outi
     .endr
     dec b
-    jp z, TilesUploadUnpackAgain
+    jp z, TilesUploadUnpackStart
     TilesUploadMany
 
 TilesUploadOneSlow:
@@ -449,64 +490,21 @@ TilesUploadOneSlow:
         outi
         ld (hl), 0 ; no effect (writes ROM)
     .endr
-    jp TilesUploadUnpackAgain
+    TilesUploadUnpack
 
 TilesUploadOneFast:
     .repeat TileSize
         outi
     .endr
-
-TilesUploadUnpackAgain
-
-        ; we need tiles indexes pointer into hl and tile index into de
-    pop hl
-
-TilesUploadUnpackStart:
-        ; Restore mapper slot
-    ld a, (MapperSlot2)
-    dec a
-    ld (MapperSlot1), a
-
-    ld a, (hl)
-    inc hl
-    cp 0
-    jp nz, +
-
-        ; direct value, load tile index from tile index pointer
-    ld e, (hl)
-    inc hl
-    ld d, (hl)
-    inc hl
-
-    push hl
-    TilesUploadOne
-
-+:
-    cp 224
-    jp c, +
-
-        ; value 224 is terminator
-    jp z, TilesUploadEnd
-
-        ; repeat, value - 223 times
-    sub 223
-    ld b, a
-
-    push hl
-    TilesUploadMany
-
-+:
-        ; standard case, increment tile index
-    add a, e
-    ld e, a
-    adc a, d
-    sub e
-    ld d, a
-
-    push hl
-    TilesUploadOne
+    TilesUploadUnpack
 
 TilesUploadEnd:
+
+        ; fix frame data pointer off by one
+    inc hl
+
+        ; restore stack pointer
+    ld sp, (SPSave)
 
         ;copy tilemap cache into ram
     ld de, TileMapCache
@@ -549,11 +547,10 @@ TilemapUnpackEnd:
         ; restore stack pointer
     ld sp, (SPSave)
 
-p2: ; Wait 4 VBlanks per frame (12.5 PAL fps)
--:  halt
-    ld a, (CurVBlankIdx)
-    and $03
-    jr nz, -
+p2: ; Wait vblank
+-:  in a, (VDPScanline)
+    cp 193
+    jr c, -
 
 p3:
     ; Tilemap swap
@@ -601,7 +598,6 @@ p4: ; Advance to next frame
 ;==============================================================
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
-
 
 .org $3700
 TUScanlineManyJumpTable:
