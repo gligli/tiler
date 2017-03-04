@@ -1762,9 +1762,15 @@ var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, p
       RawTMI: Integer;
     end;
 
-  procedure DoTilemapTileCommand;
+  procedure DoTilemapTileCommand(DoCache, DoSkip: Boolean);
   begin
-    if awaitingCacheIdx <> cTileMapCacheSize then
+    if DoSkip and (skipCount > 0) then
+    begin
+      ADataStream.WriteByte(cTileMapCommandSkip or skipCount);
+      skipCount := 0;
+    end;
+
+    if DoCache and (awaitingCacheIdx <> cTileMapCacheSize) then
       if awaitingCacheIdx < 0 then
       begin
         ADataStream.WriteByte(cTileMapCommandRaw or ((-awaitingCacheIdx) shr 8) or ((cTileMapMaxRepeat - awaitingCount) shl 4));
@@ -1927,7 +1933,7 @@ begin
 
       if smoothed and (skipCount < cTileMapMaxSkip) then
       begin
-        DoTilemapTileCommand;
+        DoTilemapTileCommand(True, False);
 
         Inc(skipCount);
 
@@ -1936,11 +1942,7 @@ begin
       end
       else
       begin
-        if skipCount > 0 then
-        begin
-          ADataStream.WriteByte(cTileMapCommandSkip or skipCount);
-          skipCount := 0;
-        end;
+        DoTilemapTileCommand(False, True);
 
         if tmiCacheIdx = awaitingCacheIdx then
         begin
@@ -1948,7 +1950,7 @@ begin
 
           if awaitingCount >= cTileMapMaxRepeat then
           begin
-            DoTilemapTileCommand;
+            DoTilemapTileCommand(True, False);
 
             awaitingCacheIdx := cTileMapCacheSize;
             awaitingCount := 0;
@@ -1956,7 +1958,7 @@ begin
         end
         else
         begin
-          DoTilemapTileCommand;
+          DoTilemapTileCommand(True, False);
 
           awaitingCacheIdx := tmiCacheIdx;
           awaitingCount := 1;
@@ -1964,7 +1966,7 @@ begin
       end;
     end;
 
-    DoTilemapTileCommand;
+    DoTilemapTileCommand(True, True);
 
     ADataStream.WriteByte(cTileMapTerminator);
 
