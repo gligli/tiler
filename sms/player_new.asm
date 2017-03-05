@@ -181,15 +181,13 @@ banks 1
         ; tilemap item low byte
     outd
         ; tilemap item high byte
-    ld a, (hl)
     .ifeq half 1
-        or $01
+        set 0, (hl)
     .else
-        and $fe
+        res 0, (hl)
     .endif
-    dec hl
-    out (VDPData), a
-    djnz -
+    outd
+    jp nz, -
 
         ; sp (reverse local tilemap pointer) must be updated too
     ld sp, hl
