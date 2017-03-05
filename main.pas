@@ -40,11 +40,11 @@ const
   cTileMapIndicesOffset : array[0..1] of Integer = (49, 256 + 49);
   cTileMapCacheBits = 5;
   cTileMapCacheSize = 1 shl cTileMapCacheBits;
-  cTileMapMaxRepeat = 4;
-  cTileMapMaxSkip = 63;
-  cTileMapCommandCache = $00;
-  cTileMapCommandSkip = $80;
-  cTileMapCommandRaw = $C0;
+  cTileMapMaxRepeat : array[Boolean{Raw?}] of Integer = (6, 4);
+  cTileMapMaxSkip = 31;
+  cTileMapCommandCache : array[1..6{Rpt}] of Byte = ($01, $40, $41, $80, $81, $c0);
+  cTileMapCommandSkip = $00;
+  cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c1, $d1, $e1, $f1);
   cTileMapTerminator = cTileMapCommandSkip; // skip zero
   cFrameSoundSize = 420.9962017804155;
 
@@ -1766,19 +1766,19 @@ var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, p
   begin
     if DoSkip and (skipCount > 0) then
     begin
-      ADataStream.WriteByte(cTileMapCommandSkip or skipCount);
+      ADataStream.WriteByte(cTileMapCommandSkip or (skipCount shl 1));
       skipCount := 0;
     end;
 
     if DoCache and (awaitingCacheIdx <> cTileMapCacheSize) then
       if awaitingCacheIdx < 0 then
       begin
-        ADataStream.WriteByte(cTileMapCommandRaw or ((-awaitingCacheIdx) shr 8) or ((cTileMapMaxRepeat - awaitingCount) shl 4));
+        ADataStream.WriteByte(cTileMapCommandRaw[awaitingCount] or ((-awaitingCacheIdx) shr 8));
         ADataStream.WriteByte((-awaitingCacheIdx) and $ff);
       end
       else
       begin
-        ADataStream.WriteByte(cTileMapCommandCache or awaitingCacheIdx or ((cTileMapMaxRepeat - awaitingCount) shl 5));
+        ADataStream.WriteByte(cTileMapCommandCache[awaitingCount] or (awaitingCacheIdx shl 1));
       end;
   end;
 
@@ -1949,7 +1949,7 @@ begin
         begin
           Inc(awaitingCount);
 
-          if awaitingCount >= cTileMapMaxRepeat then
+          if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
           begin
             DoTilemapTileCommand(True, False);
 

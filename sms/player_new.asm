@@ -123,75 +123,55 @@ banks 1
     ld a, (de)
     inc de
 
-        ; store raw command into c
-    ld c, a
-        ; compute jump table offset
-    and $c0
+        ; jump to command code using jump table
     ld l, a
     ld h, >TMCommandsJumpTable
-
-        ; jump to commands table
+    ld h, (hl)
+    ld l, 0
     jp (hl)
 .endm
 
-.macro TMCommandCacheMacro
-        ; cache pointer upper byte
-    ld b, >TileMapCache
-
-        ; compute cache offset and jump table offset from command using LUTs
-    ld l, c
-    inc h ; = >TMCommandCacheOffsetLUT
-    ld c, (hl)
-    inc h ; = >TMCommandCacheRepeatLUT
-    ld l, (hl)
-    inc h ; = >TMUploadCacheJumpTable
-
-        ; jump to tilemap upload table
-    jp (hl)
-.endm
-
-.define TMCS 11
-.macro TMUploadCacheMacro args idx
-        ; /!\ TMCS must stay equal to this macro length
-
-        ; low byte of tilemap item
-    ld a, (bc)
-    out (VDPData), a
-    inc c
-    ld h, a
-
-        ; high byte of tilemap item
-    ld a, (bc)
-    .ifneq idx 3
-        dec c
+.macro TMUploadCacheMacro args rpt
+    .ifeq rpt 1
+        dec a
+    .else
+        and %00111110
     .endif
+    ld h, >TileMapCache
     ld l, a
-    out (VDPData), a
-    push hl ; store tilemap item into LocalTileMap
+
+    .repeat rpt index idx
+            ; low byte of tilemap item
+        ld a, (hl)
+        out (VDPData), a
+        ld b, a
+        inc l
+
+            ; high byte of tilemap item
+        ld a, (hl)
+        .ifneq idx (rpt - 1)
+            dec l
+        .endif
+        ld c, a
+        out (VDPData), a
+        push bc ; store tilemap item into LocalTileMap
+    .endr
 .endm
 
-.macro TMCommandSkipMacro
-        ; command is skip count
-    ld a, c
-    and $3f
-
-        ; a skip of zero is termination
-    jp z, TilemapUnpackEnd
-
+.macro TMUploadSkipMacro
         ; local tilemap pointer
     ld hl, -1
     add hl, sp
-        ; loop counter (decremented x2 per loop)
-    rlca
+        ; loop counter (command is skip count)
     ld b, a
         ; target register
     ld c, VDPData
 
-        ; depending on VRAM "half", will call TMUploadSkipMacro 0 or 1
+        ; depending on VRAM "half", will call TMSkipHalfMacro 0 or 1
     jp (ix)
 .endm
 
-.macro TMUploadSkipMacro args half
+.macro TMSkipHalfMacro args half
         ; upload "skip count" prev items from local tilemap
 -:
         ; tilemap item low byte
@@ -214,35 +194,26 @@ banks 1
     TMProcessNextCommand
 .endm
 
-.macro TMCommandRawMacro
-        ; compute jump table offset from command repeat bits
-    ld l, c
-    ld h, >TMCommandRawLUT
-    ld l, (hl)
-    inc h ; = >TMUploadRawJumpTable
+.macro TMUploadRawMacro args rpt
+    and iyl  ; iyl = $fe or $ff depending on VRAM "side"
+    ld c, a
 
-        ; jump to tilemap upload table
-    jp (hl)
-.endm
+    .repeat rpt index idx
+            ; low byte of tilemap item
+        ld a, (de)
+        ld b, a
+        out (VDPData), a
+        push bc ; store tilemap item into LocalTileMap
 
-.define TMRS 9
-.macro TMUploadRawMacro args idx
-        ; /!\ TMRS must stay equal to this macro length
-
-        ; low byte of tilemap item
-    ld a, (de)
-    ld b, a
-    out (VDPData), a
-    push bc ; store tilemap item into LocalTileMap
-
-        ; high byte of tilemap item
-    ld a, c
-    out (VDPData), a
-    .ifneq idx 3
-        nop
-    .else
-        inc de
-    .endif
+            ; high byte of tilemap item
+        ld a, c
+        out (VDPData), a
+        .ifneq idx (rpt - 1)
+            nop
+        .else
+            inc de
+        .endif
+    .endr
 .endm
 
 ;==============================================================
@@ -467,23 +438,28 @@ TilesUploadEnd:
     out (VDPControl), a
     ld a, (CurFrameIdx)
     and 1
-    ; we want to move bit 0 to bit 5
+    ld c, a
+        ; we want to move bit 0 to bit 5
     rrca
     ld ixl, a ; VRAM "half" in ixl bit 7
     rrca
     rrca
     or VRAMWrite >> 8
     out (VDPControl), a
+    
+    ld a, c
+    or $0e
+    ld iyl, a ; $e for first "half", $0f for second in iyl
 
         ; prepare (ix) jump table
-    ld ixh, >TMUploadSkipJumpTable
+    ld ixh, >TMSkipHalf0
 
         ; save command pointer into de
     ex de, hl
 
         ; save stack pointer
     ld (SPSave), sp
-    
+
         ; sp will be used as a pointer on a reversed local tilemap
     ld sp, LocalTileMapEnd
 
@@ -493,9 +469,6 @@ TilesUploadEnd:
 TilemapUnpackEnd:
 
     ; command pointer still into de
-
-        ; restore stack pointer
-    ld sp, (SPSave)
 
 p2: ; Wait vblank
     in a, (VDPControl)
@@ -550,7 +523,7 @@ p4: ; Advance to next frame
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $3200
+.org $2a00
 TUDoDirectValue:
         ; direct value, load tile index from tile index pointer
 
@@ -559,7 +532,7 @@ TUDoDirectValue:
     TilesUploadPointOnTile
     TilesUploadScanlineJumpTable 0
 
-.org $3300
+.org $2b00
 TUDoStandard:
         ; standard case, increment tile index
 
@@ -572,7 +545,7 @@ TUDoStandard:
     TilesUploadPointOnTile
     TilesUploadScanlineJumpTable 0
 
-.org $3400
+.org $2c00
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -585,7 +558,7 @@ TUDoTerminator:
 
     jp TilesUploadEnd
 
-.org $3500
+.org $2d00
 TUDoRepeat:
         ; repeat, value - 223 times
     sub 223
@@ -608,7 +581,7 @@ TUDoRepeat:
 
     TilesUploadScanlineJumpTable 1
 
-.org $3600
+.org $2e00
 TUUnpackJumpTable:
     .db >TUDoDirectValue
     .repeat 224 - 1
@@ -619,7 +592,7 @@ TUUnpackJumpTable:
         .db >TUDoRepeat
     .endr
 
-.org $3700
+.org $2f00
 TUScanlineManyJumpTable:
     .repeat 192 / 4
         jp TilesUploadManySlow
@@ -631,7 +604,7 @@ TUScanlineManyJumpTable:
     .endr
     jp TilesUploadManySlow
 
-.org $3800
+.org $3000
 TUScanlineOneJumpTable:
     .repeat 192 / 4
         jp TilesUploadOneSlow
@@ -647,62 +620,106 @@ TUScanlineOneJumpTable:
 ; Tilemap upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $3900
+.org $3200
 TMCommandsJumpTable:
-    TMCommandCacheMacro
-     
-.org $3940
-    TMCommandCacheMacro
+    ; $00
+    .db >TMTerminator
+    .repeat 31
+        .db >TMCacheRpt1, >TMSkip
+    .endr
+    .db >TMCacheRpt1
+    ; $40
+    .repeat 32
+        .db >TMCacheRpt2, >TMCacheRpt3
+    .endr
+    ; $80
+    .repeat 32
+        .db >TMCacheRpt4, >TMCacheRpt5
+    .endr
+    ; $C0
+    .repeat 8
+        .db >TMCacheRpt6, >TMRawRpt1
+    .endr
+    .repeat 8
+        .db >TMCacheRpt6, >TMRawRpt2
+    .endr
+    .repeat 8
+        .db >TMCacheRpt6, >TMRawRpt3
+    .endr
+    .repeat 8
+        .db >TMCacheRpt6, >TMRawRpt4
+    .endr
 
-.org $3980
-    TMCommandSkipMacro
+.org $3300
+TMTerminator:
+        ; restore stack pointer
+    ld sp, (SPSave)
 
-.org $39c0
-    TMCommandRawMacro
+    jp TilemapUnpackEnd
+
+.org $3400
+TMRawRpt4:
+    TMUploadRawMacro 4
+    TMProcessNextCommand
+
+.org $3500
+TMRawRpt3:
+    TMUploadRawMacro 3
+    TMProcessNextCommand
+
+.org $3600
+TMRawRpt2:
+    TMUploadRawMacro 2
+    TMProcessNextCommand
+
+.org $3700
+TMRawRpt1:
+    TMUploadRawMacro 1
+    TMProcessNextCommand
+
+.org $3800
+TMSkip:
+    TMUploadSkipMacro
+    TMProcessNextCommand
+
+.org $3900
+TMCacheRpt6:
+    TMUploadCacheMacro 6
+    TMProcessNextCommand
 
 .org $3a00
-TMCommandCacheOffsetLUT:
-    .repeat 4
-        .repeat 32 index idx
-            .db idx * 2
-        .endr
-    .endr
+TMCacheRpt5:
+    TMUploadCacheMacro 5
+    TMProcessNextCommand
 
 .org $3b00
-TMCommandCacheRepeatLUT:
-    .dsb 32, 0
-    .dsb 32, TMCS
-    .dsb 32, TMCS*2
-    .dsb 32, TMCS*3
+TMCacheRpt4:
+    TMUploadCacheMacro 4
+    TMProcessNextCommand
 
 .org $3c00
-TMUploadCacheJumpTable:
-    .repeat 4 index idx
-        TMUploadCacheMacro idx
-    .endr
+TMCacheRpt3:
+    TMUploadCacheMacro 3
     TMProcessNextCommand
 
 .org $3d00
-TMUploadSkipJumpTable:
-    TMUploadSkipMacro 0
-    TMProcessNextCommand
-
-.org $3d80
-    TMUploadSkipMacro 1
+TMCacheRpt2:
+    TMUploadCacheMacro 2
     TMProcessNextCommand
 
 .org $3e00
-TMCommandRawLUT:
-    .dsb 208, 0
-    .dsb 16, TMRS
-    .dsb 16, TMRS*2
-    .dsb 16, TMRS*3
+TMCacheRpt1:
+    TMUploadCacheMacro 1
+    TMProcessNextCommand
 
 .org $3f00
-TMUploadRawJumpTable:
-    .repeat 4 index idx
-        TMUploadRawMacro idx
-    .endr
+TMSkipHalf0:
+    TMSkipHalfMacro 0
+    TMProcessNextCommand
+
+.org $3f80
+TMSkipHalf1:
+    TMSkipHalfMacro 1
     TMProcessNextCommand
 
 ;==============================================================
