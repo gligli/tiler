@@ -43,6 +43,14 @@ banks 1
 
 .define DblBufTileOffset 49 * TileSize
 
+.macro WaitVBlank
+    in a, (VDPControl)
+@Wait:
+    in a, (VDPControl)
+    or a  ; update flags
+    jp p, @Wait
+.endm
+
 .macro SetVDPAddress args addr
         ; Sets the VDP address
     ld a, <addr
@@ -52,7 +60,6 @@ banks 1
 .endm
 
 .macro TilesUploadTileToVRAM args slow
-    set 5, b ; fixup for outi corrupting b (add TileSize)
     .repeat TileSize - 1
         outi
         .ifeq slow 1
@@ -86,25 +93,11 @@ banks 1
     .endr
     ld h, a
 .endm
-
-.macro TilesUploadScanlineJumpTable args many
-        ; Jump to tile upload code (fast unrolled during VBlank, slower during display)
-    in a, (VDPScanline)
-    and $fc
-    .ifeq many 1
-        ld ixl, a
-        jp (ix)
-    .else
-        ld iyl, a
-        jp (iy)
-    .endif
-.endm
-
+       
 .macro TilesUploadUnpack
         ; restore mapper slot
-    ex af, af'
+    ld a, ixl
     ld (MapperSlot1), a
-    ex af, af'
 
         ; get next packed data
     pop hl
@@ -116,6 +109,57 @@ banks 1
     ld h, (hl)
     ld l, 0
     jp (hl)
+.endm
+
+.macro DoTilesUpload args many
+
+        ; f' carry bit = VBlank?
+    ex af, af'
+
+@Again:
+
+    .ifeq many 1
+        set 5, b ; fixup for outi corrupting b (add TileSize)
+    .endif
+
+        ; when not in VBlank use slow upload
+    jr nc, @Slow
+
+    TilesUploadTileToVRAM 0
+
+        ; update VSync bit
+        ; (detect blank -> active display transition, accounting for delay before next upload)
+    in a, (VDPScanline)
+    add a, 256 - 253
+    rla ; push sign into carry
+
+    .ifeq many 1
+        djnz @Again
+    .endif
+
+        ; VBlank bit preserve
+    ex af, af'
+
+    TilesUploadUnpack
+
+@Slow:
+
+    TilesUploadTileToVRAM 1
+
+        ; update VSync bit
+        ; (detect active display -> blank transition, accounting for delay before next upload)
+    in a, (VDPScanline)
+    add a, 256 - 192
+
+    .ifeq many 1
+        dec b
+        jp nz, @Again
+    .endif
+
+        ; VBlank bit preserve
+    ex af, af'
+
+    TilesUploadUnpack
 .endm
 
 .macro TMProcessNextCommand
@@ -309,6 +353,9 @@ main:
     ld a, $81
     out (VDPControl), a
 
+        ; algo expects VBlank state on start
+    WaitVBlank
+
 InitPlayer:
     ; Map slot 1 to beginning of video data
     ld a, 1
@@ -316,7 +363,7 @@ InitPlayer:
 
     ; Get first frame data pointers offset
     ld hl, BankSize_
-    
+
     ; Load frame count
     ld de, FrameCount
     ldi
@@ -385,9 +432,10 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
     or (DblBufTileOffset | VRAMWrite) >> 8
     out (VDPControl), a
 
-        ; Prepare jump tables offsets
-    ld ixh, >TUScanlineManyJumpTable
-    ld iyh, >TUScanlineOneJumpTable
+        ; f' carry bit = VBlank? , we start in VBlank
+    ex af, af'
+    scf
+    ex af, af'
 
         ; Prepare VRAM write register
     ld c, VDPData
@@ -397,35 +445,12 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
         ; frame data pointer into sp
     ld sp, hl
-    
-        ; slot1 bank into a'
-    ex af, af'
+
+        ; slot1 bank into ixl
     ld a, (MapperSlot1)
-    ex af, af'
+    ld ixl, a
 
         ; start unpacking tile indexes
-    TilesUploadUnpack
-
-TilesUploadManySlow:
-    TilesUploadTileToVRAM 1
-    djnz TUMSRedo
-    TilesUploadUnpack
-TUMSRedo:
-    TilesUploadScanlineJumpTable 1
-
-TilesUploadManyFast:
-    TilesUploadTileToVRAM 0
-    djnz TUMFRedo
-    TilesUploadUnpack
-TUMFRedo:
-    TilesUploadScanlineJumpTable 1
-
-TilesUploadOneSlow:
-    TilesUploadTileToVRAM 1
-    TilesUploadUnpack
-
-TilesUploadOneFast:
-    TilesUploadTileToVRAM 0
     TilesUploadUnpack
 
 TilesUploadEnd:
@@ -473,11 +498,9 @@ TilemapUnpackEnd:
 
     ; command pointer still into de
 
-p2: ; Wait vblank
-    in a, (VDPControl)
--:  in a, (VDPControl)
-    or a  ; update flags
-    jp p, -
+p2:
+
+    WaitVBlank
 
 p3:
     ; Tilemap swap
@@ -526,14 +549,14 @@ p4: ; Advance to next frame
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $2a00
+.org $2900
 TUDoDirectValue:
         ; direct value, load tile index from tile index pointer
 
     pop de
 
     TilesUploadPointOnTile
-    TilesUploadScanlineJumpTable 0
+    DoTilesUpload 0
 
 .org $2b00
 TUDoStandard:
@@ -546,9 +569,9 @@ TUDoStandard:
     ld d, a
 
     TilesUploadPointOnTile
-    TilesUploadScanlineJumpTable 0
+    DoTilesUpload 0
 
-.org $2c00
+.org $2d00
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -561,7 +584,7 @@ TUDoTerminator:
 
     jp TilesUploadEnd
 
-.org $2d00
+.org $2e00
 TUDoRepeat:
         ; repeat, value - 223 times
     sub 223
@@ -582,9 +605,9 @@ TUDoRepeat:
     sub e
     ld d, a
 
-    TilesUploadScanlineJumpTable 1
+    DoTilesUpload 1
 
-.org $2e00
+.org $3000
 TUUnpackJumpTable:
     .db >TUDoDirectValue
     .repeat 224 - 1
@@ -594,30 +617,6 @@ TUUnpackJumpTable:
     .repeat 256 - 1 - 224
         .db >TUDoRepeat
     .endr
-
-.org $2f00
-TUScanlineManyJumpTable:
-    .repeat 192 / 4
-        jp TilesUploadManySlow
-        nop
-    .endr
-    .repeat (252 - 192) / 4
-        jp TilesUploadManyFast
-        nop
-    .endr
-    jp TilesUploadManySlow
-
-.org $3000
-TUScanlineOneJumpTable:
-    .repeat 192 / 4
-        jp TilesUploadOneSlow
-        nop
-    .endr
-    .repeat (252 - 192) / 4
-        jp TilesUploadOneFast
-        nop
-    .endr
-    jp TilesUploadOneSlow
 
 ;==============================================================
 ; Tilemap upload fixed sequences (jump tables, LUTs)
