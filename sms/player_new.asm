@@ -72,8 +72,6 @@ banks 1
 .macro TilesUploadPointOnTile
         ; Get a pointer on tile data from tile index
 
-    ld l, e
-
         ; Upper bits of tile index select a rom bank
     ld a, d
     rra ; incoming carry will always be 0; pushes low bit into carry for use below
@@ -85,7 +83,7 @@ banks 1
         ; %-------a bcdefghi
         ;   to
         ; %01abcdef ghi00000
-    ld a, l
+    ld a, e
     ld l, 1 ; to get the 01 high bits we need
     .repeat 3
         rra     ; then rotate carry - a - l right three times
