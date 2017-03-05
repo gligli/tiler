@@ -132,6 +132,7 @@ banks 1
 .endm
 
 .macro TMUploadCacheMacro args rpt
+        ; compute cache address
     .ifeq rpt 1
         dec a
     .else
@@ -139,19 +140,22 @@ banks 1
     .endif
     ld h, >TileMapCache
     ld l, a
+    
+        ; tilemap item  low byte into b
+    ld b, (hl)
 
     .repeat rpt index idx
             ; low byte of tilemap item
-        ld a, (hl)
+        ld a, b
         out (VDPData), a
-        ld b, a
-        inc l
 
             ; high byte of tilemap item
-        ld a, (hl)
-        .ifneq idx (rpt - 1)
-            dec l
+        .ifeq idx 0
+            inc l
+        .else
+            nop ; ensure min 26 cycles between VRAM writes
         .endif
+        ld a, (hl)
         ld c, a
         out (VDPData), a
         push bc ; store tilemap item into LocalTileMap
