@@ -199,7 +199,8 @@ banks 1
 .endm
 
 .macro TMUploadRawMacro args rpt
-    and iyl  ; iyl = $fe or $ff depending on VRAM "side"
+        ; high byte of tilemap item from command
+    and iyl  ; iyl = $0e or $0f depending on VRAM "side"
     ld c, a
 
     .repeat rpt index idx
