@@ -323,7 +323,7 @@ main:
     ld (CurFrameIdx + $01), a
 
     ; Turn screen on
-    ld a, %1000000
+    ld a, %1100000
 ;          ||||||`- Zoomed sprites -> 16x16 pixels
 ;          |||||`-- Doubled sprites -> 2 tiles per sprite, 8x16
 ;          ||||`--- Mega Drive mode 5 enable
@@ -334,9 +334,6 @@ main:
     out (VDPControl), a
     ld a, $81
     out (VDPControl), a
-
-    ; Enable ints
-    ei
 
 InitPlayer:
     ; Map slot 1 to beginning of video data
@@ -501,9 +498,10 @@ TilemapUnpackEnd:
     ld sp, (SPSave)
 
 p2: ; Wait vblank
--:  in a, (VDPScanline)
-    cp 193
-    jr c, -
+    in a, (VDPControl)
+-:  in a, (VDPControl)
+    or a  ; update flags
+    jp p, -
 
 p3:
     ; Tilemap swap
