@@ -127,27 +127,29 @@ banks 1
 
 .macro DoTilesUpload args many
 
-        ; f' sign bit = VBlank?
+        ; f' carry bit = VBlank?
     ex af, af'
 
 @Again:
-
-    .ifeq many 1
-        set 5, b ; fixup for outi corrupting b (add TileSize)
-    .endif
-
         ; when not in VBlank use slow upload
-    jp p, @Slow
+    jr nc, @Slow
 
     TilesUploadTileToVRAM 0
 
         ; update VSync bit
         ; (detect blank -> active display transition, accounting for delay before next upload)
     in a, (VDPScanline)
-    add a, 256 - 253
+    .ifeq 1 0
+        add a, 256 - 253
+        rla ; push sign into carry
+    .else
+        ; faster but less safe?
+        cp 253
+    .endif
 
     .ifeq many 1
-        djnz @Again
+        dec e
+        jp nz, @Again
     .endif
 
         ; VBlank bit preserve
@@ -160,13 +162,12 @@ banks 1
     TilesUploadTileToVRAM 1
 
         ; update VSync bit
-        ; (detect active display -> blank transition, accounting for delay before next upload)
+        ; (detect active display -> blank transition)
     in a, (VDPScanline)
     add a, 256 - 192
-    sbc a, a ; push carry into sign
 
     .ifeq many 1
-        dec b
+        dec e
         jp nz, @Again
     .endif
 
@@ -467,10 +468,9 @@ NoBankChange:
     or (DblBufTileOffset | VRAMWrite) >> 8
     out (VDPControl), a
 
-        ; f' sign bit = VBlank? , we start in VBlank
+        ; f' carry bit = VBlank? , we start in VBlank
     ex af, af'
     scf
-    sbc a, a ; push carry into sign
     ex af, af'
 
         ; Prepare VRAM write register
@@ -617,12 +617,12 @@ TUDoStandard:
 
 .org $2d00
 TUDoRepeat:
-        ; repeat, value - 223 times
-    sub 223
-    ld b, a
-
         ; tile pointer back into hl
     ex de, hl
+
+        ; repeat, value - 223 times
+    sub 223
+    ld e, a
 
     DoTilesUpload 1
 
