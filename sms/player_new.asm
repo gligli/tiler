@@ -111,7 +111,7 @@ banks 1
 
 .macro DoTilesUpload args many
 
-        ; f' carry bit = VBlank?
+        ; f' sign bit = VBlank?
     ex af, af'
 
 @Again:
@@ -121,7 +121,7 @@ banks 1
     .endif
 
         ; when not in VBlank use slow upload
-    jr nc, @Slow
+    jp p, @Slow
 
     TilesUploadTileToVRAM 0
 
@@ -129,7 +129,6 @@ banks 1
         ; (detect blank -> active display transition, accounting for delay before next upload)
     in a, (VDPScanline)
     add a, 256 - 253
-    rla ; push sign into carry
 
     .ifeq many 1
         djnz @Again
@@ -148,6 +147,7 @@ banks 1
         ; (detect active display -> blank transition, accounting for delay before next upload)
     in a, (VDPScanline)
     add a, 256 - 192
+    sbc a, a ; push carry into sign
 
     .ifeq many 1
         dec b
@@ -430,9 +430,10 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
     or (DblBufTileOffset | VRAMWrite) >> 8
     out (VDPControl), a
 
-        ; f' carry bit = VBlank? , we start in VBlank
+        ; f' sign bit = VBlank? , we start in VBlank
     ex af, af'
     scf
+    sbc a, a ; push carry into sign
     ex af, af'
 
         ; Prepare VRAM write register
