@@ -70,137 +70,59 @@ banks 1
 ;     sub PCMSpeed
 ;     jp m, +++
 ;     exx
-;     
-;     ;outd
-;     
+; 
+;     outd
+; 
 ;     ld r, a
-;     
+; 
 ;     exx
 ; +++:
 ;     ex af, af'
 .endm
 
-.macro Unpack4SamplesA ;c=144
-        ; High nibble, CH1
-    rld
-    and c
-
-    ;c+22
-
-    or $90
-    ld d, a
-        ; Low nibble, CH2
-    ld a, (hl)
-    and c
-    or $b0
-
-    ;c+29
-
-    ld e, a
-        ; On to next sample pair
-    inc hl
-    push de
-
-    ;c+22
-
-        ; High nibble, CH3
-    rld
-    and c
-    or $d0
-
-    ;c+29
-
-    ld d, a
-        ; Low nibble, CH1
-    ld a, (hl)
-    and c
-    or $90
-    ld e, a
-        ; On to next sample pair
-    inc hl
-    push de
-.endm
-
-.macro Unpack4SamplesB ;c=144
-        ; High nibble, CH2
-    rld
-    and c
-
-    ;c+22
-
-    or $b0
-    ld d, a
-        ; Low nibble, CH3
-    ld a, (hl)
-    and c
-    or $d0
-
-    ;c+29
-
-    ld e, a
-        ; On to next sample pair
-    inc hl
-    push de
-
-    ;c+22
+.macro Unpack6Samples
+    ld a, (bc)
+    ld l, a
 
         ; High nibble, CH1
-    rld
-    and c
-    or $90
+    ld h, >PCMUnpackLUT
+    ld d, (hl)
 
-    ;c+29
-
-    ld d, a
         ; Low nibble, CH2
-    ld a, (hl)
-    and c
-    or $b0
-    ld e, a
-        ; On to next sample pair
-    inc hl
-    push de
-.endm
+    inc h
+    ld e, (hl)
 
-.macro Unpack4SamplesC ;c=144
+        ; On to next sample pair
+    push de
+    inc bc
+    ld a, (bc)
+    ld l, a
+
         ; High nibble, CH3
-    rld
-    and c
+    inc h
+    ld d, (hl)
 
-    ;c+22
-
-    or $d0
-    ld d, a
         ; Low nibble, CH1
-    ld a, (hl)
-    and c
-    or $90
+    inc h
+    ld e, (hl)
 
-    ;c+29
-
-    ld e, a
         ; On to next sample pair
-    inc hl
     push de
-
-    ;c+22
+    inc bc
+    ld a, (bc)
+    ld l, a
 
         ; High nibble, CH2
-    rld
-    and c
-    or $b0
+    inc h
+    ld d, (hl)
 
-    ;c+29
-
-    ld d, a
         ; Low nibble, CH3
-    ld a, (hl)
-    and c
-    or $d0
-    ld e, a
+    inc h
+    ld e, (hl)
+
         ; On to next sample pair
-    inc hl
     push de
+    inc bc
 .endm
 
 .macro TilesUploadTileToVRAM args slow
@@ -211,6 +133,8 @@ banks 1
         .endif
     .endr
     outi
+
+    PlaySample
 .endm
 
 .macro TilesUploadSetTilePointer
@@ -240,7 +164,7 @@ banks 1
         ; update tile pointer
 
         ; get byte offset from "tile index difference" using LUT
-    inc h ; ld h, >TUTileIdxDiffToOffsetLUT
+    ld h, >TUTileIdxDiffToOffsetLUT
     ld l, a
     ld a, (hl)
     inc h
@@ -320,6 +244,8 @@ banks 1
 .endm
 
 .macro TMProcessNextCommand
+    PlaySample
+
         ; read next command
     ld a, (de)
     inc de
@@ -334,7 +260,11 @@ banks 1
 
 .macro TMUploadCacheRepeatMacro args rpt
         ; compute cache address
-    and %00111110
+    .ifeq rpt 1
+        dec a
+    .else
+        and %00111110
+    .endif
     ld h, >TileMapCache
     ld l, a
 
@@ -578,6 +508,10 @@ InitPlayer:
     ld (MapperSlot2), a
 
 NextFrameLoad:
+;     WaitVBlank
+;     WaitVBlank
+;     WaitVBlank
+;     jp TilemapUnpackEnd
 
         ; are we using slot 2?
     bit 7, h
@@ -718,65 +652,73 @@ TilemapUnpackEnd:
 
     PlaySample
 
+    ld b, h
+    ld c, l
+    ld iyh, b
+    ld iyl, c
+
 .ifdef FIXED_PCM
-    ld a, h
-    ld iyh, a
-    ld a, l
-    ld iyl, a
-    ld hl, PCMData
+    ld bc, PCMData
 .endif
 
     ; Unpack frame PCM data to RAM
 
         ; PSGBufferA for even frames, PSGBufferB for odd frames
-    ld de, PSGBufferA + 1024
+    ld hl, PSGBufferB + 1024
     ld a, (CurFrameIdx)
     and $01
     rla
     rla
     neg
-    add a, d
-    ld d, a
+    add a, h
+    ld h, a
 
         ; use SP as a PSGBuffer data pointer
-    ex de, hl
     ld sp, hl
-    ex de, hl
 
         ; 842 samples per video frame
-        ; 12 samples per iteration
-    ld b, 842 / 24
-    ld c, $0f
+        ; 24 samples per iteration
+    ld ixh, 842 / 48
 
-	PlaySample
+    PlaySample
 
     ;c+68
 
     PCMUnpackLoop:
-		Unpack4SamplesA
-		Unpack4SamplesB
-		PlaySample
-		Unpack4SamplesC
-		Unpack4SamplesA
-		PlaySample
-		Unpack4SamplesB
-		Unpack4SamplesC
-		PlaySample
-	dec b
+        Unpack6Samples
+        Unpack6Samples
+        PlaySample
+        Unpack6Samples
+        Unpack6Samples
+        PlaySample
+        Unpack6Samples
+        Unpack6Samples
+        PlaySample
+        Unpack6Samples
+        Unpack6Samples
+        PlaySample
+    dec ixh
     jp nz, PCMUnpackLoop
-    Unpack4SamplesA
+    Unpack6Samples
+    Unpack6Samples
+    PlaySample
+    Unpack6Samples
+    Unpack6Samples
+    PlaySample
+    Unpack6Samples
 
         ; cleanup extra decoding
     pop hl
+    pop hl
     ld hl, $ffff
     push hl
+    push hl
 
-.ifdef FIXED_PCM
+        ; restore frame data pointer into hl
     ld a, iyh
     ld h, a
-    ld a,iyl
+    ld a, iyl
     ld l, a
-.endif
 
 p2:
 
@@ -789,7 +731,7 @@ p3:
     ; restart PCM player on other buffer
     exx
 tstpcm:
-    ld hl, PSGBufferB + 1024
+    ld hl, PSGBufferA + 1024
     ld a, (CurFrameIdx)
     and $01
     rla
@@ -860,10 +802,35 @@ PCMData:
 .endif
 
 ;==============================================================
+; PCM fixed sequences (jump tables, LUTs)
+;==============================================================
+
+.org $0900:
+PCMUnpackLUT:
+    .repeat 256 index dat
+        .db $90 | ((dat >> 4) & $0f)
+    .endr
+    .repeat 256 index dat
+        .db $b0 | (dat & $0f)
+    .endr
+    .repeat 256 index dat
+        .db $d0 | ((dat >> 4) & $0f)
+    .endr
+    .repeat 256 index dat
+        .db $90 | (dat & $0f)
+    .endr
+    .repeat 256 index dat
+        .db $b0 | ((dat >> 4) & $0f)
+    .endr
+    .repeat 256 index dat
+        .db $d0 | (dat & $0f)
+    .endr
+
+;==============================================================
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0800
+.org $0f00
 TUUnpackJumpTable:
     .repeat 223
         .db >TUDoStandard
@@ -874,7 +841,7 @@ TUUnpackJumpTable:
         .db >TUDoRepeat
     .endr
 
-.org $0900
+.org $1000
 TUDoRepeat:
         ; tile pointer back into hl
     ex de, hl
@@ -885,7 +852,7 @@ TUDoRepeat:
 
     DoTilesUpload 1
 
-.org $0b00
+.org $1200
 TUDoDirectValue:
         ; direct value, load tile index from frame data pointer
 
@@ -896,7 +863,7 @@ TUDoDirectValue:
 
     DoTilesUpload 0
 
-.org $0d00
+.org $1400
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -910,7 +877,7 @@ TUDoTerminator:
 
     jp TilesUploadEnd
 
-.org $1000
+.org $1600
 TUDoStandard:
         ; standard case, increment tile index
 
@@ -919,7 +886,7 @@ TUDoStandard:
 
     DoTilesUpload 0
 
-.org $1100
+.org $1800
 TUTileIdxDiffToOffsetLUT:
     .repeat 256 index idx
         .db (idx * TileSize) & $ff
@@ -932,14 +899,17 @@ TUTileIdxDiffToOffsetLUT:
 ; Tilemap upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $1300
+.org $1a00
 TMCommandsJumpTable:
     ; $00
     .db >TMTerminator
-    .repeat 31 index idx
+    .repeat 24 index idx
         .db (>TMCacheIndex + idx), >TMSkip
     .endr
-    .db (>TMCacheIndex + 31)
+    .repeat 7 index idx
+        .db >TMCacheRpt1, >TMSkip
+    .endr
+    .db >TMCacheRpt1
     ; $40
     .repeat 32
         .db >TMCacheRpt2, >TMCacheRpt3
@@ -962,69 +932,74 @@ TMCommandsJumpTable:
         .db >TMCacheRpt6, >TMRawRpt4
     .endr
 
-.org $1400
+.org $1b00
 TMCacheIndex:
-.repeat 32 index idx
-    .org $1400 + (idx * 256)
+.repeat 24 index idx
+    .org $1b00 + (idx * 256)
         TMUploadCacheIndexMacro idx
         TMProcessNextCommand
 .endr
 
-.org $3400
+.org $3300
 TMTerminator:
         ; frame data pointer into hl
     ex de, hl
 
     jp TilemapUnpackEnd
 
-.org $3500
+.org $3400
 TMRawRpt4:
     TMUploadRawMacro 4
     TMProcessNextCommand
 
-.org $3600
+.org $3500
 TMRawRpt3:
     TMUploadRawMacro 3
     TMProcessNextCommand
 
-.org $3700
+.org $3600
 TMRawRpt2:
     TMUploadRawMacro 2
     TMProcessNextCommand
 
-.org $3800
+.org $3700
 TMRawRpt1:
     TMUploadRawMacro 1
     TMProcessNextCommand
 
-.org $3900
+.org $3800
 TMSkip:
     TMUploadSkipMacro
     TMProcessNextCommand
 
-.org $3a00
+.org $3900
 TMCacheRpt6:
     TMUploadCacheRepeatMacro 6
     TMProcessNextCommand
 
-.org $3b00
+.org $3a00
 TMCacheRpt5:
     TMUploadCacheRepeatMacro 5
     TMProcessNextCommand
 
-.org $3c00
+.org $3b00
 TMCacheRpt4:
     TMUploadCacheRepeatMacro 4
     TMProcessNextCommand
 
-.org $3d00
+.org $3c00
 TMCacheRpt3:
     TMUploadCacheRepeatMacro 3
     TMProcessNextCommand
 
-.org $3e00
+.org $3d00
 TMCacheRpt2:
     TMUploadCacheRepeatMacro 2
+    TMProcessNextCommand
+
+.org $3e00
+TMCacheRpt1:
+    TMUploadCacheRepeatMacro 1
     TMProcessNextCommand
 
 .org $3f00
