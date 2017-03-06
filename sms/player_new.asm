@@ -69,33 +69,49 @@ banks 1
     outi
 .endm
 
-.macro TilesUploadPointOnTile
-        ; Get a pointer on tile data from tile index
+.macro TilesUploadSetTilePointer
+        ; get a pointer on tile data from tile index
 
-        ; Upper bits of tile index select a rom bank
-    ld a, d
+        ; upper bits of tile index select a rom bank
+    ld a, h
     rra ; incoming carry will always be 0; pushes low bit into carry for use below
 
-    ld (MapperSlot1), a
+    ld (MapperSlot2), a
 
-        ; Lower bits select an offset in that bank
+        ; lower bits select an offset in that bank
         ; we want the low 9 bits of hl, x32, +$4000, in hl
         ; %-------a bcdefghi
         ;   to
-        ; %01abcdef ghi00000
-    ld a, e
-    ld l, 1 ; to get the 01 high bits we need
+        ; %10abcdef ghi00000
+    ld a, l
+    ld l, %00000010 ; to get the 10 high bits we need
     .repeat 3
         rra     ; then rotate carry - a - l right three times
         rr l
     .endr
     ld h, a
 .endm
-       
+
+.macro TilesUploadUpdateTilePointer
+        ; update tile pointer
+
+        ; tile index increment << 5 into de
+    ld e, 0
+    .repeat 3
+        rrca
+        rr e
+    .endr
+    and %00011111
+    ld d, a
+
+        ; add to tile pointer
+    add hl, de
+
+.endm
+
 .macro TilesUploadUnpack
-        ; restore mapper slot
-    ld a, ixl
-    ld (MapperSlot1), a
+        ; tile pointer saved into de
+    ex de, hl
 
         ; get next packed data
     pop hl
@@ -182,7 +198,7 @@ banks 1
     .endif
     ld h, >TileMapCache
     ld l, a
-    
+
         ; tilemap item  low byte into b
     ld b, (hl)
 
@@ -389,14 +405,14 @@ NextFrameLoad:
 
         ; are we using slot 2?
     bit 7, h
-    jr z, +
+    jp z, +
 
         ; if so, move to next bank
     ld a, (MapperSlot2)
     ld (MapperSlot1), a
     inc a
     ld (MapperSlot2), a
-        
+
         ; rewind to slot 1
     ld a, h
     sub $40
@@ -408,7 +424,7 @@ NextFrameLoad:
     ld a, (hl)
     inc hl
     cp $00
-    jr z, NoFramePalette
+    jp z, NoFramePalette
 
     .repeat TilePaletteSize * 2
         ldi
@@ -417,6 +433,27 @@ NextFrameLoad:
 NoFramePalette:
 
 p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
+
+        ; slot2 bank into ixl
+    ld a, (MapperSlot2)
+    ld ixl, a
+
+        ; should we seek to next bank start?
+    ld a, (hl)
+    inc hl
+    cp $00
+    jp z, NoBankChange
+
+        ; if so, increment bank indexes
+    ld a, ixl
+    ld (MapperSlot1), a
+    inc ixl
+
+        ; reset frame data pointer
+    ld hl, $4000
+
+NoBankChange:
+
 
         ; Set tiles VRAM start address
     ld a, TileSize
@@ -444,10 +481,6 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
         ; frame data pointer into sp
     ld sp, hl
-
-        ; slot1 bank into ixl
-    ld a, (MapperSlot1)
-    ld ixl, a
 
         ; start unpacking tile indexes
     TilesUploadUnpack
@@ -548,31 +581,58 @@ p4: ; Advance to next frame
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
+.org $2800
+TUUnpackJumpTable:
+    .repeat 223
+        .db >TUDoStandard
+    .endr
+    .db >TUDoDirectValue
+    .db >TUDoTerminator
+    .repeat 256 - 1 - 1 - 223
+        .db >TUDoRepeat
+    .endr
+
 .org $2900
 TUDoDirectValue:
-        ; direct value, load tile index from tile index pointer
+        ; direct value, load tile index from frame data pointer
 
-    pop de
+    pop hl
 
-    TilesUploadPointOnTile
+        ; tile index to tile pointer
+    TilesUploadSetTilePointer
+
     DoTilesUpload 0
 
 .org $2b00
 TUDoStandard:
         ; standard case, increment tile index
 
-    add a, e
-    ld e, a
-    adc a, d
-    sub e
-    ld d, a
+        ; tile pointer back into hl
+    ex de, hl
 
-    TilesUploadPointOnTile
+        ; increment tile pointer of "tile index" tiles
+    TilesUploadUpdateTilePointer
+
     DoTilesUpload 0
 
 .org $2d00
+TUDoRepeat:
+        ; repeat, value - 223 times
+    sub 223
+    ld b, a
+
+        ; tile pointer back into hl
+    ex de, hl
+
+    DoTilesUpload 1
+
+.org $2e00
 TUDoTerminator:
         ; value 224 is terminator
+
+        ; restore mapper slot
+    ld a, ixl
+    ld (MapperSlot2), a
 
         ; frame data pointer from sp to hl
     ld hl, 0
@@ -582,40 +642,6 @@ TUDoTerminator:
     ld sp, (SPSave)
 
     jp TilesUploadEnd
-
-.org $2e00
-TUDoRepeat:
-        ; repeat, value - 223 times
-    sub 223
-    ld b, a
-
-        ; increment tile index once for TilesUploadPointOnTile
-    inc de
-
-    TilesUploadPointOnTile
-
-        ; remainder of repeat count
-    ld a, b
-    dec a
-        ; add to tile index
-    add a, e
-    ld e, a
-    adc a, d
-    sub e
-    ld d, a
-
-    DoTilesUpload 1
-
-.org $3000
-TUUnpackJumpTable:
-    .db >TUDoDirectValue
-    .repeat 224 - 1
-        .db >TUDoStandard
-    .endr
-    .db >TUDoTerminator
-    .repeat 256 - 1 - 224
-        .db >TUDoRepeat
-    .endr
 
 ;==============================================================
 ; Tilemap upload fixed sequences (jump tables, LUTs)

@@ -35,7 +35,7 @@ const
   cTileIndexesMaxDiff = 223;
   cTileIndexesRepeatStart = 225;
   cTileIndexesMaxRepeat = 31;
-  cTileIndexesDirectValue = 0;
+  cTileIndexesDirectValue = 223;
   cTileIndexesTerminator = 224;
   cTileMapIndicesOffset : array[0..1] of Integer = (49, 256 + 49);
   cTileMapCacheBits = 5;
@@ -1761,6 +1761,15 @@ var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, p
       UsedCount: Integer;
       RawTMI: Integer;
     end;
+    tileIdxStream: TMemoryStream;
+
+  procedure DoTileIndex;
+  begin
+    if sameCount = 1 then
+      tileIdxStream.WriteByte(prevDTI - 1)
+    else if sameCount <> 0 then
+      tileIdxStream.WriteByte(cTileIndexesRepeatStart + sameCount - 2);
+  end;
 
   procedure DoTilemapTileCommand(DoCache, DoSkip: Boolean);
   begin
@@ -1840,47 +1849,64 @@ begin
     pp := ADataStream.Position;
     // tiles indexes
 
-    prevTileIndex := -1;
-    prevDTI := -1;
-    sameCount := 0;
-    for j := 0 to High(FFrames[i].TilesIndexes) do
-    begin
-      diffTileIndex := FFrames[i].TilesIndexes[j] - prevTileIndex;
-
-      if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
-          (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
-          ((FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then
+    tileIdxStream := TMemoryStream.Create;
+    try
+      prevTileIndex := -1;
+      prevDTI := -1;
+      sameCount := 0;
+      for j := 0 to High(FFrames[i].TilesIndexes) do
       begin
-        if sameCount = 1 then
-          ADataStream.WriteByte(prevDTI)
-        else if sameCount <> 0 then
-          ADataStream.WriteByte(cTileIndexesRepeatStart + sameCount - 2);
+        diffTileIndex := FFrames[i].TilesIndexes[j] - prevTileIndex;
 
-        sameCount := 1;
+        if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
+            (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
+            ((FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
+        begin
+          DoTileIndex;
+          sameCount := 1;
+        end
+        else
+        begin
+          Inc(sameCount);
+        end;
+
+        if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
+            ((FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset) div cTilesPerBank <>
+             (prevTileIndex + cTileIndexesTileOffset) div cTilesPerBank) then // any bank change must be a direct value
+        begin
+          tileIdxStream.WriteByte(cTileIndexesDirectValue);
+          tileIdxStream.WriteWord(FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset);
+          diffTileIndex := -1;
+          sameCount := 0;
+        end;
+
+        prevTileIndex := FFrames[i].TilesIndexes[j];
+        prevDTI := diffTileIndex;
+      end;
+
+      DoTileIndex;
+      tileIdxStream.WriteByte(cTileIndexesTerminator);
+
+
+      // the whole tiles indices should stay in the same bank
+      if ADataStream.Size div cBankSize <> (ADataStream.Size + tileIdxStream.Size) div cBankSize then
+      begin
+        ADataStream.WriteByte(1);
+        while ADataStream.Size mod cBankSize <> 0 do
+          ADataStream.WriteByte(0);
+        DebugLn('Crossed bank limit!');
       end
       else
       begin
-        Inc(sameCount);
+        ADataStream.WriteByte(0);
       end;
 
-      if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0)  then
-      begin
-        ADataStream.WriteByte(cTileIndexesDirectValue);
-        ADataStream.WriteWord(FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset);
-        diffTileIndex := -1;
-        sameCount := 0;
-      end;
+      tileIdxStream.Position := 0;
+      ADataStream.CopyFrom(tileIdxStream, tileIdxStream.Size);
 
-      prevTileIndex := FFrames[i].TilesIndexes[j];
-      prevDTI := diffTileIndex;
+    finally
+      tileIdxStream.Free;
     end;
-
-    if sameCount = 1 then
-      ADataStream.WriteByte(prevDTI)
-    else if sameCount <> 0 then
-      ADataStream.WriteByte(cTileIndexesRepeatStart + sameCount - 2);
-
-    ADataStream.WriteByte(cTileIndexesTerminator);
 
     DebugLn(['TileIndexes size: ', ADataStream.Position - pp]);
     pp := ADataStream.Position;
