@@ -95,14 +95,13 @@ banks 1
 .macro TilesUploadUpdateTilePointer
         ; update tile pointer
 
-        ; tile index increment << 5 into de
-    ld e, 0
-    .repeat 3
-        rrca
-        rr e
-    .endr
-    and %00011111
-    ld d, a
+        ; get byte offset from "tile index difference" using LUT
+    inc h ; ld h, >TUTileIdxDiffToOffsetLUT
+    ld l, a
+    ld a, (hl)
+    inc h
+    ld h, (hl)
+    ld l, a
 
         ; add to tile pointer
     add hl, de
@@ -580,7 +579,7 @@ p4: ; Advance to next frame
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $2800
+.org $2b00
 TUUnpackJumpTable:
     .repeat 223
         .db >TUDoStandard
@@ -591,30 +590,7 @@ TUUnpackJumpTable:
         .db >TUDoRepeat
     .endr
 
-.org $2900
-TUDoDirectValue:
-        ; direct value, load tile index from frame data pointer
-
-    pop hl
-
-        ; tile index to tile pointer
-    TilesUploadSetTilePointer
-
-    DoTilesUpload 0
-
-.org $2b00
-TUDoStandard:
-        ; standard case, increment tile index
-
-        ; tile pointer back into hl
-    ex de, hl
-
-        ; increment tile pointer of "tile index" tiles
-    TilesUploadUpdateTilePointer
-
-    DoTilesUpload 0
-
-.org $2d00
+.org $2c00
 TUDoRepeat:
         ; tile pointer back into hl
     ex de, hl
@@ -624,6 +600,17 @@ TUDoRepeat:
     ld e, a
 
     DoTilesUpload 1
+
+.org $2d00
+TUDoDirectValue:
+        ; direct value, load tile index from frame data pointer
+
+    pop hl
+
+        ; tile index to tile pointer
+    TilesUploadSetTilePointer
+
+    DoTilesUpload 0
 
 .org $2e00
 TUDoTerminator:
@@ -641,6 +628,24 @@ TUDoTerminator:
     ld sp, (SPSave)
 
     jp TilesUploadEnd
+
+.org $2f00
+TUDoStandard:
+        ; standard case, increment tile index
+
+        ; increment tile pointer of "tile index difference" tiles (still de <-> hl)
+    TilesUploadUpdateTilePointer
+
+    DoTilesUpload 0
+    
+.org $3000
+TUTileIdxDiffToOffsetLUT:
+    .repeat 256 index idx
+        .db (idx * 32) & $ff
+    .endr
+    .repeat 256 index idx
+        .db (idx * 32) >> 8
+    .endr
 
 ;==============================================================
 ; Tilemap upload fixed sequences (jump tables, LUTs)
