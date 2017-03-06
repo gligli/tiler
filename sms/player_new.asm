@@ -641,10 +641,10 @@ TUDoStandard:
 .org $3000
 TUTileIdxDiffToOffsetLUT:
     .repeat 256 index idx
-        .db (idx * 32) & $ff
+        .db (idx * TileSize) & $ff
     .endr
     .repeat 256 index idx
-        .db (idx * 32) >> 8
+        .db (idx * TileSize) >> 8
     .endr
 
 ;==============================================================
