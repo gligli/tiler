@@ -106,7 +106,6 @@ banks 1
 
         ; add to tile pointer
     add hl, de
-
 .endm
 
 .macro TilesUploadUnpack
@@ -114,11 +113,11 @@ banks 1
     ex de, hl
 
         ; get next packed data
-    pop hl
-    ld a, l ; we need the data into a
-    dec sp ; we actually needed to pop only one byte
+    dec sp ; we actually need to pop only one byte
+    pop af
 
         ;  use jump table to handle it
+    ld l, a
     ld h, >TUUnpackJumpTable
     ld h, (hl)
     ld l, 0
