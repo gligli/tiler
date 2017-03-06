@@ -84,7 +84,7 @@ banks 1
         ;   to
         ; %10abcdef ghi00000
     ld a, l
-    ld l, %00000010 ; to get the 10 high bits we need
+    ld l, %00000010 ; to get the high bits we need
     .repeat 3
         rra     ; then rotate carry - a - l right three times
         rr l
@@ -637,14 +637,14 @@ TUDoStandard:
     TilesUploadUpdateTilePointer
 
     DoTilesUpload 0
-    
+
 .org $3000
 TUTileIdxDiffToOffsetLUT:
     .repeat 256 index idx
-        .db (idx * 32) & $ff
+        .db (idx * TileSize) & $ff
     .endr
     .repeat 256 index idx
-        .db (idx * 32) >> 8
+        .db (idx * TileSize) >> 8
     .endr
 
 ;==============================================================
