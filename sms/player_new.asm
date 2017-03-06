@@ -1,3 +1,5 @@
+.define FIXED_PCM
+
 ;==============================================================
 ; WLA-DX banking setup
 ;==============================================================
@@ -27,6 +29,7 @@ banks 1
 .define VDPControl $bf
 .define VDPData $be
 .define VDPScanline $7e
+.define PSGPort $7f
 .define VRAMWrite $4000
 .define CRAMWrite $c000
 .define MapperSlot0 $fffd
@@ -42,13 +45,15 @@ banks 1
 ;==============================================================
 
 .define DblBufTileOffset 49 * TileSize
+.define PCMSpeed 45
 
 .macro WaitVBlank
     in a, (VDPControl)
-@Wait:
+---:
+    PlaySample
     in a, (VDPControl)
     or a  ; update flags
-    jp p, @Wait
+    jp p, ---
 .endm
 
 .macro SetVDPAddress args addr
@@ -57,6 +62,145 @@ banks 1
     out (VDPControl),a
     ld a, >addr
     out (VDPControl),a
+.endm
+
+.macro PlaySample
+;     ex af, af'
+;     ld a, r
+;     sub PCMSpeed
+;     jp m, +++
+;     exx
+;     
+;     ;outd
+;     
+;     ld r, a
+;     
+;     exx
+; +++:
+;     ex af, af'
+.endm
+
+.macro Unpack4SamplesA ;c=144
+        ; High nibble, CH1
+    rld
+    and c
+
+    ;c+22
+
+    or $90
+    ld d, a
+        ; Low nibble, CH2
+    ld a, (hl)
+    and c
+    or $b0
+
+    ;c+29
+
+    ld e, a
+        ; On to next sample pair
+    inc hl
+    push de
+
+    ;c+22
+
+        ; High nibble, CH3
+    rld
+    and c
+    or $d0
+
+    ;c+29
+
+    ld d, a
+        ; Low nibble, CH1
+    ld a, (hl)
+    and c
+    or $90
+    ld e, a
+        ; On to next sample pair
+    inc hl
+    push de
+.endm
+
+.macro Unpack4SamplesB ;c=144
+        ; High nibble, CH2
+    rld
+    and c
+
+    ;c+22
+
+    or $b0
+    ld d, a
+        ; Low nibble, CH3
+    ld a, (hl)
+    and c
+    or $d0
+
+    ;c+29
+
+    ld e, a
+        ; On to next sample pair
+    inc hl
+    push de
+
+    ;c+22
+
+        ; High nibble, CH1
+    rld
+    and c
+    or $90
+
+    ;c+29
+
+    ld d, a
+        ; Low nibble, CH2
+    ld a, (hl)
+    and c
+    or $b0
+    ld e, a
+        ; On to next sample pair
+    inc hl
+    push de
+.endm
+
+.macro Unpack4SamplesC ;c=144
+        ; High nibble, CH3
+    rld
+    and c
+
+    ;c+22
+
+    or $d0
+    ld d, a
+        ; Low nibble, CH1
+    ld a, (hl)
+    and c
+    or $90
+
+    ;c+29
+
+    ld e, a
+        ; On to next sample pair
+    inc hl
+    push de
+
+    ;c+22
+
+        ; High nibble, CH2
+    rld
+    and c
+    or $b0
+
+    ;c+29
+
+    ld d, a
+        ; Low nibble, CH3
+    ld a, (hl)
+    and c
+    or $d0
+    ld e, a
+        ; On to next sample pair
+    inc hl
+    push de
 .endm
 
 .macro TilesUploadTileToVRAM args slow
@@ -292,13 +436,14 @@ banks 1
 ;==============================================================
 
 .enum $c000 export
+    PSGBufferA        dsb 1024
+    PSGBufferB        dsb 1024
     LocalTileMap      dsb TileMapSize
     LocalTileMapEnd   .
     TileMapCache      dsb 64 ; must be aligned on 256
     LocalPalette      dsb TilePaletteSize * 2
     FrameCount        dw
     CurFrameIdx       dw
-    SPSave            dw
 .ende
 
 ;==============================================================
@@ -317,7 +462,7 @@ banks 1
 
     jp main
 
-init_tab: ; Table must exist within first 1K of ROM
+init_tab: ; table must exist within first 1K of ROM
     .db $00, $00, $01, $02
 
 .org $0038
@@ -330,27 +475,27 @@ init_tab: ; Table must exist within first 1K of ROM
 main:
     ld sp, $dff0
 
-    ; Set up VDP registers
+    ; set up VDP registers
 
     ld hl,VDPInitData
     ld b,VDPInitDataEnd-VDPInitData
     ld c,VDPControl
     otir
 
-    ; Clear VRAM
+    ; clear VRAM
 
-    ; 1. Set VRAM write address to $0000
+    ; 1. cet VRAM write address to $0000
     SetVDPAddress $0000 | VRAMWrite
-    ; 2. Output 16KB of zeroes
-    ld bc, $4000     ; Counter for 16KB of VRAM
+    ; 2. output 16KB of zeroes
+    ld bc, $4000     ; counter for 16KB of VRAM
 -:  xor a
-    out (VDPData), a ; Output to VRAM address, which is auto-incremented after each write
+    out (VDPData), a ; output to VRAM address, which is auto-incremented after each write
     dec bc
     ld a, b
     or c
     jr nz, -
 
-    ; Dummy Sprite table
+    ; dummy Sprite table
     SetVDPAddress $600 | VRAMWrite
     ld a, $d0
     out (VDPData), a
@@ -359,12 +504,12 @@ main:
     ld a, $85
     out (VDPControl), a
 
-    ; Init current frame idx
+    ; init current frame idx
     xor a
     ld (CurFrameIdx), a
     ld (CurFrameIdx + $01), a
 
-    ; Turn screen on
+    ; turn screen on
     ld a, %1100000
 ;          ||||||`- Zoomed sprites -> 16x16 pixels
 ;          |||||`-- Doubled sprites -> 2 tiles per sprite, 8x16
@@ -377,28 +522,49 @@ main:
     ld a, $81
     out (VDPControl), a
 
+    ; init PSG
+    ld hl,PSGInit
+    ld bc,(PSGInitEnd-PSGInit)<<8 + PSGPort
+    otir
+
+    ; Clear PCM buffers
+    ld hl, PSGBufferA
+    ld b, 0
+    ld a, $ff
+-:  .repeat 2048/256
+        ld (hl), a
+        inc hl
+    .endr
+    djnz -
+
         ; algo expects VBlank state on start
     WaitVBlank
 
 InitPlayer:
-    ; Map slot 1 to beginning of video data
+        ; init PCM player
+    exx
+    ld c, PSGPort
+    ld hl, PSGBufferB + 1024 - 1
+    exx
+
+        ; map slot 1 to beginning of video data
     ld a, 1
     ld (MapperSlot1), a
 
-    ; Get first frame data pointers offset
+        ; get first frame data pointers offset
     ld hl, BankSize_
 
-    ; Load frame count
+        ; load frame count
     ld de, FrameCount
     ldi
     ldi
 
-    ; Load first frame bank index
+        ; load first frame bank index
     ld a, (hl)
     inc hl
     inc hl
 
-    ; Load frame data address into hl
+        ; load frame data address into hl
     ld e, (hl)
     inc hl
     ld d, (hl)
@@ -406,7 +572,7 @@ InitPlayer:
     set 6, d; Add $4000
     ex de, hl
 
-    ; Map slot 1 & 2 to first frame data
+        ; map slot 1 & 2 to first frame data
     ld (MapperSlot1), a
     inc a
     ld (MapperSlot2), a
@@ -485,9 +651,6 @@ NoBankChange:
         ; Prepare VRAM write register
     ld c, VDPData
 
-        ; save stack pointer
-    ld (SPSave), sp
-
         ; frame data pointer into sp
     ld sp, hl
 
@@ -545,9 +708,6 @@ TilesUploadEnd:
         ; save command pointer into de
     ex de, hl
 
-        ; save stack pointer
-    ld (SPSave), sp
-
         ; sp will be used as a pointer on a reversed local tilemap
     ld sp, LocalTileMapEnd
 
@@ -556,15 +716,89 @@ TilesUploadEnd:
 
 TilemapUnpackEnd:
 
-    ; command pointer still into de
+    PlaySample
+
+.ifdef FIXED_PCM
+    ld a, h
+    ld iyh, a
+    ld a, l
+    ld iyl, a
+    ld hl, PCMData
+.endif
+
+    ; Unpack frame PCM data to RAM
+
+        ; PSGBufferA for even frames, PSGBufferB for odd frames
+    ld de, PSGBufferA + 1024
+    ld a, (CurFrameIdx)
+    and $01
+    rla
+    rla
+    neg
+    add a, d
+    ld d, a
+
+        ; use SP as a PSGBuffer data pointer
+    ex de, hl
+    ld sp, hl
+    ex de, hl
+
+        ; 842 samples per video frame
+        ; 12 samples per iteration
+    ld b, 842 / 24
+    ld c, $0f
+
+	PlaySample
+
+    ;c+68
+
+    PCMUnpackLoop:
+		Unpack4SamplesA
+		Unpack4SamplesB
+		PlaySample
+		Unpack4SamplesC
+		Unpack4SamplesA
+		PlaySample
+		Unpack4SamplesB
+		Unpack4SamplesC
+		PlaySample
+	dec b
+    jp nz, PCMUnpackLoop
+    Unpack4SamplesA
+
+        ; cleanup extra decoding
+    pop hl
+    ld hl, $ffff
+    push hl
+
+.ifdef FIXED_PCM
+    ld a, iyh
+    ld h, a
+    ld a,iyl
+    ld l, a
+.endif
 
 p2:
 
     WaitVBlank
 
 p3:
-    ; Tilemap swap
+        ; frame data pointer into de
+    ex de, hl
 
+    ; restart PCM player on other buffer
+    exx
+tstpcm:
+    ld hl, PSGBufferB + 1024
+    ld a, (CurFrameIdx)
+    and $01
+    rla
+    rla
+    add a, h
+    ld h, a
+    exx
+
+    ; tilemap swap
     ld a, (CurFrameIdx)
     and $01
     rla
@@ -577,13 +811,15 @@ p3:
 
     ld c, VDPData
 
-    ; Upload local palette to VDP
+    ; upload local palette to VDP
 
     SetVDPAddress $0000 | CRAMWrite
     ld hl, LocalPalette
     .repeat TilePaletteSize * 2
         outi
     .endr
+
+    PlaySample
 
 p4: ; Advance to next frame
     ld bc, (CurFrameIdx)
@@ -604,12 +840,30 @@ p4: ; Advance to next frame
         ; restore command pointer into hl
     ex de, hl
     jp NextFrameLoad
+    
+;==============================================================
+; Data
+;==============================================================
+
+PSGInit:
+.db $9f $bf $df $ff $81 $00 $a1 $00 $c1 $00
+PSGInitEnd:
+
+; VDP initialisation data
+VDPInitData:
+.db $04,$80,$00,$81,$f9,$82,$ff,$85,$ff,$86,$ff,$87,$00,$88,$00,$89,$ff,$8a
+VDPInitDataEnd:
+
+.ifdef FIXED_PCM
+PCMData:
+.incbin "200hz.bin"
+.endif
 
 ;==============================================================
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0c00
+.org $0800
 TUUnpackJumpTable:
     .repeat 223
         .db >TUDoStandard
@@ -620,7 +874,7 @@ TUUnpackJumpTable:
         .db >TUDoRepeat
     .endr
 
-.org $0d00
+.org $0900
 TUDoRepeat:
         ; tile pointer back into hl
     ex de, hl
@@ -631,7 +885,7 @@ TUDoRepeat:
 
     DoTilesUpload 1
 
-.org $0e00
+.org $0b00
 TUDoDirectValue:
         ; direct value, load tile index from frame data pointer
 
@@ -642,7 +896,7 @@ TUDoDirectValue:
 
     DoTilesUpload 0
 
-.org $0f00
+.org $0d00
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -653,9 +907,6 @@ TUDoTerminator:
         ; frame data pointer from sp to hl
     ld hl, 0
     add hl, sp
-
-        ; restore stack pointer
-    ld sp, (SPSave)
 
     jp TilesUploadEnd
 
@@ -721,8 +972,8 @@ TMCacheIndex:
 
 .org $3400
 TMTerminator:
-        ; restore stack pointer
-    ld sp, (SPSave)
+        ; frame data pointer into hl
+    ex de, hl
 
     jp TilemapUnpackEnd
 
@@ -785,12 +1036,3 @@ TMSkipHalf0:
 TMSkipHalf1:
     TMSkipHalfMacro 1
     TMProcessNextCommand
-
-;==============================================================
-; Data
-;==============================================================
-
-; VDP initialisation data
-VDPInitData:
-.db $04,$80,$00,$81,$f9,$82,$ff,$85,$ff,$86,$ff,$87,$00,$88,$00,$89,$ff,$8a
-VDPInitDataEnd:
