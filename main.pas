@@ -1932,13 +1932,15 @@ begin
 
     QuickSort(tmiCache[0], 0, High(tmiCache), SizeOf(tmiCache[0]), @CompareTMICache);
 
-    k := 0;
-    for j := 0 to cTileMapCacheSize -1 do
+    for j := 0 to cTileMapCacheSize div 2 - 1 do
     begin
-      ADataStream.WriteWord(tmiCache[j].RawTMI);
-      Inc(k, tmiCache[j].UsedCount);
+      k := j * 2;
+
+      // 2:3 compression: high nibble b / high nibble a / low byte a / low byte b
+      ADataStream.WriteByte(((tmiCache[k + 1].RawTMI shr 8) shl 4) or (tmiCache[k].RawTMI shr 8));
+      ADataStream.WriteByte(tmiCache[k].RawTMI and $ff);
+      ADataStream.WriteByte(tmiCache[k + 1].RawTMI and $ff);
     end;
-    DebugLn(['Cached TMIs: ', k]);
 
     awaitingCacheIdx := cTileMapCacheSize;
     awaitingCount := 0;

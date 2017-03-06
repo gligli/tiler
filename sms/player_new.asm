@@ -195,6 +195,7 @@ banks 1
     ld l, a
 
         ; tilemap item  low byte into b
+    inc l
     ld b, (hl)
 
     .repeat rpt index idx
@@ -204,7 +205,7 @@ banks 1
 
             ; high byte of tilemap item
         .ifeq idx 0
-            inc l
+            dec l
         .else
             nop ; ensure min 26 cycles between VRAM writes
         .endif
@@ -219,15 +220,13 @@ banks 1
     ld hl, (TileMapCache + cacheIdx * 2)
 
         ; low byte of tilemap item
-    ld a, l
+    ld a, h
     out (VDPData), a
 
-    ld c, h
-    ld b, l
-    push bc ; store tilemap item into LocalTileMap
+    push hl ; store tilemap item into LocalTileMap
 
         ; high byte of tilemap item
-    ld a, h
+    ld a, l
     out (VDPData), a
 .endm
 
@@ -499,7 +498,26 @@ TilesUploadEnd:
 
         ;copy tilemap cache into ram
     ld de, TileMapCache
-    .repeat 64
+    .repeat 16
+            ; load both high nibbles
+        ld a, (hl)
+        inc hl
+
+            ; high nibble a
+        ld (de), a
+        inc e
+
+            ; low byte a
+        ldi
+
+            ; high nibble b
+        .repeat 4
+            rrca
+        .endr
+        ld (de), a
+        inc e
+
+            ; low byte b
         ldi
     .endr
 
