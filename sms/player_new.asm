@@ -188,13 +188,9 @@ banks 1
     jp (hl)
 .endm
 
-.macro TMUploadCacheMacro args rpt
+.macro TMUploadCacheRepeatMacro args rpt
         ; compute cache address
-    .ifeq rpt 1
-        dec a
-    .else
-        and %00111110
-    .endif
+    and %00111110
     ld h, >TileMapCache
     ld l, a
 
@@ -217,6 +213,22 @@ banks 1
         out (VDPData), a
         push bc ; store tilemap item into LocalTileMap
     .endr
+.endm
+
+.macro TMUploadCacheIndexMacro args cacheIdx
+    ld hl, (TileMapCache + cacheIdx * 2)
+
+        ; low byte of tilemap item
+    ld a, l
+    out (VDPData), a
+
+    ld c, h
+    ld b, l
+    push bc ; store tilemap item into LocalTileMap
+
+        ; high byte of tilemap item
+    ld a, h
+    out (VDPData), a
 .endm
 
 .macro TMUploadSkipMacro
@@ -574,12 +586,12 @@ p4: ; Advance to next frame
         ; restore command pointer into hl
     ex de, hl
     jp NextFrameLoad
-    
+
 ;==============================================================
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $2b00
+.org $0c00
 TUUnpackJumpTable:
     .repeat 223
         .db >TUDoStandard
@@ -590,7 +602,7 @@ TUUnpackJumpTable:
         .db >TUDoRepeat
     .endr
 
-.org $2c00
+.org $0d00
 TUDoRepeat:
         ; tile pointer back into hl
     ex de, hl
@@ -601,7 +613,7 @@ TUDoRepeat:
 
     DoTilesUpload 1
 
-.org $2d00
+.org $0e00
 TUDoDirectValue:
         ; direct value, load tile index from frame data pointer
 
@@ -612,7 +624,7 @@ TUDoDirectValue:
 
     DoTilesUpload 0
 
-.org $2e00
+.org $0f00
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -629,7 +641,7 @@ TUDoTerminator:
 
     jp TilesUploadEnd
 
-.org $2f00
+.org $1000
 TUDoStandard:
         ; standard case, increment tile index
 
@@ -638,7 +650,7 @@ TUDoStandard:
 
     DoTilesUpload 0
 
-.org $3000
+.org $1100
 TUTileIdxDiffToOffsetLUT:
     .repeat 256 index idx
         .db (idx * TileSize) & $ff
@@ -651,14 +663,14 @@ TUTileIdxDiffToOffsetLUT:
 ; Tilemap upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $3200
+.org $1300
 TMCommandsJumpTable:
     ; $00
     .db >TMTerminator
-    .repeat 31
-        .db >TMCacheRpt1, >TMSkip
+    .repeat 31 index idx
+        .db (>TMCacheIndex + idx), >TMSkip
     .endr
-    .db >TMCacheRpt1
+    .db (>TMCacheIndex + 31)
     ; $40
     .repeat 32
         .db >TMCacheRpt2, >TMCacheRpt3
@@ -681,66 +693,69 @@ TMCommandsJumpTable:
         .db >TMCacheRpt6, >TMRawRpt4
     .endr
 
-.org $3300
+.org $1400
+TMCacheIndex:
+.repeat 32 index idx
+    .org $1400 + (idx * 256)
+        TMUploadCacheIndexMacro idx
+        TMProcessNextCommand
+.endr
+
+.org $3400
 TMTerminator:
         ; restore stack pointer
     ld sp, (SPSave)
 
     jp TilemapUnpackEnd
 
-.org $3400
+.org $3500
 TMRawRpt4:
     TMUploadRawMacro 4
     TMProcessNextCommand
 
-.org $3500
+.org $3600
 TMRawRpt3:
     TMUploadRawMacro 3
     TMProcessNextCommand
 
-.org $3600
+.org $3700
 TMRawRpt2:
     TMUploadRawMacro 2
     TMProcessNextCommand
 
-.org $3700
+.org $3800
 TMRawRpt1:
     TMUploadRawMacro 1
     TMProcessNextCommand
 
-.org $3800
+.org $3900
 TMSkip:
     TMUploadSkipMacro
     TMProcessNextCommand
 
-.org $3900
-TMCacheRpt6:
-    TMUploadCacheMacro 6
-    TMProcessNextCommand
-
 .org $3a00
-TMCacheRpt5:
-    TMUploadCacheMacro 5
+TMCacheRpt6:
+    TMUploadCacheRepeatMacro 6
     TMProcessNextCommand
 
 .org $3b00
-TMCacheRpt4:
-    TMUploadCacheMacro 4
+TMCacheRpt5:
+    TMUploadCacheRepeatMacro 5
     TMProcessNextCommand
 
 .org $3c00
-TMCacheRpt3:
-    TMUploadCacheMacro 3
+TMCacheRpt4:
+    TMUploadCacheRepeatMacro 4
     TMProcessNextCommand
 
 .org $3d00
-TMCacheRpt2:
-    TMUploadCacheMacro 2
+TMCacheRpt3:
+    TMUploadCacheRepeatMacro 3
     TMProcessNextCommand
 
 .org $3e00
-TMCacheRpt1:
-    TMUploadCacheMacro 1
+TMCacheRpt2:
+    TMUploadCacheRepeatMacro 2
     TMProcessNextCommand
 
 .org $3f00
