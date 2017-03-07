@@ -45,20 +45,30 @@ banks 1
 ;==============================================================
 
 .define DblBufTileOffset 49 * TileSize
-.define PCMSpeed 45
+.define FrameSampleCount 826 ; 344 cycles per PCM sample = one sample every 320 cycles
 
-.macro WaitVBlank args playSmp
-    in a, (VDPControl)
----:
+.macro WaitVBlank args playSmp ; c0
     .ifeq playSmp 1
+        jp +++
+---:
         PlaySample
++++:
+; c0
+        .repeat 19
+            add iy, iy ; timing
+        .endr
+        inc iy ; timing
+; c295
+    .else
+---:
     .endif
     in a, (VDPControl)
     or a  ; update flags
     jp p, ---
+; c320
 .endm
 
-.macro SetVDPAddress args addr
+.macro SetVDPAddress args addr  ; c36
         ; Sets the VDP address
     ld a, <addr
     out (VDPControl),a
@@ -67,22 +77,12 @@ banks 1
 .endm
 
 .macro PlaySample
-    ex af, af'
-    ld a, r
-    sub PCMSpeed
-    jp m, +++
     exx
-
     outd
-
-    ld r, a
-
     exx
-+++:
-    ex af, af'
 .endm
 
-.macro Unpack6Samples
+.macro Unpack6Samples ; c153
     ld a, (bc)
     ld l, a
 
@@ -520,14 +520,11 @@ InitPlayer:
     ld (MapperSlot2), a
 
 NextFrameLoad:
-;     WaitVBlank 1
-;     WaitVBlank 1
-;     WaitVBlank 1
-;     jp TilemapUnpackEnd
+ ; c229 from jump
 
         ; are we using slot 2?
     bit 7, h
-    jp z, +
+    jr z, NoSlotChange
 
         ; if so, move to next bank
     ld a, (MapperSlot2)
@@ -540,19 +537,54 @@ NextFrameLoad:
     sub $40
     ld h, a
 
-+:
+    jp SlotEnd
+; c312
+
+NoSlotChange:
+
+        ; ensure same timing as slot change
+    .repeat 6
+        inc iy
+    .endr
+
+SlotEnd:
+
     ; Load palette if frame contains one
     ld de, LocalPalette
+; c319/c322
+    PlaySample
+
     ld a, (hl)
     inc hl
     cp $00
     jp z, NoFramePalette
 
-    .repeat TilePaletteSize * 2
+    .repeat 18
+        ldi
+    .endr
+; c315
+    PlaySample
+
+    .repeat 14
         ldi
     .endr
 
+    jp PaletteEnd
+
 NoFramePalette:
+
+    .repeat 18
+        ld (0), hl ; timing
+    .endr
+; c320
+    PlaySample
+
+    .repeat 16
+        ld (0), hl ; timing
+    .endr
+
+PaletteEnd:
+; c234/c240
 
 p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
@@ -573,9 +605,28 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
         ; reset frame data pointer
     ld hl, $4000
+; c320
+    PlaySample
+
+    jp BankChangeEnd
 
 NoBankChange:
 
+    ld (0), a ; timing
+    ld (0), a ; timing
+
+; c319
+    PlaySample
+
+    inc iy ; timing
+
+BankChangeEnd:
+; c10
+
+    WaitVBlank 1
+    WaitVBlank 1
+    WaitVBlank 1
+    jp TilemapUnpackEnd
 
         ; Set tiles VRAM start address
     ld a, TileSize
@@ -662,8 +713,6 @@ TilesUploadEnd:
 
 TilemapUnpackEnd:
 
-    PlaySample
-
     ld b, h
     ld c, l
     ld iyh, b
@@ -688,49 +737,42 @@ TilemapUnpackEnd:
         ; use SP as a PSGBuffer data pointer
     ld sp, hl
 
-        ; 842 samples per video frame
-        ; 24 samples per iteration
-    ld ixh, 842 / 48
+        ; 36 samples per iteration
+    ld ixh, FrameSampleCount / 36 + 0.5
 
-    PlaySample
-
-    ;c+68
+; c0
 
     PCMUnpackLoop:
-        Unpack6Samples
-        Unpack6Samples
         PlaySample
         Unpack6Samples
         Unpack6Samples
+        ld iy, 0 ; timing
+; c320
         PlaySample
         Unpack6Samples
         Unpack6Samples
+        ld iy, 0 ; timing
+; c320
         PlaySample
         Unpack6Samples
         Unpack6Samples
-        PlaySample
     dec ixh
     jp nz, PCMUnpackLoop
-    Unpack6Samples
-    Unpack6Samples
+; c322
     PlaySample
-    Unpack6Samples
-    Unpack6Samples
-    PlaySample
-    Unpack6Samples
 
         ; cleanup extra decoding
     pop hl
-    pop hl
     ld hl, $ffff
     push hl
-    push hl
+; c31
 
         ; restore frame data pointer into hl
     ld a, iyh
     ld h, a
     ld a, iyl
     ld l, a
+; c55
 
 p2:
 
@@ -742,7 +784,10 @@ p3:
 
     ; restart PCM player on other buffer
     exx
+
 tstpcm:
+    ld (PSGBufferA), hl ; debug tool (shows how many samples actually played per frame)
+
     ld hl, PSGBufferA + 1024 - 1
     ld a, (CurFrameIdx)
     and $01
@@ -751,6 +796,7 @@ tstpcm:
     add a, h
     ld h, a
     exx
+; c129
 
     ; tilemap swap
     ld a, (CurFrameIdx)
@@ -764,23 +810,33 @@ tstpcm:
     out (VDPControl), a
 
     ld c, VDPData
-
+; c204
     ; upload local palette to VDP
 
     SetVDPAddress $0000 | CRAMWrite
     ld hl, LocalPalette
-    .repeat TilePaletteSize * 2
+; c250
+    .repeat 4
         outi
     .endr
-
+; c314
     PlaySample
+    .repeat 20
+        outi
+    .endr
+; c320
+    PlaySample
+    .repeat 8
+        outi
+    .endr
+; c128
 
 p4: ; Advance to next frame
     ld bc, (CurFrameIdx)
     inc bc
     ld hl, (FrameCount)
     sbc hl, bc
-    jr nz, +
+    jp nz, +
 
     ; If we're past last frame, rewind to first frame
     ld bc, 0
@@ -794,6 +850,7 @@ p4: ; Advance to next frame
         ; restore command pointer into hl
     ex de, hl
     jp NextFrameLoad
+ ; c229
 
 ;==============================================================
 ; Data
@@ -810,7 +867,7 @@ VDPInitDataEnd:
 
 .ifdef FIXED_PCM
 PCMData:
-.incbin "200hz.bin"
+.incbin "220hz344cy.bin"
 .endif
 
 ;==============================================================

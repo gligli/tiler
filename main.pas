@@ -28,6 +28,7 @@ const
   cBankSize = 16384;
   cTileSize = cTileWidth * cTileWidth div 2;
   cTilesPerBank = cBankSize div cTileSize;
+  cZ80Clock = 3546893;
 
   // Video player consts
   cSmoothingPrevFrame = 1;
@@ -46,7 +47,8 @@ const
   cTileMapCommandSkip = $00;
   cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c1, $d1, $e1, $f1);
   cTileMapTerminator = cTileMapCommandSkip; // skip zero
-  cFrameSoundSize = 420.9962017804155;
+  cClocksPerSample = 344;
+  cFrameSoundSize = cZ80Clock / cClocksPerSample / 25;
 
   // JPEG standard quantization tables
 
@@ -1734,7 +1736,8 @@ begin
 
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'pcmenc.exe';
-  Process.Parameters.Add('-p 4 -dt1 337 -dt2 337 -dt3 337 -cpuf 3546893 -rto 3 -a ' + IntToStr(Volume) + ' -r 1024 "' + AFN + '"');
+  Process.Parameters.Add('-p 4 -dt1 ' + IntToStr(cClocksPerSample) + ' -dt2 ' + IntToStr(cClocksPerSample) + ' -dt3 ' +
+    IntToStr(cClocksPerSample) + ' -cpuf ' + IntToStr(cZ80Clock) + ' -rto 3 -a ' + IntToStr(Volume) + ' -r 1024 -precision 8 "' + AFN + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
@@ -2004,8 +2007,8 @@ begin
 
     if Assigned(ASoundStream) then
     begin
-      ASoundStream.Position := 2 + Round(cFrameSoundSize * i);
-      ADataStream.CopyFrom(ASoundStream, Round(cFrameSoundSize));
+      ASoundStream.Position := 2 + Floor(cFrameSoundSize * i);
+      ADataStream.CopyFrom(ASoundStream, Ceil(cFrameSoundSize));
     end;
 
     prevKF := FFrames[i].KeyFrame;
