@@ -47,7 +47,7 @@ banks 1
 .define DblBufTileOffset 49 * TileSize
 .define FrameSampleCount 826 ; 344 cycles per PCM sample = one sample every 320 cycles
 .define FirstVBlankScanline 192
-.define LastVBlankScanline 252
+.define LastVBlankScanline 253
 
 .macro WaitVBlank args playSmp ; c0
     in a, (VDPControl)
@@ -219,25 +219,25 @@ banks 1
 
 .macro DoTilesUploadMany ; c
 
-        ; f' carry bit = VBlank?
+@Again:
+        ; VBlank bit restore
     ex af, af'
 
-@Again:
         ; when not in VBlank use slow upload
-    jr nc, @Slow
+    jp p, @Slow
 
     TilesUploadTileToVRAMFast
 
         ; update VSync bit
         ; (detect blank -> active display transition, accounting for delay before next upload)
     in a, (VDPScanline)
-    cp LastVBlankScanline ; safe?
-
-    dec e
-    jp nz, @Again
+    add a, 256 - LastVBlankScanline
 
         ; VBlank bit preserve
     ex af, af'
+
+    dec e
+    jp nz, @Again
 
     TilesUploadUnpack
 
@@ -249,31 +249,34 @@ banks 1
         ; (detect active display -> blank transition)
     in a, (VDPScanline)
     add a, 256 - FirstVBlankScanline
-
-    dec e
-    jp nz, @Again
+    sbc a, a ; carry into sign
 
         ; VBlank bit preserve
     ex af, af'
+
+    dec e
+    jp nz, @Again
 
     TilesUploadUnpack
 .endm
 
 .macro DoTilesUploadOne ; c228
 
-        ; f' carry bit = VBlank?
+        ; VBlank bit restore
     ex af, af'
 
-        ; when not in VBlank use slow upload
-    jp c, @Fast
+        ; when in VBlank use fast upload
+    jp m, @Fast
 
     TilesUploadTileToVRAMSlow
-    inc iy ; timing
+    dec de ; timing
+
 
         ; update VSync bit
         ; (detect active display -> blank transition)
     in a, (VDPScanline)
     add a, 256 - FirstVBlankScanline
+    sbc a, a ; carry into sign
 
     jp @End
 
@@ -284,7 +287,7 @@ banks 1
         ; update VSync bit
         ; (detect blank -> active display transition, accounting for delay before next upload)
     in a, (VDPScanline)
-    cp LastVBlankScanline ; safe?
+    add a, 256 - LastVBlankScanline
 
 @End:
 
@@ -672,9 +675,10 @@ BankChangeEnd:
     or (DblBufTileOffset | VRAMWrite) >> 8
     out (VDPControl), a
 
-        ; f' carry bit = VBlank? , we start in VBlank
+        ; f' sign bit = VBlank? , we start in VBlank
     ex af, af'
     scf
+    sbc a, a ; carry into sign
     ex af, af'
 
         ; Prepare VRAM write register
