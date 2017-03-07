@@ -48,6 +48,8 @@ banks 1
 .define FrameSampleCount 826 ; 344 cycles per PCM sample = one sample every 320 cycles
 
 .macro WaitVBlank args playSmp ; c0
+    in a, (VDPControl)
+
     .ifeq playSmp 1
         jp +++
 ---:
@@ -128,25 +130,13 @@ banks 1
 .endm
 
 .macro TilesUploadTileToVRAM args slow
-    .repeat TileSize  / 2 - 1
+    .repeat TileSize - 1
         outi
         .ifeq slow 1
             ld (hl), 0 ; no effect (writes ROM)
         .endif
     .endr
     outi
-
-    PlaySample
-
-    .repeat TileSize  / 2 - 1
-        outi
-        .ifeq slow 1
-            ld (hl), 0 ; no effect (writes ROM)
-        .endif
-    .endr
-    outi
-
-    PlaySample
 .endm
 
 .macro TilesUploadSetTilePointer
@@ -256,8 +246,6 @@ banks 1
 .endm
 
 .macro TMProcessNextCommand
-    PlaySample
-
         ; read next command
     ld a, (de)
     inc de
@@ -573,6 +561,7 @@ SlotEnd:
 
 NoFramePalette:
 
+        ; ensure same timing as palette
     .repeat 18
         ld (0), hl ; timing
     .endr
@@ -612,6 +601,7 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
 NoBankChange:
 
+        ; ensure same timing as bank change
     ld (0), a ; timing
     ld (0), a ; timing
 
@@ -622,11 +612,6 @@ NoBankChange:
 
 BankChangeEnd:
 ; c10
-
-    WaitVBlank 1
-    WaitVBlank 1
-    WaitVBlank 1
-    jp TilemapUnpackEnd
 
         ; Set tiles VRAM start address
     ld a, TileSize
@@ -650,6 +635,7 @@ BankChangeEnd:
 
         ; frame data pointer into sp
     ld sp, hl
+;c103
 
         ; start unpacking tile indexes
     TilesUploadUnpack
@@ -746,12 +732,14 @@ TilemapUnpackEnd:
         PlaySample
         Unpack6Samples
         Unpack6Samples
-        ld iy, 0 ; timing
+        cp 0 ; timing
+        cp 0 ; timing
 ; c320
         PlaySample
         Unpack6Samples
         Unpack6Samples
-        ld iy, 0 ; timing
+        cp 0 ; timing
+        cp 0 ; timing
 ; c320
         PlaySample
         Unpack6Samples
@@ -784,10 +772,7 @@ p3:
 
     ; restart PCM player on other buffer
     exx
-
-tstpcm:
     ld (PSGBufferA), hl ; debug tool (shows how many samples actually played per frame)
-
     ld hl, PSGBufferA + 1024 - 1
     ld a, (CurFrameIdx)
     and $01
