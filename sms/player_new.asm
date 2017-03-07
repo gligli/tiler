@@ -47,10 +47,12 @@ banks 1
 .define DblBufTileOffset 49 * TileSize
 .define PCMSpeed 45
 
-.macro WaitVBlank
+.macro WaitVBlank args playSmp
     in a, (VDPControl)
 ---:
-    PlaySample
+    .ifeq playSmp 1
+        PlaySample
+    .endif
     in a, (VDPControl)
     or a  ; update flags
     jp p, ---
@@ -65,19 +67,19 @@ banks 1
 .endm
 
 .macro PlaySample
-;     ex af, af'
-;     ld a, r
-;     sub PCMSpeed
-;     jp m, +++
-;     exx
-; 
-;     outd
-; 
-;     ld r, a
-; 
-;     exx
-; +++:
-;     ex af, af'
+    ex af, af'
+    ld a, r
+    sub PCMSpeed
+    jp m, +++
+    exx
+
+    outd
+
+    ld r, a
+
+    exx
++++:
+    ex af, af'
 .endm
 
 .macro Unpack6Samples
@@ -126,7 +128,17 @@ banks 1
 .endm
 
 .macro TilesUploadTileToVRAM args slow
-    .repeat TileSize - 1
+    .repeat TileSize  / 2 - 1
+        outi
+        .ifeq slow 1
+            ld (hl), 0 ; no effect (writes ROM)
+        .endif
+    .endr
+    outi
+
+    PlaySample
+
+    .repeat TileSize  / 2 - 1
         outi
         .ifeq slow 1
             ld (hl), 0 ; no effect (writes ROM)
@@ -205,7 +217,7 @@ banks 1
         ; update VSync bit
         ; (detect blank -> active display transition, accounting for delay before next upload)
     in a, (VDPScanline)
-    .ifeq 1 0
+    .ifeq 0 0
         add a, 256 - 253
         rla ; push sign into carry
     .else
@@ -468,7 +480,7 @@ main:
     djnz -
 
         ; algo expects VBlank state on start
-    WaitVBlank
+    WaitVBlank 0
 
 InitPlayer:
         ; init PCM player
@@ -508,9 +520,9 @@ InitPlayer:
     ld (MapperSlot2), a
 
 NextFrameLoad:
-;     WaitVBlank
-;     WaitVBlank
-;     WaitVBlank
+;     WaitVBlank 1
+;     WaitVBlank 1
+;     WaitVBlank 1
 ;     jp TilemapUnpackEnd
 
         ; are we using slot 2?
@@ -722,7 +734,7 @@ TilemapUnpackEnd:
 
 p2:
 
-    WaitVBlank
+    WaitVBlank 1
 
 p3:
         ; frame data pointer into de
@@ -731,7 +743,7 @@ p3:
     ; restart PCM player on other buffer
     exx
 tstpcm:
-    ld hl, PSGBufferA + 1024
+    ld hl, PSGBufferA + 1024 - 1
     ld a, (CurFrameIdx)
     and $01
     rla
@@ -782,7 +794,7 @@ p4: ; Advance to next frame
         ; restore command pointer into hl
     ex de, hl
     jp NextFrameLoad
-    
+
 ;==============================================================
 ; Data
 ;==============================================================
