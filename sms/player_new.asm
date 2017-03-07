@@ -46,6 +46,8 @@ banks 1
 
 .define DblBufTileOffset 49 * TileSize
 .define FrameSampleCount 826 ; 344 cycles per PCM sample = one sample every 320 cycles
+.define FirstVBlankScanline 192
+.define LastVBlankScanline 252
 
 .macro WaitVBlank args playSmp ; c0
     in a, (VDPControl)
@@ -129,17 +131,7 @@ banks 1
     inc bc
 .endm
 
-.macro TilesUploadTileToVRAM args slow
-    .repeat TileSize - 1
-        outi
-        .ifeq slow 1
-            ld (hl), 0 ; no effect (writes ROM)
-        .endif
-    .endr
-    outi
-.endm
-
-.macro TilesUploadSetTilePointer
+.macro TilesUploadSetTilePointer ; c72
         ; get a pointer on tile data from tile index
 
         ; upper bits of tile index select a rom bank
@@ -162,14 +154,14 @@ banks 1
     ld h, a
 .endm
 
-.macro TilesUploadUpdateTilePointer
+.macro TilesUploadUpdateTilePointer ; c37
         ; update tile pointer
 
         ; get byte offset from "tile index difference" using LUT
-    ld h, >TUTileIdxDiffToOffsetLUT
+    dec h; ld h, (>TUTileIdxDiffToOffsetLUT + 1)
     ld l, a
     ld a, (hl)
-    inc h
+    dec h; ld h, >TUTileIdxDiffToOffsetLUT
     ld h, (hl)
     ld l, a
 
@@ -177,7 +169,7 @@ banks 1
     add hl, de
 .endm
 
-.macro TilesUploadUnpack
+.macro TilesUploadUnpack  ; c49
         ; tile pointer saved into de
     ex de, hl
 
@@ -193,7 +185,39 @@ banks 1
     jp (hl)
 .endm
 
-.macro DoTilesUpload args many
+.macro TilesUploadTileToVRAMFast ; c192
+    .repeat 20
+        outi
+    .endr
+; c320
+    PlaySample
+    .repeat 12
+        outi
+    .endr
+.endm
+
+.macro TilesUploadTileToVRAMSlow ; c172
+    .repeat 12
+        outi
+        ld (hl), 0 ; timing
+    .endr
+    outi
+; c328
+    PlaySample
+    .repeat 12
+        outi
+        ld (hl), 0 ; timing
+    .endr
+; c312
+    PlaySample
+    .repeat 6
+        outi
+        ld (hl), 0 ; timing
+    .endr
+    outi
+.endm
+
+.macro DoTilesUploadMany ; c
 
         ; f' carry bit = VBlank?
     ex af, af'
@@ -202,23 +226,15 @@ banks 1
         ; when not in VBlank use slow upload
     jr nc, @Slow
 
-    TilesUploadTileToVRAM 0
+    TilesUploadTileToVRAMFast
 
         ; update VSync bit
         ; (detect blank -> active display transition, accounting for delay before next upload)
     in a, (VDPScanline)
-    .ifeq 0 0
-        add a, 256 - 253
-        rla ; push sign into carry
-    .else
-        ; faster but less safe?
-        cp 253
-    .endif
+    cp LastVBlankScanline ; safe?
 
-    .ifeq many 1
-        dec e
-        jp nz, @Again
-    .endif
+    dec e
+    jp nz, @Again
 
         ; VBlank bit preserve
     ex af, af'
@@ -227,22 +243,53 @@ banks 1
 
 @Slow:
 
-    TilesUploadTileToVRAM 1
+    TilesUploadTileToVRAMSlow
 
         ; update VSync bit
         ; (detect active display -> blank transition)
     in a, (VDPScanline)
-    add a, 256 - 192
+    add a, 256 - FirstVBlankScanline
 
-    .ifeq many 1
-        dec e
-        jp nz, @Again
-    .endif
+    dec e
+    jp nz, @Again
 
         ; VBlank bit preserve
     ex af, af'
 
     TilesUploadUnpack
+.endm
+
+.macro DoTilesUploadOne ; c228
+
+        ; f' carry bit = VBlank?
+    ex af, af'
+
+        ; when not in VBlank use slow upload
+    jp c, @Fast
+
+    TilesUploadTileToVRAMSlow
+    inc iy ; timing
+
+        ; update VSync bit
+        ; (detect active display -> blank transition)
+    in a, (VDPScanline)
+    add a, 256 - FirstVBlankScanline
+
+    jp @End
+
+@Fast:
+
+    TilesUploadTileToVRAMFast
+
+        ; update VSync bit
+        ; (detect blank -> active display transition, accounting for delay before next upload)
+    in a, (VDPScanline)
+    cp LastVBlankScanline ; safe?
+
+@End:
+
+        ; VBlank bit preserve
+    ex af, af'
 .endm
 
 .macro TMProcessNextCommand
@@ -641,6 +688,7 @@ BankChangeEnd:
     TilesUploadUnpack
 
 TilesUploadEnd:
+; c192
 
         ;copy tilemap cache into ram
     ld de, TileMapCache
@@ -859,7 +907,7 @@ PCMData:
 ; PCM fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0900:
+.org $0a00:
 PCMUnpackLUT:
     .repeat 256 index dat
         .db $90 | ((dat >> 4) & $0f)
@@ -884,7 +932,7 @@ PCMUnpackLUT:
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0f00
+.org $1000
 TUUnpackJumpTable:
     .repeat 223
         .db >TUDoStandard
@@ -895,7 +943,7 @@ TUUnpackJumpTable:
         .db >TUDoRepeat
     .endr
 
-.org $1000
+.org $1100
 TUDoRepeat:
         ; tile pointer back into hl
     ex de, hl
@@ -904,9 +952,9 @@ TUDoRepeat:
     sub 223
     ld e, a
 
-    DoTilesUpload 1
+    DoTilesUploadMany
 
-.org $1200
+.org $1300
 TUDoDirectValue:
         ; direct value, load tile index from frame data pointer
 
@@ -915,9 +963,14 @@ TUDoDirectValue:
         ; tile index to tile pointer
     TilesUploadSetTilePointer
 
-    DoTilesUpload 0
+    DoTilesUploadOne
 
-.org $1400
+; c347
+    PlaySample ; here because TilesUploadUnpack doesn't return
+
+    TilesUploadUnpack
+
+.org $1500
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -932,22 +985,27 @@ TUDoTerminator:
     jp TilesUploadEnd
 
 .org $1600
+TUTileIdxDiffToOffsetLUT:
+    .repeat 256 index idx
+        .db (idx * TileSize) >> 8
+    .endr
+    .repeat 256 index idx
+        .db (idx * TileSize) & $ff
+    .endr
+
+.org $1800
 TUDoStandard:
         ; standard case, increment tile index
 
         ; increment tile pointer of "tile index difference" tiles (still de <-> hl)
     TilesUploadUpdateTilePointer
 
-    DoTilesUpload 0
+    DoTilesUploadOne
 
-.org $1800
-TUTileIdxDiffToOffsetLUT:
-    .repeat 256 index idx
-        .db (idx * TileSize) & $ff
-    .endr
-    .repeat 256 index idx
-        .db (idx * TileSize) >> 8
-    .endr
+; c314
+    PlaySample ; here because TilesUploadUnpack doesn't return
+
+    TilesUploadUnpack
 
 ;==============================================================
 ; Tilemap upload fixed sequences (jump tables, LUTs)
