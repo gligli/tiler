@@ -384,8 +384,6 @@ banks 1
         ; sp (reverse local tilemap pointer) must be updated too
     ld sp, hl
     inc sp
-
-    TMProcessNextCommand
 .endm
 
 .macro TMUploadRawMacro args rpt
