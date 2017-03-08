@@ -302,7 +302,7 @@ banks 1
 
         ; jump to command code using jump table
     ld l, a
-    ld h, >TMCommandsJumpTable
+    ld h, c
     ld h, (hl)
     ld l, 0
     jp (hl)
@@ -331,13 +331,16 @@ banks 1
         .ifeq idx 0
             dec l
         .else
-            nop ; ensure min 26 cycles between VRAM writes
+            nop ; timing
         .endif
         ld a, (hl)
         ld c, a
         out (VDPData), a
         push bc ; store tilemap item into LocalTileMap
     .endr
+
+        ; jump table offset back into c
+    ld c, ixl
 .endm
 
 .macro TMUploadCacheIndexMacro args cacheIdx
@@ -354,20 +357,15 @@ banks 1
     out (VDPData), a
 .endm
 
-.macro TMUploadSkipMacro
+.macro TMSkipHalfMacro args half
         ; local tilemap pointer
     ld hl, -1
     add hl, sp
-        ; loop counter (command is skip count)
+        ; loop counter (command is skip count * 2 already)
     ld b, a
         ; target register
     ld c, VDPData
 
-        ; depending on VRAM "half", will call TMSkipHalfMacro 0 or 1
-    jp (ix)
-.endm
-
-.macro TMSkipHalfMacro args half
         ; upload "skip count" prev items from local tilemap
 -:
         ; tilemap item low byte
@@ -384,22 +382,25 @@ banks 1
         ; sp (reverse local tilemap pointer) must be updated too
     ld sp, hl
     inc sp
+
+        ; jump table offset back into c
+    ld c, (>TMCommandsJumpTable + half)
 .endm
 
 .macro TMUploadRawMacro args rpt
         ; high byte of tilemap item from command
     and iyl  ; iyl = $0e or $0f depending on VRAM "side"
-    ld c, a
+    ld l, a
 
     .repeat rpt index idx
             ; low byte of tilemap item
         ld a, (de)
-        ld b, a
+        ld h, a
         out (VDPData), a
-        push bc ; store tilemap item into LocalTileMap
+        push hl ; store tilemap item into LocalTileMap
 
             ; high byte of tilemap item
-        ld a, c
+        ld a, l
         out (VDPData), a
         .ifneq idx (rpt - 1)
             nop
@@ -725,18 +726,21 @@ TilesUploadEnd:
     ld c, a
         ; we want to move bit 0 to bit 5
     rrca
-    ld ixl, a ; VRAM "half" in ixl bit 7
     rrca
     rrca
     or VRAMWrite >> 8
     out (VDPControl), a
-    
+
+        ; $e for first "half", $0f for second in iyl
     ld a, c
     or $0e
-    ld iyl, a ; $e for first "half", $0f for second in iyl
+    ld iyl, a
 
-        ; prepare (ix) jump table
-    ld ixh, >TMSkipHalf0
+        ; jump table offset depending on VRAM "half" into c and ixl
+    ld a, c
+    add a, >TMCommandsJumpTable
+    ld c, a
+    ld ixl, a
 
         ; save command pointer into de
     ex de, hl
@@ -1013,15 +1017,15 @@ TUDoStandard:
 ; Tilemap upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $1a00
+.org $1900
 TMCommandsJumpTable:
     ; $00
     .db >TMTerminator
     .repeat 24 index idx
-        .db (>TMCacheIndex + idx), >TMSkip
+        .db (>TMCacheIndex + idx), >TMSkipHalf0
     .endr
     .repeat 7 index idx
-        .db >TMCacheRpt1, >TMSkip
+        .db >TMCacheRpt1, >TMSkipHalf0
     .endr
     .db >TMCacheRpt1
     ; $40
@@ -1033,6 +1037,36 @@ TMCommandsJumpTable:
         .db >TMCacheRpt4, >TMCacheRpt5
     .endr
     ; $C0
+    .repeat 8
+        .db >TMCacheRpt6, >TMRawRpt1
+    .endr
+    .repeat 8
+        .db >TMCacheRpt6, >TMRawRpt2
+    .endr
+    .repeat 8
+        .db >TMCacheRpt6, >TMRawRpt3
+    .endr
+    .repeat 8
+        .db >TMCacheRpt6, >TMRawRpt4
+    .endr
+    ; $100
+    .db >TMTerminator
+    .repeat 24 index idx
+        .db (>TMCacheIndex + idx), >TMSkipHalf1
+    .endr
+    .repeat 7 index idx
+        .db >TMCacheRpt1, >TMSkipHalf1
+    .endr
+    .db >TMCacheRpt1
+    ; $140
+    .repeat 32
+        .db >TMCacheRpt2, >TMCacheRpt3
+    .endr
+    ; $180
+    .repeat 32
+        .db >TMCacheRpt4, >TMCacheRpt5
+    .endr
+    ; $1C0
     .repeat 8
         .db >TMCacheRpt6, >TMRawRpt1
     .endr
@@ -1082,46 +1116,41 @@ TMRawRpt1:
     TMProcessNextCommand
 
 .org $3800
-TMSkip:
-    TMUploadSkipMacro
-    TMProcessNextCommand
-
-.org $3900
 TMCacheRpt6:
     TMUploadCacheRepeatMacro 6
     TMProcessNextCommand
 
-.org $3a00
+.org $3900
 TMCacheRpt5:
     TMUploadCacheRepeatMacro 5
     TMProcessNextCommand
 
-.org $3b00
+.org $3a00
 TMCacheRpt4:
     TMUploadCacheRepeatMacro 4
     TMProcessNextCommand
 
-.org $3c00
+.org $3b00
 TMCacheRpt3:
     TMUploadCacheRepeatMacro 3
     TMProcessNextCommand
 
-.org $3d00
+.org $3c00
 TMCacheRpt2:
     TMUploadCacheRepeatMacro 2
     TMProcessNextCommand
 
-.org $3e00
+.org $3d00
 TMCacheRpt1:
     TMUploadCacheRepeatMacro 1
     TMProcessNextCommand
 
-.org $3f00
+.org $3e00
 TMSkipHalf0:
     TMSkipHalfMacro 0
     TMProcessNextCommand
 
-.org $3f80
+.org $3f00
 TMSkipHalf1:
     TMSkipHalfMacro 1
     TMProcessNextCommand
