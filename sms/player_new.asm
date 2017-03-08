@@ -304,7 +304,7 @@ banks 1
     ld l, a
     ld h, c
     ld h, (hl)
-    ld l, 0
+    ld l, b
     jp (hl)
 .endm
 
@@ -341,6 +341,7 @@ banks 1
 
         ; jump table offset back into c
     ld c, ixl
+    ld b, 0
 .endm
 
 .macro TMUploadCacheIndexMacro args cacheIdx
@@ -741,6 +742,9 @@ TilesUploadEnd:
     add a, >TMCommandsJumpTable
     ld c, a
     ld ixl, a
+
+        ; expected for TMProcessNextCommand
+    ld b, 0
 
         ; save command pointer into de
     ex de, hl
