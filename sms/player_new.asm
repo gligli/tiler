@@ -87,7 +87,7 @@ banks 1
     exx
 .endm
 
-.macro PlaySampleSkew args skew
+.macro PlaySampleSkew args skew ; clobbers af
     exx
     ld a, e
     add a, (skew + 33) / 328 * 256
@@ -96,6 +96,23 @@ banks 1
 ++++:
     ld e, a
     exx
+.endm
+
+.macro PSMoveSkewToSkew2 ; c20
+    exx
+    ex af, af'
+    ld a, e
+    ex af, af'
+    exx
+.endm
+
+.macro PlaySampleSkew2 args skew ; clobbers af'
+    ex af, af'
+    add a, (skew + 25) / 320 * 256
+    jp nc, ++++
+        PlaySample
+++++:
+    ex af, af'
 .endm
 
 .macro Unpack6Samples ; c153
@@ -262,7 +279,46 @@ banks 1
     ex af, af'
 .endm
 
-.macro TMProcessNextCommand
+.macro TMCopy2CacheSlots args ps
+        ; load both high nibbles
+    ld a, (hl)
+    inc hl
+
+    .ifeq ps 0
+        PlaySample
+    .endif
+
+        ; high nibble a
+    ld (de), a
+    inc e
+
+    .ifeq ps 1
+        PlaySample
+    .endif
+
+        ; low byte a
+    ldi
+
+    .ifeq ps 2
+        PlaySample
+    .endif
+
+        ; high nibble b
+    .repeat 4
+        rrca
+    .endr
+    ld (de), a
+    inc e
+
+    .ifeq ps 3
+        PlaySample
+    .endif
+
+        ; low byte b
+    ldi
+.endm
+
+.macro TMProcessNextCommand ; c34
         ; read next command
     ld a, (de)
     inc de
@@ -275,7 +331,7 @@ banks 1
     jp (hl)
 .endm
 
-.macro TMUploadCacheRepeatMacro args rpt
+.macro TMUploadCacheRepeatMacro args rpt  ;c40+52*rpt
         ; compute cache address
     .ifeq rpt 1
         dec a
@@ -291,6 +347,10 @@ banks 1
     ld h, (hl)
     ld l, a
 
+    .ifeq rpt 6
+;        PlaySample
+    .endif
+
     .repeat rpt index idx
             ; low byte of tilemap item
         ld a, h
@@ -303,6 +363,12 @@ banks 1
         out (VDPData), a
         push hl ; store tilemap item into LocalTileMap
     .endr
+
+    .ifeq rpt 6
+;        PlaySampleSkew2 32
+    .else
+;        PlaySampleSkew2 rpt*52+40
+    .endif
 .endm
 
 .macro TMUploadCacheIndexMacro args cacheIdx
@@ -662,32 +728,31 @@ BankChangeEnd:
     TilesUploadUnpack
 
 TilesUploadEnd:
-; c192
+        
+        ; PlaySampleSkew2 is faster and works with next algo
+    PSMoveSkewToSkew2
+; c205
 
         ;copy tilemap cache into ram
     ld de, TileMapCache
-    .repeat 16
-            ; load both high nibbles
-        ld a, (hl)
-        inc hl
-
-            ; high nibble a
-        ld (de), a
-        inc e
-
-            ; low byte a
-        ldi
-
-            ; high nibble b
-        .repeat 4
-            rrca
-        .endr
-        ld (de), a
-        inc e
-
-            ; low byte b
-        ldi
-    .endr
+    TMCopy2CacheSlots 1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots 0
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    PlaySample
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots 3
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots 2
+; c43
 
         ; Set tilemap VRAM pointer (also store it into ix)
     xor a
@@ -710,6 +775,7 @@ TilesUploadEnd:
 
         ; sp will be used as a pointer on a reversed local tilemap
     ld sp, LocalTileMapEnd
+; c133
 
         ; start unpacking tilemap
     TMProcessNextCommand
@@ -718,10 +784,10 @@ TilemapUnpackEnd:
 
     ld b, h
     ld c, l
-    ld iyh, b
-    ld iyl, c
 
 .ifdef FIXED_PCM
+    ld iyh, b
+    ld iyl, c
     ld bc, PCMData
 .endif
 
@@ -773,10 +839,12 @@ TilemapUnpackEnd:
 ; c31
 
         ; restore frame data pointer into hl
-    ld a, iyh
-    ld h, a
-    ld a, iyl
-    ld l, a
+.ifdef FIXED_PCM
+    ld b, iyh
+    ld c, iyl
+.endif
+    ld h, b
+    ld l, c
 ; c55
 
 p2:
