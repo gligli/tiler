@@ -59,10 +59,10 @@ banks 1
         PlaySample
 +++:
 ; c0
-        .repeat 19
-            add iy, iy ; timing
-        .endr
-        inc iy ; timing
+         .repeat 19
+             add iy, iy ; timing
+         .endr
+         inc iy ; timing
 ; c295
     .else
 ---:
@@ -84,6 +84,17 @@ banks 1
 .macro PlaySample
     exx
     outd
+    exx
+.endm
+
+.macro PlaySampleSkew args skew
+    exx
+    ld a, e
+    add a, (skew + 33) / 328 * 256
+    jp nc, ++++
+        outd
+++++:
+    ld e, a
     exx
 .endm
 
@@ -477,6 +488,7 @@ InitPlayer:
     exx
     ld c, PSGPort
     ld hl, PSGBufferB + 1024 - 1
+    ld de, 0
     exx
 
         ; map slot 1 to beginning of video data
@@ -769,7 +781,7 @@ TilemapUnpackEnd:
 
 p2:
 
-    WaitVBlank 1
+    WaitVBlank 0
 
 p3:
         ; frame data pointer into de
@@ -909,7 +921,7 @@ TUDoStandard:
         ; update "remaining tiles" counter
     dec ixh
 
-; c314
+; c322
     PlaySample ; here because TilesUploadUnpack doesn't return
 
     TilesUploadUnpack
@@ -923,18 +935,19 @@ TUDoDirectValue:
         ; tile index to tile pointer
     TilesUploadSetTilePointer
 
+    PlaySampleSkew 43
+
         ; upload tile
     DoTilesUploadOne
 
         ; update "remaining tiles" counter
     dec ixh
 
-; c343
     PlaySample ; here because TilesUploadUnpack doesn't return
 
     TilesUploadUnpack
 
-.org $1200
+.org $1300
 TUDoRepeat:
         ; tile pointer back into hl
     ex de, hl
@@ -942,7 +955,6 @@ TUDoRepeat:
         ; repeat, value - 223 times
     sub 223
 
-@UploadMax:
     ld d, a
 
         ; update "remaining tiles" counter
@@ -950,32 +962,17 @@ TUDoRepeat:
     add a, ixh
     ld ixh, a
 
-@Begin:
+    PlaySampleSkew 88
+    
+@Loop:
     DoTilesUploadOne
+    PlaySampleSkew 242
     dec d
-    jp z, @End
-
-    DoTilesUploadOne
-    dec d
-    jp z, @End
-
-    PlaySample
-
-    DoTilesUploadOne
-    dec d
-    jp z, @End
-
-    PlaySample
-
-    DoTilesUploadOne
-    dec d
-    jp nz, @Begin
-@End:
-    PlaySample
+    jp nz, @Loop
 
     TilesUploadUnpack
 
-.org $1600
+.org $1500
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -983,12 +980,18 @@ TUDoTerminator:
     ex de, hl
 
         ; always upload max tiles to ensure proper video timing
-    ld a, ixh
-    cp 0
-    jp z, +
-    dec sp ; at the end of TUDoRepeat, call TUDoTerminator again
-    jp TUDoRepeat@UploadMax
-+:
+    ld d, ixh
+    inc d
+    dec d
+    jp z, @MaxUploaded
+
+@Loop:
+    DoTilesUploadOne
+    PlaySampleSkew 242
+    dec d
+    jp nz, @Loop
+
+@MaxUploaded:
 
         ; restore mapper slot
     ld a, ixl
