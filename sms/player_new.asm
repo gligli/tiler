@@ -98,14 +98,6 @@ banks 1
     exx
 .endm
 
-.macro PSMoveSkewToSkew2 ; c20
-    exx
-    ex af, af'
-    ld a, e
-    ex af, af'
-    exx
-.endm
-
 .macro PlaySampleSkew2 args skew ; clobbers af'
     ex af, af'
     add a, (skew + 25) / 320 * 256
@@ -113,6 +105,14 @@ banks 1
         PlaySample
 ++++:
     ex af, af'
+.endm
+
+.macro PSMoveSkewToSkew2 ; c20
+    exx
+    ex af, af'
+    ld a, e
+    ex af, af'
+    exx
 .endm
 
 .macro Unpack6Samples ; c153
@@ -226,20 +226,24 @@ banks 1
 .macro TilesUploadTileToVRAMSlow ; c172
     .repeat 12
         outi
-        ld (hl), 0 ; timing
+        inc iy ; timing
     .endr
     outi
 ; c328
     PlaySample
     .repeat 12
         outi
-        ld (hl), 0 ; timing
+        dec iy ; timing
     .endr
 ; c312
     PlaySample
-    .repeat 6
+    .repeat 3
         outi
-        ld (hl), 0 ; timing
+        inc iy ; timing
+    .endr
+    .repeat 3
+        outi
+        dec iy ; timing
     .endr
     outi
 .endm
@@ -347,8 +351,8 @@ banks 1
     ld h, (hl)
     ld l, a
 
-    .ifeq rpt 6
-;        PlaySample
+    .ifgreq rpt 5
+        PlaySample
     .endif
 
     .repeat rpt index idx
@@ -365,13 +369,17 @@ banks 1
     .endr
 
     .ifeq rpt 6
-;        PlaySampleSkew2 32
+        PlaySampleSkew2 66
     .else
-;        PlaySampleSkew2 rpt*52+40
+        .ifeq rpt 5
+            PlaySampleSkew2 14
+        .else
+            PlaySampleSkew2 52*rpt+40+34
+        .endif
     .endif
 .endm
 
-.macro TMUploadCacheIndexMacro args cacheIdx
+.macro TMUploadCacheIndexMacro args cacheIdx ; c57
     ld hl, (TileMapCache + cacheIdx * 2)
 
         ; low byte of tilemap item
@@ -383,9 +391,11 @@ banks 1
         ; high byte of tilemap item
     ld a, l
     out (VDPData), a
+
+    PlaySampleSkew2 57+34
 .endm
 
-.macro TMSkipMacro args half
+.macro TMSkipMacro args half ; c54
         ; local tilemap pointer
     ld hl, -1
     add hl, sp
@@ -404,7 +414,11 @@ banks 1
     .else
         res 0, (hl)
     .endif
+
+    PlaySampleSkew2 50
+
     outd
+
     jp nz, -
 
         ; sp (reverse local tilemap pointer) must be updated too
@@ -413,9 +427,11 @@ banks 1
 
         ; jump table offset back into bc
     ld bc, TMCommandsJumpTable + half * $80
+
+    PlaySampleSkew2 54+34
 .endm
 
-.macro TMUploadRawMacro args rpt, half
+.macro TMUploadRawMacro args rpt, half ; c4+4*(1-half)+52*rpt
         ; high byte of tilemap item from command
     .ifeq half 0
         dec a
@@ -438,6 +454,8 @@ banks 1
             inc de
         .endif
     .endr
+
+    PlaySampleSkew2 52*rpt+4+4*(1-half)+34
 .endm
 
 ;==============================================================
@@ -648,7 +666,7 @@ NoFramePalette:
 ; c320
     PlaySample
 
-    .repeat 16
+    .repeat 15
         ld (0), hl ; timing
     .endr
 
@@ -849,7 +867,7 @@ TilemapUnpackEnd:
 
 p2:
 
-    WaitVBlank 0
+    WaitVBlank 1
 
 p3:
         ; frame data pointer into de
