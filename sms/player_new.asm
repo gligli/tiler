@@ -318,30 +318,24 @@ banks 1
     ld h, >TileMapCache
     ld l, a
 
-        ; tilemap item  low byte into b
+        ; tilemap item into hl
+    ld a, (hl)
     inc l
-    ld b, (hl)
+    ld h, (hl)
+    ld l, a
 
     .repeat rpt index idx
             ; low byte of tilemap item
-        ld a, b
+        ld a, h
         out (VDPData), a
+
+        in a, (VDPScanline) ; timing
 
             ; high byte of tilemap item
-        .ifeq idx 0
-            dec l
-        .else
-            nop ; timing
-        .endif
-        ld a, (hl)
-        ld c, a
+        ld a, l
         out (VDPData), a
-        push bc ; store tilemap item into LocalTileMap
+        push hl ; store tilemap item into LocalTileMap
     .endr
-
-        ; jump table offset back into c
-    ld c, ixl
-    ld b, 0
 .endm
 
 .macro TMUploadCacheIndexMacro args cacheIdx
@@ -734,11 +728,10 @@ TilesUploadEnd:
     or VRAMWrite >> 8
     out (VDPControl), a
 
-        ; jump table offset depending on VRAM "half" into c and ixl
+        ; jump table offset depending on VRAM "half" into c
     ld a, c
     add a, >TMCommandsJumpTable
     ld c, a
-    ld ixl, a
 
         ; expected for TMProcessNextCommand
     ld b, 0
