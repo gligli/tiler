@@ -358,7 +358,7 @@ banks 1
     out (VDPData), a
 .endm
 
-.macro TMSkipHalfMacro args half
+.macro TMSkipMacro args half
         ; local tilemap pointer
     ld hl, -1
     add hl, sp
@@ -388,9 +388,11 @@ banks 1
     ld c, (>TMCommandsJumpTable + half)
 .endm
 
-.macro TMUploadRawMacro args rpt
+.macro TMUploadRawMacro args rpt, half
         ; high byte of tilemap item from command
-    and iyl  ; iyl = $0e or $0f depending on VRAM "side"
+    .ifeq half 0
+        dec a
+    .endif
     ld l, a
 
     .repeat rpt index idx
@@ -732,11 +734,6 @@ TilesUploadEnd:
     or VRAMWrite >> 8
     out (VDPControl), a
 
-        ; $e for first "half", $0f for second in iyl
-    ld a, c
-    or $0e
-    ld iyl, a
-
         ; jump table offset depending on VRAM "half" into c and ixl
     ld a, c
     add a, >TMCommandsJumpTable
@@ -895,19 +892,6 @@ p4: ; Advance to next frame
     jp NextFrameLoad
  ; c229
 
-;==============================================================
-; Data
-;==============================================================
-
-PSGInit:
-.db $9f $bf $df $ff $81 $00 $a1 $00 $c1 $00
-PSGInitEnd:
-
-; VDP initialisation data
-VDPInitData:
-.db $04,$80,$00,$81,$f9,$82,$ff,$85,$ff,$86,$ff,$87,$00,$88,$00,$89,$ff,$8a
-VDPInitDataEnd:
-
 .ifdef FIXED_PCM
 PCMData:
 .incbin "220hz344cy.bin"
@@ -917,7 +901,7 @@ PCMData:
 ; PCM fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0a00:
+.org $0800:
 PCMUnpackLUT:
     .repeat 256 index dat
         .db $90 | ((dat >> 4) & $0f)
@@ -942,7 +926,7 @@ PCMUnpackLUT:
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $1000
+.org $0e00
 TUUnpackJumpTable:
     .repeat 223
         .db >TUDoStandard
@@ -953,7 +937,30 @@ TUUnpackJumpTable:
         .db >TUDoRepeat
     .endr
 
+.org $0f00
+TUTileIdxDiffToOffsetLUT:
+    .repeat 256 index idx
+        .db (idx * TileSize) >> 8
+    .endr
+    .repeat 256 index idx
+        .db (idx * TileSize) & $ff
+    .endr
+
 .org $1100
+TUDoStandard:
+        ; standard case, increment tile index
+
+        ; increment tile pointer of "tile index difference" tiles (still de <-> hl)
+    TilesUploadUpdateTilePointer
+
+    DoTilesUploadOne
+
+; c314
+    PlaySample ; here because TilesUploadUnpack doesn't return
+
+    TilesUploadUnpack
+
+.org $1200
 TUDoRepeat:
         ; tile pointer back into hl
     ex de, hl
@@ -980,7 +987,7 @@ TUDoDirectValue:
 
     TilesUploadUnpack
 
-.org $1500
+.org $1400
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -994,34 +1001,11 @@ TUDoTerminator:
 
     jp TilesUploadEnd
 
-.org $1600
-TUTileIdxDiffToOffsetLUT:
-    .repeat 256 index idx
-        .db (idx * TileSize) >> 8
-    .endr
-    .repeat 256 index idx
-        .db (idx * TileSize) & $ff
-    .endr
-
-.org $1800
-TUDoStandard:
-        ; standard case, increment tile index
-
-        ; increment tile pointer of "tile index difference" tiles (still de <-> hl)
-    TilesUploadUpdateTilePointer
-
-    DoTilesUploadOne
-
-; c314
-    PlaySample ; here because TilesUploadUnpack doesn't return
-
-    TilesUploadUnpack
-
 ;==============================================================
 ; Tilemap upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $1900
+.org $1500
 TMCommandsJumpTable:
     ; $00
     .db >TMTerminator
@@ -1042,16 +1026,16 @@ TMCommandsJumpTable:
     .endr
     ; $C0
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt1
+        .db >TMCacheRpt6, >TMRawRpt1Half0
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt2
+        .db >TMCacheRpt6, >TMRawRpt2Half0
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt3
+        .db >TMCacheRpt6, >TMRawRpt3Half0
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt4
+        .db >TMCacheRpt6, >TMRawRpt4Half0
     .endr
     ; $100
     .db >TMTerminator
@@ -1072,89 +1056,122 @@ TMCommandsJumpTable:
     .endr
     ; $1C0
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt1
+        .db >TMCacheRpt6, >TMRawRpt1Half1
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt2
+        .db >TMCacheRpt6, >TMRawRpt2Half1
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt3
+        .db >TMCacheRpt6, >TMRawRpt3Half1
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt4
+        .db >TMCacheRpt6, >TMRawRpt4Half1
     .endr
 
-.org $1b00
+.org $1700
 TMCacheIndex:
 .repeat 24 index idx
-    .org $1b00 + (idx * 256)
+    .org $1700 + (idx * 256)
         TMUploadCacheIndexMacro idx
         TMProcessNextCommand
 .endr
 
+.org $2f00
+TMRawRpt4Half0:
+    TMUploadRawMacro 4, 0
+    TMProcessNextCommand
+
+.org $3000
+TMRawRpt3Half0:
+    TMUploadRawMacro 3, 0
+    TMProcessNextCommand
+
+.org $3100
+TMRawRpt2Half0:
+    TMUploadRawMacro 2, 0
+    TMProcessNextCommand
+
+.org $3200
+TMRawRpt1Half0:
+    TMUploadRawMacro 1, 0
+    TMProcessNextCommand
+
 .org $3300
+TMRawRpt4Half1:
+    TMUploadRawMacro 4, 1
+    TMProcessNextCommand
+
+.org $3400
+TMRawRpt3Half1:
+    TMUploadRawMacro 3, 1
+    TMProcessNextCommand
+
+.org $3500
+TMRawRpt2Half1:
+    TMUploadRawMacro 2, 1
+    TMProcessNextCommand
+
+.org $3600
+TMRawRpt1Half1:
+    TMUploadRawMacro 1, 1
+    TMProcessNextCommand
+
+.org $3700
+TMCacheRpt6:
+    TMUploadCacheRepeatMacro 6
+    TMProcessNextCommand
+
+.org $3800
+TMCacheRpt5:
+    TMUploadCacheRepeatMacro 5
+    TMProcessNextCommand
+
+.org $3900
+TMCacheRpt4:
+    TMUploadCacheRepeatMacro 4
+    TMProcessNextCommand
+
+.org $3a00
+TMCacheRpt3:
+    TMUploadCacheRepeatMacro 3
+    TMProcessNextCommand
+
+.org $3b00
+TMCacheRpt2:
+    TMUploadCacheRepeatMacro 2
+    TMProcessNextCommand
+
+.org $3c00
+TMCacheRpt1:
+    TMUploadCacheRepeatMacro 1
+    TMProcessNextCommand
+
+.org $3d00
+TMSkipHalf0:
+    TMSkipMacro 0
+    TMProcessNextCommand
+
+.org $3e00
+TMSkipHalf1:
+    TMSkipMacro 1
+    TMProcessNextCommand
+
+.org $3f00
 TMTerminator:
         ; frame data pointer into hl
     ex de, hl
 
     jp TilemapUnpackEnd
 
-.org $3400
-TMRawRpt4:
-    TMUploadRawMacro 4
-    TMProcessNextCommand
+;==============================================================
+; Data
+;==============================================================
 
-.org $3500
-TMRawRpt3:
-    TMUploadRawMacro 3
-    TMProcessNextCommand
+PSGInit:
+.db $9f $bf $df $ff $81 $00 $a1 $00 $c1 $00
+PSGInitEnd:
 
-.org $3600
-TMRawRpt2:
-    TMUploadRawMacro 2
-    TMProcessNextCommand
-
-.org $3700
-TMRawRpt1:
-    TMUploadRawMacro 1
-    TMProcessNextCommand
-
-.org $3800
-TMCacheRpt6:
-    TMUploadCacheRepeatMacro 6
-    TMProcessNextCommand
-
-.org $3900
-TMCacheRpt5:
-    TMUploadCacheRepeatMacro 5
-    TMProcessNextCommand
-
-.org $3a00
-TMCacheRpt4:
-    TMUploadCacheRepeatMacro 4
-    TMProcessNextCommand
-
-.org $3b00
-TMCacheRpt3:
-    TMUploadCacheRepeatMacro 3
-    TMProcessNextCommand
-
-.org $3c00
-TMCacheRpt2:
-    TMUploadCacheRepeatMacro 2
-    TMProcessNextCommand
-
-.org $3d00
-TMCacheRpt1:
-    TMUploadCacheRepeatMacro 1
-    TMProcessNextCommand
-
-.org $3e00
-TMSkipHalf0:
-    TMSkipHalfMacro 0
-    TMProcessNextCommand
-
-.org $3f00
-TMSkipHalf1:
-    TMSkipHalfMacro 1
-    TMProcessNextCommand
+; VDP initialisation data
+VDPInitData:
+.db $04,$80,$00,$81,$f9,$82,$ff,$85,$ff,$86,$ff,$87,$00,$88,$00,$89,$ff,$8a
+VDPInitDataEnd:
