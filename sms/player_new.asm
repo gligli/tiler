@@ -131,7 +131,7 @@ banks 1
     inc bc
 .endm
 
-.macro TilesUploadSetTilePointer ; c72
+.macro TilesUploadSetTilePointer ; c68
         ; get a pointer on tile data from tile index
 
         ; upper bits of tile index select a rom bank
@@ -140,17 +140,15 @@ banks 1
 
     ld (MapperSlot2), a
 
-        ; lower bits select an offset in that bank
-        ; we want the low 9 bits of hl, x32, +$4000, in hl
-        ; %-------a bcdefghi
-        ;   to
-        ; %10abcdef ghi00000
-    ld a, l
-    ld l, %00000010 ; to get the high bits we need
-    .repeat 3
-        rra     ; then rotate carry - a - l right three times
-        rr l
-    .endr
+    sbc a, a ; get a mask of "carry" bits
+    and $20 ; carry is $100 * Tilesize = $2000 bytes
+    or $80 ; add pointer high bits ($8000)
+
+        ; get pointer using LUT
+    ld h, >TUTileIndexToOffsetLUT
+    add a, (hl) ; add high byte from LUT
+    inc h
+    ld l, (hl) ; low byte from LUT
     ld h, a
 .endm
 
@@ -158,10 +156,10 @@ banks 1
         ; update tile pointer
 
         ; get byte offset from "tile index difference" using LUT
-    dec h; ld h, (>TUTileIdxDiffToOffsetLUT + 1)
+    dec h ; ld h, (>TUTileIndexToOffsetLUT + 1)
     ld l, a
     ld a, (hl)
-    dec h; ld h, >TUTileIdxDiffToOffsetLUT
+    dec h
     ld h, (hl)
     ld l, a
 
@@ -926,7 +924,7 @@ TUUnpackJumpTable:
     .endr
 
 .org $0f00
-TUTileIdxDiffToOffsetLUT:
+TUTileIndexToOffsetLUT:
     .repeat 256 index idx
         .db (idx * TileSize) >> 8
     .endr
@@ -970,7 +968,7 @@ TUDoDirectValue:
 
     DoTilesUploadOne
 
-; c347
+; c343
     PlaySample ; here because TilesUploadUnpack doesn't return
 
     TilesUploadUnpack
