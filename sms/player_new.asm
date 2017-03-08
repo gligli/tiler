@@ -48,6 +48,7 @@ banks 1
 .define FrameSampleCount 826 ; 344 cycles per PCM sample = one sample every 320 cycles
 .define FirstVBlankScanline 192
 .define LastVBlankScanline 253
+.define MaxTilesPerVideoFrames 207
 
 .macro WaitVBlank args playSmp ; c0
     in a, (VDPControl)
@@ -215,59 +216,16 @@ banks 1
     outi
 .endm
 
-.macro DoTilesUploadMany ; c
-
-@Again:
-        ; VBlank bit restore
-    ex af, af'
-
-        ; when not in VBlank use slow upload
-    jp p, @Slow
-
-    TilesUploadTileToVRAMFast
-
-        ; update VSync bit
-        ; (detect blank -> active display transition, accounting for delay before next upload)
-    in a, (VDPScanline)
-    add a, 256 - LastVBlankScanline
-
-        ; VBlank bit preserve
-    ex af, af'
-
-    dec e
-    jp nz, @Again
-
-    TilesUploadUnpack
-
-@Slow:
-
-    TilesUploadTileToVRAMSlow
-
-        ; update VSync bit
-        ; (detect active display -> blank transition)
-    in a, (VDPScanline)
-    add a, 256 - FirstVBlankScanline
-    sbc a, a ; carry into sign
-
-        ; VBlank bit preserve
-    ex af, af'
-
-    dec e
-    jp nz, @Again
-
-    TilesUploadUnpack
-.endm
-
 .macro DoTilesUploadOne ; c228
 
         ; VBlank bit restore
     ex af, af'
 
         ; when in VBlank use fast upload
-    jp m, @Fast
+    jp m, ++
 
     TilesUploadTileToVRAMSlow
-    dec de ; timing
+    inc de ; timing
 
 
         ; update VSync bit
@@ -276,9 +234,9 @@ banks 1
     add a, 256 - FirstVBlankScanline
     sbc a, a ; carry into sign
 
-    jp @End
+    jp +++
 
-@Fast:
+++:
 
     TilesUploadTileToVRAMFast
 
@@ -287,7 +245,7 @@ banks 1
     in a, (VDPScanline)
     add a, 256 - LastVBlankScanline
 
-@End:
++++:
 
         ; VBlank bit preserve
     ex af, af'
@@ -675,8 +633,14 @@ BankChangeEnd:
     sbc a, a ; carry into sign
     ex af, af'
 
-        ; Prepare VRAM write register
+        ; prepare VRAM write register
     ld c, VDPData
+
+        ; needed for algo
+    ld e, 0
+
+        ; remaining tiles to upload
+    ld ixh, MaxTilesPerVideoFrames
 
         ; frame data pointer into sp
     ld sp, hl
@@ -887,7 +851,7 @@ PCMData:
 ; PCM fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0800:
+.org $0700:
 PCMUnpackLUT:
     .repeat 256 index dat
         .db $90 | ((dat >> 4) & $0f)
@@ -912,7 +876,7 @@ PCMUnpackLUT:
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0e00
+.org $0d00
 TUUnpackJumpTable:
     .repeat 223
         .db >TUDoStandard
@@ -923,7 +887,7 @@ TUUnpackJumpTable:
         .db >TUDoRepeat
     .endr
 
-.org $0f00
+.org $0e00 ; /!\ must stay $200 below TUDoStandard (cf. TilesUploadUpdateTilePointer)
 TUTileIndexToOffsetLUT:
     .repeat 256 index idx
         .db (idx * TileSize) >> 8
@@ -932,16 +896,40 @@ TUTileIndexToOffsetLUT:
         .db (idx * TileSize) & $ff
     .endr
 
-.org $1100
+.org $1000
 TUDoStandard:
         ; standard case, increment tile index
 
         ; increment tile pointer of "tile index difference" tiles (still de <-> hl)
     TilesUploadUpdateTilePointer
 
+        ; upload tile
     DoTilesUploadOne
 
+        ; update "remaining tiles" counter
+    dec ixh
+
 ; c314
+    PlaySample ; here because TilesUploadUnpack doesn't return
+
+    TilesUploadUnpack
+
+.org $1100
+TUDoDirectValue:
+        ; direct value, load tile index from frame data pointer
+
+    pop hl
+
+        ; tile index to tile pointer
+    TilesUploadSetTilePointer
+
+        ; upload tile
+    DoTilesUploadOne
+
+        ; update "remaining tiles" counter
+    dec ixh
+
+; c343
     PlaySample ; here because TilesUploadUnpack doesn't return
 
     TilesUploadUnpack
@@ -953,29 +941,54 @@ TUDoRepeat:
 
         ; repeat, value - 223 times
     sub 223
-    ld e, a
 
-    DoTilesUploadMany
+@UploadMax:
+    ld d, a
 
-.org $1300
-TUDoDirectValue:
-        ; direct value, load tile index from frame data pointer
+        ; update "remaining tiles" counter
+    neg
+    add a, ixh
+    ld ixh, a
 
-    pop hl
-
-        ; tile index to tile pointer
-    TilesUploadSetTilePointer
+@Begin:
+    DoTilesUploadOne
+    dec d
+    jp z, @End
 
     DoTilesUploadOne
+    dec d
+    jp z, @End
 
-; c343
-    PlaySample ; here because TilesUploadUnpack doesn't return
+    PlaySample
+
+    DoTilesUploadOne
+    dec d
+    jp z, @End
+
+    PlaySample
+
+    DoTilesUploadOne
+    dec d
+    jp nz, @Begin
+@End:
+    PlaySample
 
     TilesUploadUnpack
 
-.org $1400
+.org $1600
 TUDoTerminator:
         ; value 224 is terminator
+
+        ; tile pointer back into hl
+    ex de, hl
+
+        ; always upload max tiles to ensure proper video timing
+    ld a, ixh
+    cp 0
+    jp z, +
+    dec sp ; at the end of TUDoRepeat, call TUDoTerminator again
+    jp TUDoRepeat@UploadMax
++:
 
         ; restore mapper slot
     ld a, ixl
@@ -991,14 +1004,16 @@ TUDoTerminator:
 ; Tilemap upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $1500
+.org $1700
 TMCommandsJumpTable:
     ; $00
     .db >TMTerminator
-    .repeat 30 index idx
+    .repeat 28 index idx
         .db (>TMCacheIndex + idx), >TMSkip
     .endr
-    .db >TMCacheRpt1, >TMSkip
+    .repeat 3
+        .db >TMCacheRpt1, >TMSkip
+    .endr
     .db >TMCacheRpt1
     ; $40
     .repeat 32
@@ -1022,13 +1037,13 @@ TMCommandsJumpTable:
         .db >TMCacheRpt6, >TMRawRpt4
     .endr
 
-.org $1600
+.org $1800
 TMCacheIndex:
-.repeat 30 index idx
-    .org $1600 + (idx * $100)
+.repeat 28 index idx
+    .org $1800 + (idx * $100)
         TMUploadCacheIndexMacro idx
         TMProcessNextCommand
-    .org $1680 + (idx * $100)
+    .org $1880 + (idx * $100)
         TMUploadCacheIndexMacro idx
         TMProcessNextCommand
 .endr
