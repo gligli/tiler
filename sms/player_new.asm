@@ -47,7 +47,7 @@ banks 1
 .define DblBufTileOffset 49 * TileSize
 .define FrameSampleCount 826 ; 344 cycles per PCM sample = one sample every 320 cycles
 .define FirstVBlankScanline 192
-.define LastVBlankScanline 253
+.define LastVBlankScanline 252
 .define MaxTilesPerVideoFrames 207
 
 .macro WaitVBlank args playSmp ; c0
