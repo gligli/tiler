@@ -98,23 +98,6 @@ banks 1
     exx
 .endm
 
-.macro PlaySampleSkew2 args skew ; clobbers af'
-    ex af, af'
-    add a, (skew + 25) / 320 * 256
-    jp nc, ++++
-        PlaySample
-++++:
-    ex af, af'
-.endm
-
-.macro PSMoveSkewToSkew2 ; c20
-    exx
-    ex af, af'
-    ld a, e
-    ex af, af'
-    exx
-.endm
-
 .macro Unpack6Samples ; c153
     ld a, (bc)
     ld l, a
@@ -351,10 +334,6 @@ banks 1
     ld h, (hl)
     ld l, a
 
-    .ifgreq rpt 5
-        PlaySample
-    .endif
-
     .repeat rpt index idx
             ; low byte of tilemap item
         ld a, h
@@ -369,13 +348,7 @@ banks 1
     .endr
 
     .ifeq rpt 6
-        PlaySampleSkew2 66
-    .else
-        .ifeq rpt 5
-            PlaySampleSkew2 14
-        .else
-            PlaySampleSkew2 52*rpt+40+34
-        .endif
+        PlaySample
     .endif
 .endm
 
@@ -391,21 +364,30 @@ banks 1
         ; high byte of tilemap item
     ld a, l
     out (VDPData), a
-
-    PlaySampleSkew2 57+34
 .endm
 
 .macro TMSkipMacro args half ; c54
-        ; local tilemap pointer
-    ld hl, -1
-    add hl, sp
         ; loop counter (command is skip count * 2 already)
     ld b, a
+
+        ; play a sample every 4.5 iterations
+    sub 9
+
         ; target register
     ld c, VDPData
 
+        ; local tilemap pointer
+    ld hl, -1
+    add hl, sp
+
         ; upload "skip count" prev items from local tilemap
 -:
+        ; do we need to play a sample?
+    cp b
+    jp m, +
+    PlaySample
+    sub 9 ; play a sample every 4.5 iterations
++:
         ; tilemap item low byte
     outd
         ; tilemap item high byte
@@ -414,11 +396,7 @@ banks 1
     .else
         res 0, (hl)
     .endif
-
-    PlaySampleSkew2 50
-
     outd
-
     jp nz, -
 
         ; sp (reverse local tilemap pointer) must be updated too
@@ -427,8 +405,6 @@ banks 1
 
         ; jump table offset back into bc
     ld bc, TMCommandsJumpTable + half * $80
-
-    PlaySampleSkew2 54+34
 .endm
 
 .macro TMUploadRawMacro args rpt, half ; c4+4*(1-half)+52*rpt
@@ -454,8 +430,6 @@ banks 1
             inc de
         .endif
     .endr
-
-    PlaySampleSkew2 52*rpt+4+4*(1-half)+34
 .endm
 
 ;==============================================================
@@ -747,12 +721,14 @@ BankChangeEnd:
 
 TilesUploadEnd:
         
-        ; PlaySampleSkew2 is faster and works with next algo
-    PSMoveSkewToSkew2
-; c205
+; c185
 
         ;copy tilemap cache into ram
     ld de, TileMapCache
+    TMCopy2CacheSlots 2
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots -1
     TMCopy2CacheSlots 1
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
@@ -766,11 +742,7 @@ TilesUploadEnd:
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots 3
-    TMCopy2CacheSlots -1
-    TMCopy2CacheSlots -1
-    TMCopy2CacheSlots -1
-    TMCopy2CacheSlots 2
-; c43
+; c16
 
         ; Set tilemap VRAM pointer (also store it into ix)
     xor a
@@ -799,6 +771,8 @@ TilesUploadEnd:
     TMProcessNextCommand
 
 TilemapUnpackEnd:
+; c120
+    PlaySampleSkew 197
 
     ld b, h
     ld c, l
@@ -826,6 +800,7 @@ TilemapUnpackEnd:
 
         ; 36 samples per iteration
     ld ixh, FrameSampleCount / 36 + 0.5
+; c197
 
 ; c0
 
