@@ -42,11 +42,10 @@ const
   cTileMapCacheBits = 5;
   cTileMapCacheSize = 1 shl cTileMapCacheBits;
   cTileMapMaxRepeat : array[Boolean{Raw?}] of Integer = (6, 4);
-  cTileMapMaxSkip = 30;
+  cTileMapMaxSkip = 31;
   cTileMapCommandCache : array[1..6{Rpt}] of Byte = ($01, $40, $41, $80, $81, $c0);
   cTileMapCommandSkip = $00;
   cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c1, $d1, $e1, $f1);
-  cTileMapCommandPlaySample = $3e;  // skip 31
   cTileMapTerminator = $00; // skip 0
   cClocksPerSample = 344;
   cFrameSoundSize = cZ80Clock / cClocksPerSample / 25;
