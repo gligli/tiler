@@ -42,11 +42,12 @@ const
   cTileMapCacheBits = 5;
   cTileMapCacheSize = 1 shl cTileMapCacheBits;
   cTileMapMaxRepeat : array[Boolean{Raw?}] of Integer = (6, 4);
-  cTileMapMaxSkip = 31;
+  cTileMapMaxSkip = 30;
   cTileMapCommandCache : array[1..6{Rpt}] of Byte = ($01, $40, $41, $80, $81, $c0);
   cTileMapCommandSkip = $00;
   cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c1, $d1, $e1, $f1);
-  cTileMapTerminator = cTileMapCommandSkip; // skip zero
+  cTileMapCommandPlaySample = $3e;  // skip 31
+  cTileMapTerminator = $00; // skip 0
   cClocksPerSample = 344;
   cFrameSoundSize = cZ80Clock / cClocksPerSample / 25;
 
@@ -1963,39 +1964,37 @@ begin
       if tmiCacheIdx = -1  then
         tmiCacheIdx := -rawTMI;
 
-      if smoothed and (skipCount < cTileMapMaxSkip) then
+      if tmiCacheIdx = awaitingCacheIdx then
       begin
-        DoTilemapTileCommand(True, False);
+        Inc(awaitingCount);
 
-        Inc(skipCount);
-
-        awaitingCacheIdx := cTileMapCacheSize;
-        awaitingCount := 0;
-      end
-      else
-      begin
-        DoTilemapTileCommand(False, True);
-
-        if tmiCacheIdx = awaitingCacheIdx then
-        begin
-          Inc(awaitingCount);
-
-          if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
-          begin
-            DoTilemapTileCommand(True, False);
-
-            awaitingCacheIdx := cTileMapCacheSize;
-            awaitingCount := 0;
-          end;
-        end
-        else
+        if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
         begin
           DoTilemapTileCommand(True, False);
 
+          awaitingCacheIdx := cTileMapCacheSize;
+          awaitingCount := 0;
+        end;
+      end
+      else
+      begin
+        DoTilemapTileCommand(True, False);
+
+        if smoothed and (skipCount < cTileMapMaxSkip) then
+        begin
+          Inc(skipCount);
+
+          awaitingCacheIdx := cTileMapCacheSize;
+          awaitingCount := 0;
+        end
+        else
+        begin
+          DoTilemapTileCommand(False, True);
+
           awaitingCacheIdx := tmiCacheIdx;
           awaitingCount := 1;
-        end
-      end;
+        end;
+      end
     end;
 
     DoTilemapTileCommand(True, True);
