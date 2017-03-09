@@ -835,9 +835,12 @@ TilemapUnpackEnd:
 .ifdef FIXED_PCM
     ld b, iyh
     ld c, iyl
-.endif
+    ld hl, FrameSampleCount / 2
+    add hl, bc
+.else
     ld h, b
     ld l, c
+.endif
 ; c55
 
 p2:

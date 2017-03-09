@@ -252,6 +252,7 @@ object MainForm: TMainForm
     Top = 62
     Width = 176
     TabOrder = 2
+    Text = 'C:\smsdev\nggyu\nggyu_lim.wav'
   end
   object Label1: TLabel
     Left = 8
