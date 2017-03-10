@@ -238,7 +238,7 @@ banks 1
     ex af, af'
 
         ; when in VBlank use fast upload
-    jp m, ++
+    jp c, ++
 
     TilesUploadTileToVRAMSlow
 
@@ -246,7 +246,6 @@ banks 1
         ; (detect active display -> blank transition)
     in a, (VDPScanline)
     add a, 256 - FirstVBlankScanline
-    sbc a, a ; carry into sign
 
     jp +++
 
@@ -257,8 +256,7 @@ banks 1
         ; update VSync bit
         ; (detect blank -> active display transition, accounting for delay before next upload)
     in a, (VDPScanline)
-    add a, 256 - LastVBlankScanline
-
+    cp LastVBlankScanline
 +++:
 
         ; VBlank bit preserve
@@ -705,10 +703,9 @@ BankChangeEnd:
     or (DblBufTileOffset | VRAMWrite) >> 8
     out (VDPControl), a
 
-        ; f' sign bit = VBlank? , we start in VBlank
+        ; f' carry bit = VBlank? , we start in VBlank
     ex af, af'
     scf
-    sbc a, a ; carry into sign
     ex af, af'
 
         ; prepare VRAM write register
