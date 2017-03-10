@@ -722,8 +722,8 @@ BankChangeEnd:
         ; prepare VRAM write register
     ld c, VDPData
 
-        ; remaining tiles to upload
-    ld ixh, MaxTilesPerVideoFrames
+        ; number of tiles uploaded
+    ld ixh, 0
 
         ; frame data pointer into sp
     ld sp, hl
@@ -1002,8 +1002,8 @@ TUDoStandard:
         ; upload tile
     DoTilesUploadOne 1
 
-        ; update "remaining tiles" counter
-    dec ixh
+        ; update "uploaded tiles" counter
+    inc ixh
 
 ; c322
     ;PlaySample done by "DoTilesUploadOne 1"
@@ -1024,8 +1024,8 @@ TUDoDirectValue:
         ; upload tile
     DoTilesUploadOne 1
 
-        ; update "remaining tiles" counter
-    dec ixh
+        ; update "uploaded tiles" counter
+    inc ixh
 
     ;PlaySample done by "DoTilesUploadOne 1"
 
@@ -1044,16 +1044,15 @@ TUDoRepeat:
 
     ld d, a
 
-        ; update "remaining tiles" counter
-    neg
+        ; update "uploaded tiles" counter
     add a, ixh
     ld ixh, a
 
         ; VBlank bit restore
     rl e
 
-    PlaySampleSkew 104
-    
+    PlaySampleSkew 96
+
 @Loop:
     DoTilesUploadOne 0
     PlaySampleSkew 234
@@ -1069,16 +1068,22 @@ TUDoTerminator:
         ; tile pointer back into hl
     ex de, hl
 
+        ; VBlank bit preserve
+    rr e
+
         ; always upload max tiles to ensure proper video timing
-    ld d, ixh
-    inc d
-    dec d
+    ld a, ixh
+    sub MaxTilesPerVideoFrames
     jp z, @MaxUploaded
 
+    ld d, a
+
+        ; VBlank bit restore
+    rl e
 @Loop:
     DoTilesUploadOne 0
     PlaySampleSkew 234
-    dec d
+    inc d
     jp nz, @Loop
 
 @MaxUploaded:
