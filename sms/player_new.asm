@@ -87,15 +87,13 @@ banks 1
     exx
 .endm
 
-.macro PlaySampleSkew args skew ; clobbers af
-    exx
-    ld a, e
-    add a, (skew + 33) / 328 * 256
+.macro PlaySampleSkew args skew
+    ex af, af'
+    add a, (skew + 25) / 320 * 256
     jp nc, ++++
-        outd
+        PlaySample
 ++++:
-    ld e, a
-    exx
+    ex af, af'
 .endm
 
 .macro Unpack6Samples ; c153
@@ -143,7 +141,10 @@ banks 1
     inc bc
 .endm
 
-.macro TilesUploadSetTilePointer ; c68
+.macro TilesUploadSetTilePointer ; c84
+        ; VBlank bit preserve
+    rr e
+
         ; get a pointer on tile data from tile index
 
         ; upper bits of tile index select a rom bank
@@ -162,9 +163,12 @@ banks 1
     inc h
     ld l, (hl) ; low byte from LUT
     ld h, a
+
+        ; VBlank bit restore
+    rl e
 .endm
 
-.macro TilesUploadUpdateTilePointer ; c37
+.macro TilesUploadUpdateTilePointer ; c45
         ; update tile pointer
 
         ; get byte offset from "tile index difference" using LUT
@@ -175,8 +179,14 @@ banks 1
     ld h, (hl)
     ld l, a
 
+        ; VBlank bit preserve
+    rra
+
         ; add to tile pointer
     add hl, de
+
+        ; VBlank bit restore
+    rla
 .endm
 
 .macro TilesUploadUnpack  ; c49
@@ -184,11 +194,11 @@ banks 1
     ex de, hl
 
         ; get next packed data
+    pop hl
     dec sp ; we actually need to pop only one byte
-    pop af
 
         ;  use jump table to handle it
-    ld l, a
+    ld a, l
     ld h, >TUUnpackJumpTable
     ld h, (hl)
     ld l, 0
@@ -232,15 +242,16 @@ banks 1
     outi
 .endm
 
-.macro DoTilesUploadOne ; c228
-
-        ; VBlank bit restore
-    ex af, af'
+.macro DoTilesUploadOne args ps ; c220
 
         ; when in VBlank use fast upload
     jp c, ++
 
     TilesUploadTileToVRAMSlow
+    
+    .ifeq ps 1
+        PlaySample
+    .endif
 
         ; update VSync bit
         ; (detect active display -> blank transition)
@@ -253,14 +264,16 @@ banks 1
 
     TilesUploadTileToVRAMFast
 
+    .ifeq ps 1
+        PlaySample
+    .endif
+
         ; update VSync bit
         ; (detect blank -> active display transition, accounting for delay before next upload)
     in a, (VDPScanline)
     cp LastVBlankScanline
 +++:
 
-        ; VBlank bit preserve
-    ex af, af'
 .endm
 
 .macro TMCopy2CacheSlots args ps
@@ -703,16 +716,11 @@ BankChangeEnd:
     or (DblBufTileOffset | VRAMWrite) >> 8
     out (VDPControl), a
 
-        ; f' carry bit = VBlank? , we start in VBlank
-    ex af, af'
+        ; f carry bit = VBlank? , we start in VBlank
     scf
-    ex af, af'
 
         ; prepare VRAM write register
     ld c, VDPData
-
-        ; needed for algo
-    ld e, 0
 
         ; remaining tiles to upload
     ld ixh, MaxTilesPerVideoFrames
@@ -992,13 +1000,13 @@ TUDoStandard:
     TilesUploadUpdateTilePointer
 
         ; upload tile
-    DoTilesUploadOne
+    DoTilesUploadOne 1
 
         ; update "remaining tiles" counter
     dec ixh
 
 ; c322
-    PlaySample ; here because TilesUploadUnpack doesn't return
+    ;PlaySample done by "DoTilesUploadOne 1"
 
     TilesUploadUnpack
 
@@ -1011,15 +1019,15 @@ TUDoDirectValue:
         ; tile index to tile pointer
     TilesUploadSetTilePointer
 
-    PlaySampleSkew 43
+    PlaySampleSkew 51
 
         ; upload tile
-    DoTilesUploadOne
+    DoTilesUploadOne 1
 
         ; update "remaining tiles" counter
     dec ixh
 
-    PlaySample ; here because TilesUploadUnpack doesn't return
+    ;PlaySample done by "DoTilesUploadOne 1"
 
     TilesUploadUnpack
 
@@ -1027,6 +1035,9 @@ TUDoDirectValue:
 TUDoRepeat:
         ; tile pointer back into hl
     ex de, hl
+
+        ; VBlank bit preserve
+    rr e
 
         ; repeat, value - 223 times
     sub 223
@@ -1038,11 +1049,14 @@ TUDoRepeat:
     add a, ixh
     ld ixh, a
 
-    PlaySampleSkew 88
+        ; VBlank bit restore
+    rl e
+
+    PlaySampleSkew 104
     
 @Loop:
-    DoTilesUploadOne
-    PlaySampleSkew 242
+    DoTilesUploadOne 0
+    PlaySampleSkew 234
     dec d
     jp nz, @Loop
 
@@ -1062,8 +1076,8 @@ TUDoTerminator:
     jp z, @MaxUploaded
 
 @Loop:
-    DoTilesUploadOne
-    PlaySampleSkew 242
+    DoTilesUploadOne 0
+    PlaySampleSkew 234
     dec d
     jp nz, @Loop
 
