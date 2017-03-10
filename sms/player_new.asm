@@ -318,16 +318,16 @@ banks 1
     ldi
 .endm
 
-.macro TMProcessNextCommand args half ; c40
+.macro TMProcessNextCommand ; c34
         ; read next command
     ld a, (de)
     inc de
 
         ; jump to command code using jump table
     ld l, a
-    ld h, >TMCommandsJumpTable
+    ld h, b
     ld h, (hl)
-    ld l, half * $80
+    ld l, c
     jp (hl)
 .endm
 
@@ -352,50 +352,42 @@ banks 1
         ld a, h
         out (VDPData), a
 
-            ; sample skew
-        .ifeq idx 0
-            inc b
-            inc b
-            inc b
-        .else
-            inc b
-            or 0 ; timing
-        .endif
+        in a, (VDPScanline) ; timing
 
             ; high byte of tilemap item
         ld a, l
         out (VDPData), a
         push hl ; store tilemap item into LocalTileMap
     .endr
+
+    .ifeq rpt 6
+        PlaySample
+    .endif
 .endm
 
 .macro TMUploadCacheIndexMacro args cacheIdx ; c57
     ld hl, (TileMapCache + cacheIdx * 2)
 
         ; low byte of tilemap item
-    out (c), h
+    ld a, h
+    out (VDPData), a
 
     push hl ; store tilemap item into LocalTileMap
 
-        ; sample skew
-    inc b
-
         ; high byte of tilemap item
-    out (c), l
-
-        ; sample skew
-    inc b
+    ld a, l
+    out (VDPData), a
 .endm
 
 .macro TMSkipMacro args half ; c54
         ; loop counter (command is skip count * 2 already)
-    ld l, b ; cf. next code block
     ld b, a
 
-        ; update sample skew (temporarily into a)
-    rrca
-    add a, l ; prev sample skew
-    add a, 2
+        ; play a sample every 4.5 iterations
+    sub 9
+
+        ; target register
+    ld c, VDPData
 
         ; local tilemap pointer
     ld hl, -1
@@ -403,6 +395,12 @@ banks 1
 
         ; upload "skip count" prev items from local tilemap
 -:
+        ; do we need to play a sample?
+    cp b
+    jp m, +
+    PlaySample
+    sub 9 ; play a sample every 4.5 iterations
++:
         ; tilemap item low byte
     outd
         ; tilemap item high byte
@@ -418,8 +416,8 @@ banks 1
     ld sp, hl
     inc sp
 
-        ; sample skew back into b
-    ld b, a
+        ; jump table offset back into bc
+    ld bc, TMCommandsJumpTable + half * $80
 .endm
 
 .macro TMUploadRawMacro args rpt, half ; c4+4*(1-half)+52*rpt
@@ -437,21 +435,14 @@ banks 1
         push hl ; store tilemap item into LocalTileMap
 
             ; high byte of tilemap item
-        .ifeq idx (rpt - 1)
-                ; sample skew
-            inc b
-            out (c), l
+        ld a, l
+        out (VDPData), a
+        .ifneq idx (rpt - 1)
+            nop
         .else
-            ld a, l
-            out (VDPData), a
+            inc de
         .endif
-
-            ; sample skew
-        inc b
     .endr
-
-        ; onto next command
-    inc de
 .endm
 
 ;==============================================================
@@ -765,9 +756,9 @@ TilesUploadEnd:
     out (VDPControl), a
     ld a, (CurFrameIdx)
     and 1
-    ld e, a
         ; we want to move bit 0 to bit 5
     rrca
+    ld c, a ; jump table jump low byte depending on VRAM "half" into c
     rrca
     rrca
     or VRAMWrite >> 8
@@ -781,17 +772,10 @@ TilesUploadEnd:
 
         ; sp will be used as a pointer on a reversed local tilemap
     ld sp, LocalTileMapEnd
-; c106
-
-        ; target register
-    ld c, VDPData
+; c133
 
         ; start unpacking tilemap
-    bit 0, l
-    jp nz, +
-    TMProcessNextCommand 0
-+:
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 TilemapUnpackEnd:
 ; c120
@@ -1143,99 +1127,99 @@ TMCacheIndex:
 .repeat 28 index idx
     .org $1800 + (idx * $100)
         TMUploadCacheIndexMacro idx
-        TMProcessNextCommand 0
+        TMProcessNextCommand
     .org $1880 + (idx * $100)
         TMUploadCacheIndexMacro idx
-        TMProcessNextCommand 1
+        TMProcessNextCommand
 .endr
 
 .org $3400
 TMRawRpt4:
     TMUploadRawMacro 4, 0
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3480
     TMUploadRawMacro 4, 1
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3500
 TMRawRpt3:
     TMUploadRawMacro 3, 0
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3580
     TMUploadRawMacro 3, 1
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3600
 TMRawRpt2:
     TMUploadRawMacro 2, 0
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3680
     TMUploadRawMacro 2, 1
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3700
 TMRawRpt1:
     TMUploadRawMacro 1, 0
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3780
     TMUploadRawMacro 1, 1
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3800
 TMCacheRpt6:
     TMUploadCacheRepeatMacro 6
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3880
     TMUploadCacheRepeatMacro 6
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3900
 TMCacheRpt5:
     TMUploadCacheRepeatMacro 5
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3980
     TMUploadCacheRepeatMacro 5
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3a00
 TMCacheRpt4:
     TMUploadCacheRepeatMacro 4
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3a80
     TMUploadCacheRepeatMacro 4
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3b00
 TMCacheRpt3:
     TMUploadCacheRepeatMacro 3
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3b80
     TMUploadCacheRepeatMacro 3
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3c00
 TMCacheRpt2:
     TMUploadCacheRepeatMacro 2
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3c80
     TMUploadCacheRepeatMacro 2
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3d00
 TMCacheRpt1:
     TMUploadCacheRepeatMacro 1
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3d80
     TMUploadCacheRepeatMacro 1
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3e00
 TMSkip:
     TMSkipMacro 0
-    TMProcessNextCommand 0
+    TMProcessNextCommand
 .org $3e80
     TMSkipMacro 1
-    TMProcessNextCommand 1
+    TMProcessNextCommand
 
 .org $3f00
 TMTerminator:
