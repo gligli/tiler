@@ -79,10 +79,10 @@ banks 1
 .macro PlaySampleSkew args skew
     ex af, af'
         ; this macro is 25 cycles when not playing
-        ; one sample every 320 cycles
-        ; + 0.5 to round
-    add a, (skew + 25) / 320 * 256 + 0.5
-    jp nc, ++++
+        ; one sample every 325 cycles (320 + 5 from jr not jumping)
+        ; + 0.5 to round up
+    add a, (skew + 27) / 325 * 256 + 0.5
+    jr nc, ++++
         PlaySample
 ++++:
     ex af, af'
@@ -855,7 +855,7 @@ TilemapUnpackEnd:
 .endif
 ; c45
 
-    PlaySampleSkew 45
+    PlaySampleSkew 56
 p2:
 
     WaitVBlank 1
