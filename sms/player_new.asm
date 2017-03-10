@@ -1,4 +1,4 @@
-.define FIXED_PCM
+;.define FIXED_PCM
 
 ;==============================================================
 ; WLA-DX banking setup
@@ -50,27 +50,16 @@ banks 1
 .define LastVBlankScanline 252
 .define MaxTilesPerVideoFrames 207
 
-.macro WaitVBlank args playSmp ; c0
+.macro WaitVBlank args playSmp ; c11
     in a, (VDPControl)
 
+---:
     .ifeq playSmp 1
-        jp +++
----:
-        PlaySample
-+++:
-; c0
-         .repeat 19
-             add iy, iy ; timing
-         .endr
-         inc iy ; timing
-; c295
-    .else
----:
+        PlaySampleSkew 25
     .endif
     in a, (VDPControl)
     or a  ; update flags
     jp p, ---
-; c320
 .endm
 
 .macro SetVDPAddress args addr  ; c36
@@ -89,11 +78,11 @@ banks 1
 
 .macro PlaySampleSkew args skew
     ex af, af'
-        ; this macro is 27 cycles when not playing
+        ; this macro is 25 cycles when not playing
         ; one sample every 320 cycles
-        ; 5 because jr is 5 cycles shorter when playing
-    add a, (skew + 27) / (320 + 5) * 256
-    jr nc, ++++
+        ; + 0.5 to round
+    add a, (skew + 25) / 320 * 256 + 0.5
+    jp nc, ++++
         PlaySample
 ++++:
     ex af, af'
@@ -250,18 +239,18 @@ banks 1
         ; when in VBlank use fast upload
     jp c, ++
 
-    TilesUploadTileToVRAMSlow
-    
-    .ifeq ps 1
-        PlaySample
-    .endif
-
-        ; update VSync bit
-        ; (detect active display -> blank transition)
-    in a, (VDPScanline)
-    add a, 256 - FirstVBlankScanline
-
-    jp +++
+;     TilesUploadTileToVRAMSlow
+;     
+;     .ifeq ps 1
+;         PlaySample
+;     .endif
+; 
+;         ; update VSync bit
+;         ; (detect active display -> blank transition)
+;     in a, (VDPScanline)
+;     add a, 256 - FirstVBlankScanline
+; 
+;     jp +++
 
 ++:
 
@@ -279,11 +268,11 @@ banks 1
 
 .endm
 
-.macro TMCopy2CacheSlots args ps
+.macro TMCopy2CacheSlots args ps ; c83
         ; load both high nibbles
     ld a, (hl)
     inc hl
-
+; c13
     .ifeq ps 0
         PlaySample
     .endif
@@ -291,14 +280,14 @@ banks 1
         ; high nibble a
     ld (de), a
     inc e
-
+; c24
     .ifeq ps 1
         PlaySample
     .endif
 
         ; low byte a
     ldi
-
+; c40
     .ifeq ps 2
         PlaySample
     .endif
@@ -309,7 +298,7 @@ banks 1
     .endr
     ld (de), a
     inc e
-
+; c67
     .ifeq ps 3
         PlaySample
     .endif
@@ -347,6 +336,10 @@ banks 1
     ld h, (hl)
     ld l, a
 
+    .ifgreq rpt 5
+        PlaySample
+    .endif
+    
     .repeat rpt index idx
             ; low byte of tilemap item
         ld a, h
@@ -361,7 +354,13 @@ banks 1
     .endr
 
     .ifeq rpt 6
-        PlaySample
+        PlaySampleSkew 66
+    .else
+        .ifeq rpt 5
+            PlaySampleSkew 14
+        .else
+            PlaySampleSkew 52*rpt+40+34
+        .endif
     .endif
 .endm
 
@@ -377,30 +376,21 @@ banks 1
         ; high byte of tilemap item
     ld a, l
     out (VDPData), a
+
+    PlaySampleSkew 57+34
 .endm
 
 .macro TMSkipMacro args half ; c54
-        ; loop counter (command is skip count * 2 already)
-    ld b, a
-
-        ; play a sample every 4.5 iterations
-    sub 9
-
-        ; target register
-    ld c, VDPData
-
         ; local tilemap pointer
     ld hl, -1
     add hl, sp
+        ; loop counter (command is skip count * 2 already)
+    ld b, a
+        ; target register
+    ld c, VDPData
 
         ; upload "skip count" prev items from local tilemap
 -:
-        ; do we need to play a sample?
-    cp b
-    jp m, +
-    PlaySample
-    sub 9 ; play a sample every 4.5 iterations
-+:
         ; tilemap item low byte
     outd
         ; tilemap item high byte
@@ -409,7 +399,11 @@ banks 1
     .else
         res 0, (hl)
     .endif
+
+    PlaySampleSkew 57
+
     outd
+
     jp nz, -
 
         ; sp (reverse local tilemap pointer) must be updated too
@@ -418,6 +412,8 @@ banks 1
 
         ; jump table offset back into bc
     ld bc, TMCommandsJumpTable + half * $80
+
+    PlaySampleSkew 54+34
 .endm
 
 .macro TMUploadRawMacro args rpt, half ; c4+4*(1-half)+52*rpt
@@ -443,6 +439,8 @@ banks 1
             inc de
         .endif
     .endr
+
+    PlaySampleSkew 52*rpt+4+4*(1-half)+34
 .endm
 
 ;==============================================================
@@ -593,7 +591,7 @@ InitPlayer:
     ld (MapperSlot2), a
 
 NextFrameLoad:
- ; c229 from jump
+ ; c85 from jump
 
         ; are we using slot 2?
     bit 7, h
@@ -621,24 +619,28 @@ NoSlotChange:
     .endr
 
 SlotEnd:
+; c165/168
 
     ; Load palette if frame contains one
     ld de, LocalPalette
-; c319/c322
-    PlaySample
-
     ld a, (hl)
     inc hl
     cp $00
     jp z, NoFramePalette
 
-    .repeat 18
+    .repeat 7
         ldi
     .endr
-; c315
+; c319
     PlaySample
 
-    .repeat 14
+    .repeat 20
+        ldi
+    .endr
+; c320
+    PlaySample
+
+    .repeat 5
         ldi
     .endr
 
@@ -647,24 +649,33 @@ SlotEnd:
 NoFramePalette:
 
         ; ensure same timing as palette
-    .repeat 18
+    .repeat 7
+        ld (0), hl ; timing
+    .endr
+; c319
+    PlaySample
+
+    .repeat 20
         ld (0), hl ; timing
     .endr
 ; c320
     PlaySample
 
-    .repeat 15
+    .repeat 5
         ld (0), hl ; timing
     .endr
+    inc iy ; timing
 
 PaletteEnd:
-; c234/c240
+; c297
 
 p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
         ; slot2 bank into ixl
     ld a, (MapperSlot2)
     ld ixl, a
+; c318
+    PlaySample
 
         ; should we seek to next bank start?
     ld a, (hl)
@@ -679,24 +690,18 @@ p1: ; Unpack tiles indexes and copy corresponding tiles to VRAM
 
         ; reset frame data pointer
     ld hl, $4000
-; c320
-    PlaySample
 
     jp BankChangeEnd
 
 NoBankChange:
 
         ; ensure same timing as bank change
-    ld (0), a ; timing
-    ld (0), a ; timing
-
-; c319
-    PlaySample
-
-    inc iy ; timing
+    .repeat 3
+        ld (0), hl ; timing
+    .endr
 
 BankChangeEnd:
-; c10
+; c79/78
 
         ; Set tiles VRAM start address
     ld a, TileSize
@@ -721,35 +726,34 @@ BankChangeEnd:
 
         ; frame data pointer into sp
     ld sp, hl
-;c103
+; c175
 
         ; start unpacking tile indexes
     TilesUploadUnpack
 
 TilesUploadEnd:
-        
-; c185
+
+; c175
 
         ;copy tilemap cache into ram
     ld de, TileMapCache
-    TMCopy2CacheSlots 2
+    TMCopy2CacheSlots -1
+    TMCopy2CacheSlots 2 ; c308
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
-    TMCopy2CacheSlots 1
+    TMCopy2CacheSlots 1 ; c316
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
-    TMCopy2CacheSlots 0
+    TMCopy2CacheSlots 0 ; c321
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
-    PlaySample
+    TMCopy2CacheSlots 0 ; c332
     TMCopy2CacheSlots -1
     TMCopy2CacheSlots -1
-    TMCopy2CacheSlots -1
-    TMCopy2CacheSlots 3
-; c16
+; c236
 
         ; Set tilemap VRAM pointer (also store it into ix)
     xor a
@@ -772,14 +776,14 @@ TilesUploadEnd:
 
         ; sp will be used as a pointer on a reversed local tilemap
     ld sp, LocalTileMapEnd
-; c133
+    
+; c326
+    PlaySample
 
         ; start unpacking tilemap
     TMProcessNextCommand
 
 TilemapUnpackEnd:
-; c120
-    PlaySampleSkew 197
 
     ld b, h
     ld c, l
@@ -845,11 +849,13 @@ TilemapUnpackEnd:
     ld hl, FrameSampleCount / 2
     add hl, bc
 .else
+    dec bc
     ld h, b
     ld l, c
 .endif
-; c55
+; c45
 
+    PlaySampleSkew 45
 p2:
 
     WaitVBlank 1
@@ -869,7 +875,11 @@ p3:
     add a, h
     ld h, a
     exx
-; c129
+    ; reset sample skew
+    ex af, af'
+    xor a
+    ex af, af'
+; c0
 
     ; tilemap swap
     ld a, (CurFrameIdx)
@@ -883,31 +893,30 @@ p3:
     out (VDPControl), a
 
     ld c, VDPData
-; c204
+
     ; upload local palette to VDP
 
     SetVDPAddress $0000 | CRAMWrite
     ld hl, LocalPalette
-; c250
-    .repeat 4
+; c121
+    .repeat 12
         outi
     .endr
-; c314
+; c313
     PlaySample
     .repeat 20
         outi
     .endr
 ; c320
-    PlaySample
-    .repeat 8
-        outi
-    .endr
-; c128
 
 p4: ; Advance to next frame
+    ld hl, (FrameCount)
+
+; c336
+    PlaySample
+
     ld bc, (CurFrameIdx)
     inc bc
-    ld hl, (FrameCount)
     sbc hl, bc
     jp nz, +
 
@@ -923,7 +932,7 @@ p4: ; Advance to next frame
         ; restore command pointer into hl
     ex de, hl
     jp NextFrameLoad
- ; c229
+ ; c85
 
 .ifdef FIXED_PCM
 PCMData:
@@ -1082,6 +1091,8 @@ TUDoTerminator:
         ; frame data pointer from sp to hl
     ld hl, 0
     add hl, sp
+    
+    PlaySampleSkew 89
 
     jp TilesUploadEnd
 
