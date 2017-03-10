@@ -206,7 +206,7 @@ banks 1
     .endr
 .endm
 
-.macro TilesUploadTileToVRAMSlow ; c172
+.macro TilesUploadTileToVRAMSlow ; c172+10
     .repeat 12
         outi
         inc iy ; timing
@@ -214,11 +214,12 @@ banks 1
     outi
 ; c328
     PlaySample
-    .repeat 12
+    .repeat 11
         outi
         dec iy ; timing
     .endr
-; c312
+    outi
+; c302
     PlaySample
     .repeat 3
         outi
@@ -240,8 +241,6 @@ banks 1
     jp m, ++
 
     TilesUploadTileToVRAMSlow
-    inc de ; timing
-
 
         ; update VSync bit
         ; (detect active display -> blank transition)
