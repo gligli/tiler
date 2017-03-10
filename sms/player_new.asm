@@ -89,8 +89,11 @@ banks 1
 
 .macro PlaySampleSkew args skew
     ex af, af'
-    add a, (skew + 25) / 320 * 256
-    jp nc, ++++
+        ; this macro is 27 cycles when not playing
+        ; one sample every 320 cycles
+        ; 5 because jr is 5 cycles shorter when playing
+    add a, (skew + 27) / (320 + 5) * 256
+    jr nc, ++++
         PlaySample
 ++++:
     ex af, af'
