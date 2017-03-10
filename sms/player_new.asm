@@ -238,19 +238,19 @@ banks 1
 
         ; when in VBlank use fast upload
     jp c, ++
+;jp ++
+    TilesUploadTileToVRAMSlow
 
-;     TilesUploadTileToVRAMSlow
-;     
-;     .ifeq ps 1
-;         PlaySample
-;     .endif
-; 
-;         ; update VSync bit
-;         ; (detect active display -> blank transition)
-;     in a, (VDPScanline)
-;     add a, 256 - FirstVBlankScanline
-; 
-;     jp +++
+    .ifeq ps 1
+        PlaySample
+    .endif
+
+        ; update VSync bit
+        ; (detect active display -> blank transition)
+    in a, (VDPScanline)
+    add a, 256 - FirstVBlankScanline
+
+    jp +++
 
 ++:
 
@@ -549,16 +549,17 @@ main:
     .endr
     djnz -
 
-        ; algo expects VBlank state on start
-    WaitVBlank 0
-
-InitPlayer:
         ; init PCM player
     exx
     ld c, PSGPort
     ld hl, PSGBufferB + 1024 - 1
     ld de, 0
     exx
+
+        ; algo expects VBlank state on start
+    WaitVBlank 0
+
+InitPlayer:
 
         ; map slot 1 to beginning of video data
     ld a, 1
