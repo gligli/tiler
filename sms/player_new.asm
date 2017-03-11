@@ -1,4 +1,4 @@
-;.define FIXED_PCM
+.define FIXED_PCM
 
 ;==============================================================
 ; WLA-DX banking setup
@@ -300,12 +300,13 @@ banks 1
 
         .ifeq idx 0
             .ifeq rpt 6
+                ;c377
                 PlaySample
-                PlaySampleSkew 69
+                PlaySampleSkew 57
             .else
                 .ifeq rpt 5
+                    ; c324
                     PlaySample
-                    PlaySampleSkew 17
                 .else
                     PlaySampleSkew 53*(rpt-1)+39+36+37
                 .endif
@@ -328,12 +329,12 @@ banks 1
         ; low byte of tilemap item
     out (c), h
 
-    push hl ; store tilemap item into LocalTileMap
-
     PlaySampleSkew 51+37
 
         ; high byte of tilemap item
     out (c), l
+
+    push hl ; store tilemap item into LocalTileMap
 .endm
 
 .macro TMSkipMacro args half ; c44
@@ -990,9 +991,9 @@ TUDoVBlankSwitch:
     ld a, ixh
     or a
     jp z, +
-    ld ixh, 0
-    PlaySampleSkew 86
-    TilesUploadUnpack 0
+;     ld ixh, 0
+;     PlaySampleSkew 86
+;     TilesUploadUnpack 0
 +:
     ld ixh, 1
     PlaySampleSkew 86
