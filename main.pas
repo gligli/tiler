@@ -29,15 +29,24 @@ const
   cTileSize = cTileWidth * cTileWidth div 2;
   cTilesPerBank = cBankSize div cTileSize;
   cZ80Clock = 3546893;
+  cLineCount = 313;
+  cRefreshRate = 50;
+  cCyclesPerLine = cZ80Clock / (cLineCount * cRefreshRate);
+  cCyclesPerDisplayPhase : array[Boolean{VSync?}] of Integer = (
+    Round(cScreenHeight * cCyclesPerLine),
+    Round((cLineCount - cScreenHeight) * cCyclesPerLine)
+  );
 
   // Video player consts
+  cMaxTilesPerFrame = 207;
   cSmoothingPrevFrame = 1;
   cTileIndexesTileOffset = cTilesPerBank + 1;
   cTileIndexesMaxDiff = 223;
-  cTileIndexesRepeatStart = 225;
-  cTileIndexesMaxRepeat = 31;
+  cTileIndexesRepeatStart = 224;
+  cTileIndexesMaxRepeat = 30;
   cTileIndexesDirectValue = 223;
-  cTileIndexesTerminator = 224;
+  cTileIndexesTerminator = 254;
+  cTileIndexesVBlankSwitch = 255;
   cTileMapIndicesOffset : array[0..1] of Integer = (49, 256 + 49);
   cTileMapCacheBits = 5;
   cTileMapCacheSize = 1 shl cTileMapCacheBits;
@@ -48,7 +57,15 @@ const
   cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c1, $d1, $e1, $f1);
   cTileMapTerminator = $00; // skip 0
   cClocksPerSample = 344;
-  cFrameSoundSize = cZ80Clock / cClocksPerSample / 25;
+  cFrameSoundSize = cZ80Clock / cClocksPerSample / 2 / (cRefreshRate / 4);
+
+  // number of Z80 cycles to execute a function
+  cTileIndexesTimings : array[Boolean{VSync?}, 0..4 {Direct/Std/RptFix/RptVar/VBlank}] of Integer = (
+    (343 + 688, 289 + 17 + 688, 91, 213 + 12 + 688, 113 + 7),
+    (343 + 344, 309 + 18 + 344, 91, 233 + 14 + 344, 113 + 7)
+  );
+  cLineJitter = 5;
+  cTileIndexesInitialLine = 201; // algo starts in VBlank
 
   // JPEG standard quantization tables
 
@@ -1754,8 +1771,8 @@ end;
 
 procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
 var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, prevDTI, sameCount, skipCount: Integer;
-    rawTMI, tmiCacheIdx, best, awaitingCacheIdx, awaitingCount: Integer;
-    smoothed: Boolean;
+    rawTMI, tmiCacheIdx, best, awaitingCacheIdx, awaitingCount, tiZ80Cycles: Integer;
+    smoothed, tiVBlank, vbl: Boolean;
     prevKF: PKeyFrame;
     tilesPlanes: array[0..cTileWidth - 1, 0..3] of Byte;
     tmi: PTileMapItem;
@@ -1766,12 +1783,67 @@ var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, p
     end;
     tileIdxStream: TMemoryStream;
 
-  procedure DoTileIndex;
+  function CurrentLineJitter: Integer;
   begin
+    Result := round(IfThen(tiVBlank, -cLineJitter * cCyclesPerLine, cLineJitter * cCyclesPerLine));
+  end;
+
+  procedure HandleTileIndexZ80Cycles(ACycleAdd: Integer);
+  var
+    cyPh: Integer;
+  begin
+    cyPh := cCyclesPerDisplayPhase[tiVBlank];
+    tiZ80Cycles += ACycleAdd;
+    if tiZ80Cycles > cyPh + CurrentLineJitter then
+    begin
+      tiZ80Cycles -= cyPh;
+      tiVBlank := not tiVBlank;
+      tileIdxStream.WriteByte(cTileIndexesVBlankSwitch);
+      tiZ80Cycles += cTileIndexesTimings[tiVBlank, 4];
+    end;
+  end;
+
+  procedure DoTileIndex;
+  var
+    priorCount, cyAdd: Integer;
+    vbl: Boolean;
+  begin
+    vbl := tiVBlank;
     if sameCount = 1 then
-      tileIdxStream.WriteByte(prevDTI - 1)
+    begin
+      if vbl then
+        HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 1]);
+      tileIdxStream.WriteByte(prevDTI - 1);
+      if not vbl then
+        HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 1]);
+    end
     else if sameCount <> 0 then
-      tileIdxStream.WriteByte(cTileIndexesRepeatStart + sameCount - 2);
+    begin
+      priorCount := sameCount;
+      cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3];
+
+      while (tiZ80Cycles + cyAdd > cCyclesPerDisplayPhase[tiVBlank] + CurrentLineJitter) and (priorCount > 0) do
+      begin
+        Dec(priorCount);
+        cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3];
+      end;
+
+      if priorCount > 0 then
+      begin
+        HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3]);
+        tileIdxStream.WriteByte(cTileIndexesRepeatStart + priorCount - 1);
+      end;
+
+      sameCount -= priorCount;
+      if sameCount > 0 then
+      begin
+        if vbl then
+          HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 2] + sameCount * cTileIndexesTimings[tiVBlank, 3]);
+        tileIdxStream.WriteByte(cTileIndexesRepeatStart + sameCount - 1);
+        if not vbl then
+          HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 2] + sameCount * cTileIndexesTimings[tiVBlank, 3]);
+      end;
+    end;
   end;
 
   procedure DoTilemapTileCommand(DoCache, DoSkip: Boolean);
@@ -1854,6 +1926,9 @@ begin
 
     tileIdxStream := TMemoryStream.Create;
     try
+      tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
+      tiVBlank := True;
+
       prevTileIndex := -1;
       prevDTI := -1;
       sameCount := 0;
@@ -1877,8 +1952,16 @@ begin
             ((FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset) div cTilesPerBank <>
              (prevTileIndex + cTileIndexesTileOffset) div cTilesPerBank) then // any bank change must be a direct value
         begin
+          vbl := tiVBlank;
+          if vbl then
+            HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
+
           tileIdxStream.WriteByte(cTileIndexesDirectValue);
           tileIdxStream.WriteWord(FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset);
+
+          if not vbl then
+            HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
+
           diffTileIndex := -1;
           sameCount := 0;
         end;
@@ -1889,7 +1972,7 @@ begin
 
       DoTileIndex;
       tileIdxStream.WriteByte(cTileIndexesTerminator);
-
+      tileIdxStream.WriteByte(cMaxTilesPerFrame - Length(FFrames[i].TilesIndexes));
 
       // the whole tiles indices should stay in the same bank
       if ADataStream.Size div cBankSize <> (ADataStream.Size + tileIdxStream.Size) div cBankSize then

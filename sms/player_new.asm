@@ -78,12 +78,12 @@ banks 1
 
 .macro PlaySampleSkew args skew
     ex af, af'
-        ; this macro is 25 cycles when not playing
+        ; this macro is 27 cycles when not playing
         ; one sample every 325 cycles (320 + 5 from jr not jumping)
-        ; + 0.5 to round up
-    add a, (skew + 27) / 325 * 256 + 0.5
+        ; + 1 to round up
+    add a, (skew + 27) / 325 * 256 + 1
     jr nc, ++++
-        PlaySample
+    PlaySample
 ++++:
     ex af, af'
 .endm
@@ -133,10 +133,7 @@ banks 1
     inc bc
 .endm
 
-.macro TilesUploadSetTilePointer ; c84
-        ; VBlank bit preserve
-    rr e
-
+.macro TilesUploadSetTilePointer ; c68
         ; get a pointer on tile data from tile index
 
         ; upper bits of tile index select a rom bank
@@ -155,43 +152,43 @@ banks 1
     inc h
     ld l, (hl) ; low byte from LUT
     ld h, a
-
-        ; VBlank bit restore
-    rl e
 .endm
 
-.macro TilesUploadUpdateTilePointer ; c45
+.macro TilesUploadUpdateTilePointer args fast; c41
         ; update tile pointer
 
         ; get byte offset from "tile index difference" using LUT
-    dec h ; ld h, (>TUTileIndexToOffsetLUT + 1)
-    ld l, a
-    ld a, (hl)
-    dec h
-    ld h, (hl)
-    ld l, a
-
-        ; VBlank bit preserve
-    rra
+    .ifeq fast 1
+        dec h
+        ld l, a
+        ld a, (hl)
+        dec h
+        ld h, (hl)
+        ld l, a
+    .else
+        inc h
+        ld l, a
+        ld a, (hl)
+        inc h
+        ld l, (hl)
+        ld h, a
+    .endif
 
         ; add to tile pointer
     add hl, de
-
-        ; VBlank bit restore
-    rla
 .endm
 
-.macro TilesUploadUnpack  ; c49
+.macro TilesUploadUnpack args fast ; c49
         ; tile pointer saved into de
     ex de, hl
 
         ; get next packed data
-    pop hl
     dec sp ; we actually need to pop only one byte
+    pop af
 
         ;  use jump table to handle it
-    ld a, l
-    ld h, >TUUnpackJumpTable
+    ld l, a
+    ld h, >TUUnpackJumpTable + (1 - fast)
     ld h, (hl)
     ld l, 0
     jp (hl)
@@ -208,7 +205,7 @@ banks 1
     .endr
 .endm
 
-.macro TilesUploadTileToVRAMSlow ; c172+10
+.macro TilesUploadTileToVRAMSlow ; c172
     .repeat 12
         outi
         inc iy ; timing
@@ -216,12 +213,11 @@ banks 1
     outi
 ; c328
     PlaySample
-    .repeat 11
+    .repeat 12
         outi
         dec iy ; timing
     .endr
-    outi
-; c302
+; c312
     PlaySample
     .repeat 3
         outi
@@ -232,40 +228,6 @@ banks 1
         dec iy ; timing
     .endr
     outi
-.endm
-
-.macro DoTilesUploadOne args ps ; c220
-
-        ; when in VBlank use fast upload
-    jp c, ++
-;jp ++
-    TilesUploadTileToVRAMSlow
-
-    .ifeq ps 1
-        PlaySample
-    .endif
-
-        ; update VSync bit
-        ; (detect active display -> blank transition)
-    in a, (VDPScanline)
-    add a, 256 - FirstVBlankScanline
-
-    jp +++
-
-++:
-
-    TilesUploadTileToVRAMFast
-
-    .ifeq ps 1
-        PlaySample
-    .endif
-
-        ; update VSync bit
-        ; (detect blank -> active display transition, accounting for delay before next upload)
-    in a, (VDPScanline)
-    cp LastVBlankScanline
-+++:
-
 .endm
 
 .macro TMCopy2CacheSlots args ps ; c83
@@ -716,21 +678,18 @@ BankChangeEnd:
     or (DblBufTileOffset | VRAMWrite) >> 8
     out (VDPControl), a
 
-        ; f carry bit = VBlank? , we start in VBlank
-    scf
+        ; to indicate we start in "fast" VBlank
+    ld ixh, 1
 
         ; prepare VRAM write register
     ld c, VDPData
-
-        ; number of tiles uploaded
-    ld ixh, 0
 
         ; frame data pointer into sp
     ld sp, hl
 ; c175
 
-        ; start unpacking tile indexes
-    TilesUploadUnpack
+        ; start unpacking tile indexes (in "fast" VBlank)
+    TilesUploadUnpack 1
 
 TilesUploadEnd:
 
@@ -918,14 +877,14 @@ p4: ; Advance to next frame
 
     ld bc, (CurFrameIdx)
     inc bc
+    scf
+    ccf
     sbc hl, bc
     jp nz, +
 
     ; If we're past last frame, rewind to first frame
     ld bc, 0
     ld (CurFrameIdx), bc
-        ; restore command pointer into hl
-    ex de, hl
     jp InitPlayer
 
 +:
@@ -944,7 +903,7 @@ PCMData:
 ; PCM fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0700:
+.org $0500:
 PCMUnpackLUT:
     .repeat 256 index dat
         .db $90 | ((dat >> 4) & $0f)
@@ -969,18 +928,60 @@ PCMUnpackLUT:
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0d00
+.org $0b00
 TUUnpackJumpTable:
+    ; "fast" VBlank part
     .repeat 223
-        .db >TUDoStandard
+        .db >TUDoStandardFast
     .endr
-    .db >TUDoDirectValue
+    .db >TUDoDirectValueFast
+    .repeat 30
+        .db >TUDoRepeatFast
+    .endr
     .db >TUDoTerminator
-    .repeat 256 - 1 - 1 - 223
-        .db >TUDoRepeat
+    .db >TUDoVBlankSwitch
+    ; "slow" active display part
+    .repeat 223
+        .db >TUDoStandardSlow
     .endr
+    .db >TUDoDirectValueSlow
+    .repeat 30
+        .db >TUDoRepeatSlow
+    .endr
+    .db >TUDoTerminator
+    .db >TUDoVBlankSwitch
 
-.org $0e00 ; /!\ must stay $200 below TUDoStandard (cf. TilesUploadUpdateTilePointer)
+.org $0d00
+TUDoVBlankSwitch:
+        ; tile pointer back into hl
+    ex de, hl
+    
+    ld a, ixh
+    or a
+    jp z, +
+    ld ixh, 0
+    PlaySampleSkew 86
+    TilesUploadUnpack 0
++:
+    ld ixh, 1
+    PlaySampleSkew 86
+    TilesUploadUnpack 1
+
+.org $0e00
+TUDoStandardSlow:
+        ; standard case, increment tile index
+
+        ; increment tile pointer of "tile index difference" tiles (still de <-> hl)
+    TilesUploadUpdateTilePointer 0
+
+        ; upload tile
+    TilesUploadTileToVRAMSlow
+
+    PlaySampleSkew 262
+
+    TilesUploadUnpack 0
+
+.org $0f00 ; /!\ must stay between TUDoStandardSlow and TUDoStandardFast (cf. TilesUploadUpdateTilePointer)
 TUTileIndexToOffsetLUT:
     .repeat 256 index idx
         .db (idx * TileSize) >> 8
@@ -989,26 +990,22 @@ TUTileIndexToOffsetLUT:
         .db (idx * TileSize) & $ff
     .endr
 
-.org $1000
-TUDoStandard:
+.org $1100
+TUDoStandardFast:
         ; standard case, increment tile index
 
         ; increment tile pointer of "tile index difference" tiles (still de <-> hl)
-    TilesUploadUpdateTilePointer
+    TilesUploadUpdateTilePointer 1
 
         ; upload tile
-    DoTilesUploadOne 1
+    TilesUploadTileToVRAMFast
 
-        ; update "uploaded tiles" counter
-    inc ixh
+    PlaySampleSkew 282
 
-; c322
-    ;PlaySample done by "DoTilesUploadOne 1"
+    TilesUploadUnpack 1
 
-    TilesUploadUnpack
-
-.org $1100
-TUDoDirectValue:
+.org $1200
+TUDoDirectValueFast:
         ; direct value, load tile index from frame data pointer
 
     pop hl
@@ -1016,71 +1013,98 @@ TUDoDirectValue:
         ; tile index to tile pointer
     TilesUploadSetTilePointer
 
-    PlaySampleSkew 51
-
         ; upload tile
-    DoTilesUploadOne 1
+    TilesUploadTileToVRAMFast
 
-        ; update "uploaded tiles" counter
-    inc ixh
+; c319
+    PlaySample
 
-    ;PlaySample done by "DoTilesUploadOne 1"
-
-    TilesUploadUnpack
+    TilesUploadUnpack 1
 
 .org $1300
-TUDoRepeat:
+TUDoDirectValueSlow:
+        ; direct value, load tile index from frame data pointer
+
+    pop hl
+
+        ; tile index to tile pointer
+    TilesUploadSetTilePointer
+
+        ; upload tile
+    TilesUploadTileToVRAMSlow
+
+    inc iy ; timing
+    inc iy ; timing
+
+; c319
+    PlaySample
+
+    TilesUploadUnpack 0
+
+.org $1400
+TUDoRepeatFast:
         ; tile pointer back into hl
     ex de, hl
 
-        ; VBlank bit preserve
-    rr e
-
         ; repeat, value - 223 times
     sub 223
-
     ld d, a
 
-        ; update "uploaded tiles" counter
-    add a, ixh
-    ld ixh, a
-
-        ; VBlank bit restore
-    rl e
-
-    PlaySampleSkew 96
+    PlaySampleSkew 64
 
 @Loop:
-    DoTilesUploadOne 0
-    PlaySampleSkew 234
+    TilesUploadTileToVRAMFast
+    PlaySampleSkew 206
     dec d
     jp nz, @Loop
 
-    TilesUploadUnpack
+    TilesUploadUnpack 1
 
 .org $1500
+TUDoRepeatSlow:
+        ; tile pointer back into hl
+    ex de, hl
+
+        ; repeat, value - 223 times
+    sub 223
+    ld d, a
+
+    PlaySampleSkew 64
+
+@Loop:
+    TilesUploadTileToVRAMSlow
+    PlaySampleSkew 186
+    dec d
+    jp nz, @Loop
+
+    TilesUploadUnpack 0
+
+.org $1600
 TUDoTerminator:
         ; value 224 is terminator
 
         ; tile pointer back into hl
     ex de, hl
 
-        ; VBlank bit preserve
-    rr e
+        ; get remaining tile count
+    dec sp ; we actually need to pop only one byte
+    pop af
 
-        ; always upload max tiles to ensure proper video timing
-    ld a, ixh
-    sub MaxTilesPerVideoFrames
+    cp 0
     jp z, @MaxUploaded
 
+        ; ensure proper video timing my simulating the upload of remaining tiles
     ld d, a
-
-        ; VBlank bit restore
-    rl e
 @Loop:
-    DoTilesUploadOne 0
-    PlaySampleSkew 234
-    inc d
+    .repeat 32
+        inc iy
+    .endr
+    PlaySample
+    .repeat 19
+        inc iy
+    .endr
+    PlaySampleSkew 204
+    dec d
     jp nz, @Loop
 
 @MaxUploaded:
@@ -1092,7 +1116,7 @@ TUDoTerminator:
         ; frame data pointer from sp to hl
     ld hl, 0
     add hl, sp
-    
+
     PlaySampleSkew 89
 
     jp TilesUploadEnd
