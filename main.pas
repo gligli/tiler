@@ -2142,37 +2142,39 @@ begin
       if tmiCacheIdx = -1  then
         tmiCacheIdx := -rawTMI;
 
-      if tmiCacheIdx = awaitingCacheIdx then
-      begin
-        Inc(awaitingCount);
-
-        if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
-        begin
-          DoTilemapTileCommand(True, False);
-
-          awaitingCacheIdx := cTileMapCacheSize;
-          awaitingCount := 0;
-        end;
-      end
-      else
+      if smoothed and (skipCount < cTileMapMaxSkip) then
       begin
         DoTilemapTileCommand(True, False);
 
-        if smoothed and (skipCount < cTileMapMaxSkip) then
-        begin
-          Inc(skipCount);
+        Inc(skipCount);
 
-          awaitingCacheIdx := cTileMapCacheSize;
-          awaitingCount := 0;
+        awaitingCacheIdx := cTileMapCacheSize;
+        awaitingCount := 0;
+      end
+      else
+      begin
+        DoTilemapTileCommand(False, True);
+
+        if tmiCacheIdx = awaitingCacheIdx then
+        begin
+          Inc(awaitingCount);
+
+          if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
+          begin
+            DoTilemapTileCommand(True, False);
+
+            awaitingCacheIdx := cTileMapCacheSize;
+            awaitingCount := 0;
+          end;
         end
         else
         begin
-          DoTilemapTileCommand(False, True);
+          DoTilemapTileCommand(True, False);
 
           awaitingCacheIdx := tmiCacheIdx;
           awaitingCount := 1;
-        end;
-      end
+        end
+      end;
     end;
 
     DoTilemapTileCommand(True, True);
