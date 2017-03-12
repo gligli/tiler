@@ -397,7 +397,7 @@ banks 1
     .endr
 .endm
 
-.macro TMSkipMacro args step, half ; c106
+.macro TMSkipMacro args step, half ; c95
     .ifeq step 0
         ld a, d
     .else
@@ -412,21 +412,30 @@ banks 1
     ld d, 0
     ld e, a
     add ix, de
-
-        ; compute VRAM pointer
-    ld d, ixh
-    ld e, ixl
     ex de, hl
-    add hl, hl
 
-        ; update VRAM pointer
-    ld a, l
+        ; update VRAM pointer (TM offset * 2 + ...)
+    ld a, ixl
+    rla
     out (VDPControl), a
-    ld a, h
+    ld a, ixh
+    rla
     or >VRAMWrite + half * $20
     out (VDPControl), a
 
-    PlaySampleSkew 106+36-10*step
+    PlaySampleSkew 95+36-10*step
+.endm
+
+.macro TMSkip1Macro args step, half ; c32
+        ; advance VRAM pointer one TM item
+
+    in a, (VDPData)
+
+    PlaySampleSkew 32+36-10*step
+
+    in a, (VDPData)
+
+    inc ix
 .endm
 
 ;==============================================================
@@ -994,7 +1003,7 @@ PCMData:
 ; Tiles upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $0700
+.org $0600
 TUUnpackJumpTable:
     ; "fast" VBlank part
     .repeat 223
@@ -1017,7 +1026,7 @@ TUUnpackJumpTable:
     .db >TUDoTerminator
     .db >TUDoVBlankSwitch
 
-.org $0900
+.org $0800
 TUDoVBlankSwitch:
         ; tile pointer back into hl
     ex de, hl
@@ -1033,7 +1042,7 @@ TUDoVBlankSwitch:
     PlaySampleSkew 86
     TilesUploadUnpack 1
 
-.org $0a00
+.org $0900
 TUDoStandardSlow:
         ; standard case, increment tile index
 
@@ -1047,7 +1056,7 @@ TUDoStandardSlow:
 
     TilesUploadUnpack 0
 
-.org $0b00 ; /!\ must stay between TUDoStandardSlow and TUDoStandardFast (cf. TilesUploadUpdateTilePointer)
+.org $0a00 ; /!\ must stay between TUDoStandardSlow and TUDoStandardFast (cf. TilesUploadUpdateTilePointer)
 TUTileIndexToOffsetLUT:
     .repeat 256 index idx
         .db (idx * TileSize) >> 8
@@ -1056,7 +1065,7 @@ TUTileIndexToOffsetLUT:
         .db (idx * TileSize) & $ff
     .endr
 
-.org $0d00
+.org $0c00
 TUDoStandardFast:
         ; standard case, increment tile index
 
@@ -1070,7 +1079,7 @@ TUDoStandardFast:
 
     TilesUploadUnpack 1
 
-.org $0e00
+.org $0d00
 TUDoDirectValueFast:
         ; direct value, load tile index from frame data pointer
 
@@ -1087,7 +1096,7 @@ TUDoDirectValueFast:
 
     TilesUploadUnpack 1
 
-.org $0f00
+.org $0e00
 TUDoDirectValueSlow:
         ; direct value, load tile index from frame data pointer
 
@@ -1107,7 +1116,7 @@ TUDoDirectValueSlow:
 
     TilesUploadUnpack 0
 
-.org $1000
+.org $0f00
 TUDoRepeatFast:
         ; tile pointer back into hl
     ex de, hl
@@ -1126,7 +1135,7 @@ TUDoRepeatFast:
 
     TilesUploadUnpack 1
 
-.org $1100
+.org $1000
 TUDoRepeatSlow:
         ; tile pointer back into hl
     ex de, hl
@@ -1145,7 +1154,7 @@ TUDoRepeatSlow:
 
     TilesUploadUnpack 0
 
-.org $1200
+.org $1100
 TUDoTerminator:
         ; value 224 is terminator
 
@@ -1191,14 +1200,18 @@ TUDoTerminator:
 ; Tilemap upload fixed sequences (jump tables, LUTs)
 ;==============================================================
 
-.org $1300
+.org $1200
 TMCommandsJumpTable:
     ; $00
     .repeat 32 index idx
         .ifeq idx 0
             .db >TMTerminator
         .else
-            .db >TMSkip
+            .ifeq idx 1
+                .db >TMSkip1
+            .else
+                .db >TMSkip
+            .endif
         .endif
         .db (>TMCacheIndex + idx)
     .endr
@@ -1224,57 +1237,71 @@ TMCommandsJumpTable:
         .db (>TMCacheRepeat + 4), (>TMRaw + 3)
     .endr
 
-.org $1500
+.org $1400
 TMCacheIndex:
 .repeat 32 index idx
-    .org $1500 + (idx * $100)
+    .org $1400 + (idx * $100)
         TMUploadCacheIndexMacro idx, 0
         TMProcessNextCommand 0, 0
-    .org $1540 + (idx * $100)
+    .org $1440 + (idx * $100)
         TMUploadCacheIndexMacro idx, 1
         TMProcessNextCommand 1, 0
-    .org $1580 + (idx * $100)
+    .org $1480 + (idx * $100)
         TMUploadCacheIndexMacro idx, 0
         TMProcessNextCommand 0, 1
-    .org $15c0 + (idx * $100)
+    .org $14c0 + (idx * $100)
         TMUploadCacheIndexMacro idx, 1
         TMProcessNextCommand 1, 1
 .endr
 
-.org $3500
+.org $3400
 TMCacheRepeat:
 .repeat 5 index idxRpt
-    .org $3500 + (idxRpt * $100)
+    .org $3400 + (idxRpt * $100)
         TMUploadCacheRepeatMacro (idxRpt + 2), 0
         TMProcessNextCommand 0, 0
-    .org $3540 + (idxRpt * $100)
+    .org $3440 + (idxRpt * $100)
         TMUploadCacheRepeatMacro (idxRpt + 2), 1
         TMProcessNextCommand 1, 0
-    .org $3580 + (idxRpt * $100)
+    .org $3480 + (idxRpt * $100)
         TMUploadCacheRepeatMacro (idxRpt + 2), 0
         TMProcessNextCommand 0, 1
-    .org $35c0 + (idxRpt * $100)
+    .org $34c0 + (idxRpt * $100)
         TMUploadCacheRepeatMacro (idxRpt + 2), 1
         TMProcessNextCommand 1, 1
 .endr
 
-.org $3a00
+.org $3900
 TMRaw:
 .repeat 4 index idxRpt
-    .org $3a00 + (idxRpt * $100)
+    .org $3900 + (idxRpt * $100)
         TMUploadRawMacro (idxRpt + 1), 0, 0
             ; TMUploadRawMacro consumed one more "command", so step in inverted
         TMProcessNextCommand 1, 0
-    .org $3a40 + (idxRpt * $100)
+    .org $3940 + (idxRpt * $100)
         TMUploadRawMacro (idxRpt + 1), 1, 0
         TMProcessNextCommand 0, 0
-    .org $3a80 + (idxRpt * $100)
+    .org $3980 + (idxRpt * $100)
         TMUploadRawMacro (idxRpt + 1), 0, 1
         TMProcessNextCommand 1, 1
-    .org $3ac0 + (idxRpt * $100)
+    .org $39c0 + (idxRpt * $100)
         TMUploadRawMacro (idxRpt + 1), 1, 1
         TMProcessNextCommand 0, 1
 .endr
+
+.org $3d00
+TMSkip1:
+    TMSkip1Macro 0, 0
+    TMProcessNextCommand 0, 0
+.org $3d40
+    TMSkip1Macro 1, 0
+    TMProcessNextCommand 1, 0
+.org $3d80
+    TMSkip1Macro 0, 1
+    TMProcessNextCommand 0, 1
+.org $3dc0
+    TMSkip1Macro 1, 1
+    TMProcessNextCommand 1, 1
 
 .org $3e00
 TMSkip:
