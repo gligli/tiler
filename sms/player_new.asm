@@ -81,8 +81,7 @@ banks 1
     ex af, af'
         ; this macro is 27 cycles when not playing
         ; one sample every 325 cycles (320 + 5 from jr not jumping)
-        ; + 0.5 to round up
-    add a, (skew + 27) / 325 * 256 + 0.5
+    add a, (skew + 27) / 325 * 256
     jr nc, ++++
     PlaySample
 ++++:
@@ -352,19 +351,10 @@ banks 1
     .endif
 .endm
 
-.macro TMUploadRawMacro args rpt, step, half ; c52*(rpt-1)+38-4*half+14*(1-step)
+.macro TMUploadRawMacro args rpt, step, half ; c52*(rpt-1)+38+14*(1-step)
     .ifeq step 0
         ld a, d
         pop de
-    .endif
-
-        ; high byte of tilemap item from command
-    .ifeq half 0
-        .ifeq step 0
-            dec a
-        .else
-            dec e
-        .endif
     .endif
 
     .repeat rpt index idx
@@ -376,7 +366,20 @@ banks 1
         .endif
 
         inc ix
-        nop ; timing
+        .ifeq idx 0
+                ; high byte of tilemap item from command
+            .ifeq half 0
+                .ifeq step 0
+                    dec a
+                .else
+                    dec e
+                .endif
+            .else
+                nop ; timing
+            .endif
+        .else
+            nop ; timing
+        .endif
 
             ; high byte of tilemap item
         .ifeq step 0
@@ -386,7 +389,7 @@ banks 1
         .endif
 
         .ifeq idx 0
-            PlaySampleSkew 52*(rpt-1)+38-4*half+14*(1-step)+26+10*step
+            PlaySampleSkew 52*(rpt-1)+38+14*(1-step)+26+10*step
         .else
             inc iy ; timing
             nop ; timing
