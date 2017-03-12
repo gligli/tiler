@@ -464,7 +464,7 @@ init_tab: ; table must exist within first 1K of ROM
     reti
 
 .org $0066
-    retn
+    jp 0
 
 main:
     ld sp, $dff0
@@ -979,7 +979,7 @@ PSGInitEnd:
 
 ; VDP initialisation data
 VDPInitData:
-.db $04,$80,$00,$81,$f9,$82,$ff,$85,$ff,$86,$ff,$87,$00,$88,$00,$89,$ff,$8a
+.db $04,$80,$00,$81,$f1,$82,$ff,$85,$ff,$86,$ff,$87,$00,$88,$00,$89,$ff,$8a
 VDPInitDataEnd:
 
 .ifdef FIXED_PCM
