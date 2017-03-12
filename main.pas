@@ -39,7 +39,7 @@ const
 
   // Video player consts
   cMaxTilesPerFrame = 207;
-  cSmoothingPrevFrame = 1;
+  cSmoothingPrevFrame = 2;
   cTileIndexesTileOffset = cTilesPerBank + 1;
   cTileIndexesMaxDiff = 223;
   cTileIndexesRepeatStart = 224;

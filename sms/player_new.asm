@@ -30,6 +30,7 @@ banks 1
 .define VDPData $be
 .define VDPScanline $7e
 .define PSGPort $7f
+.define VRAMRead $0000
 .define VRAMWrite $4000
 .define CRAMWrite $c000
 .define MapperSlot0 $fffd
@@ -282,7 +283,7 @@ banks 1
     jp (hl)
 .endm
 
-.macro TMUploadCacheRepeatMacro args rpt  ;c53*(rpt-1)+39+36
+.macro TMUploadCacheRepeatMacro args rpt  ;c53*(rpt-1)+30+36
         ; compute cache address
     and %00111110
     ld h, >TileMapCache
@@ -302,13 +303,12 @@ banks 1
             .ifeq rpt 6
                 ;c377
                 PlaySample
-                PlaySampleSkew 57
             .else
                 .ifeq rpt 5
                     ; c324
                     PlaySample
                 .else
-                    PlaySampleSkew 53*(rpt-1)+39+36+37
+                    PlaySampleSkew 53*(rpt-1)+30+36+37
                 .endif
             .endif
         .else
@@ -318,8 +318,19 @@ banks 1
 
             ; high byte of tilemap item
         out (c), a
-        ld l, a
-        push hl ; store tilemap item into LocalTileMap
+
+        inc sp
+        .ifeq idx 0
+            .ifeq rpt 6
+                PlaySampleSkew 57
+            .else
+                nop ; timing
+                nop ; timing
+            .endif
+        .else
+            nop ; timing
+            nop ; timing
+        .endif
     .endr
 .endm
 
@@ -329,49 +340,39 @@ banks 1
         ; low byte of tilemap item
     out (c), h
 
-    PlaySampleSkew 51+37
+    PlaySampleSkew 46+37
 
         ; high byte of tilemap item
     out (c), l
 
-    push hl ; store tilemap item into LocalTileMap
-.endm
-
-.macro TMSkipMacro args half ; c44
-        ; local tilemap pointer
-    ld hl, -1
-    add hl, sp
-        ; loop counter (command is skip count * 2 already)
-    ld b, a
-
-        ; upload "skip count" prev items from local tilemap
--:
-        ; tilemap item low byte
-    outd
-        ; tilemap item high byte
-    .ifeq half 1
-        set 0, (hl)
-    .else
-        res 0, (hl)
-    .endif
-
-    PlaySampleSkew 57
-
-    outd
-
-    jp nz, -
-
-        ; sp (reverse local tilemap pointer) must be updated too
-    ld sp, hl
     inc sp
-
-        ; jump table offset back into b
-    ld b, >TMCommandsJumpTable
-
-    PlaySampleSkew 44+37
 .endm
 
-.macro TMUploadRawMacro args rpt, half ; c52*(rpt-1)+45+4+4*(1-half)
+.macro TMSkipMacro args half ; c80
+
+        ; command is skip count * 2
+    rrca
+
+        ; update TM offset (add skip count)
+    ld h, 0
+    ld l, a
+    add hl, sp
+    ld sp, hl
+
+        ; compute VRAM pointer
+    add hl, hl
+
+        ; update VRAM pointer
+    ld a, l
+    out (VDPControl), a
+    ld a, h
+    or >VRAMWrite + half * $20
+    out (VDPControl), a
+
+    PlaySampleSkew 80+37
+.endm
+
+.macro TMUploadRawMacro args rpt, half ; c52*(rpt-1)+42+4+4*(1-half)
         ; high byte of tilemap item from command
     .ifeq half 0
         dec a
@@ -382,27 +383,24 @@ banks 1
             ; low byte of tilemap item
         ld a, (de)
         out (VDPData), a
-        ld h, a
-        push hl ; store tilemap item into LocalTileMap
+        inc sp
+        .ifeq idx 0
+            PlaySampleSkew 52*(rpt-1)+42+4+4*(1-half)+37
+        .else
+            nop ; timing
+            nop ; timing
+        .endif
 
             ; high byte of tilemap item
         out (c), l
 
-        .ifeq idx 0
-            PlaySampleSkew 52*(rpt-1)+45+4+4*(1-half)+37
+        .ifeq idx (rpt - 1)
+            inc de
         .else
-            .ifneq idx (rpt - 1)
-                nop ; timing
-                nop ; timing
-            .else
-                inc de
-            .endif
+            nop ; timing
+            nop ; timing
         .endif
     .endr
-
-    .ifeq rpt 1
-        inc de
-    .endif
 .endm
 
 ;==============================================================
@@ -413,8 +411,6 @@ banks 1
     PSGBufferA        dsb 1024
     PSGBufferB        dsb 1024
     PCMUnpackLUT      dsb 1536
-    LocalTileMap      dsb TileMapSize
-    LocalTileMapEnd   .
     TileMapCache      dsb 64 ; must be aligned on 256
     LocalPalette      dsb TilePaletteSize * 2
     FrameCount        dw
@@ -786,8 +782,8 @@ TilesUploadEnd:
         ; save command pointer into de
     ex de, hl
 
-        ; sp will be used as a pointer on a reversed local tilemap
-    ld sp, LocalTileMapEnd
+        ; sp will be used as a tilemap tile offset
+    ld sp, 0
 
 ; c326
     PlaySample
@@ -991,9 +987,9 @@ TUDoVBlankSwitch:
     ld a, ixh
     or a
     jp z, +
-;     ld ixh, 0
-;     PlaySampleSkew 86
-;     TilesUploadUnpack 0
+    ld ixh, 0
+    PlaySampleSkew 86
+    TilesUploadUnpack 0
 +:
     ld ixh, 1
     PlaySampleSkew 86
@@ -1132,10 +1128,10 @@ TUDoTerminator:
         inc iy
     .endr
     PlaySample
-    .repeat 19
+    .repeat 31
         inc iy
     .endr
-    PlaySampleSkew 204
+    PlaySample
     dec d
     jp nz, @Loop
 
