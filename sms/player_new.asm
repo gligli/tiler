@@ -1162,24 +1162,24 @@ TMCommandsJumpTable:
     .endr
     ; $40
     .repeat 32
-        .db >TMCacheRpt2, >TMCacheRpt3
+        .db >TMCacheRepeat, (>TMCacheRepeat + 1)
     .endr
     ; $80
     .repeat 32
-        .db >TMCacheRpt4, >TMCacheRpt5
+        .db (>TMCacheRepeat + 2), (>TMCacheRepeat + 3)
     .endr
     ; $C0
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt1
+        .db (>TMCacheRepeat + 4), >TMRaw
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt2
+        .db (>TMCacheRepeat + 4), (>TMRaw + 1)
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt3
+        .db (>TMCacheRepeat + 4), (>TMRaw + 2)
     .endr
     .repeat 8
-        .db >TMCacheRpt6, >TMRawRpt4
+        .db (>TMCacheRepeat + 4), (>TMRaw + 3)
     .endr
 
 .org $1500
@@ -1194,76 +1194,26 @@ TMCacheIndex:
 .endr
 
 .org $3500
-TMRawRpt4:
-    TMUploadRawMacro 4, 0
-    TMProcessNextCommand 0
-.org $3580
-    TMUploadRawMacro 4, 1
-    TMProcessNextCommand 1
-
-.org $3600
-TMRawRpt3:
-    TMUploadRawMacro 3, 0
-    TMProcessNextCommand 0
-.org $3680
-    TMUploadRawMacro 3, 1
-    TMProcessNextCommand 1
-
-.org $3700
-TMRawRpt2:
-    TMUploadRawMacro 2, 0
-    TMProcessNextCommand 0
-.org $3780
-    TMUploadRawMacro 2, 1
-    TMProcessNextCommand 1
-
-.org $3800
-TMRawRpt1:
-    TMUploadRawMacro 1, 0
-    TMProcessNextCommand 0
-.org $3880
-    TMUploadRawMacro 1, 1
-    TMProcessNextCommand 1
-
-.org $3900
-TMCacheRpt6:
-    TMUploadCacheRepeatMacro 6
-    TMProcessNextCommand 0
-.org $3980
-    TMUploadCacheRepeatMacro 6
-    TMProcessNextCommand 1
+TMCacheRepeat:
+.repeat 5 index idxRpt
+    .org $3500 + (idxRpt * $100)
+        TMUploadCacheRepeatMacro (idxRpt + 2)
+        TMProcessNextCommand 0
+    .org $3580 + (idxRpt * $100)
+        TMUploadCacheRepeatMacro (idxRpt + 2)
+        TMProcessNextCommand 1
+.endr
 
 .org $3a00
-TMCacheRpt5:
-    TMUploadCacheRepeatMacro 5
-    TMProcessNextCommand 0
-.org $3a80
-    TMUploadCacheRepeatMacro 5
-    TMProcessNextCommand 1
-
-.org $3b00
-TMCacheRpt4:
-    TMUploadCacheRepeatMacro 4
-    TMProcessNextCommand 0
-.org $3b80
-    TMUploadCacheRepeatMacro 4
-    TMProcessNextCommand 1
-
-.org $3c00
-TMCacheRpt3:
-    TMUploadCacheRepeatMacro 3
-    TMProcessNextCommand 0
-.org $3c80
-    TMUploadCacheRepeatMacro 3
-    TMProcessNextCommand 1
-
-.org $3d00
-TMCacheRpt2:
-    TMUploadCacheRepeatMacro 2
-    TMProcessNextCommand 0
-.org $3d80
-    TMUploadCacheRepeatMacro 2
-    TMProcessNextCommand 1
+TMRaw:
+.repeat 4 index idxRpt
+    .org $3a00 + (idxRpt * $100)
+        TMUploadRawMacro (idxRpt + 1), 0
+        TMProcessNextCommand 0
+    .org $3a80 + (idxRpt * $100)
+        TMUploadRawMacro (idxRpt + 1), 1
+        TMProcessNextCommand 1
+.endr
 
 .org $3e00
 TMSkip:
