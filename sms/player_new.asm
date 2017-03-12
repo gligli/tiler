@@ -283,7 +283,7 @@ banks 1
     jp (hl)
 .endm
 
-.macro TMUploadCacheRepeatMacro args rpt  ;c53*(rpt-1)+30+36
+.macro TMUploadCacheRepeatMacro args rpt  ;c52*(rpt-1)+38+36/c52*rpt+36+7
         ; compute cache address
     and %00111110
     ld h, >TileMapCache
@@ -294,44 +294,40 @@ banks 1
     inc l
     ld h, (hl)
 
+    .ifleeq rpt 4
+        .repeat rpt index idx
+                ; low byte of tilemap item
+            out (c), h
 
-    .repeat rpt index idx
+            .ifeq idx 0
+                PlaySampleSkew 52*(rpt-1)+38+36+37
+            .else
+                inc iy ; timing
+                nop ; timing
+            .endif
+
+                ; high byte of tilemap item
+            out (c), a
+
+            inc sp
+            nop ; timing
+            nop ; timing
+        .endr
+    .else
+        ld l, rpt
+-:
             ; low byte of tilemap item
         out (c), h
 
-        .ifeq idx 0
-            .ifeq rpt 6
-                ;c377
-                PlaySample
-            .else
-                .ifeq rpt 5
-                    ; c324
-                    PlaySample
-                .else
-                    PlaySampleSkew 53*(rpt-1)+30+36+37
-                .endif
-            .endif
-        .else
-            inc iy ; timing
-            nop ; timing
-        .endif
+        inc sp
+        PlaySampleSkew 52+(36+7+37)/rpt
 
             ; high byte of tilemap item
         out (c), a
 
-        inc sp
-        .ifeq idx 0
-            .ifeq rpt 6
-                PlaySampleSkew 57
-            .else
-                nop ; timing
-                nop ; timing
-            .endif
-        .else
-            nop ; timing
-            nop ; timing
-        .endif
-    .endr
+        dec l
+        jp nz, -
+    .endif
 .endm
 
 .macro TMUploadCacheIndexMacro args cacheIdx ; c51
