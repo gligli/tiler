@@ -13,7 +13,7 @@ const
   cKeyframeFixedColors = 2;
   cGamma = 2.2;
   cInvertSpritePalette = True;
-  cGammaCorrectFrameTiling = True;
+  cGammaCorrectFrameTiling = False;
   cGammaCorrectSmoothing = False;
   cUseOldDithering = False;
 
@@ -65,7 +65,7 @@ const
     (343 + 688, 289 + 17 + 688, 91, 213 + 12 + 688, 113 + 7),
     (343 + 344, 309 + 18 + 344, 91, 233 + 14 + 344, 113 + 7)
   );
-  cLineJitter = 5;
+  cLineJitter = 3;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
   // JPEG standard quantization tables
