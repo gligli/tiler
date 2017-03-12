@@ -1,4 +1,4 @@
-.define FIXED_PCM
+;.define FIXED_PCM
 
 ;==============================================================
 ; WLA-DX banking setup
