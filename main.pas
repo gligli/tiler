@@ -15,6 +15,7 @@ const
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
+  cUseOldDithering = False;
 
   // SMS consts
   cTotalColors = 64;
@@ -91,7 +92,7 @@ const
     (99,  99,  99,  99,  99,  99,  99,  99)
   );
 
-  cDitheringMap2 : array[0..8*8 - 1] of Byte = (
+  cDitheringMap : array[0..8*8 - 1] of Byte = (
      0, 48, 12, 60,  3, 51, 15, 63,
     32, 16, 44, 28, 35, 19, 47, 31,
      8, 56,  4, 52, 11, 59,  7, 55,
@@ -140,6 +141,11 @@ type
   end;
 
   PFrame = ^TFrame;
+
+  TMixingPlan = record
+    Colors: array[0..1] of Integer;
+    Ratio: Integer; // 0 = always index1, 63 = always index2, 32 = 50% of both
+  end;
 
   TMixingPlan2 = record
     List: array[0..255] of Integer;
@@ -217,6 +223,10 @@ type
 
     // Dithering algorithm ported from http://bisqwit.iki.fi/story/howto/dither/jy/
     function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
+
+    function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
+    function DeviseBestMixingPlan(r,g,b: Integer; const pal: array of Integer): TMixingPlan;
+
     procedure PreparePlan2(var Plan: TMixingPlan2; const pal: array of Integer);
     procedure DeviseBestMixingPlan2(var Plan: TMixingPlan2; r, g, b: Integer);
 
@@ -778,19 +788,33 @@ end;
 
 procedure TMainForm.DitherTile(ATile: PTile; const pal: array of Integer; SpritePal: Boolean);
 var
-  x, y: Integer;
+  x, y, col: Integer;
   map_value: Integer;
-  plan: TMixingPlan2;
+  plan: TMixingPlan;
+  plan2: TMixingPlan2;
 begin
-  PreparePlan2(plan, pal);
+  if not cUseOldDithering then
+    PreparePlan2(plan2, pal);
 
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
     begin
-      map_value := cDitheringMap2[(x and (cTileWidth - 1)) + ((y and (cTileWidth - 1)) shl 3)];
-      DeviseBestMixingPlan2(plan, ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2]);
-      map_value := map_value * plan.Count div 64;
-      ATile^.PalPixels[SpritePal, y,x] := plan.List[map_value];
+      map_value := cDitheringMap[(x and (cTileWidth - 1)) + ((y and (cTileWidth - 1)) shl 3)];
+      if cUseOldDithering then
+      begin
+        plan := DeviseBestMixingPlan(ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2], pal);
+        if map_value < plan.Ratio then
+          col := plan.Colors[1]
+        else
+          col := plan.Colors[0];
+        ATile^.PalPixels[SpritePal, y, x] := col;
+      end
+      else
+      begin
+        DeviseBestMixingPlan2(plan2, ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2]);
+        map_value := map_value * plan2.Count div 64;
+        ATile^.PalPixels[SpritePal, y,x] := plan2.List[map_value];
+      end;
     end;
 end;
 
@@ -975,10 +999,82 @@ begin
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * (299 * 299 * 3 div 4);
-  Result += diffG * diffG * (587 * 587 * 3 div 4);
-  Result += diffB * diffB * (114 * 114 * 3 div 4);
+  Result := diffR * diffR * (299 * 1000 * 3 div 4);
+  Result += diffG * diffG * (587 * 1000 * 3 div 4);
+  Result += diffB * diffB * (114 * 1000 * 3 div 4);
   Result += lumadiff * lumadiff;
+end;
+
+function TMainForm.EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
+begin
+  Result := ColorCompare(r,g,b, r0,g0,b0) + ColorCompare(r1,g1,b1, r2,g2,b2) * 0.1 * (abs(ratio-0.5)+0.5);
+end;
+
+function TMainForm.DeviseBestMixingPlan(r, g, b: Integer; const pal: array of Integer): TMixingPlan;
+var
+  r0,r1,r2,g0,g1,g2,b0,b1,b2,index1,index2,ratio,color1,color2,t1,t2,t3,d1,d2,d3: Integer;
+  least_penalty, penalty: Single;
+begin
+  Result.Colors[0] := 0;
+  Result.Colors[1] := 0;
+  Result.Ratio := 32;
+
+  least_penalty := MaxSingle;
+  // Loop through every unique combination of two colors from the palette,
+  // and through each possible way to mix those two colors. They can be
+  // mixed in exactly 64 ways, when the threshold matrix is 8x8.
+  for index1 := 0 to High(pal) do
+  begin
+    color1 := pal[index1];
+    b1 := (color1 shr 16) and $ff; g1 := (color1 shr 8) and $ff; r1 := color1 and $ff;
+    for index2 := 0 to High(pal) do
+    begin
+      // Determine the two component colors
+      color2 := pal[index2];
+      b2 := (color2 shr 16) and $ff; g2 := (color2 shr 8) and $ff; r2 := color2 and $ff;
+      ratio := 32;
+      if color1 <> color2 then
+      begin
+        // Determine the ratio of mixing for each channel.
+        //   solve(r1 + ratio*(r2-r1)/64 = r, ratio)
+        // Take a weighed average of these three ratios according to the
+        // perceived luminosity of each channel (according to CCIR 601).
+        t1 := 0; t2 := 0; t3 := 0; d1 := 0; d2 := 0; d3 := 0;
+        if r2 <> r1 then
+        begin
+          t1 := 299*64 * (r - r1) div (r2-r1);
+          d1 := 299;
+        end;
+        if g2 <> g1 then
+        begin
+          t2 := 587*64 * (g - g1) div (g2-g1);
+          d2 := 587;
+        end;
+        if b2 <> b1 then
+        begin
+          t3 := 114*64 * (b - b1) div (b2-b1);
+          d3 := 114;
+        end;
+        ratio := (t1+t2+t3) div (d1+d2+d3);
+        if(ratio < 0) then ratio := 0 else if(ratio > 63) then ratio := 63;
+      end;
+
+      // Determine what mixing them in this proportion will produce
+      r0 := r1 + ratio * (r2-r1) shr 6;
+      g0 := g1 + ratio * (g2-g1) shr 6;
+      b0 := b1 + ratio * (b2-b1) shr 6;
+      // Determine how well that matches what we want to accomplish
+      penalty := EvaluateMixingError(r,g,b, r0,g0,b0, r1,g1,b1, r2,g2,b2, ratio/64.0);
+      if penalty < least_penalty then
+      begin
+        // Keep the result that has the smallest error
+        least_penalty := penalty;
+        result.colors[0] := index1;
+        result.colors[1] := index2;
+        result.ratio := ratio;
+      end;
+    end;
+  end;
 end;
 
 procedure TMainForm.RGBToYUV(r, g, b: Integer;  GammaCor: Boolean; out y, u, v: Single); inline;
