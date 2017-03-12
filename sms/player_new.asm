@@ -587,10 +587,9 @@ main:
     ld de, 0
     exx
 
+InitPlayer:
         ; algo expects VBlank state on start
     WaitVBlank 0
-
-InitPlayer:
 
         ; map slot 1 to beginning of video data
     ld a, 1
