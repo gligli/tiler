@@ -443,8 +443,8 @@ banks 1
 ;==============================================================
 
 .enum $c000 export
-    PSGBufferA        dsb 1024
-    PSGBufferB        dsb 1024
+    PSGBufferA        dsb 2048
+    PSGBufferB        dsb 2048
     PCMUnpackLUT      dsb 1536
     TileMapCache      dsb 64 ; must be aligned on 256
     LocalPalette      dsb TilePaletteSize * 2
@@ -537,7 +537,7 @@ main:
     ld hl, PSGBufferA
     ld b, 0
     ld a, $ff
--:  .repeat 2048/256
+-:  .repeat 4096/256
         ld (hl), a
         inc hl
     .endr
@@ -595,7 +595,7 @@ main:
     ; init PCM player
     exx
     ld c, PSGPort
-    ld hl, PSGBufferB + 1024 - 1
+    ld hl, PSGBufferB + 2048 - 1
     ld de, 0
     exx
 
@@ -844,9 +844,10 @@ TilemapUnpackEnd:
     ; Unpack frame PCM data to RAM
 
         ; PSGBufferA for even frames, PSGBufferB for odd frames
-    ld hl, PSGBufferB + 1024
+    ld hl, PSGBufferB + 2048
     ld a, (CurFrameIdx)
     and $01
+    rla
     rla
     rla
     neg
@@ -914,9 +915,10 @@ p3:
     ; restart PCM player on other buffer
     exx
     ld (PSGBufferA), hl ; debug tool (shows how many samples actually played per frame)
-    ld hl, PSGBufferA + 1024 - 1
+    ld hl, PSGBufferA + 2048 - 1
     ld a, (CurFrameIdx)
     and $01
+    rla
     rla
     rla
     add a, h
