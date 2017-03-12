@@ -81,8 +81,8 @@ banks 1
     ex af, af'
         ; this macro is 27 cycles when not playing
         ; one sample every 325 cycles (320 + 5 from jr not jumping)
-        ; + 1 to round up
-    add a, (skew + 27) / 325 * 256 + 1
+        ; + 0.5 to round up
+    add a, (skew + 27) / 325 * 256 + 0.5
     jr nc, ++++
     PlaySample
 ++++:
