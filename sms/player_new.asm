@@ -1164,10 +1164,10 @@ TUDoTerminator:
         inc iy
     .endr
     PlaySample
-    .repeat 31
+    .repeat 26
         inc iy
     .endr
-    PlaySample
+    PlaySampleSkew 274
     dec d
     jp nz, @Loop
 
