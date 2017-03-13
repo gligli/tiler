@@ -105,6 +105,7 @@ const
 
 type
   PTile = ^TTile;
+  PPTile = ^PTile;
 
   TTile = record
     RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1),0..2] of Integer;
@@ -212,7 +213,7 @@ type
     FFrames: array of TFrame;
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FColorMapLuma: array[0..cTotalColors - 1] of Integer;
-    FTiles: array of TTile;
+    FTiles: array of PTile;
     FCS: TCriticalSection;
 
     function GetMostFrequent(Arr: array of Byte): Integer;
@@ -443,9 +444,9 @@ procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
   var
     SpritePal: Boolean;
   begin
-    if FTiles[AIndex].Active then
+    if FTiles[AIndex]^.Active then
       for SpritePal := False to True do
-        ComputeTileDCT(@FTiles[AIndex], True, SpritePal, cGammaCorrectFrameTiling, PKeyFrame(AData)^.PaletteRGB[SpritePal]);
+        ComputeTileDCT(FTiles[AIndex], True, SpritePal, cGammaCorrectFrameTiling, PKeyFrame(AData)^.PaletteRGB[SpritePal]);
   end;
 
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -556,8 +557,8 @@ procedure TMainForm.btnReindexClick(Sender: TObject);
 
   procedure DoPruneUnusedTiles(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FTiles[AIndex].UseCount := GetTileUseCount(AIndex);
-    FTiles[AIndex].Active := FTiles[AIndex].Active and (FTiles[AIndex].UseCount <> 0);
+    FTiles[AIndex]^.UseCount := GetTileUseCount(AIndex);
+    FTiles[AIndex]^.Active := FTiles[AIndex]^.Active and (FTiles[AIndex]^.UseCount <> 0);
   end;
 
   procedure DoIndexFrameTiles(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -656,8 +657,12 @@ begin
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
+var
+  i: Integer;
 begin
   FCS.Free;
+  for i := 0 to High(FTiles) do
+    Dispose(FTiles[i]);
 end;
 
 procedure TMainForm.IdleTimerTimer(Sender: TObject);
@@ -842,7 +847,7 @@ begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
-      Tile_ := @FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
+      Tile_ := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
 
       if not Tile_^.Active then
         Exit;
@@ -893,7 +898,7 @@ begin
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
-          GTile := @FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
 
           for ty := 0 to cTileWidth - 1 do
             for tx := 0 to cTileWidth - 1 do
@@ -944,7 +949,7 @@ begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
-      Tile_ := @FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
+      Tile_ := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
 
       if not Tile_^.Active then
         Exit;
@@ -978,14 +983,21 @@ var
   i,j,x,y: Integer;
   tileCnt: Integer;
 begin
+  for i := 0 to High(FTiles) do
+    Dispose(FTiles[i]);
+
   tileCnt := Length(FFrames) * cMaxTiles;
+
   SetLength(FTiles, tileCnt);
+
+  for i := 0 to High(FTiles) do
+    FTiles[i] := New(PTile);
 
   for i := 0 to High(FFrames) do
   begin
     tileCnt := i * cMaxTiles;
     for j := 0 to cMaxTiles - 1 do
-      Move(FFrames[i].Tiles[j], FTiles[tileCnt+j], Sizeof(FFrames[i].Tiles[j]));
+      Move(FFrames[i].Tiles[j], FTiles[tileCnt+j]^, Sizeof(FFrames[i].Tiles[j]));
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
         Inc(FFrames[i].TileMap[y,x].GlobalTileIndex, tileCnt);
@@ -1288,17 +1300,17 @@ begin
           begin
             if dithered then
             begin
-              col := FColorMap[FTiles[ti].PaletteIndexes[FTiles[ti].PalPixels[False, tx, ty]]];
+              col := FColorMap[FTiles[ti]^.PaletteIndexes[FTiles[ti]^.PalPixels[False, tx, ty]]];
               b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
             end
             else
             begin
-              r := FTiles[ti].RGBPixels[tx, ty, 0];
-              g := FTiles[ti].RGBPixels[tx, ty, 1];
-              b := FTiles[ti].RGBPixels[tx, ty, 2];
+              r := FTiles[ti]^.RGBPixels[tx, ty, 0];
+              g := FTiles[ti]^.RGBPixels[tx, ty, 1];
+              b := FTiles[ti]^.RGBPixels[tx, ty, 2];
             end;
 
-            if not FTiles[ti].Active then
+            if not FTiles[ti]^.Active then
             begin
               r := 255;
               g := 0;
@@ -1320,7 +1332,7 @@ begin
           end;
 {$if true}
           ti := TMItem.GlobalTileIndex;
-          tilePtr := @FTiles[ti];
+          tilePtr := FTiles[ti];
 {$else}
           ti := (j shr 3) * cTileMapWidth + (i shr 3);
           tilePtr := @AFrame^.Tiles[ti];
@@ -1357,7 +1369,7 @@ var i: Integer;
 begin
   Result := 0;
   for i := 0 to High(FTiles) do
-    if FTiles[i].Active then
+    if FTiles[i]^.Active then
       Inc(Result);
 end;
 
@@ -1407,7 +1419,7 @@ begin
     begin
       FillChar(PalOccurences, cTilePaletteSize * SizeOf(Integer), 0);
       for i := 0 to TileCount - 1 do
-        Inc(PalOccurences[FTiles[TileIndexes[i]].PalPixels[False, ty, tx]]);
+        Inc(PalOccurences[FTiles[TileIndexes[i]]^.PalPixels[False, ty, tx]]);
 
       j := -1;
       k := 0;
@@ -1420,26 +1432,26 @@ begin
         end;
       end;
 
-      FTiles[Tile0].PalPixels[False, ty, tx] := j;
+      FTiles[Tile0]^.PalPixels[False, ty, tx] := j;
 		end;
 
   for k := 1 to TileCount - 1 do
   begin
     j := TileIndexes[k];
 
-    Inc(FTiles[Tile0].AveragedCount, FTiles[j].AveragedCount);
+    Inc(FTiles[Tile0]^.AveragedCount, FTiles[j]^.AveragedCount);
 
-    FTiles[j].Active := False;
-    FTiles[j].TmpIndex := Tile0;
+    FTiles[j]^.Active := False;
+    FTiles[j]^.TmpIndex := Tile0;
 
-    FillChar(FTiles[j].RGBPixels, SizeOf(FTiles[j].RGBPixels), 0);
-    FillChar(FTiles[j].PalPixels, SizeOf(FTiles[j].PalPixels), 0);
+    FillChar(FTiles[j]^.RGBPixels, SizeOf(FTiles[j]^.RGBPixels), 0);
+    FillChar(FTiles[j]^.PalPixels, SizeOf(FTiles[j]^.PalPixels), 0);
   end;
 
   for k := 0 to High(FFrames) do
     for j := 0 to (cTileMapHeight - 1) do
         for i := 0 to (cTileMapWidth - 1) do
-          if FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex].TmpIndex = Tile0 then
+          if FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex]^.TmpIndex = Tile0 then
             FFrames[k].TileMap[j, i].GlobalTileIndex := Tile0;
 end;
 
@@ -1508,9 +1520,9 @@ begin
   SetLength(TilesRepo, Length(FTiles));
   j := 0;
   for i := 0 to High(FTiles) do
-    if FTiles[i].Active then
+    if FTiles[i]^.Active then
     begin
-      TilesRepo[j].Tile := @FTiles[i];
+      TilesRepo[j].Tile := FTiles[i];
       TilesRepo[j].GlobalIndex := i;
       TilesRepo[j].UseCount := 0;
       Inc(j);
@@ -1640,8 +1652,8 @@ begin
     if PrevTMI^.FrameTileIndex >= Length(AFrame^.TilesIndexes) then
       Continue;
 
-    PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]];
-    Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]];
+    PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]]^;
+    Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]]^;
 
     if PrevTMI^.HMirror then HMirrorPalTile(@PrevTile, False);
     if PrevTMI^.VMirror then VMirrorPalTile(@PrevTile, False);
@@ -1712,16 +1724,16 @@ begin
   Cnt := 0;
   for i := 0 to High(FTiles) do
   begin
-    WasActive[i] := FTiles[i].Active;
+    WasActive[i] := FTiles[i]^.Active;
 
-    if not FTiles[i].Active then
+    if not FTiles[i]^.Active then
       Continue;
 
     j := 0;
     for y := 0 to cTileWidth - 1 do
       for x := 0 to cTileWidth - 1 do
       begin
-        Dataset[Cnt, j] := FTiles[i].PalPixels[False, y, x];
+        Dataset[Cnt, j] := FTiles[i]^.PalPixels[False, y, x];
         Inc(j);
       end;
 
@@ -1758,44 +1770,44 @@ begin
 end;
 
 function CompareTileUseCountRev(Item1, Item2, UserParameter:Pointer):Integer;
+var
+  t1, t2: PTile;
 begin
-  Result := CompareValue(PTile(Item2)^.UseCount, PTile(Item1)^.UseCount);
+  t1 := PPTile(Item1)^;
+  t2 := PPTile(Item2)^;
+  Result := CompareValue(t2^.UseCount, t1^.UseCount);
   if Result = 0 then
-    Result := CompareValue(PTile(Item1)^.TmpIndex, PTile(Item2)^.TmpIndex);
+    Result := CompareValue(t1^.TmpIndex, t2^.TmpIndex);
 end;
 
 procedure TMainForm.ReindexTiles;
 var
-  i, j, x, y, cnt: Integer;
+  i, x, y, cnt: Integer;
   IdxMap: TIntegerDynArray;
 begin
   cnt := 0;
   for i := 0 to High(FTiles) do
   begin
-    FTiles[i].TmpIndex := i;
-    if FTiles[i].Active then
+    FTiles[i]^.TmpIndex := i;
+    if FTiles[i]^.Active then
       Inc(cnt);
   end;
 
-  for i := High(FTiles) downto 0 do
-    if not FTiles[i].Active then
+  for i := High(FTiles) - 1 downto 0 do
+    if not FTiles[i]^.Active then
     begin
-      for j := i to High(FTiles) - 1 do
-        if FTiles[j + 1].Active then
-          Move(FTiles[j + 1], FTiles[j], Sizeof(FTiles[j]))
-        else
-          FTiles[j].Active := False;
-      FTiles[High(FTiles)].Active := False;
+      Dispose(FTiles[i]);
+      Move(FTiles[i + 1], FTiles[i], (Length(FTiles) - 1 - i) * SizeOf(PTile));
     end;
 
   SetLength(IdxMap, Length(FTiles));
-  FillDWord(IdxMap[0], High(FTiles), $ffffffff);
+  FillDWord(IdxMap[0], Length(FTiles), $ffffffff);
 
   SetLength(FTiles, cnt);
-  QuickSort(FTiles[0], 0, High(FTiles), SizeOf(TTile), @CompareTileUseCountRev);
+  QuickSort(FTiles[0], 0, High(FTiles), SizeOf(PTile), @CompareTileUseCountRev);
 
   for i := 0 to High(FTiles) do
-    IdxMap[FTiles[i].TmpIndex] := i;
+    IdxMap[FTiles[i]^.TmpIndex] := i;
 
   for i := 0 to High(FFrames) do
     for y := 0 to (cTileMapHeight - 1) do
@@ -1816,7 +1828,7 @@ begin
 
   cnt := 0;
   for i := 0 to High(FTiles) do
-    if FTiles[i].Active then
+    if FTiles[i]^.Active then
     begin
       UseCount := 0;
       for y := 0 to (cTileMapHeight - 1) do
@@ -2188,7 +2200,7 @@ begin
     begin
       for x := 0 to cTileWidth - 1 do
       begin
-        idx := FTiles[i].PalPixels[False, x, y];
+        idx := FTiles[i]^.PalPixels[False, x, y];
         tilesPlanes[y, 0] := tilesPlanes[y, 0] or (((idx and 1) shl 7) shr x);
         tilesPlanes[y, 1] := tilesPlanes[y, 1] or (((idx and 2) shl 6) shr x);
         tilesPlanes[y, 2] := tilesPlanes[y, 2] or (((idx and 4) shl 5) shr x);
