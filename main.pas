@@ -6,7 +6,7 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
-  StdCtrls, ComCtrls, Spin, Math, MTProcs, syncobjs, types, Process, strutils, kmodes;
+  StdCtrls, ComCtrls, Spin, Menus, Math, MTProcs, syncobjs, types, Process, strutils, kmodes;
 
 const
   // Tweakable params
@@ -166,14 +166,7 @@ type
   { TMainForm }
 
   TMainForm = class(TForm)
-    btnDoFrameTiling: TButton;
-    btnSmooth: TButton;
-    btnSave: TButton;
-    btnDoGlobalTiling: TButton;
-    btnLoad: TButton;
-    btnDither: TButton;
     btnRunAll: TButton;
-    btnReindex: TButton;
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
     edInput: TEdit;
@@ -189,7 +182,17 @@ type
     Label8: TLabel;
     Label9: TLabel;
     lblTileCount: TLabel;
+    MenuItem2: TMenuItem;
+    MenuItem3: TMenuItem;
+    MenuItem4: TMenuItem;
+    MenuItem5: TMenuItem;
+    MenuItem6: TMenuItem;
+    MenuItem7: TMenuItem;
+    miLoad: TMenuItem;
+    MenuItem1: TMenuItem;
     pbPalette: TPaintBox;
+    pmProcesses: TPopupMenu;
+    PopupMenu1: TPopupMenu;
     seAvgTPF: TSpinEdit;
     seTempoSmoo: TSpinEdit;
     seMaxTPF: TSpinEdit;
@@ -203,6 +206,7 @@ type
     tbFrame: TTrackBar;
     procedure btnDitherClick(Sender: TObject);
     procedure btnDoFrameTilingClick(Sender: TObject);
+    procedure btnDoMakeUniqueClick(Sender: TObject);
     procedure btnDoGlobalTilingClick(Sender: TObject);
     procedure btnLoadClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
@@ -415,17 +419,7 @@ end;
 { TMainForm }
 
 procedure TMainForm.btnDoGlobalTilingClick(Sender: TObject);
-
-const
-  cTilesAtATime = 100 * cMaxTiles;
-
-  procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    MakeTilesUnique(AIndex * cTilesAtATime, Min(Length(FTiles) - AIndex * cTilesAtATime, cTilesAtATime));
-  end;
-
 begin
-  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div cTilesAtATime);
   DoGlobalTiling(seAvgTPF.Value * Length(FFrames), seKMRest.Value);
   tbFrameChange(nil);
 end;
@@ -498,6 +492,20 @@ begin
     ProcThreadPool.DoParallelLocalProc(@DoFrame, first, last);
   end;
 
+  tbFrameChange(nil);
+end;
+
+procedure TMainForm.btnDoMakeUniqueClick(Sender: TObject);
+const
+  cTilesAtATime = 100 * cMaxTiles;
+
+  procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    MakeTilesUnique(AIndex * cTilesAtATime, Min(Length(FTiles) - AIndex * cTilesAtATime, cTilesAtATime));
+  end;
+
+begin
+  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div cTilesAtATime);
   tbFrameChange(nil);
 end;
 
@@ -594,13 +602,14 @@ end;
 
 procedure TMainForm.btnRunAllClick(Sender: TObject);
 begin
-  btnLoad.Click;
-  btnDither.Click;
-  btnDoGlobalTiling.Click;
-  btnDoFrameTiling.Click;
-  btnReindex.Click;
-  btnSmooth.Click;
-  btnSave.Click;
+  btnLoadClick(nil);
+  btnDitherClick(nil);
+  btnDoMakeUniqueClick(nil);
+  btnDoGlobalTilingClick(nil);
+  btnDoFrameTilingClick(nil);
+  btnReindexClick(nil);
+  btnSmoothClick(nil);
+  btnSaveClick(nil);
 end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);

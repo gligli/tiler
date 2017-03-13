@@ -25,29 +25,11 @@ object MainForm: TMainForm
     Width = 512
     Stretch = True
   end
-  object btnDoGlobalTiling: TButton
-    Left = 8
-    Height = 25
-    Top = 264
-    Width = 123
-    Caption = '3a - Global tiling'
-    OnClick = btnDoGlobalTilingClick
-    TabOrder = 10
-  end
   object imgTiles: TImage
     Left = 8
     Height = 384
     Top = 400
     Width = 256
-  end
-  object btnLoad: TButton
-    Left = 8
-    Height = 25
-    Top = 232
-    Width = 123
-    Caption = '1 - Load'
-    OnClick = btnLoadClick
-    TabOrder = 8
   end
   object tbFrame: TTrackBar
     Left = 272
@@ -61,7 +43,7 @@ object MainForm: TMainForm
     ShowSelRange = False
     TickMarks = tmBoth
     TickStyle = tsNone
-    TabOrder = 19
+    TabOrder = 12
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -70,7 +52,7 @@ object MainForm: TMainForm
     Width = 42
     Caption = 'Play'
     OnChange = chkPlayChange
-    TabOrder = 17
+    TabOrder = 10
   end
   object lblTileCount: TLabel
     Left = 8
@@ -89,16 +71,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 18
-  end
-  object btnDither: TButton
-    Left = 144
-    Height = 25
-    Top = 232
-    Width = 123
-    Caption = '2 - Dithering'
-    OnClick = btnDitherClick
-    TabOrder = 9
+    TabOrder = 11
   end
   object Label2: TLabel
     Left = 8
@@ -142,23 +115,15 @@ object MainForm: TMainForm
     Caption = 'Input'
     ParentColor = False
   end
-  object btnSave: TButton
+  object btnRunAll: TButton
     Left = 8
     Height = 25
-    Top = 328
+    Top = 224
     Width = 123
-    Caption = '6 - Save'
-    OnClick = btnSaveClick
-    TabOrder = 14
-  end
-  object btnRunAll: TButton
-    Left = 144
-    Height = 25
-    Top = 328
-    Width = 123
-    Caption = 'Run all (1-2-3-4-5-6)'
+    Caption = 'Run all'
     OnClick = btnRunAllClick
-    TabOrder = 15
+    PopupMenu = pmProcesses
+    TabOrder = 8
   end
   object sePage: TSpinEdit
     Left = 208
@@ -167,7 +132,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 227
     OnChange = tbFrameChange
-    TabOrder = 16
+    TabOrder = 9
   end
   object Label6: TLabel
     Left = 8
@@ -176,15 +141,6 @@ object MainForm: TMainForm
     Width = 77
     Caption = 'Show tile page'
     ParentColor = False
-  end
-  object btnReindex: TButton
-    Left = 8
-    Height = 25
-    Top = 296
-    Width = 123
-    Caption = '4 - Reindex'
-    OnClick = btnReindexClick
-    TabOrder = 12
   end
   object Label7: TLabel
     Left = 8
@@ -202,15 +158,6 @@ object MainForm: TMainForm
     MaxValue = 207
     TabOrder = 5
     Value = 207
-  end
-  object btnDoFrameTiling: TButton
-    Left = 144
-    Height = 25
-    Top = 264
-    Width = 123
-    Caption = '3b - Frame tiling'
-    OnClick = btnDoFrameTilingClick
-    TabOrder = 11
   end
   object Label8: TLabel
     Left = 8
@@ -296,20 +243,47 @@ object MainForm: TMainForm
     TabOrder = 7
     Value = 1
   end
-  object btnSmooth: TButton
-    Left = 144
-    Height = 25
-    Top = 296
-    Width = 123
-    Caption = '5 - Smoothing'
-    OnClick = btnSmoothClick
-    TabOrder = 13
-  end
   object IdleTimer: TIdleTimer
     Enabled = False
     Interval = 80
     OnTimer = IdleTimerTimer
     left = 744
     top = 744
+  end
+  object pmProcesses: TPopupMenu
+    left = 168
+    top = 352
+    object miLoad: TMenuItem
+      Caption = 'Load'
+      OnClick = btnLoadClick
+    end
+    object MenuItem1: TMenuItem
+      Caption = 'Dither'
+      OnClick = btnDitherClick
+    end
+    object MenuItem7: TMenuItem
+      Caption = 'Tile (make unique)'
+      OnClick = btnDoMakeUniqueClick
+    end
+    object MenuItem2: TMenuItem
+      Caption = 'Tile (global)'
+      OnClick = btnDoGlobalTilingClick
+    end
+    object MenuItem3: TMenuItem
+      Caption = 'Tile (frame)'
+      OnClick = btnDoFrameTilingClick
+    end
+    object MenuItem4: TMenuItem
+      Caption = 'Reindex'
+      OnClick = btnReindexClick
+    end
+    object MenuItem5: TMenuItem
+      Caption = 'Smooth'
+      OnClick = btnSmoothClick
+    end
+    object MenuItem6: TMenuItem
+      Caption = 'Save'
+      OnClick = btnSaveClick
+    end
   end
 end
