@@ -55,8 +55,11 @@ banks 1
     in a, (VDPControl)
 
 ---:
+    .repeat 10
+        inc iy
+    .endr
     .ifeq playSmp 1
-        PlaySampleSkew 25
+        PlaySampleSkew 125
     .endif
     in a, (VDPControl)
     or a  ; update flags
