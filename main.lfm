@@ -130,7 +130,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 369
     Width = 56
-    MaxValue = 227
+    MaxValue = 10000
     OnChange = tbFrameChange
     TabOrder = 9
   end
