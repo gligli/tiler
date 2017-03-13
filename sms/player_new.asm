@@ -596,7 +596,7 @@ main:
     exx
     ld c, PSGPort
     ld hl, PSGBufferB + 1024 - 1
-    ld de, 0
+    ld d, h
     exx
 
 InitPlayer:
@@ -844,12 +844,11 @@ TilemapUnpackEnd:
     ; Unpack frame PCM data to RAM
 
         ; PSGBufferA for even frames, PSGBufferB for odd frames
-    ld hl, PSGBufferB + 1024
+    ld hl, PSGBufferA + 1024
     ld a, (CurFrameIdx)
     and $01
     rla
     rla
-    neg
     add a, h
     ld h, a
 
@@ -884,10 +883,12 @@ TilemapUnpackEnd:
     PlaySample
 
         ; cleanup extra decoding
-    pop hl
-    ld hl, $ffff
-    push hl
-; c31
+   pop hl
+   pop hl
+   ld l, h
+   push hl
+   push hl
+; c46
 
         ; restore frame data pointer into hl
 .ifdef FIXED_PCM
@@ -900,10 +901,31 @@ TilemapUnpackEnd:
     ld h, b
     ld l, c
 .endif
-; c45
+; c60
 
-    PlaySampleSkew 56
+    PlaySampleSkew 71
 p2:
+
+        ; ensure the video frame lasted long enough by checking PCM buffer position
+-:
+    .repeat 10
+        inc iy ; timing
+    .endr
+
+    PlaySampleSkew 159
+    exx
+    ld a, d
+    and $fc
+    ld ixh, a
+    ld a, h
+    exx
+
+    cp ixh
+        ; stop on buffer underflow
+    jp c, +
+        ; loop while there's still buffer left
+    jp nz, -
++:
 
     WaitVBlank 1
 
@@ -921,6 +943,7 @@ p3:
     rla
     add a, h
     ld h, a
+    ld d, a
     exx
     ; reset sample skew
     ex af, af'
@@ -1165,29 +1188,6 @@ TUDoTerminator:
     dec sp ; we actually need to pop only one byte
     pop af
 
-    cp 0
-    jp z, @MaxUploaded
-
-        ; ensure proper video timing my simulating the upload of remaining tiles
-    ld d, a
-@Loop:
-    .repeat 32
-        inc iy
-    .endr
-    PlaySample
-    .repeat 32
-        inc iy
-    .endr
-    PlaySample
-    .repeat 16
-        inc iy
-    .endr
-    PlaySampleSkew 174
-    dec d
-    jp nz, @Loop
-
-@MaxUploaded:
-
         ; restore mapper slot
     ld a, ixl
     ld (MapperSlot2), a
@@ -1196,7 +1196,7 @@ TUDoTerminator:
     ld hl, 0
     add hl, sp
 
-    PlaySampleSkew 89
+    PlaySampleSkew 70
 
     jp TilesUploadEnd
 
