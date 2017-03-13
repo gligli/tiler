@@ -226,14 +226,23 @@ begin
 end;
 {$ifend}
 
-procedure MatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; var Dissim: TByteDynArray);
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
 var
-  i: Integer;
+  dis, best, i: Integer;
 begin
-  SetLength(Dissim, Length(a));
-
+  Result := -1;
+  best := MaxInt;
   for i := 0 to High(a) do
-    Dissim[i] := MatchingDissim(a[i], b);
+  begin
+    dis := MatchingDissim(a[i], b);
+    if dis < best then
+    begin
+      best := dis;
+      Result := i;
+    end;
+  end;
+
+  bestDissim := best;
 end;
 
 function CountClusterMembers(cluster: Integer; const membship: TIntegerDynArray): Integer;
@@ -313,8 +322,7 @@ end;
 
 function LabelsCost(const X, centroids: TByteDynArray2; var labels: TIntegerDynArray): Integer;
 var
-  npoints, ipoint, clust: Integer;
-  dis: TByteDynArray;
+  npoints, ipoint, clust, dis: Integer;
 begin
   npoints := Length(X);
   Result := 0;
@@ -323,10 +331,9 @@ begin
 
   for ipoint := 0 to npoints - 1 do
   begin
-    MatchingDissim(centroids, X[ipoint], dis);
-    clust := GetMinValueIndex(dis);
+    clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
     labels[ipoint] := clust;
-    Result += dis[clust];
+    Result += dis;
   end;
 end;
 
@@ -362,17 +369,15 @@ end;
 
 function KModesIter(const X: TByteDynArray2; var cl_attr_freq: TIntegerDynArray3; var centroids: TByteDynArray2; var membship: TIntegerDynArray): Integer;
 var
-  npoints, ipoint, ipoint2, ik, clust, old_clust, from_clust, rindx, cnt: Integer;
+  npoints, ipoint, ipoint2, ik, clust, old_clust, from_clust, rindx, cnt, dis: Integer;
   clsize, choices: TIntegerDynArray;
-  dis: TByteDynArray;
 begin
   npoints := Length(X);
   Result := 0;
 
   for ipoint := 0 to npoints - 1 do
   begin
-    MatchingDissim(centroids, X[ipoint], dis);
-    clust := GetMinValueIndex(dis);
+    clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
     if membship[ipoint] = clust then
       Continue;
 
@@ -421,7 +426,7 @@ var
     converged: Boolean;
     cost, ncost: Integer;
     labels, membship: TIntegerDynArray;
-    dis: TByteDynArray;
+    dis: Integer;
     centroids: TByteDynArray2;
     cl_attr_freq: TIntegerDynArray3;
   begin
@@ -442,8 +447,7 @@ var
 
     for ipoint := 0 to npoints - 1 do
     begin
-      MatchingDissim(centroids, X[ipoint], dis);
-      clust := GetMinValueIndex(dis);
+      clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
 
       membship[ipoint] := clust;
 
