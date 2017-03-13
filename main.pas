@@ -2186,7 +2186,7 @@ begin
 
     if Assigned(ASoundStream) then
     begin
-      ASoundStream.Position := 2 + Round(cFrameSoundSize * (i + 1)); // +1 because one frame contains audio for the next
+      ASoundStream.Position := 2 + Floor(cFrameSoundSize * i);
       ADataStream.CopyFrom(ASoundStream, Ceil(cFrameSoundSize));
     end;
 
