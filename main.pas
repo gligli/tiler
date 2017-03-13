@@ -257,6 +257,9 @@ type
 
     function DoExternalPCMEnc(AFN: String; Volume: Integer): String;
 
+    procedure SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
+    procedure SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
+
     procedure Save(ADataStream, ASoundStream: TStream);
  public
     { public declarations }
@@ -1498,7 +1501,7 @@ var
   FrameTile: TTile;
   cmp, cmpH, cmpV, cmpHV, rcmp: Single;
   idx, idxH, idxV, idxHV: Integer;
-  pass, sp, spH, spV, spHV, isp: Boolean;
+  pass, sp, spH, spV, spHV: Boolean;
   Dataset: TByteDynArray2;
   XYC: TIntegerDynArray;
 begin
@@ -1860,24 +1863,11 @@ begin
   Result := AFN + '.pcmenc';
 end;
 
-function CompareTMICache(Item1,Item2,UserParameter:Pointer):Integer;
-begin
-  Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
-end;
-
-procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
-var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, prevDTI, sameCount, skipCount: Integer;
-    rawTMI, tmiCacheIdx, best, awaitingCacheIdx, awaitingCount, tiZ80Cycles: Integer;
-    smoothed, tiVBlank, vbl: Boolean;
-    prevKF: PKeyFrame;
-    tilesPlanes: array[0..cTileWidth - 1, 0..3] of Byte;
-    tmi: PTileMapItem;
-    rawTMIs: array[0..cMaxTiles] of Integer;
-    tmiCache: array[0..4095] of packed record
-      UsedCount: Integer;
-      RawTMI: Integer;
-    end;
-    tileIdxStream: TMemoryStream;
+procedure TMainForm.SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
+var
+  j, prevTileIndex, diffTileIndex, prevDTI, sameCount, tiZ80Cycles: Integer;
+  tiVBlank, vbl: Boolean;
+  tileIdxStream: TMemoryStream;
 
   function CurrentLineJitter: Integer;
   begin
@@ -1942,6 +1932,95 @@ var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, p
     end;
   end;
 
+begin
+  tileIdxStream := TMemoryStream.Create;
+  try
+    tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
+    tiVBlank := True;
+
+    prevTileIndex := -1;
+    prevDTI := -1;
+    sameCount := 0;
+    for j := 0 to High(AFrame^.TilesIndexes) do
+    begin
+      diffTileIndex := AFrame^.TilesIndexes[j] - prevTileIndex;
+
+      if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
+          (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
+          ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
+      begin
+        DoTileIndex;
+        sameCount := 1;
+      end
+      else
+      begin
+        Inc(sameCount);
+      end;
+
+      if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
+          ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) div cTilesPerBank <>
+           (prevTileIndex + cTileIndexesTileOffset) div cTilesPerBank) then // any bank change must be a direct value
+      begin
+        vbl := tiVBlank;
+        if vbl then
+          HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
+
+        tileIdxStream.WriteByte(cTileIndexesDirectValue);
+        tileIdxStream.WriteWord(AFrame^.TilesIndexes[j] + cTileIndexesTileOffset);
+
+        if not vbl then
+          HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
+
+        diffTileIndex := -1;
+        sameCount := 0;
+      end;
+
+      prevTileIndex := AFrame^.TilesIndexes[j];
+      prevDTI := diffTileIndex;
+    end;
+
+    DoTileIndex;
+    tileIdxStream.WriteByte(cTileIndexesTerminator);
+    tileIdxStream.WriteByte(cMaxTilesPerFrame - Length(AFrame^.TilesIndexes));
+
+    // the whole tiles indices should stay in the same bank
+    if ADataStream.Size div cBankSize <> (ADataStream.Size + tileIdxStream.Size) div cBankSize then
+    begin
+      ADataStream.WriteByte(1);
+      while ADataStream.Size mod cBankSize <> 0 do
+        ADataStream.WriteByte(0);
+      DebugLn('Crossed bank limit!');
+    end
+    else
+    begin
+      ADataStream.WriteByte(0);
+    end;
+
+    tileIdxStream.Position := 0;
+    ADataStream.CopyFrom(tileIdxStream, tileIdxStream.Size);
+
+  finally
+    tileIdxStream.Free;
+  end;
+end;
+
+function CompareTMICache(Item1,Item2,UserParameter:Pointer):Integer;
+begin
+  Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
+end;
+
+procedure TMainForm.SaveTileMap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
+var
+  j, k, x, y, skipCount: Integer;
+  rawTMI, tmiCacheIdx, awaitingCacheIdx, awaitingCount: Integer;
+  smoothed: Boolean;
+  tmi: PTileMapItem;
+  rawTMIs: array[0..cMaxTiles] of Integer;
+  tmiCache: array[0..4095] of packed record
+    UsedCount: Integer;
+    RawTMI: Integer;
+  end;
+
   procedure DoTilemapTileCommand(DoCache, DoSkip: Boolean);
   begin
     if DoSkip and (skipCount > 0) then
@@ -1962,6 +2041,138 @@ var pp, pp2, i, j, k, sz, x, y, idx, frameStart, prevTileIndex, diffTileIndex, p
       end;
   end;
 
+begin
+  for j := 0 to High(tmiCache) do
+  begin
+    tmiCache[j].UsedCount := 0;
+    tmiCache[j].RawTMI := j;
+  end;
+
+  for y := 0 to cTileMapHeight - 1 do
+    for x := 0 to cTileMapWidth - 1 do
+    begin
+      tmi := @AFrame^.TileMap[y, x];
+      rawTMI := (tmi^.FrameTileIndex + cTileMapIndicesOffset[AFrameIdx and 1]) and $1ff;
+      if tmi^.HMirror then rawTMI := rawTMI or $200;
+      if tmi^.VMirror then rawTMI := rawTMI or $400;
+      if tmi^.SpritePal then rawTMI := rawTMI or $800;
+      rawTMIs[x + y * cTileMapWidth] := rawTMI;
+      Inc(tmiCache[rawTMI].UsedCount);
+    end;
+
+  QuickSort(tmiCache[0], 0, High(tmiCache), SizeOf(tmiCache[0]), @CompareTMICache);
+
+  for j := 0 to cTileMapCacheSize div 2 - 1 do
+  begin
+    k := j * 2;
+
+    // 2:3 compression: high nibble b / high nibble a / low byte a / low byte b
+    ADataStream.WriteByte(((tmiCache[k + 1].RawTMI shr 8) shl 4) or (tmiCache[k].RawTMI shr 8));
+    ADataStream.WriteByte(tmiCache[k].RawTMI and $ff);
+    ADataStream.WriteByte(tmiCache[k + 1].RawTMI and $ff);
+  end;
+
+  awaitingCacheIdx := cTileMapCacheSize;
+  awaitingCount := 0;
+  skipCount := 0;
+  for j := 0 to cMaxTiles - 1 do
+  begin
+    smoothed := AFrame^.TileMap[j div cTileMapWidth, j mod cTileMapWidth].Smoothed;
+    rawTMI := rawTMIs[j];
+
+    tmiCacheIdx := -1;
+    for k := 0 to cTileMapCacheSize -1 do
+      if tmiCache[k].RawTMI = rawTMI then
+      begin
+        tmiCacheIdx := k;
+        Break;
+      end;
+    if tmiCacheIdx = -1  then
+      tmiCacheIdx := -rawTMI;
+
+    if ASkipFirst then
+    begin
+      if smoothed and (skipCount < cTileMapMaxSkip) then
+      begin
+        DoTilemapTileCommand(True, False);
+
+        Inc(skipCount);
+
+        awaitingCacheIdx := cTileMapCacheSize;
+        awaitingCount := 0;
+      end
+      else
+      begin
+        DoTilemapTileCommand(False, True);
+
+        if tmiCacheIdx = awaitingCacheIdx then
+        begin
+          Inc(awaitingCount);
+
+          if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
+          begin
+            DoTilemapTileCommand(True, False);
+
+            awaitingCacheIdx := cTileMapCacheSize;
+            awaitingCount := 0;
+          end;
+        end
+        else
+        begin
+          DoTilemapTileCommand(True, False);
+
+          awaitingCacheIdx := tmiCacheIdx;
+          awaitingCount := 1;
+        end;
+      end;
+    end
+    else
+    begin
+      if tmiCacheIdx = awaitingCacheIdx then
+      begin
+        Inc(awaitingCount);
+
+        if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
+        begin
+          DoTilemapTileCommand(True, False);
+
+          awaitingCacheIdx := cTileMapCacheSize;
+          awaitingCount := 0;
+        end;
+      end
+      else
+      begin
+        DoTilemapTileCommand(True, False);
+
+        if smoothed and (skipCount < cTileMapMaxSkip) then
+        begin
+          Inc(skipCount);
+
+          awaitingCacheIdx := cTileMapCacheSize;
+          awaitingCount := 0;
+        end
+        else
+        begin
+          DoTilemapTileCommand(False, True);
+
+          awaitingCacheIdx := tmiCacheIdx;
+          awaitingCount := 1;
+        end;
+      end;
+    end;
+  end;
+
+  DoTilemapTileCommand(True, True);
+
+  ADataStream.WriteByte(cTileMapTerminator);
+end;
+
+procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
+var pp, pp2, i, sz, x, y, idx, frameStart: Integer;
+    prevKF: PKeyFrame;
+    SkipFirst: Boolean;
+    tilesPlanes: array[0..cTileWidth - 1, 0..3] of Byte;
+    TMStream: array[Boolean] of TMemoryStream;
 begin
   // leave the size of one tile for index
 
@@ -2017,171 +2228,31 @@ begin
       ADataStream.WriteByte(0);
     end;
 
-    pp := ADataStream.Position;
     // tiles indexes
 
-    tileIdxStream := TMemoryStream.Create;
-    try
-      tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
-      tiVBlank := True;
-
-      prevTileIndex := -1;
-      prevDTI := -1;
-      sameCount := 0;
-      for j := 0 to High(FFrames[i].TilesIndexes) do
-      begin
-        diffTileIndex := FFrames[i].TilesIndexes[j] - prevTileIndex;
-
-        if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
-            (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
-            ((FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
-        begin
-          DoTileIndex;
-          sameCount := 1;
-        end
-        else
-        begin
-          Inc(sameCount);
-        end;
-
-        if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
-            ((FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset) div cTilesPerBank <>
-             (prevTileIndex + cTileIndexesTileOffset) div cTilesPerBank) then // any bank change must be a direct value
-        begin
-          vbl := tiVBlank;
-          if vbl then
-            HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
-
-          tileIdxStream.WriteByte(cTileIndexesDirectValue);
-          tileIdxStream.WriteWord(FFrames[i].TilesIndexes[j] + cTileIndexesTileOffset);
-
-          if not vbl then
-            HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
-
-          diffTileIndex := -1;
-          sameCount := 0;
-        end;
-
-        prevTileIndex := FFrames[i].TilesIndexes[j];
-        prevDTI := diffTileIndex;
-      end;
-
-      DoTileIndex;
-      tileIdxStream.WriteByte(cTileIndexesTerminator);
-      tileIdxStream.WriteByte(cMaxTilesPerFrame - Length(FFrames[i].TilesIndexes));
-
-      // the whole tiles indices should stay in the same bank
-      if ADataStream.Size div cBankSize <> (ADataStream.Size + tileIdxStream.Size) div cBankSize then
-      begin
-        ADataStream.WriteByte(1);
-        while ADataStream.Size mod cBankSize <> 0 do
-          ADataStream.WriteByte(0);
-        DebugLn('Crossed bank limit!');
-      end
-      else
-      begin
-        ADataStream.WriteByte(0);
-      end;
-
-      tileIdxStream.Position := 0;
-      ADataStream.CopyFrom(tileIdxStream, tileIdxStream.Size);
-
-    finally
-      tileIdxStream.Free;
-    end;
-
-    DebugLn(['TileIndexes size: ', ADataStream.Position - pp]);
     pp := ADataStream.Position;
+    SaveTileIndexes(ADataStream, @FFrames[i]);
+    DebugLn(['TileIndexes size: ', ADataStream.Position - pp]);
+
     // tilemap
 
-    for j := 0 to High(tmiCache) do
+    for SkipFirst := False to True do
     begin
-      tmiCache[j].UsedCount := 0;
-      tmiCache[j].RawTMI := j;
+      TMStream[SkipFirst] := TMemoryStream.Create;
+      SaveTileMap(TMStream[SkipFirst], @FFrames[i], i, SkipFirst);
+      DebugLn(['TM size: ', TMStream[SkipFirst].Size, ' ', SkipFirst]);
     end;
 
-    for y := 0 to cTileMapHeight - 1 do
-      for x := 0 to cTileMapWidth - 1 do
-      begin
-        tmi := @FFrames[i].TileMap[y, x];
-        rawTMI := (tmi^.FrameTileIndex + cTileMapIndicesOffset[i and 1]) and $1ff;
-        if tmi^.HMirror then rawTMI := rawTMI or $200;
-        if tmi^.VMirror then rawTMI := rawTMI or $400;
-        if tmi^.SpritePal then rawTMI := rawTMI or $800;
-        rawTMIs[x + y * cTileMapWidth] := rawTMI;
-        Inc(tmiCache[rawTMI].UsedCount);
-      end;
+    SkipFirst := True;
+    if TMStream[SkipFirst].Size > TMStream[not SkipFirst].Size then
+      SkipFirst := not SkipFirst;
 
-    QuickSort(tmiCache[0], 0, High(tmiCache), SizeOf(tmiCache[0]), @CompareTMICache);
+    TMStream[SkipFirst].Position := 0;
+    ADataStream.CopyFrom(TMStream[SkipFirst], TMStream[SkipFirst].Size);
 
-    for j := 0 to cTileMapCacheSize div 2 - 1 do
-    begin
-      k := j * 2;
+    for SkipFirst := False to True do
+      TMStream[SkipFirst].Free;
 
-      // 2:3 compression: high nibble b / high nibble a / low byte a / low byte b
-      ADataStream.WriteByte(((tmiCache[k + 1].RawTMI shr 8) shl 4) or (tmiCache[k].RawTMI shr 8));
-      ADataStream.WriteByte(tmiCache[k].RawTMI and $ff);
-      ADataStream.WriteByte(tmiCache[k + 1].RawTMI and $ff);
-    end;
-
-    awaitingCacheIdx := cTileMapCacheSize;
-    awaitingCount := 0;
-    skipCount := 0;
-    for j := 0 to cMaxTiles - 1 do
-    begin
-      smoothed := FFrames[i].TileMap[j div cTileMapWidth, j mod cTileMapWidth].Smoothed;
-      rawTMI := rawTMIs[j];
-
-      tmiCacheIdx := -1;
-      for k := 0 to cTileMapCacheSize -1 do
-        if tmiCache[k].RawTMI = rawTMI then
-        begin
-          tmiCacheIdx := k;
-          Break;
-        end;
-      if tmiCacheIdx = -1  then
-        tmiCacheIdx := -rawTMI;
-
-      if smoothed and (skipCount < cTileMapMaxSkip) then
-      begin
-        DoTilemapTileCommand(True, False);
-
-        Inc(skipCount);
-
-        awaitingCacheIdx := cTileMapCacheSize;
-        awaitingCount := 0;
-      end
-      else
-      begin
-        DoTilemapTileCommand(False, True);
-
-        if tmiCacheIdx = awaitingCacheIdx then
-        begin
-          Inc(awaitingCount);
-
-          if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
-          begin
-            DoTilemapTileCommand(True, False);
-
-            awaitingCacheIdx := cTileMapCacheSize;
-            awaitingCount := 0;
-          end;
-        end
-        else
-        begin
-          DoTilemapTileCommand(True, False);
-
-          awaitingCacheIdx := tmiCacheIdx;
-          awaitingCount := 1;
-        end
-      end;
-    end;
-
-    DoTilemapTileCommand(True, True);
-
-    ADataStream.WriteByte(cTileMapTerminator);
-
-    DebugLn(['TM size: ', ADataStream.Position - pp]);
     // sound
 
     if Assigned(ASoundStream) then
