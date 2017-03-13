@@ -46,10 +46,9 @@ banks 1
 ;==============================================================
 
 .define DblBufTileOffset 49 * TileSize
-.define FrameSampleCount 826 ; 344 cycles per PCM sample = one sample every 320 cycles
-.define FirstVBlankScanline 192
-.define LastVBlankScanline 252
-.define MaxTilesPerVideoFrames 207
+.define FrameSampleCount 825 ; 344 cycles per PCM sample = one sample every 320 cycles
+.define PCMBufferSizeShift 11
+.define PCMBufferSize (1 << PCMBufferSizeShift)
 
 .macro WaitVBlank args playSmp ; c11
     in a, (VDPControl)
@@ -446,8 +445,8 @@ banks 1
 ;==============================================================
 
 .enum $c000 export
-    PSGBufferA        dsb 1024
-    PSGBufferB        dsb 1024
+    PSGBufferA        dsb PCMBufferSize
+    PSGBufferB        dsb PCMBufferSize
     PCMUnpackLUT      dsb 1536
     TileMapCache      dsb 64 ; must be aligned on 256
     LocalPalette      dsb TilePaletteSize * 2
@@ -540,7 +539,7 @@ main:
     ld hl, PSGBufferA
     ld b, 0
     ld a, $ff
--:  .repeat 2048/256
+-:  .repeat (PCMBufferSize*2)/256
         ld (hl), a
         inc hl
     .endr
@@ -598,7 +597,7 @@ main:
     ; init PCM player
     exx
     ld c, PSGPort
-    ld hl, PSGBufferB + 1024 - 1
+    ld hl, PSGBufferB + PCMBufferSize - 1
     ld d, h
     exx
 
@@ -847,11 +846,12 @@ TilemapUnpackEnd:
     ; Unpack frame PCM data to RAM
 
         ; PSGBufferA for even frames, PSGBufferB for odd frames
-    ld hl, PSGBufferA + 1024
+    ld hl, PSGBufferA + PCMBufferSize
     ld a, (CurFrameIdx)
     and $01
-    rla
-    rla
+    .repeat (PCMBufferSizeShift - 8)
+        rla
+    .endr
     add a, h
     ld h, a
 
@@ -939,11 +939,12 @@ p3:
     ; restart PCM player on other buffer
     exx
     ld (PSGBufferA), hl ; debug tool (shows how many samples actually played per frame)
-    ld hl, PSGBufferA + 1024 - 1
+    ld hl, PSGBufferA + PCMBufferSize - 1
     ld a, (CurFrameIdx)
     and $01
-    rla
-    rla
+    .repeat (PCMBufferSizeShift - 8)
+        rla
+    .endr
     add a, h
     ld h, a
     ld d, a
