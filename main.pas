@@ -65,7 +65,7 @@ const
     (343 + 688, 289 + 17 + 688, 91, 213 + 12 + 688, 113 + 7),
     (343 + 344, 309 + 18 + 344, 91, 233 + 14 + 344, 113 + 7)
   );
-  cLineJitter = 3;
+  cLineJitter = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
   // JPEG standard quantization tables
@@ -82,14 +82,22 @@ const
   );
 
   cChromaQuantisation: array[0..7, 0..7] of Single = (
-    (17,  18,  24,  47,  99,  99,  99,  99),
-    (18,  21,  26,  66,  99,  99,  99,  99),
-    (24,  26,  56,  99,  99,  99,  99,  99),
-    (47,  66,  99,  99,  99,  99,  99,  99),
-    (99,  99,  99,  99,  99,  99,  99,  99),
-    (99,  99,  99,  99,  99,  99,  99,  99),
-    (99,  99,  99,  99,  99,  99,  99,  99),
-    (99,  99,  99,  99,  99,  99,  99,  99)
+    //(17,  18,  24,  47,  99,  99,  99,  99),
+    //(18,  21,  26,  66,  99,  99,  99,  99),
+    //(24,  26,  56,  99,  99,  99,  99,  99),
+    //(47,  66,  99,  99,  99,  99,  99,  99),
+    //(99,  99,  99,  99,  99,  99,  99,  99),
+    //(99,  99,  99,  99,  99,  99,  99,  99),
+    //(99,  99,  99,  99,  99,  99,  99,  99),
+    //(99,  99,  99,  99,  99,  99,  99,  99)
+    (17,18,24,47,99,99,128,192),
+    (18,21,26,66,99,99,128,192),
+    (24,26,56,99,99,128,192,256),
+    (47,66,99,99,128,192,256,512),
+    (99,99,99,128,192,256,512,1024),
+    (99,99,128,192,256,512,1024,2048),
+    (128,128,192,256,512,1024,2048,4096),
+    (192,192,256,512,1024,2048,4096,8192)
   );
 
   cDitheringMap : array[0..8*8 - 1] of Byte = (
@@ -244,7 +252,8 @@ type
     procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame);
     procedure FinalDitherTiles(AFrame: PFrame);
 
-    procedure MergeTilesByPaletteIndexes(const TileIndexes: array of Integer; TileCount: Integer);
+    procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
+    procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; ByPaletteIndexes: Boolean);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     procedure HMirrorPalTile(ATile: PTile; SpritePal: Boolean);
@@ -406,7 +415,17 @@ end;
 { TMainForm }
 
 procedure TMainForm.btnDoGlobalTilingClick(Sender: TObject);
+
+const
+  cTilesAtATime = 100 * cMaxTiles;
+
+  procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    MakeTilesUnique(AIndex * cTilesAtATime, Min(Length(FTiles) - AIndex * cTilesAtATime, cTilesAtATime));
+  end;
+
 begin
+  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div cTilesAtATime);
   DoGlobalTiling(seAvgTPF.Value * Length(FFrames), seKMRest.Value);
   tbFrameChange(nil);
 end;
@@ -978,6 +997,53 @@ begin
     end;
 end;
 
+
+function CompareTilePalPixels(Item1, Item2, UserParameter:Pointer):Integer;
+var
+  t1, t2: PTile;
+begin
+  t1 := PPTile(Item1)^;
+  t2 := PPTile(Item2)^;
+  Result := CompareByte(t1^.PalPixels[False, 0, 0], t2^.PalPixels[False, 0, 0], sqr(cTileWidth));
+end;
+
+procedure TMainForm.MakeTilesUnique(FirstTileIndex, TileCount: Integer);
+var
+  i, firstSameIdx: Integer;
+  sortArr: array of PTile;
+  sameIdx: array of Integer;
+
+  procedure DoOneMerge;
+  var
+    j: Integer;
+  begin
+    if i - firstSameIdx >= 2 then
+    begin
+      for j := firstSameIdx to i - 1 do
+        sameIdx[j - firstSameIdx] := sortArr[j]^.TmpIndex;
+      MergeTiles(sameIdx, i - firstSameIdx, False);
+    end;
+    firstSameIdx := i;
+  end;
+
+begin
+  SetLength(sameIdx, TileCount);
+  sortArr := Copy(FTiles, FirstTileIndex, TileCount);
+
+  for i := 0 to High(sortArr) do
+    sortArr[i]^.TmpIndex := i + FirstTileIndex;
+
+  QuickSort(sortArr[0], 0, High(sortArr), SizeOf(PTile), @CompareTilePalPixels);
+
+  firstSameIdx := 0;
+  for i := 1 to High(sortArr) do
+    if CompareByte(sortArr[i - 1]^.PalPixels[False, 0, 0], sortArr[i]^.PalPixels[False, 0, 0], sqr(cTileWidth)) <> 0 then
+      DoOneMerge;
+
+  i := High(sortArr);
+  DoOneMerge;
+end;
+
 procedure TMainForm.LoadTiles;
 var
   i,j,x,y: Integer;
@@ -1404,7 +1470,7 @@ begin
       Result := Max(Result, GetFrameTileCount(@FFrames[i]));
 end;
 
-procedure TMainForm.MergeTilesByPaletteIndexes(const TileIndexes: array of Integer; TileCount: Integer);
+procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; ByPaletteIndexes: Boolean);
 var
   i, j, k, tx, ty, Tile0: Integer;
   PalOccurences: array[0..cTilePaletteSize-1] of Integer;
@@ -1414,26 +1480,27 @@ begin
 
   Tile0 := TileIndexes[0];
 
-  for ty := 0 to (cTileWidth - 1) do
-    for tx := 0 to (cTileWidth - 1) do
-    begin
-      FillChar(PalOccurences, cTilePaletteSize * SizeOf(Integer), 0);
-      for i := 0 to TileCount - 1 do
-        Inc(PalOccurences[FTiles[TileIndexes[i]]^.PalPixels[False, ty, tx]]);
-
-      j := -1;
-      k := 0;
-      for i := 0 to High(PalOccurences) do
+  if ByPaletteIndexes then;
+    for ty := 0 to (cTileWidth - 1) do
+      for tx := 0 to (cTileWidth - 1) do
       begin
-        if PalOccurences[i] > k then
-        begin
-          k := PalOccurences[i];
-          j := i;
-        end;
-      end;
+        FillDWord(PalOccurences, cTilePaletteSize, 0);
+        for i := 0 to TileCount - 1 do
+          Inc(PalOccurences[FTiles[TileIndexes[i]]^.PalPixels[False, ty, tx]]);
 
-      FTiles[Tile0]^.PalPixels[False, ty, tx] := j;
-		end;
+        j := -1;
+        k := 0;
+        for i := 0 to High(PalOccurences) do
+        begin
+          if PalOccurences[i] > k then
+          begin
+            k := PalOccurences[i];
+            j := i;
+          end;
+        end;
+
+        FTiles[Tile0]^.PalPixels[False, ty, tx] := j;
+		  end;
 
   for k := 1 to TileCount - 1 do
   begin
@@ -1765,7 +1832,7 @@ begin
     end;
 
     if Cnt >= 2 then
-      MergeTilesByPaletteIndexes(ToMerge, Cnt);
+      MergeTiles(ToMerge, Cnt, True);
   end;
 end;
 
@@ -2021,7 +2088,7 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TMainForm.SaveTileMap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
+procedure TMainForm.SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
 var
   j, k, x, y, skipCount: Integer;
   rawTMI, tmiCacheIdx, awaitingCacheIdx, awaitingCount: Integer;
