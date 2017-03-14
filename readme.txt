@@ -1,6 +1,6 @@
-***********************************
-* SMS video player / encoder v6.2 *
-***********************************
+*********************************
+* SMS video player / encoder v7 *
+*********************************
 
 Project page: https://gitlab.com/gligli/tiler
 
