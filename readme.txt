@@ -60,8 +60,13 @@ Show dithered:
 Press "Run all" to run the entire encoding process or right click on it to run a specific sub process.
 The process tries to use all the available CPU cores, but can still take hours to finish depending on the number of frames and the settings.
 
-ROM compilation
-===============
+Player compilation (player_new.asm)
+===================================
+
+- Compile with a recent WLA-DX. I used this tutorial to setup the environment: http://www.smspower.org/maxim/HowToProgram/Index
+
+Building a video ROM
+====================
 
 - Put data.bin from the encoder in ./tiled/
 - Run append.bat to append video data to the player ROM.
@@ -98,7 +103,6 @@ v6.2:
 	Fixed a player tile corruption bug.
 	Encoder reindexing process speedup.
 	Proper 1MB Sonic CD video plus a full version.
-
 v7:
 	Complete rewrite.
 	Now using a global tile repository instead of per keyframe.
