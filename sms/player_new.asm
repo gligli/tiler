@@ -135,12 +135,12 @@ banks 1
     inc bc
 .endm
 
-.macro TilesUploadSetTilePointer ; c68
+.macro TilesUploadSetTilePointer ; c72
         ; get a pointer on tile data from tile index
 
         ; upper bits of tile index select a rom bank
     ld a, h
-    rra ; incoming carry will always be 0; pushes low bit into carry for use below
+    srl a ; pushes low bit into carry for use below
 
     ld (MapperSlot2), a
 
@@ -1118,7 +1118,7 @@ TUDoDirectValueFast:
         ; upload tile
     TilesUploadTileToVRAMFast
 
-; c319
+; c323
     PlaySample
 
     TilesUploadUnpack 1
@@ -1135,8 +1135,8 @@ TUDoDirectValueSlow:
         ; upload tile
     TilesUploadTileToVRAMSlow
 
-    inc iy ; timing
-    inc iy ; timing
+    inc iyl ; timing
+    inc iyl ; timing
 
 ; c319
     PlaySample

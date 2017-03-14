@@ -63,7 +63,7 @@ const
   // number of Z80 cycles to execute a function
   cTileIndexesTimings : array[Boolean{VSync?}, 0..4 {Direct/Std/RptFix/RptVar/VBlank}] of Integer = (
     (343 + 688, 289 + 17 + 688, 91, 213 + 12 + 688, 113 + 7),
-    (343 + 344, 309 + 18 + 344, 91, 233 + 14 + 344, 113 + 7)
+    (347 + 344, 309 + 18 + 344, 91, 233 + 14 + 344, 113 + 7)
   );
   cLineJitter = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
