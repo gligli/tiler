@@ -1749,6 +1749,10 @@ begin
       TMI^.VMirror := PrevTMI^.VMirror;
       TMI^.SpritePal := PrevTMI^.SpritePal;
       TMI^.Smoothed := True;
+    end
+    else
+    begin
+      TMI^.Smoothed := False;
     end;
   end;
 end;
