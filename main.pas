@@ -584,8 +584,15 @@ procedure TMainForm.btnReindexClick(Sender: TObject);
 
   procedure DoPruneUnusedTiles(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FTiles[AIndex]^.UseCount := GetTileUseCount(AIndex);
-    FTiles[AIndex]^.Active := FTiles[AIndex]^.Active and (FTiles[AIndex]^.UseCount <> 0);
+    if FTiles[AIndex]^.Active then
+    begin
+      FTiles[AIndex]^.UseCount := GetTileUseCount(AIndex);
+      FTiles[AIndex]^.Active := FTiles[AIndex]^.UseCount <> 0;
+    end
+    else
+    begin
+      FTiles[AIndex]^.UseCount := 0;
+    end;
   end;
 
   procedure DoIndexFrameTiles(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);

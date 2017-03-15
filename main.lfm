@@ -89,7 +89,7 @@ object MainForm: TMainForm
     MaxValue = 10000
     MinValue = 1
     TabOrder = 3
-    Value = 50
+    Value = 100
   end
   object Label3: TLabel
     Left = 8
