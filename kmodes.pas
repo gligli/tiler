@@ -188,19 +188,14 @@ begin
     // SIMD for 64 items
 
     movdqu xmm0, oword ptr [rcx]
+    movdqu xmm2, oword ptr [rcx + $10]
+    movdqu xmm4, oword ptr [rcx + $20]
+    movdqu xmm6, oword ptr [rcx + $30]
+
     movdqu xmm1, oword ptr [rdx]
-    lea rcx, [rcx + $10]
-    lea rdx, [rdx + $10]
-    movdqu xmm2, oword ptr [rcx]
-    movdqu xmm3, oword ptr [rdx]
-    lea rcx, [rcx + $10]
-    lea rdx, [rdx + $10]
-    movdqu xmm4, oword ptr [rcx]
-    movdqu xmm5, oword ptr [rdx]
-    lea rcx, [rcx + $10]
-    lea rdx, [rdx + $10]
-    movdqu xmm6, oword ptr [rcx]
-    movdqu xmm7, oword ptr [rdx]
+    movdqu xmm3, oword ptr [rdx + $10]
+    movdqu xmm5, oword ptr [rdx + $20]
+    movdqu xmm7, oword ptr [rdx + $30]
 
     pcmpeqb xmm0, xmm1
     pcmpeqb xmm2, xmm3
