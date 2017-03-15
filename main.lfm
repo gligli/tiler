@@ -183,7 +183,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 1000
     TabOrder = 4
-    Value = 50
+    Value = 25
   end
   object Label10: TLabel
     Left = 8
@@ -241,7 +241,7 @@ object MainForm: TMainForm
     Top = 195
     Width = 56
     TabOrder = 7
-    Value = 1
+    Value = 2
   end
   object IdleTimer: TIdleTimer
     Enabled = False

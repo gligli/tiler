@@ -1481,15 +1481,18 @@ end;
 
 procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; ByPaletteIndexes: Boolean);
 var
-  i, j, k, tx, ty, Tile0: Integer;
+  i, j, k, tx, ty, best, bestIdx, dis: Integer;
+  Tile_: TTile;
   PalOccurences: array[0..cTilePaletteSize-1] of Integer;
+  PalPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
 begin
   if TileCount < 2 then
     Exit;
 
-  Tile0 := TileIndexes[0];
+  if ByPaletteIndexes then
+  begin
+    // build a tile with per pixel most probable palette index
 
-  if ByPaletteIndexes then;
     for ty := 0 to (cTileWidth - 1) do
       for tx := 0 to (cTileWidth - 1) do
       begin
@@ -1508,17 +1511,48 @@ begin
           end;
         end;
 
-        FTiles[Tile0]^.PalPixels[False, ty, tx] := j;
+        PalPixels[ty, tx] := j;
 		  end;
 
-  for k := 1 to TileCount - 1 do
+    // find the closest existing tile
+
+    best := MaxInt;
+    bestIdx := -1;
+    for k := 0 to TileCount - 1 do
+    begin
+      j := TileIndexes[k];
+      Tile_ := FTiles[j]^;
+
+      dis := 0;
+      for ty := 0 to (cTileWidth - 1) do
+        for tx := 0 to (cTileWidth - 1) do
+          Inc(dis, Ord(PalPixels[ty, tx] <> Tile_.PalPixels[False, ty, tx]));
+
+      if dis < best then
+      begin
+        best := dis;
+        bestIdx := j;
+      end;
+    end;
+  end
+  else
+  begin
+    bestIdx := TileIndexes[0];
+  end;
+
+  // merge by pointing all TM to chosen tile and deactivating all other tiles
+
+  for k := 0 to TileCount - 1 do
   begin
     j := TileIndexes[k];
 
-    Inc(FTiles[Tile0]^.AveragedCount, FTiles[j]^.AveragedCount);
+    if j = bestIdx then
+      Continue;
+
+    Inc(FTiles[bestIdx]^.AveragedCount, FTiles[j]^.AveragedCount);
 
     FTiles[j]^.Active := False;
-    FTiles[j]^.TmpIndex := Tile0;
+    FTiles[j]^.TmpIndex := bestIdx;
 
     FillChar(FTiles[j]^.RGBPixels, SizeOf(FTiles[j]^.RGBPixels), 0);
     FillChar(FTiles[j]^.PalPixels, SizeOf(FTiles[j]^.PalPixels), 0);
@@ -1527,8 +1561,8 @@ begin
   for k := 0 to High(FFrames) do
     for j := 0 to (cTileMapHeight - 1) do
         for i := 0 to (cTileMapWidth - 1) do
-          if FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex]^.TmpIndex = Tile0 then
-            FFrames[k].TileMap[j, i].GlobalTileIndex := Tile0;
+          if FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex]^.TmpIndex = bestIdx then
+            FFrames[k].TileMap[j, i].GlobalTileIndex := bestIdx;
 end;
 
 function TMainForm.IsTileInFrame(AFrame: PFrame; ATile: Integer): Boolean;
@@ -1945,7 +1979,7 @@ begin
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'pcmenc.exe';
   Process.Parameters.Add('-p 4 -dt1 ' + IntToStr(cClocksPerSample) + ' -dt2 ' + IntToStr(cClocksPerSample) + ' -dt3 ' +
-    IntToStr(cClocksPerSample) + ' -cpuf ' + IntToStr(cZ80Clock) + ' -rto 3 -a ' + IntToStr(Volume) + ' -r 1024 -precision 8 "' + AFN + '"');
+    IntToStr(cClocksPerSample) + ' -cpuf ' + IntToStr(cZ80Clock) + ' -rto 3 -a ' + IntToStr(Volume) + ' -r 4096 -precision 8 "' + AFN + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
