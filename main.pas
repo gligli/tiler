@@ -1278,7 +1278,32 @@ begin
     end;
 end;
 
+{$if defined(CPUX86_64)}
+function SumOf8Squares(pa, pb: PSingle): Single; assembler;
+asm
+  movups xmm0, oword ptr [rcx]
+  movups xmm1, oword ptr [rcx + $10]
+
+  movups xmm2, oword ptr [rdx]
+  movups xmm3, oword ptr [rdx + $10]
+
+  subps xmm0, xmm2
+  subps xmm1, xmm3
+
+  mulps xmm0, xmm0
+  mulps xmm1, xmm1
+
+  addps xmm0, xmm1
+
+  haddps xmm0, xmm0
+  haddps xmm0, xmm0
+end ['xmm1', 'xmm2', 'xmm3'];
+{$endif}
+
+
 function TMainForm.CompareTilesDCT(ATileA, ATileB: PTile; SpritePalA, SpritePalB: Boolean): Single;
+const
+  cSqrtFactor = 1 / (sqr(cTileWidth) * 3);
 var
   i: Integer;
   pa, pb: PSingle;
@@ -1290,6 +1315,7 @@ begin
 
   for i := 0 to cTileWidth * 3 - 1 do
   begin
+{$if not defined(CPUX86_64)}
     // unroll by cTileWidth
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
@@ -1299,9 +1325,14 @@ begin
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+{$else}
+    Result += SumOf8Squares(pa, pb);
+    Inc(pa, 8);
+    Inc(pb, 8);
+{$endif}
   end;
 
-  Result := sqrt(Result / (sqr(cTileWidth) * 3));
+  Result := sqrt(Result * cSqrtFactor);
 end;
 
 procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
