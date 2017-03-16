@@ -68,9 +68,10 @@ const
   cLineJitter = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
-  // JPEG standard quantization tables
+  // DCT quantization tables
 
   cLumaQuantisation: array[0..7, 0..7] of Single = (
+    // JPEG standard
     (16,  11,  10,  16,  24,  40,  51,  61),
     (12,  12,  14,  19,  26,  58,  60,  55),
     (14,  13,  16,  24,  40,  57,  69,  56),
@@ -82,22 +83,27 @@ const
   );
 
   cChromaQuantisation: array[0..7, 0..7] of Single = (
-    //(17,  18,  24,  47,  99,  99,  99,  99),
-    //(18,  21,  26,  66,  99,  99,  99,  99),
-    //(24,  26,  56,  99,  99,  99,  99,  99),
-    //(47,  66,  99,  99,  99,  99,  99,  99),
-    //(99,  99,  99,  99,  99,  99,  99,  99),
-    //(99,  99,  99,  99,  99,  99,  99,  99),
-    //(99,  99,  99,  99,  99,  99,  99,  99),
-    //(99,  99,  99,  99,  99,  99,  99,  99)
-    (17,18,24,47,99,99,128,192),
-    (18,21,26,66,99,99,128,192),
-    (24,26,56,99,99,128,192,256),
-    (47,66,99,99,128,192,256,512),
-    (99,99,99,128,192,256,512,1024),
-    (99,99,128,192,256,512,1024,2048),
-    (128,128,192,256,512,1024,2048,4096),
-    (192,192,256,512,1024,2048,4096,8192)
+{$if false}
+    // JPEG standard
+    (17,  18,  24,  47,  99,  99,  99,  99),
+    (18,  21,  26,  66,  99,  99,  99,  99),
+    (24,  26,  56,  99,  99,  99,  99,  99),
+    (47,  66,  99,  99,  99,  99,  99,  99),
+    (99,  99,  99,  99,  99,  99,  99,  99),
+    (99,  99,  99,  99,  99,  99,  99,  99),
+    (99,  99,  99,  99,  99,  99,  99,  99),
+    (99,  99,  99,  99,  99,  99,  99,  99)
+{$else}
+    // Improved (reduced figh frequency chroma importance)
+    (17,  18,  24,  47,  99,  99,  128, 192 ),
+    (18,  21,  26,  66,  99,  99,  128, 192 ),
+    (24,  26,  56,  99,  99,  128, 192, 256 ),
+    (47,  66,  99,  99,  128, 192, 256, 512 ),
+    (99,  99,  99,  128, 192, 256, 512, 1024),
+    (99,  99,  128, 192, 256, 512, 1024,2048),
+    (128, 128, 192, 256, 512, 1024,2048,4096),
+    (192, 192, 256, 512, 1024,2048,4096,8192)
+{$endif}
   );
 
   cDitheringMap : array[0..8*8 - 1] of Byte = (
@@ -116,10 +122,10 @@ type
   PPTile = ^PTile;
 
   TTile = record
-    RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1),0..2] of Integer;
-    DCTCoeffs: array[Boolean, 0..(cTileWidth - 1),0..(cTileWidth - 1),0..2] of Single;
+    RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1),0..2{RGB}] of Integer;
+    DCTCoeffs: array[Boolean{SpritePal?}, 0..(cTileWidth - 1),0..(cTileWidth - 1),0..2{YUV}] of Single;
 
-    PalPixels: array[Boolean, 0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
+    PalPixels: array[Boolean{SpritePal?}, 0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
 
     PaletteIndexes: array[0..(cTilePaletteSize - 1)] of Byte;
     PaletteRGB: array[0..(cTilePaletteSize - 1)] of Integer;
@@ -136,8 +142,8 @@ type
   end;
 
   TKeyFrame = record
-    PaletteIndexes: array[Boolean, 0..(cTilePaletteSize - 1)] of Byte;
-    PaletteRGB: array[Boolean, 0..(cTilePaletteSize - 1)] of Integer;
+    PaletteIndexes: array[Boolean{SpritePal?}, 0..(cTilePaletteSize - 1)] of Byte;
+    PaletteRGB: array[Boolean{SpritePal?}, 0..(cTilePaletteSize - 1)] of Integer;
   end;
 
   PKeyFrame = ^TKeyFrame;
@@ -228,13 +234,13 @@ type
     FTiles: array of PTile;
     FCS: TCriticalSection;
 
-    function GetMostFrequent(Arr: array of Byte): Integer;
     procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Single);
 
     procedure ComputeTileDCT(ATile: PTile; FromPal, SpritePal, GammaCor: Boolean; const pal: array of Integer);
     function CompareTilesDCT(ATileA, ATileB: PTile; SpritePalA, SpritePalB: Boolean): Single;
 
-    // Dithering algorithm ported from http://bisqwit.iki.fi/story/howto/dither/jy/
+    // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
+
     function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
 
     function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
@@ -248,8 +254,6 @@ type
     procedure Render(AFrameIndex: Integer; dithered: Boolean; page: Integer);
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: PFrame): Integer;
-    function GetMaxFrameTileCount(AKeyFrame: PKeyFrame): Integer;
-    function IsTileInFrame(AFrame: PFrame; ATile: Integer): Boolean;
 
     procedure DitherTile(ATile: PTile; const pal: array of Integer; SpritePal: Boolean);
     procedure PreDitherTiles(AFrame: PFrame);
@@ -887,6 +891,8 @@ begin
       if not Tile_^.Active then
         Exit;
 
+      // dither using full 64 colors palette
+
       DitherTile(Tile_, FColorMap, False);
 
       for i := 0 to High(CMUsage) do
@@ -895,11 +901,15 @@ begin
         CMUsage[i].Index := i;
       end;
 
+      // keep the 16 most used color
+
       for ty := 0 to (cTileWidth - 1) do
         for tx := 0 to (cTileWidth - 1) do
           Inc(CMUsage[Tile_^.PalPixels[False, ty,tx]].Count, Tile_^.AveragedCount);
 
       QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMU);
+
+      // sort those by luma
       QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULuma, @FColorMapLuma[0]);
 
       for i := 0 to cTilePaletteSize - 1 do
@@ -908,6 +918,7 @@ begin
         Tile_^.PaletteRGB[i] := FColorMap[CMUsage[cTilePaletteSize - 1 - i].Index];
       end;
 
+      // dither again using that 16 color palette
       DitherTile(Tile_, Tile_^.PaletteRGB, False);
 
       Move(Tile_^.PalPixels[False, 0, 0], Tile_^.PalPixels[True, 0, 0], cTileWidth * cTileWidth);
@@ -927,6 +938,8 @@ begin
     CMUsage[i].Index := i;
   end;
 
+  // get color usage stats
+
   for i := 0 to High(FFrames) do
     if FFrames[i].KeyFrame = AKeyFrame then
     begin
@@ -941,7 +954,11 @@ begin
         end;
     end;
 
+  // sort colors by use count
+
   QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMU);
+
+  // split most used colors into two 16 color palettes, with brightest and darkest colors repeated in both
 
   QuickSort(CMUsage[0], 0, (cTilePaletteSize - cKeyframeFixedColors) * 2 - 1, SizeOf(CMUsage[0]), @CompareCMULuma, @FColorMapLuma[0]);
   for i := 0 to cTilePaletteSize - 1 do
@@ -989,6 +1006,8 @@ begin
       if not Tile_^.Active then
         Exit;
 
+      // choose best palette from the keyframe tqo by comparing DCT of the tile colored with either palette
+
       OrigTile := Tile_^;
       ComputeTileDCT(@OrigTile, True, False, False, OrigTile.PaletteRGB);
 
@@ -1003,6 +1022,8 @@ begin
       end;
 
       SpritePal := cmp[True] < cmp[False];
+
+      // now that the palette is chosen, keep only one version of the tile
 
       Move(KF^.PaletteIndexes[SpritePal], Tile_^.PaletteIndexes, SizeOf(Tile_^.PaletteIndexes));
       Move(KF^.PaletteRGB[SpritePal], Tile_^.PaletteRGB, SizeOf(Tile_^.PaletteRGB));
@@ -1043,6 +1064,8 @@ var
   end;
 
 begin
+  // sort global tiles by palette indexes (L to R, T to B)
+
   SetLength(sameIdx, TileCount);
   sortArr := Copy(FTiles, FirstTileIndex, TileCount);
 
@@ -1050,6 +1073,8 @@ begin
     sortArr[i]^.TmpIndex := i + FirstTileIndex;
 
   QuickSort(sortArr[0], 0, High(sortArr), SizeOf(PTile), @CompareTilePalPixels);
+
+  // merge exactly similar tiles (so, consecutive after prev code)
 
   firstSameIdx := 0;
   for i := 1 to High(sortArr) do
@@ -1065,6 +1090,7 @@ var
   i,j,x,y: Integer;
   tileCnt: Integer;
 begin
+  // free memory from a prev run
   for i := 0 to High(FTiles) do
     Dispose(FTiles[i]);
 
@@ -1072,9 +1098,11 @@ begin
 
   SetLength(FTiles, tileCnt);
 
+  // allocate tiles
   for i := 0 to High(FTiles) do
     FTiles[i] := New(PTile);
 
+  // copy frame tiles to global tiles, point tilemap on proper global tiles
   for i := 0 to High(FFrames) do
   begin
     tileCnt := i * cMaxTiles;
@@ -1096,7 +1124,7 @@ begin
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * (299 * 1000 * 3 div 4);
+  Result := diffR * diffR * (299 * 1000 * 3 div 4); // 1000 to match luma scale, 3 div 4 for 0.75 chroma improtance reduction
   Result += diffG * diffG * (587 * 1000 * 3 div 4);
   Result += diffB * diffB * (114 * 1000 * 3 div 4);
   Result += lumadiff * lumadiff;
@@ -1255,6 +1283,8 @@ var
   i, j: Integer;
   v: Byte;
 begin
+  // hardcode horizontal mirror into the tile
+
   for i := 0 to cTileWidth div 2 - 1  do
     for j := 0 to cTileWidth - 1 do
     begin
@@ -1269,6 +1299,8 @@ var
   i, j: Integer;
   v: Byte;
 begin
+  // hardcode vertical mirror into the tile
+
   for i := 0 to cTileWidth div 2 - 1  do
     for j := 0 to cTileWidth - 1 do
     begin
@@ -1281,20 +1313,24 @@ end;
 {$if defined(CPUX86_64)}
 function SumOf8Squares(pa, pb: PSingle): Single; assembler;
 asm
+  // load 8 singles from pa
   movups xmm0, oword ptr [rcx]
   movups xmm1, oword ptr [rcx + $10]
 
+  // load 8 singles from pb
   movups xmm2, oword ptr [rdx]
   movups xmm3, oword ptr [rdx + $10]
 
+  // pa - pb for 8 singles
   subps xmm0, xmm2
   subps xmm1, xmm3
 
+  // result of prev operation squared
   mulps xmm0, xmm0
   mulps xmm1, xmm1
 
+  // sum the 8 squared differences
   addps xmm0, xmm1
-
   haddps xmm0, xmm0
   haddps xmm0, xmm0
 end ['xmm1', 'xmm2', 'xmm3'];
@@ -1326,6 +1362,7 @@ begin
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
 {$else}
+    // use SIMD optimised version
     Result += SumOf8Squares(pa, pb);
     Inc(pa, 8);
     Inc(pb, 8);
@@ -1403,6 +1440,8 @@ begin
           tx := i and (cTileWidth - 1);
           ty := j and (cTileWidth - 1);
 
+          // tile pages
+
           if ti >= Length(FTiles) then
           begin
             r := 0;
@@ -1437,19 +1476,17 @@ begin
 
           if j >= cScreenHeight then Continue;
 
+          // dest screen
+
           TMItem := Frame^.TileMap[j shr 3, i shr 3];
           if TMItem.Smoothed then
           begin
+            // emulate smoothing (use porev frame tilemap item)
             TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 3, i shr 3];
             TMItem.GlobalTileIndex := Frame^.TilesIndexes[TMItem.FrameTileIndex];
           end;
-{$if true}
           ti := TMItem.GlobalTileIndex;
           tilePtr := FTiles[ti];
-{$else}
-          ti := (j shr 3) * cTileMapWidth + (i shr 3);
-          tilePtr := @AFrame^.Tiles[ti];
-{$endif}
 
           if TMItem.HMirror then tx := cTileWidth - 1 - tx;
           if TMItem.VMirror then ty := cTileWidth - 1 - ty;
@@ -1505,16 +1542,6 @@ begin
 
   for i := 0 to High(Used) do
     Inc(Result, ifthen(Used[i], 1));
-end;
-
-function TMainForm.GetMaxFrameTileCount(AKeyFrame: PKeyFrame): Integer;
-var
-  i: Integer;
-begin
-  Result := 0;
-  for i := 0 to High(FFrames) do
-    if FFrames[i].KeyFrame = AKeyFrame then
-      Result := Max(Result, GetFrameTileCount(@FFrames[i]));
 end;
 
 procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; ByPaletteIndexes: Boolean);
@@ -1603,20 +1630,6 @@ begin
             FFrames[k].TileMap[j, i].GlobalTileIndex := bestIdx;
 end;
 
-function TMainForm.IsTileInFrame(AFrame: PFrame; ATile: Integer): Boolean;
-var
-  x, y: Integer;
-begin
-  Result := False;
-  for y := 0 to cTileMapHeight - 1 do
-    for x := 0 to cTileMapWidth - 1 do
-      if AFrame^.TileMap[y, x].GlobalTileIndex = ATile then
-      begin
-        Result := True;
-        Break;
-      end;
-end;
-
 function CompareTRUseCountInv(Item1,Item2,UserParameter:Pointer):Integer;
 begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
@@ -1665,6 +1678,8 @@ var
   Dataset: TByteDynArray2;
   XYC: TIntegerDynArray;
 begin
+  // make a list of all active tiles
+
   SetLength(TilesRepo, Length(FTiles));
   j := 0;
   for i := 0 to High(FTiles) do
@@ -1682,22 +1697,34 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
+        // make a copy of the tile
+
         FrameTile := AFrame^.Tiles[sx + sy * cTileMapWidth];
+
+        // regular orientation
 
         ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
         cmp := FindBestComparison(@FrameTile, idx, sp);
+
+        // H mirrored
 
         HMirrorPalTile(@FrameTile, False);
         ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
         cmpH := FindBestComparison(@FrameTile, idxH, spH);
 
+        // H/V mirrored
+
         VMirrorPalTile(@FrameTile, False);
         ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
         cmpHV := FindBestComparison(@FrameTile, idxHV, spHV);
 
+        // V mirrored
+
         HMirrorPalTile(@FrameTile, False);
         ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
         cmpV := FindBestComparison(@FrameTile, idxV, spV);
+
+        // choose best orientation
 
         rcmp := minvalue([cmp, cmpH, cmpHV, cmpV]);
 
@@ -1729,6 +1756,8 @@ begin
     if pass or (GetFrameTileCount(AFrame) <= DesiredNbTiles) then
       Break;
 
+    // sort repo by descending tile use count by the frame
+
     j := Length(TilesRepo);
     for i := 0 to High(TilesRepo) do
     begin
@@ -1746,6 +1775,8 @@ begin
     end;
     QuickSort(TilesRepo[0], 0, High(TilesRepo), SIzeOf(TilesRepo[0]), @CompareTRUseCountInv);
 
+    // prepare a dataset of used tiles for KModes
+
     SetLength(Dataset, j, sqr(cTileWidth));
     j := 0;
     for i := 0 to High(TilesRepo) do
@@ -1761,6 +1792,8 @@ begin
 
     Assert(j = Length(Dataset));
 
+    // run KModes, reducing the tile count to fit "Max tiles per frame"
+
     ComputeKModes(Dataset, DesiredNbTiles, MaxInt, RestartCount, cTilePaletteSize, 1, XYC);
 
     for j := 0 to DesiredNbTiles - 1 do
@@ -1774,7 +1807,7 @@ begin
 
         if XYC[k] = j then
         begin
-          if Cnt <> 0 then // first has hightest use count, so keep that one
+          if Cnt <> 0 then // first has highest use count, so keep that one
             TilesRepo[i].GlobalIndex := -2;
           Inc(Cnt);
         end;
@@ -1782,6 +1815,8 @@ begin
         Inc(k);
       end;
     end;
+
+    // run tile choosing algo again
   end;
 end;
 
@@ -1800,6 +1835,8 @@ begin
     if PrevTMI^.FrameTileIndex >= Length(AFrame^.TilesIndexes) then
       Continue;
 
+    // compare DCT of current tile with tile from prev frame tilemap
+
     PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]]^;
     Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]]^;
 
@@ -1812,6 +1849,8 @@ begin
     ComputeTileDCT(@Tile_, True, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal]);
 
     cmp := CompareTilesDCT(@Tile_, @PrevTile, False, False);
+
+    // if difference is low enough, mark the tile as smoothed for tilemap compression use
 
     if Abs(cmp) <= Strength then
     begin
@@ -1841,27 +1880,6 @@ begin
 end;
 
 
-function TMainForm.GetMostFrequent(Arr: array of Byte): Integer;
-var
-  Freq: array[0..255] of Integer;
-  i: Integer;
-  best: Integer;
-begin
-  FillDWord(Freq, 256, 0);
-
-  for i := 0 to High(Arr) do
-    Inc(Freq[Arr[i]]);
-
-  Result := -1;
-  best := 0;
-  for i := 0 to 255 do
-    if Freq[i] > best then
-    begin
-      best := Freq[i];
-      Result := i;
-    end;
-end;
-
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset: TByteDynArray2;
@@ -1872,6 +1890,8 @@ var
 begin
   SetLength(Dataset, Length(FTiles), sqr(cTileWidth));
   SetLength(WasActive, Length(FTiles));
+
+  // prepare KModes dataset, one line per tile, 64 palette indexes per line
 
   Cnt := 0;
   for i := 0 to High(FTiles) do
@@ -1894,7 +1914,11 @@ begin
 
   SetLength(Dataset, Cnt);
 
+  // run the KModes algorighm, which will group similar tiles until it reaches a fixed amount of groups
+
   ComputeKModes(Dataset, DesiredNbTiles, MaxInt, RestartCount, cTilePaletteSize, 0, XYC);
+
+  // for each group, merge the tiles
 
   SetLength(ToMerge, Length(FTiles));
 
@@ -1945,6 +1969,8 @@ begin
       Inc(cnt);
   end;
 
+  // pack the global tiles, removing inactive ones
+
   for i := High(FTiles) - 1 downto 0 do
     if not FTiles[i]^.Active then
     begin
@@ -1955,8 +1981,12 @@ begin
   SetLength(IdxMap, Length(FTiles));
   FillDWord(IdxMap[0], Length(FTiles), $ffffffff);
 
+  // sort global tiles by use count descending (to make smoothing work better) then by tile index (to make tile indexes compression work better)
+
   SetLength(FTiles, cnt);
   QuickSort(FTiles[0], 0, High(FTiles), SizeOf(PTile), @CompareTileUseCountRev);
+
+  // point tilemap items on new tiles indexes
 
   for i := 0 to High(FTiles) do
     IdxMap[FTiles[i]^.TmpIndex] := i;
@@ -1976,6 +2006,8 @@ procedure TMainForm.IndexFrameTiles(AFrame: PFrame);
 var
   x, y, i, cnt, UseCount: Integer;
 begin
+  // build a list of tiles indexes used by the frame
+
   SetLength(AFrame^.TilesIndexes, cMaxTiles);
 
   cnt := 0;
@@ -1997,7 +2029,11 @@ begin
 
   SetLength(AFrame^.TilesIndexes, cnt);
 
+  // sort it
+
   QuickSort(AFrame^.TilesIndexes[0], 0, High(AFrame^.TilesIndexes), SizeOf(AFrame^.TilesIndexes[0]), @CompareTilesIndexes);
+
+  // point tilemap on those indexes
 
   for i := 0 to High(AFrame^.TilesIndexes) do
     for y := 0 to (cTileMapHeight - 1) do

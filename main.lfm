@@ -199,7 +199,7 @@ object MainForm: TMainForm
     Top = 62
     Width = 176
     TabOrder = 2
-    Text = 'C:\smsdev\ba\ba_res.wav'
+    Text = 'C:\smsdev\ba\bad_apple.wav'
   end
   object Label1: TLabel
     Left = 8
@@ -215,7 +215,7 @@ object MainForm: TMainForm
     Top = 36
     Width = 176
     TabOrder = 1
-    Text = 'c:\smsdev\tiler\sms\tiled'
+    Text = 'C:\smsdev\ba\tiled'
   end
   object pbPalette: TPaintBox
     Left = 8
@@ -241,7 +241,7 @@ object MainForm: TMainForm
     Top = 195
     Width = 56
     TabOrder = 7
-    Value = 2
+    Value = 1
   end
   object IdleTimer: TIdleTimer
     Enabled = False
