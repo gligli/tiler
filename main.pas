@@ -424,6 +424,9 @@ end;
 
 procedure TMainForm.btnDoGlobalTilingClick(Sender: TObject);
 begin
+  if Length(FFrames) = 0 then
+    Exit;
+
   DoGlobalTiling(seAvgTPF.Value * Length(FFrames), seKMRest.Value);
   tbFrameChange(nil);
 end;
@@ -473,6 +476,9 @@ procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
 
 var i, j, first, last: Integer;
 begin
+  if Length(FFrames) = 0 then
+    Exit;
+
   for j := 0 to High(FKeyFrames) do
   begin
     ProcThreadPool.DoParallelLocalProc(@DoDCT, 0, High(FTiles), @FKeyFrames[j]);
@@ -509,6 +515,9 @@ const
   end;
 
 begin
+  if Length(FFrames) = 0 then
+    Exit;
+
   ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div cTilesAtATime);
   tbFrameChange(nil);
 end;
@@ -552,8 +561,9 @@ begin
     fn := Format(inPath, [i]);
     if not FileExists(fn) then
     begin
-      Application.MessageBox(PChar('File not found: ' + fn), nil, MB_ICONERROR);
-      Exit;
+      SetLength(FFrames, 0);
+      tbFrame.Max := 0;
+      raise EFileNotFoundException.Create('File not found: ' + fn);
     end;
   end;
 
@@ -605,6 +615,9 @@ procedure TMainForm.btnReindexClick(Sender: TObject);
   end;
 
 begin
+  if Length(FFrames) = 0 then
+    Exit;
+
   ProcThreadPool.DoParallelLocalProc(@DoPruneUnusedTiles, 0, High(FTiles));
   ReindexTiles;
   ProcThreadPool.DoParallelLocalProc(@DoIndexFrameTiles, 0, High(FFrames));
@@ -627,6 +640,9 @@ procedure TMainForm.btnSaveClick(Sender: TObject);
 var
   dataFS, soundFS: TFileStream;
 begin
+  if Length(FFrames) = 0 then
+    Exit;
+
   dataFS := TFileStream.Create(IncludeTrailingPathDelimiter(edOutputDir.Text) + 'data.bin', fmCreate);
   soundFS := nil;
   if Trim(edWAV.Text) <> '' then
@@ -648,6 +664,9 @@ procedure TMainForm.btnSmoothClick(Sender: TObject);
       DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 10);
   end;
 begin
+  if Length(FFrames) = 0 then
+    Exit;
+
   ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, cTileMapHeight - 1);
   tbFrameChange(nil);
 end;
