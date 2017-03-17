@@ -2,7 +2,7 @@
 * SMS video player / encoder v7 *
 *********************************
 
-Project page: https://gitlab.com/gligli/tiler
+Project page: https://github.com/gligli/tiler
 
 By: GliGli, with help from Maxim and others from http://www.smspower.org/forums/16306-FullscreenVideoPlaybackOnSegaMasterSystem
 License: GNU GPL v3
