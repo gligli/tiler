@@ -33,7 +33,7 @@ const
   cLineCount = 313;
   cRefreshRate = 50;
   cCyclesPerLine = cZ80Clock / (cLineCount * cRefreshRate);
-  cCyclesPerDisplayPhase : array[Boolean{VSync?}] of Integer = (
+  cCyclesPerDisplayPhase : array[Boolean{VBlank?}] of Integer = (
     Round(cScreenHeight * cCyclesPerLine),
     Round((cLineCount - cScreenHeight) * cCyclesPerLine)
   );
@@ -61,11 +61,11 @@ const
   cFrameSoundSize = cZ80Clock / cClocksPerSample / 2 / (cRefreshRate / 4);
 
   // number of Z80 cycles to execute a function
-  cTileIndexesTimings : array[Boolean{VSync?}, 0..4 {Direct/Std/RptFix/RptVar/VBlank}] of Integer = (
-    (343 + 688, 289 + 17 + 688, 91, 213 + 12 + 688, 113 + 7),
-    (347 + 344, 309 + 18 + 344, 91, 233 + 14 + 344, 113 + 7)
+  cTileIndexesTimings : array[Boolean{VBlank?}, 0..4 {Direct/Std/RptFix/RptVar/VBlankSwitch}] of Integer = (
+    (343 + 688, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
+    (347 + 344, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
   );
-  cLineJitter = 4;
+  cLineJitterCompensation = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
   // DCT quantization tables
@@ -2090,7 +2090,7 @@ var
 
   function CurrentLineJitter: Integer;
   begin
-    Result := round(IfThen(tiVBlank, -cLineJitter * cCyclesPerLine, cLineJitter * cCyclesPerLine));
+    Result := round(IfThen(tiVBlank, -cLineJitterCompensation * cCyclesPerLine, cLineJitterCompensation * cCyclesPerLine));
   end;
 
   procedure HandleTileIndexZ80Cycles(ACycleAdd: Integer);
