@@ -2129,20 +2129,32 @@ var
         cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3];
       end;
 
-      cyAdd := cTileIndexesTimings[tiVBlank, 2] + sameCount * cTileIndexesTimings[tiVBlank, 3];
+      // compute cycles
+      cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3] +
+               cTileIndexesTimings[not tiVBlank, 2] + (sameCount - priorCount) * cTileIndexesTimings[not tiVBlank, 3];
 
       // in case we need to switch VBlank in the middle of the upload, add one more tile in "slow" not VBlank state
       if tiZ80Cycles + cyAdd > cCyclesPerDisplayPhase[tiVBlank] + CurrentLineJitter then
       begin
         if (priorCount > 0) and tiVBlank then
-          Dec(priorCount)
+        begin
+          Dec(priorCount);
+          cyAdd -= cTileIndexesTimings[tiVBlank, 3];
+          cyAdd += cTileIndexesTimings[not tiVBlank, 3];
+        end
         else if (priorCount < sameCount) and not tiVBlank then
+        begin
           Inc(priorCount);
+          cyAdd += cTileIndexesTimings[tiVBlank, 3];
+          cyAdd -= cTileIndexesTimings[not tiVBlank, 3];
+        end;
       end;
 
-      // if we output 2 commands, we will spend RptFix more cycles
-      if (priorCount > 0) and (sameCount - priorCount > 0) then
-        cyAdd += cTileIndexesTimings[tiVBlank, 2];
+      // if we output only one command, only one fixed cost should have been added
+      if priorCount = 0 then
+        cyAdd -= cTileIndexesTimings[tiVBlank, 2]
+      else if priorCount = sameCount then
+        cyAdd -= cTileIndexesTimings[not tiVBlank, 2];
 
       if priorCount > 0 then
         tileIdxStream.WriteByte(cTileIndexesRepeatStart + priorCount - 1);
