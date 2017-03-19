@@ -68,42 +68,40 @@ const
   cLineJitterCompensation = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
-  // DCT quantization tables
-
-  cLumaQuantisation: array[0..7, 0..7] of Single = (
-    // JPEG standard
-    (16,  11,  10,  16,  24,  40,  51,  61),
-    (12,  12,  14,  19,  26,  58,  60,  55),
-    (14,  13,  16,  24,  40,  57,  69,  56),
-    (14,  17,  22,  29,  51,  87,  80,  62),
-    (18,  22,  37,  56,  68, 109, 103,  77),
-    (24,  35,  55,  64,  81, 104, 113,  92),
-    (49,  64,  78,  87, 103, 121, 120, 101),
-    (72,  92,  95,  98, 112, 100, 103,  99)
-  );
-
-  cChromaQuantisation: array[0..7, 0..7] of Single = (
-{$if false}
-    // JPEG standard
-    (17,  18,  24,  47,  99,  99,  99,  99),
-    (18,  21,  26,  66,  99,  99,  99,  99),
-    (24,  26,  56,  99,  99,  99,  99,  99),
-    (47,  66,  99,  99,  99,  99,  99,  99),
-    (99,  99,  99,  99,  99,  99,  99,  99),
-    (99,  99,  99,  99,  99,  99,  99,  99),
-    (99,  99,  99,  99,  99,  99,  99,  99),
-    (99,  99,  99,  99,  99,  99,  99,  99)
-{$else}
-    // Improved (reduced figh frequency chroma importance)
-    (17,  18,  24,  47,  99,  99,  128, 192 ),
-    (18,  21,  26,  66,  99,  99,  128, 192 ),
-    (24,  26,  56,  99,  99,  128, 192, 256 ),
-    (47,  66,  99,  99,  128, 192, 256, 512 ),
-    (99,  99,  99,  128, 192, 256, 512, 1024),
-    (99,  99,  128, 192, 256, 512, 1024,2048),
-    (128, 128, 192, 256, 512, 1024,2048,4096),
-    (192, 192, 256, 512, 1024,2048,4096,8192)
-{$endif}
+  cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of Single = (
+    (
+      // JPEG standard
+      (16,  11,  10,  16,  24,  40,  51,  61),
+      (12,  12,  14,  19,  26,  58,  60,  55),
+      (14,  13,  16,  24,  40,  57,  69,  56),
+      (14,  17,  22,  29,  51,  87,  80,  62),
+      (18,  22,  37,  56,  68, 109, 103,  77),
+      (24,  35,  55,  64,  81, 104, 113,  92),
+      (49,  64,  78,  87, 103, 121, 120, 101),
+      (72,  92,  95,  98, 112, 100, 103,  99)
+    ),
+    (
+      // Improved (reduced high frequency chroma importance)
+      (17,  18,  24,  47,  99,  99,  99,  99),
+      (18,  21,  26,  66,  99,  99,  99, 128),
+      (24,  26,  56,  99,  99,  99, 128, 160),
+      (47,  66,  99,  99,  99, 128, 160, 192),
+      (99,  99,  99,  99, 128, 160, 192, 224),
+      (99,  99,  99, 128, 160, 192, 224, 224),
+      (99,  99, 128, 160, 192, 224, 224, 256),
+      (99, 128, 160, 192, 224, 224, 256, 256)
+    ),
+    (
+      // Improved (reduced high frequency chroma importance)
+      (17,  18,  24,  47,  99,  99,  99,  99),
+      (18,  21,  26,  66,  99,  99,  99, 128),
+      (24,  26,  56,  99,  99,  99, 128, 160),
+      (47,  66,  99,  99,  99, 128, 160, 192),
+      (99,  99,  99,  99, 128, 160, 192, 224),
+      (99,  99,  99, 128, 160, 192, 224, 224),
+      (99,  99, 128, 160, 192, 224, 224, 256),
+      (99, 128, 160, 192, 224, 224, 256, 256)
+    )
   );
 
   cDitheringMap : array[0..8*8 - 1] of Byte = (
@@ -1288,10 +1286,7 @@ begin
 
 		    coeff := 0.25 * Cu * Cv * z;
 
-        if cpn = 0 then
-          coeff := coeff * 255.0 / cLumaQuantisation[v,u]
-        else
-          coeff := coeff * 255.0 / cChromaQuantisation[v,u];
+        coeff := coeff * 255.0 / cDCTQuantization[cpn, v, u];
 
         ATile^.DCTCoeffs[SpritePal,v,u,cpn] := coeff;
 	    end;
@@ -2093,7 +2088,7 @@ var
     Result := round(IfThen(tiVBlank, -cLineJitterCompensation * cCyclesPerLine, cLineJitterCompensation * cCyclesPerLine));
   end;
 
-  procedure HandleTileIndexZ80Cycles(ACycleAdd: Integer);
+  procedure CountZ80Cycles(ACycleAdd: Integer);
   var
     cyPh: Integer;
   begin
@@ -2117,13 +2112,14 @@ var
     if sameCount = 1 then
     begin
       if vbl then
-        HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 1]);
+        CountZ80Cycles(cTileIndexesTimings[tiVBlank, 1]);
       tileIdxStream.WriteByte(prevDTI - 1);
       if not vbl then
-        HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 1]);
+        CountZ80Cycles(cTileIndexesTimings[tiVBlank, 1]);
     end
     else if sameCount <> 0 then
     begin
+      // split upload in case we need to switch VBlank in the midlde of it
       priorCount := sameCount;
       cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3];
 
@@ -2133,21 +2129,28 @@ var
         cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3];
       end;
 
-      if priorCount > 0 then
+      cyAdd := cTileIndexesTimings[tiVBlank, 2] + sameCount * cTileIndexesTimings[tiVBlank, 3];
+
+      // in case we need to switch VBlank in the middle of the upload, add one more tile in "slow" not VBlank state
+      if tiZ80Cycles + cyAdd > cCyclesPerDisplayPhase[tiVBlank] + CurrentLineJitter then
       begin
-        HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3]);
-        tileIdxStream.WriteByte(cTileIndexesRepeatStart + priorCount - 1);
+        if (priorCount > 0) and tiVBlank then
+          Dec(priorCount)
+        else if (priorCount < sameCount) and not tiVBlank then
+          Inc(priorCount);
       end;
 
-      sameCount -= priorCount;
-      if sameCount > 0 then
-      begin
-        if vbl then
-          HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 2] + sameCount * cTileIndexesTimings[tiVBlank, 3]);
-        tileIdxStream.WriteByte(cTileIndexesRepeatStart + sameCount - 1);
-        if not vbl then
-          HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 2] + sameCount * cTileIndexesTimings[tiVBlank, 3]);
-      end;
+      // if we output 2 commands, we will spend RptFix more cycles
+      if (priorCount > 0) and (sameCount - priorCount > 0) then
+        cyAdd += cTileIndexesTimings[tiVBlank, 2];
+
+      if priorCount > 0 then
+        tileIdxStream.WriteByte(cTileIndexesRepeatStart + priorCount - 1);
+
+      CountZ80Cycles(cyAdd);
+
+      if sameCount - priorCount > 0 then
+        tileIdxStream.WriteByte(cTileIndexesRepeatStart + sameCount - priorCount - 1);
     end;
   end;
 
@@ -2182,13 +2185,13 @@ begin
       begin
         vbl := tiVBlank;
         if vbl then
-          HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
+          CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
 
         tileIdxStream.WriteByte(cTileIndexesDirectValue);
         tileIdxStream.WriteWord(AFrame^.TilesIndexes[j] + cTileIndexesTileOffset);
 
         if not vbl then
-          HandleTileIndexZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
+          CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
 
         diffTileIndex := -1;
         sameCount := 0;
