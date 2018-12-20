@@ -643,7 +643,7 @@ procedure TMainForm.btnRunAllClick(Sender: TObject);
 begin
   btnLoadClick(nil);
   btnDitherClick(nil);
-  btnDoMakeUniqueClick(nil);
+  //btnDoMakeUniqueClick(nil); // useless and may alter tiles weighting
   btnDoGlobalTilingClick(nil);
   btnDoFrameTilingClick(nil);
   btnReindexClick(nil);
