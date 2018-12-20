@@ -44,7 +44,7 @@
             <LinkSmart Value="True"/>
           </Linking>
           <Other>
-            <CustomOptions Value="-CF32"/>
+            <CustomOptions Value="-CF32 -Or"/>
           </Other>
         </CompilerOptions>
       </Item2>
@@ -81,7 +81,7 @@
             </Options>
           </Linking>
           <Other>
-            <CustomOptions Value="-CF32"/>
+            <CustomOptions Value="-CF32 -Or"/>
           </Other>
         </CompilerOptions>
       </Item3>
@@ -90,7 +90,7 @@
           <Version Value="11"/>
           <PathDelim Value="\"/>
           <Target>
-            <Filename Value="tiler"/>
+            <Filename Value="tilerWPO"/>
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
@@ -101,7 +101,6 @@
           </Parsing>
           <CodeGeneration>
             <SmartLinkUnit Value="True"/>
-            <TargetCPU Value="x86_64"/>
             <Optimizations>
               <OptimizationLevel Value="4"/>
             </Optimizations>
@@ -109,6 +108,7 @@
           <Linking>
             <Debugging>
               <GenerateDebugInfo Value="False"/>
+              <UseExternalDbgSyms Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
             <Options>
@@ -118,7 +118,10 @@
             </Options>
           </Linking>
           <Other>
-            <CustomOptions Value="-CF32 -OWall -FWfeedbackfile.wpo"/>
+            <Verbosity>
+              <ShowAll Value="True"/>
+            </Verbosity>
+            <CustomOptions Value="-CF32 -OWall -FWfeedbackfile.wpo -Xs- -Or"/>
           </Other>
         </CompilerOptions>
       </Item4>
