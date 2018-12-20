@@ -11,14 +11,24 @@ uses
 const
   // Tweakable params
   cKeyframeFixedColors = 2;
-  cGamma = 2.2;
+  cGamma = 2.0;
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = False;
   cGammaCorrectSmoothing = False;
-  cUseOldDithering = False;
+  cUseLABColors = True;
+  cRedMultiplier = 224;
+  cGreenMultiplier = 608;
+  cBlueMultiplier = 192;
+
+  cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
+
+{$if cLumaMultiplier <> 1024}
+  {$message error wrong RGB to luma!}
+{$endif}
 
   // SMS consts
-  cTotalColors = 64;
+  cBitsPerComp = 2;
+  cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
   cTilePaletteSize = 16;
   cTileMapWidth = 32;
@@ -161,7 +171,7 @@ type
   end;
 
   TMixingPlan2 = record
-    List: array[0..255] of Integer;
+    List: array[0..cTotalColors - 1] of Integer;
     Count: Integer;
     LumaPal: array of Integer;
     GammaPal: array of array[0..2] of Single;
@@ -171,6 +181,7 @@ type
 
   TMainForm = class(TForm)
     btnRunAll: TButton;
+    chkUseOldDithering: TCheckBox;
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
     edInput: TEdit;
@@ -218,6 +229,7 @@ type
     procedure btnSaveClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure chkPlayChange(Sender: TObject);
+    procedure chkUseOldDitheringChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure IdleTimerTimer(Sender: TObject);
@@ -231,8 +243,10 @@ type
     FColorMapLuma: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
     FCS: TCriticalSection;
+    FUseOldDithering: Boolean;
 
     procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Single);
+    procedure RGBToLAB(ir,ig,ib: Integer;  GammaCor: Boolean; out ol,oa,ob: Single);
 
     procedure ComputeTileDCT(ATile: PTile; FromPal, SpritePal, GammaCor: Boolean; const pal: array of Integer);
     function CompareTilesDCT(ATileA, ATileB: PTile; SpritePalA, SpritePalB: Boolean): Single;
@@ -674,9 +688,14 @@ begin
   IdleTimer.Enabled := chkPlay.Checked;
 end;
 
+procedure TMainForm.chkUseOldDitheringChange(Sender: TObject);
+begin
+  FUseOldDithering := chkUseOldDithering.Checked;
+end;
+
 procedure TMainForm.FormCreate(Sender: TObject);
 var
-  r,g,b,i,col: Integer;
+  r,g,b,i,col,sr: Integer;
 begin
   SetPriorityClass(GetCurrentProcess, IDLE_PRIORITY_CLASS);
   FormatSettings.DecimalSeparator := '.';
@@ -691,12 +710,16 @@ begin
   imgTiles.Picture.Bitmap.Height:=cScreenHeight * 2;
   imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  for i := 0 to 63 do
+  chkUseOldDitheringChange(nil);
+
+  sr := (1 shl cBitsPerComp) - 1;
+
+  for i := 0 to cTotalColors - 1 do
   begin
     col :=
-      ((i and $03) * 85) or    //R
-      ((i and $0C) * 5440 ) or //G
-      ((i and $30) * 348160);  //B
+      (((i and sr) * 255 div sr) and $ff) or //R
+      (((((i shr (cBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
+      (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
 
     FColorMap[i] := col;
   end;
@@ -707,9 +730,9 @@ begin
     r := col and $ff;
     g := (col shr 8) and $ff;
     b := col shr 16;
-    FColorMapLuma[i] := r*299 + g*587 + b*114;
-  end;
 
+    FColorMapLuma[i] := r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier;
+  end;
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
@@ -764,6 +787,7 @@ end;
 procedure TMainForm.PreparePlan2(var Plan: TMixingPlan2; const pal: array of Integer);
 var
   i, col, r, g, b: Integer;
+  fr, fg, fb: Single;
 begin
   Plan.Count := 0;
   SetLength(Plan.LumaPal, Length(pal));
@@ -776,11 +800,15 @@ begin
     g := (col shr 8) and $ff;
     b := col shr 16;
 
-    Plan.LumaPal[i] := r*299 + g*587 + b*114;
+    fr := GammaCorrect(r);
+    fg := GammaCorrect(g);
+    fb := GammaCorrect(b);
 
-    Plan.GammaPal[i][0] := GammaCorrect(r);
-    Plan.GammaPal[i][1] := GammaCorrect(g);
-    Plan.GammaPal[i][2] := GammaCorrect(b);
+    Plan.LumaPal[i] := trunc((fr*cRedMultiplier + fg*cGreenMultiplier + fb*cBlueMultiplier) / cLumaMultiplier * (1 shl 16));
+
+    Plan.GammaPal[i][0] := fr;
+    Plan.GammaPal[i][1] := fg;
+    Plan.GammaPal[i][2] := fb;
   end;
 end;
 
@@ -857,14 +885,14 @@ var
   plan: TMixingPlan;
   plan2: TMixingPlan2;
 begin
-  if not cUseOldDithering then
+  if not FUseOldDithering then
     PreparePlan2(plan2, pal);
 
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
     begin
       map_value := cDitheringMap[(x and (cTileWidth - 1)) + ((y and (cTileWidth - 1)) shl 3)];
-      if cUseOldDithering then
+      if FUseOldDithering then
       begin
         plan := DeviseBestMixingPlan(ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2], pal);
         if map_value < plan.Ratio then
@@ -877,7 +905,7 @@ begin
       begin
         DeviseBestMixingPlan2(plan2, ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2]);
         map_value := map_value * plan2.Count div 64;
-        ATile^.PalPixels[SpritePal, y,x] := plan2.List[map_value];
+        ATile^.PalPixels[SpritePal,y,x] := plan2.List[map_value];
       end;
     end;
 end;
@@ -908,7 +936,7 @@ begin
       if not Tile_^.Active then
         Exit;
 
-      // dither using full 64 colors palette
+      // dither using full RGB palette
 
       DitherTile(Tile_, FColorMap, False);
 
@@ -1135,15 +1163,15 @@ function TMainForm.ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
 var
   luma1, luma2, lumadiff, diffR, diffG, diffB: Int64;
 begin
-  luma1 := r1 * 299 + g1 * 587 + b1 * 114;
-  luma2 := r2 * 299 + g2 * 587 + b2 * 114;
+  luma1 := r1 * cRedMultiplier + g1 * cGreenMultiplier + b1 * cBlueMultiplier;
+  luma2 := r2 * cRedMultiplier + g2 * cGreenMultiplier + b2 * cBlueMultiplier;
   lumadiff := luma1 - luma2;
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * (299 * 1000 * 3 div 4); // 1000 to match luma scale, 3 div 4 for 0.75 chroma improtance reduction
-  Result += diffG * diffG * (587 * 1000 * 3 div 4);
-  Result += diffB * diffB * (114 * 1000 * 3 div 4);
+  Result := diffR * diffR * (cRedMultiplier * cLumaMultiplier * 3 div 4); // 3 div 4 for 0.75 chroma improtance reduction
+  Result += diffG * diffG * (cGreenMultiplier * cLumaMultiplier * 3 div 4);
+  Result += diffB * diffB * (cBlueMultiplier * cLumaMultiplier * 3 div 4);
   Result += lumadiff * lumadiff;
 end;
 
@@ -1184,18 +1212,18 @@ begin
         t1 := 0; t2 := 0; t3 := 0; d1 := 0; d2 := 0; d3 := 0;
         if r2 <> r1 then
         begin
-          t1 := 299*64 * (r - r1) div (r2-r1);
-          d1 := 299;
+          t1 := cRedMultiplier*64 * (r - r1) div (r2-r1);
+          d1 := cRedMultiplier;
         end;
         if g2 <> g1 then
         begin
-          t2 := 587*64 * (g - g1) div (g2-g1);
-          d2 := 587;
+          t2 := cGreenMultiplier*64 * (g - g1) div (g2-g1);
+          d2 := cGreenMultiplier;
         end;
         if b2 <> b1 then
         begin
-          t3 := 114*64 * (b - b1) div (b2-b1);
-          d3 := 114;
+          t3 := cBlueMultiplier*64 * (b - b1) div (b2-b1);
+          d3 := cBlueMultiplier;
         end;
         ratio := (t1+t2+t3) div (d1+d2+d3);
         if(ratio < 0) then ratio := 0 else if(ratio > 63) then ratio := 63;
@@ -1236,9 +1264,41 @@ begin
     sb := b / 255.0;
   end;
 
-  y := 0.299*sr + 0.587*sg + 0.114*sb;
-  u := -0.147*sr - 0.289*sg + 0.436*sb;
-  v := 0.615*sr - 0.515*sg - 0.100*sb;
+  sr *= cRedMultiplier / cLumaMultiplier;
+  sg *= cGreenMultiplier / cLumaMultiplier;
+  sb *= cBlueMultiplier / cLumaMultiplier;
+
+  y := sr + sg + sb;
+  u := -0.147/0.299*sr - 0.289/0.587*sg + 0.436/0.114*sb;
+  v := 0.615/0.299*sr - 0.515/0.587*sg - 0.100/0.114*sb;
+end;
+
+procedure TMainForm.RGBToLAB(ir,ig,ib: Integer;  GammaCor: Boolean; out ol,oa,ob: Single); inline;
+var
+  r, g, b, x, y, z: Single;
+begin
+  r := ir / 255.0;
+  g := ig / 255.0;
+  b := ib / 255.0;
+
+  if GammaCor then
+  begin
+    if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
+    if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
+    if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
+  end;
+
+  x := (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
+  y := (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.00000;
+  z := (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+
+  if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
+  if y > 0.008856 then y := power(y, 1/3) else y := (7.787 * y) + 16/116;
+  if z > 0.008856 then z := power(z, 1/3) else z := (7.787 * z) + 16/116;
+
+  ol := (116 * y) - 16;
+  oa := 500 * (x - y);
+  ob := 200 * (y - z);
 end;
 
 procedure TMainForm.ComputeTileDCT(ATile: PTile; FromPal, SpritePal, GammaCor: Boolean; const pal: array of Integer);
@@ -1253,16 +1313,26 @@ begin
       for x := 0 to (cTileWidth - 1) do
       begin
         col := pal[ATile^.PalPixels[SpritePal,y,x]];
+{$if cUseLABColors}
+        RGBToLAB(col and $ff, (col shr 8) and $ff, (col shr 16) and $ff, GammaCor,
+                 YUVPixels[y,x,0], YUVPixels[y,x,1], YUVPixels[y,x,2]);
+{$else}
         RGBToYUV(col and $ff, (col shr 8) and $ff, (col shr 16) and $ff, GammaCor,
                  YUVPixels[y,x,0], YUVPixels[y,x,1], YUVPixels[y,x,2]);
+{$endif}
       end;
   end
   else
   begin
     for y := 0 to (cTileWidth - 1) do
       for x := 0 to (cTileWidth - 1) do
+{$if cUseLABColors}
+        RGBToLAB(ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2], GammaCor,
+                 YUVPixels[y,x,0], YUVPixels[y,x,1], YUVPixels[y,x,2]);
+{$else}
         RGBToYUV(ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2], GammaCor,
                  YUVPixels[y,x,0], YUVPixels[y,x,1], YUVPixels[y,x,2]);
+{$endif}
   end;
 
   for cpn := 0 to 2 do
