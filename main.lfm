@@ -276,7 +276,7 @@ object MainForm: TMainForm
       OnClick = btnDitherClick
     end
     object MenuItem7: TMenuItem
-      Caption = 'Tile (make unique)'
+      Caption = 'Tile (make unique, deprecated)'
       OnClick = btnDoMakeUniqueClick
     end
     object MenuItem2: TMenuItem
