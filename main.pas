@@ -311,7 +311,7 @@ end;
 
 var
   GammaCorLut: array[0..High(Byte)] of Single;
-  GammaUncorLut: array[0..High(Word)] of Byte;
+  GammaUncorLut: array[0..(1 shl 20) - 1] of Byte;
 
 procedure InitGammaLuts;
 var i: Integer;
@@ -319,8 +319,11 @@ begin
   for i := 0 to High(GammaCorLut) do
     GammaCorLut[i] := power(i / 255.0, cGamma);
 
-  for i := 0 to High(GammaUncorLut) do
-    GammaUncorLut[i] := EnsureRange(Round(power(i / Single(High(GammaUncorLut)), 1 / cGamma) * 255.0), 0, 255);
+  FillByte(GammaUncorLut[0], High(GammaUncorLut) div 2, 0);
+  FillByte(GammaUncorLut[High(GammaUncorLut) div 2], High(GammaUncorLut) div 2, 255);
+
+  for i := 0 to High(GammaUncorLut) div 2 do
+    GammaUncorLut[i + High(GammaUncorLut) div 4] := EnsureRange(Round(power(i / Single(High(GammaUncorLut) div 2), 1 / cGamma) * 255.0), 0, 255);
 end;
 
 function GammaCorrect(x: Byte): Single; inline;
@@ -330,7 +333,7 @@ end;
 
 function GammaUnCorrect(x: Single): Integer; inline;
 begin
-  Result := GammaUncorLut[EnsureRange(Round(x * Single(High(GammaUncorLut))), 0, High(GammaUncorLut))];
+  Result := GammaUncorLut[Round(x * Single(High(GammaUncorLut) div 2)) + High(GammaUncorLut) div 4];
 end;
 
 Const
@@ -1169,7 +1172,7 @@ begin
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * (cRedMultiplier * cLumaMultiplier * 3 div 4); // 3 div 4 for 0.75 chroma improtance reduction
+  Result := diffR * diffR * (cRedMultiplier * cLumaMultiplier * 3 div 4); // 3 div 4 for 0.75 chroma importance reduction
   Result += diffG * diffG * (cGreenMultiplier * cLumaMultiplier * 3 div 4);
   Result += diffB * diffB * (cBlueMultiplier * cLumaMultiplier * 3 div 4);
   Result += lumadiff * lumadiff;
@@ -1177,7 +1180,7 @@ end;
 
 function TMainForm.EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
 begin
-  Result := ColorCompare(r,g,b, r0,g0,b0) + ColorCompare(r1,g1,b1, r2,g2,b2) * 0.1 * (abs(ratio-0.5)+0.5);
+  Result := ColorCompare(r,g,b, r0,g0,b0) + ColorCompare(r1,g1,b1, r2,g2,b2) * 0.025;
 end;
 
 function TMainForm.DeviseBestMixingPlan(r, g, b: Integer; const pal: array of Integer): TMixingPlan;
