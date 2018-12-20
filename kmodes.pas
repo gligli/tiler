@@ -2,6 +2,9 @@
 
 unit kmodes;
 
+//{$define HAS_NO_POPCNT}
+//{$define GENERIC_DISSIM}
+
 {$mode objfpc}{$H+}
 
 interface
@@ -182,6 +185,23 @@ begin
       Inc(Result);
 end;
 {$else}
+function CountPopulation(const x:UInt64):UInt64; register;
+const
+  m1:UInt64 = $5555555555555555; //binary: 0101...
+  m2:UInt64 = $3333333333333333; //binary: 00110011..
+  m4:UInt64 = $0f0f0f0f0f0f0f0f; //binary:  4 zeros,  4 ones ...
+  h1:UInt64 = $0101010101010101; //the sum of 256 to the power of 0,1,2,3...
+begin
+  Result := x;
+
+  // Wikipedia popcount_3 port ( http://en.wikipedia.org/wiki/Popcnt )
+
+  Result := Result - ((Result shr 1) and m1);          //put count of each 2 bits into those 2 bits
+  Result := (Result and m2) + ((Result shr 2) and m2); //put count of each 4 bits into those 4 bits
+  Result := (Result + (Result shr 4)) and m4;          //put count of each 8 bits into those 8 bits
+  Result := (Result * h1) shr 56; //returns left 8 bits of Result + (Result<<8) + (Result<<16) + (Result<<24) + ...
+end;
+
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): Byte;
 begin
   asm
@@ -215,11 +235,17 @@ begin
     or rax, r8
 
     not rax
+
+    {$ifdef HAS_NO_POPCNT}
+    mov rcx, rax
+    call CountPopulation
+    {$else}
     popcnt rax, rax
+    {$endif}
 
   end ['r8', 'xmm0', 'xmm1', 'xmm2', 'xmm3', 'xmm4', 'xmm5', 'xmm6', 'xmm7'];
 end;
-{$ifend}
+{$endif}
 
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
 var
