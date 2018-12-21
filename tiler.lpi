@@ -45,6 +45,9 @@
           </Linking>
           <Other>
             <CustomOptions Value="-CF32 -Or"/>
+            <OtherDefines Count="1">
+              <Define0 Value="DEBUG"/>
+            </OtherDefines>
           </Other>
         </CompilerOptions>
       </Item2>
@@ -190,12 +193,16 @@
     </CodeGeneration>
     <Linking>
       <Debugging>
-        <DebugInfoType Value="dsDwarf2"/>
         <UseHeaptrc Value="True"/>
       </Debugging>
     </Linking>
     <Other>
-      <CustomOptions Value="-CF32"/>
+      <CustomOptions Value="-CF32
+-Si-
+-dDEBUG"/>
+      <OtherDefines Count="1">
+        <Define0 Value="DEBUG"/>
+      </OtherDefines>
     </Other>
   </CompilerOptions>
   <Debugging>

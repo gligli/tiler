@@ -16,15 +16,17 @@ const
   cGammaCorrectFrameTiling = False;
   cGammaCorrectSmoothing = False;
   cUseLABColors = True;
+{$if false}
   cRedMultiplier = 224;
   cGreenMultiplier = 608;
   cBlueMultiplier = 192;
+{$else}
+  cRedMultiplier = 299;
+  cGreenMultiplier = 587;
+  cBlueMultiplier = 114;
+{$endif}
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
-
-{$if cLumaMultiplier <> 1024}
-  {$message error wrong RGB to luma!}
-{$endif}
 
   // SMS consts
   cBitsPerComp = 2;
@@ -133,9 +135,9 @@ type
     RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1),0..2{RGB}] of Integer;
     DCTCoeffs: array[Boolean{SpritePal?}, 0..(cTileWidth - 1),0..(cTileWidth - 1),0..2{YUV}] of Single;
 
-    PalPixels: array[Boolean{SpritePal?}, 0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
+    PalPixels: array[Boolean{SpritePal?}, 0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
 
-    PaletteIndexes: array[0..(cTilePaletteSize - 1)] of Byte;
+    PaletteIndexes: array[0..(cTilePaletteSize - 1)] of Integer;
     PaletteRGB: array[0..(cTilePaletteSize - 1)] of Integer;
 
     Active: Boolean;
@@ -150,7 +152,7 @@ type
   end;
 
   TKeyFrame = record
-    PaletteIndexes: array[Boolean{SpritePal?}, 0..(cTilePaletteSize - 1)] of Byte;
+    PaletteIndexes: array[Boolean{SpritePal?}, 0..(cTilePaletteSize - 1)] of Integer;
     PaletteRGB: array[Boolean{SpritePal?}, 0..(cTilePaletteSize - 1)] of Integer;
   end;
 
@@ -166,11 +168,13 @@ type
   PFrame = ^TFrame;
 
   TMixingPlan = record
+    IsYiluoma2: Boolean;
+
+    Palette: array of Integer;
+
     Colors: array[0..1] of Integer;
     Ratio: Integer; // 0 = always index1, 63 = always index2, 32 = 50% of both
-  end;
 
-  TMixingPlan2 = record
     List: array[0..cTotalColors - 1] of Integer;
     Count: Integer;
     LumaPal: array of Integer;
@@ -239,6 +243,7 @@ type
   private
     FKeyFrames: array of TKeyFrame;
     FFrames: array of TFrame;
+    FColorMapPlan: TMixingPlan;
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FColorMapLuma: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
@@ -246,7 +251,7 @@ type
     FUseOldDithering: Boolean;
 
     procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Single);
-    procedure RGBToLAB(ir,ig,ib: Integer;  GammaCor: Boolean; out ol,oa,ob: Single);
+    procedure RGBToLAB(ir,ig,ib: Integer; GammaCor: Boolean; out ol,oa,ob: Single);
 
     procedure ComputeTileDCT(ATile: PTile; FromPal, SpritePal, GammaCor: Boolean; const pal: array of Integer);
     function CompareTilesDCT(ATileA, ATileB: PTile; SpritePalA, SpritePalB: Boolean): Single;
@@ -256,10 +261,10 @@ type
     function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
 
     function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
-    function DeviseBestMixingPlan(r,g,b: Integer; const pal: array of Integer): TMixingPlan;
+    procedure DeviseBestMixingPlan(var Plan: TMixingPlan; r,g,b: Integer);
 
-    procedure PreparePlan2(var Plan: TMixingPlan2; const pal: array of Integer);
-    procedure DeviseBestMixingPlan2(var Plan: TMixingPlan2; r, g, b: Integer);
+    procedure PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
+    procedure DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
 
     procedure LoadTiles;
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
@@ -267,7 +272,7 @@ type
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: PFrame): Integer;
 
-    procedure DitherTile(ATile: PTile; const pal: array of Integer; SpritePal: Boolean);
+    procedure DitherTile(ATile: PTile; var Plan: TMixingPlan; SpritePal: Boolean);
     procedure PreDitherTiles(AFrame: PFrame);
     procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame);
     procedure FinalDitherTiles(AFrame: PFrame);
@@ -319,11 +324,10 @@ begin
   for i := 0 to High(GammaCorLut) do
     GammaCorLut[i] := power(i / 255.0, cGamma);
 
-  FillByte(GammaUncorLut[0], High(GammaUncorLut) div 2, 0);
-  FillByte(GammaUncorLut[High(GammaUncorLut) div 2], High(GammaUncorLut) div 2, 255);
+  FillByte(GammaUncorLut[0], High(GammaUncorLut), 0);
 
-  for i := 0 to High(GammaUncorLut) div 2 do
-    GammaUncorLut[i + High(GammaUncorLut) div 4] := EnsureRange(Round(power(i / Single(High(GammaUncorLut) div 2), 1 / cGamma) * 255.0), 0, 255);
+  for i := 0 to High(GammaUncorLut) do
+    GammaUncorLut[i] := EnsureRange(Round(power(i / Single(High(GammaUncorLut)), 1 / cGamma) * 255.0), 0, 255);
 end;
 
 function GammaCorrect(x: Byte): Single; inline;
@@ -333,7 +337,7 @@ end;
 
 function GammaUnCorrect(x: Single): Integer; inline;
 begin
-  Result := GammaUncorLut[Round(x * Single(High(GammaUncorLut) div 2)) + High(GammaUncorLut) div 4];
+  Result := GammaUncorLut[Min(High(GammaUncorLut), Round(x * Single(High(GammaUncorLut))))];
 end;
 
 Const
@@ -700,8 +704,12 @@ procedure TMainForm.FormCreate(Sender: TObject);
 var
   r,g,b,i,col,sr: Integer;
 begin
-  SetPriorityClass(GetCurrentProcess, IDLE_PRIORITY_CLASS);
   FormatSettings.DecimalSeparator := '.';
+{$ifdef DEBUG}
+  ProcThreadPool.MaxThreadCount := 1;
+{$else}
+  SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
+{$endif}
 
   FCS := TCriticalSection.Create;
 
@@ -736,6 +744,8 @@ begin
 
     FColorMapLuma[i] := r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier;
   end;
+
+  PreparePlan(FColorMapPlan, FColorMap, not FUseOldDithering);
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
@@ -787,32 +797,36 @@ begin
   Repaint;
 end;
 
-procedure TMainForm.PreparePlan2(var Plan: TMixingPlan2; const pal: array of Integer);
+procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
 var
   i, col, r, g, b: Integer;
   fr, fg, fb: Single;
 begin
   Plan.Count := 0;
+  Plan.IsYiluoma2 := IsYiluoma2;
+  Plan.Ratio := 0;
+  Plan.Palette := pal;
   SetLength(Plan.LumaPal, Length(pal));
   SetLength(Plan.GammaPal, Length(pal));
 
-  for i := 0 to High(pal) do
-  begin
-    col := pal[i];
-    r := col and $ff;
-    g := (col shr 8) and $ff;
-    b := col shr 16;
+  if IsYiluoma2 then
+    for i := 0 to High(pal) do
+    begin
+      col := pal[i];
+      r := col and $ff;
+      g := (col shr 8) and $ff;
+      b := (col shr 16) and $ff;
 
-    fr := GammaCorrect(r);
-    fg := GammaCorrect(g);
-    fb := GammaCorrect(b);
+      fr := GammaCorrect(r);
+      fg := GammaCorrect(g);
+      fb := GammaCorrect(b);
 
-    Plan.LumaPal[i] := trunc((fr*cRedMultiplier + fg*cGreenMultiplier + fb*cBlueMultiplier) / cLumaMultiplier * (1 shl 16));
+      Plan.LumaPal[i] := trunc((fr*cRedMultiplier + fg*cGreenMultiplier + fb*cBlueMultiplier) / cLumaMultiplier * (1 shl 16));
 
-    Plan.GammaPal[i][0] := fr;
-    Plan.GammaPal[i][1] := fg;
-    Plan.GammaPal[i][2] := fb;
-  end;
+      Plan.GammaPal[i][0] := fr;
+      Plan.GammaPal[i][1] := fg;
+      Plan.GammaPal[i][2] := fb;
+    end;
 end;
 
 function PlanCompareLuma(Item1,Item2,UserParameter:Pointer):Integer;
@@ -820,7 +834,7 @@ begin
   Result := CompareValue(PInteger(UserParameter)[PInteger(Item1)^], PInteger(UserParameter)[PInteger(Item2)^]);
 end;
 
-procedure TMainForm.DeviseBestMixingPlan2(var Plan: TMixingPlan2; r, g, b: Integer);
+procedure TMainForm.DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
 var
   p, t, index, max_test_count, chosen_amount, chosen: Integer;
   least_penalty, penalty: Int64;
@@ -881,34 +895,29 @@ begin
   QuickSort(Plan.List[0], 0, Plan.Count - 1, SizeOf(Integer), @PlanCompareLuma, @Plan.LumaPal[0]);
 end;
 
-procedure TMainForm.DitherTile(ATile: PTile; const pal: array of Integer; SpritePal: Boolean);
+procedure TMainForm.DitherTile(ATile: PTile; var Plan: TMixingPlan; SpritePal: Boolean);
 var
   x, y, col: Integer;
   map_value: Integer;
-  plan: TMixingPlan;
-  plan2: TMixingPlan2;
 begin
-  if not FUseOldDithering then
-    PreparePlan2(plan2, pal);
-
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
     begin
       map_value := cDitheringMap[(x and (cTileWidth - 1)) + ((y and (cTileWidth - 1)) shl 3)];
-      if FUseOldDithering then
+      if not Plan.IsYiluoma2 then
       begin
-        plan := DeviseBestMixingPlan(ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2], pal);
-        if map_value < plan.Ratio then
-          col := plan.Colors[1]
+        DeviseBestMixingPlan(Plan, ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2]);
+        if map_value < Plan.Ratio then
+          col := Plan.Colors[1]
         else
-          col := plan.Colors[0];
+          col := Plan.Colors[0];
         ATile^.PalPixels[SpritePal, y, x] := col;
       end
       else
       begin
-        DeviseBestMixingPlan2(plan2, ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2]);
-        map_value := map_value * plan2.Count div 64;
-        ATile^.PalPixels[SpritePal,y,x] := plan2.List[map_value];
+        DeviseBestMixingPlan2(Plan, ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2]);
+        map_value := map_value * Plan.Count div 64;
+        ATile^.PalPixels[SpritePal,y,x] := Plan.List[map_value];
       end;
     end;
 end;
@@ -930,6 +939,7 @@ var
     Count, Index: Integer;
   end;
   Tile_: PTile;
+  Plan: TMixingPlan;
 begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
@@ -941,7 +951,7 @@ begin
 
       // dither using full RGB palette
 
-      DitherTile(Tile_, FColorMap, False);
+      DitherTile(Tile_, FColorMapPlan, False);
 
       for i := 0 to High(CMUsage) do
       begin
@@ -967,9 +977,11 @@ begin
       end;
 
       // dither again using that 16 color palette
-      DitherTile(Tile_, Tile_^.PaletteRGB, False);
+      PreparePlan(Plan, Tile_^.PaletteRGB, not FUseOldDithering);
 
-      Move(Tile_^.PalPixels[False, 0, 0], Tile_^.PalPixels[True, 0, 0], cTileWidth * cTileWidth);
+      DitherTile(Tile_, Plan, False);
+
+      Move(Tile_^.PalPixels[False, 0, 0], Tile_^.PalPixels[True, 0, 0], cTileWidth * cTileWidth * SizeOf(Integer));
     end;
 end;
 
@@ -1045,6 +1057,7 @@ var
   SpritePal: Boolean;
   cmp: array[Boolean] of Single;
   Tile_: PTile;
+  Plan: TMixingPlan;
 begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
@@ -1063,7 +1076,8 @@ begin
 
       for SpritePal := False to True do
       begin
-        DitherTile(Tile_, KF^.PaletteRGB[SpritePal], SpritePal);
+        PreparePlan(Plan, KF^.PaletteRGB[SpritePal], not FUseOldDithering);
+        DitherTile(Tile_, Plan, SpritePal);
 
         ComputeTileDCT(Tile_, True, SpritePal, False, KF^.PaletteRGB[SpritePal]);
         cmp[SpritePal] := CompareTilesDCT(Tile_, @OrigTile, SpritePal, False);
@@ -1075,7 +1089,7 @@ begin
 
       Move(KF^.PaletteIndexes[SpritePal], Tile_^.PaletteIndexes, SizeOf(Tile_^.PaletteIndexes));
       Move(KF^.PaletteRGB[SpritePal], Tile_^.PaletteRGB, SizeOf(Tile_^.PaletteRGB));
-      Move(Tile_^.PalPixels[SpritePal, 0, 0], Tile_^.PalPixels[not SpritePal, 0, 0], cTileWidth * cTileWidth);
+      Move(Tile_^.PalPixels[SpritePal, 0, 0], Tile_^.PalPixels[not SpritePal, 0, 0], cTileWidth * cTileWidth * SizeOf(Integer));
 
       AFrame^.TileMap[sy, sx].SpritePal := SpritePal;
       AFrame^.Tiles[sx + sy * cTileMapWidth] := Tile_^;
@@ -1089,7 +1103,7 @@ var
 begin
   t1 := PPTile(Item1)^;
   t2 := PPTile(Item2)^;
-  Result := CompareByte(t1^.PalPixels[False, 0, 0], t2^.PalPixels[False, 0, 0], sqr(cTileWidth));
+  Result := CompareDWord(t1^.PalPixels[False, 0, 0], t2^.PalPixels[False, 0, 0], sqr(cTileWidth));
 end;
 
 procedure TMainForm.MakeTilesUnique(FirstTileIndex, TileCount: Integer);
@@ -1126,7 +1140,7 @@ begin
 
   firstSameIdx := 0;
   for i := 1 to High(sortArr) do
-    if CompareByte(sortArr[i - 1]^.PalPixels[False, 0, 0], sortArr[i]^.PalPixels[False, 0, 0], sqr(cTileWidth)) <> 0 then
+    if CompareDWord(sortArr[i - 1]^.PalPixels[False, 0, 0], sortArr[i]^.PalPixels[False, 0, 0], sqr(cTileWidth)) <> 0 then
       DoOneMerge;
 
   i := High(sortArr);
@@ -1183,27 +1197,27 @@ begin
   Result := ColorCompare(r,g,b, r0,g0,b0) + ColorCompare(r1,g1,b1, r2,g2,b2) * 0.025;
 end;
 
-function TMainForm.DeviseBestMixingPlan(r, g, b: Integer; const pal: array of Integer): TMixingPlan;
+procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r,g,b: Integer);
 var
   r0,r1,r2,g0,g1,g2,b0,b1,b2,index1,index2,ratio,color1,color2,t1,t2,t3,d1,d2,d3: Integer;
   least_penalty, penalty: Single;
 begin
-  Result.Colors[0] := 0;
-  Result.Colors[1] := 0;
-  Result.Ratio := 32;
+  Plan.Colors[0] := 0;
+  Plan.Colors[1] := 0;
+  Plan.Ratio := 32;
 
   least_penalty := MaxSingle;
   // Loop through every unique combination of two colors from the palette,
   // and through each possible way to mix those two colors. They can be
   // mixed in exactly 64 ways, when the threshold matrix is 8x8.
-  for index1 := 0 to High(pal) do
+  for index1 := 0 to High(Plan.Palette) do
   begin
-    color1 := pal[index1];
+    color1 := Plan.Palette[index1];
     b1 := (color1 shr 16) and $ff; g1 := (color1 shr 8) and $ff; r1 := color1 and $ff;
-    for index2 := 0 to High(pal) do
+    for index2 := 0 to High(Plan.Palette) do
     begin
       // Determine the two component colors
-      color2 := pal[index2];
+      color2 := Plan.Palette[index2];
       b2 := (color2 shr 16) and $ff; g2 := (color2 shr 8) and $ff; r2 := color2 and $ff;
       ratio := 32;
       if color1 <> color2 then
@@ -1242,9 +1256,9 @@ begin
       begin
         // Keep the result that has the smallest error
         least_penalty := penalty;
-        result.colors[0] := index1;
-        result.colors[1] := index2;
-        result.ratio := ratio;
+        Plan.colors[0] := index1;
+        Plan.colors[1] := index2;
+        Plan.ratio := ratio;
       end;
     end;
   end;
@@ -1276,7 +1290,7 @@ begin
   v := 0.615/0.299*sr - 0.515/0.587*sg - 0.100/0.114*sb;
 end;
 
-procedure TMainForm.RGBToLAB(ir,ig,ib: Integer;  GammaCor: Boolean; out ol,oa,ob: Single); inline;
+procedure TMainForm.RGBToLAB(ir,ig,ib: Integer; GammaCor: Boolean; out ol,oa,ob: Single); inline;
 var
   r, g, b, x, y, z: Single;
 begin
@@ -1358,7 +1372,6 @@ begin
           end;
 
 		    coeff := 0.25 * Cu * Cv * z;
-
         coeff := coeff * 255.0 / cDCTQuantization[cpn, v, u];
 
         ATile^.DCTCoeffs[SpritePal,v,u,cpn] := coeff;
@@ -1368,7 +1381,7 @@ end;
 procedure TMainForm.HMirrorPalTile(ATile: PTile; SpritePal: Boolean);
 var
   i, j: Integer;
-  v: Byte;
+  v: Integer;
 begin
   // hardcode horizontal mirror into the tile
 
@@ -1384,7 +1397,7 @@ end;
 procedure TMainForm.VMirrorPalTile(ATile: PTile; SpritePal: Boolean);
 var
   i, j: Integer;
-  v: Byte;
+  v: Integer;
 begin
   // hardcode vertical mirror into the tile
 
@@ -1636,7 +1649,7 @@ var
   i, j, k, tx, ty, best, bestIdx, dis: Integer;
   Tile_: TTile;
   PalOccurences: array[0..cTilePaletteSize-1] of Integer;
-  PalPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
+  PalPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
 begin
   if TileCount < 2 then
     Exit;
@@ -2475,9 +2488,9 @@ begin
 end;
 
 procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
-var pp, pp2, i, sz, x, y, idx, frameStart: Integer;
+var pp, pp2, i, j, x, y, idx, frameStart: Integer;
     prevKF: PKeyFrame;
-    SkipFirst: Boolean;
+    SkipFirst, b: Boolean;
     tilesPlanes: array[0..cTileWidth - 1, 0..3] of Byte;
     TMStream: array[Boolean] of TMemoryStream;
 begin
@@ -2526,9 +2539,10 @@ begin
 
     if FFrames[i].KeyFrame <> prevKF then
     begin
-      sz := SizeOf(FFrames[i].KeyFrame^.PaletteIndexes);
-      ADataStream.WriteByte(sz);
-      ADataStream.WriteBuffer(FFrames[i].KeyFrame^.PaletteIndexes, sz);
+      ADataStream.WriteByte(cTilePaletteSize * 2);
+      for b := False to True do
+        for j := 0 to cTilePaletteSize - 1 do
+          ADataStream.WriteByte(FFrames[i].KeyFrame^.PaletteIndexes[b, j]);
     end
     else
     begin
