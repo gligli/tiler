@@ -1,17 +1,17 @@
 object MainForm: TMainForm
-  Left = 312
-  Height = 742
-  Top = 9
+  Left = 365
+  Height = 842
+  Top = 108
   Width = 808
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 742
+  VertScrollBar.Page = 837
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
-  ClientHeight = 742
-  ClientWidth = 791
+  ClientHeight = 842
+  ClientWidth = 808
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   Position = poScreenCenter
@@ -110,7 +110,7 @@ object MainForm: TMainForm
     Top = 10
     Width = 176
     TabOrder = 0
-    Text = 'e:\taxi_sms\pics0\%.4d.png'
+    Text = 'c:\taxi_sms\pics0\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -204,7 +204,7 @@ object MainForm: TMainForm
     Top = 62
     Width = 176
     TabOrder = 2
-    Text = 'e:\taxi_sms\taxi.wav'
+    Text = 'c:\taxi_sms\taxi.wav'
   end
   object Label1: TLabel
     Left = 8
@@ -220,7 +220,7 @@ object MainForm: TMainForm
     Top = 36
     Width = 176
     TabOrder = 1
-    Text = 'e:\taxi_sms\tiled'
+    Text = 'c:\taxi_sms\tiled'
   end
   object pbPalette: TPaintBox
     Left = 8

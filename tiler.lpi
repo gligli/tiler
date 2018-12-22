@@ -44,7 +44,7 @@
             <LinkSmart Value="True"/>
           </Linking>
           <Other>
-            <CustomOptions Value="-CF32 -Or"/>
+            <CustomOptions Value="-Or"/>
             <OtherDefines Count="1">
               <Define0 Value="DEBUG"/>
             </OtherDefines>
@@ -84,7 +84,7 @@
             </Options>
           </Linking>
           <Other>
-            <CustomOptions Value="-CF32 -Or"/>
+            <CustomOptions Value="-Or"/>
           </Other>
         </CompilerOptions>
       </Item3>
@@ -124,7 +124,10 @@
             <Verbosity>
               <ShowAll Value="True"/>
             </Verbosity>
-            <CustomOptions Value="-CF32 -OWall -FWfeedbackfile.wpo -Xs- -Or"/>
+            <CustomOptions Value="-OWall -FWfeedbackfile.wpo -Xs- -Or"/>
+            <OtherDefines Count="1">
+              <Define0 Value="DEBUG"/>
+            </OtherDefines>
           </Other>
         </CompilerOptions>
       </Item4>
@@ -197,8 +200,7 @@
       </Debugging>
     </Linking>
     <Other>
-      <CustomOptions Value="-CF32
--Si-
+      <CustomOptions Value="-Si-
 -dDEBUG"/>
       <OtherDefines Count="1">
         <Define0 Value="DEBUG"/>

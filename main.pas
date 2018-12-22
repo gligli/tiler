@@ -11,9 +11,9 @@ uses
 const
   // Tweakable params
   cKeyframeFixedColors = 2;
-  cGamma = 2.0;
+  cGamma = 2.2;
   cInvertSpritePalette = True;
-  cGammaCorrectFrameTiling = False;
+  cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
   cUseLABColors = True;
 {$if false}
@@ -243,7 +243,6 @@ type
   private
     FKeyFrames: array of TKeyFrame;
     FFrames: array of TFrame;
-    FColorMapPlan: TMixingPlan;
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FColorMapLuma: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
@@ -316,7 +315,7 @@ end;
 
 var
   GammaCorLut: array[0..High(Byte)] of Single;
-  GammaUncorLut: array[0..(1 shl 20) - 1] of Byte;
+  GammaUncorLut: array[0..High(Word)] of Byte;
 
 procedure InitGammaLuts;
 var i: Integer;
@@ -327,7 +326,7 @@ begin
   FillByte(GammaUncorLut[0], High(GammaUncorLut), 0);
 
   for i := 0 to High(GammaUncorLut) do
-    GammaUncorLut[i] := EnsureRange(Round(power(i / Single(High(GammaUncorLut)), 1 / cGamma) * 255.0), 0, 255);
+    GammaUncorLut[i] := EnsureRange(Round(power(i / Double(High(GammaUncorLut)), 1 / cGamma) * 255.0), 0, 255);
 end;
 
 function GammaCorrect(x: Byte): Single; inline;
@@ -744,8 +743,6 @@ begin
 
     FColorMapLuma[i] := r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier;
   end;
-
-  PreparePlan(FColorMapPlan, FColorMap, not FUseOldDithering);
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
@@ -883,7 +880,7 @@ begin
       end;
     end;
 
-    Assert(Plan.Count + chosen_amount < Length(Plan.List));
+    chosen_amount := Min(chosen_amount,  High(Plan.List) - Plan.Count);
     FillDWord(Plan.List[Plan.Count], chosen_amount, chosen);
     Inc(Plan.Count, chosen_amount);
 
@@ -922,6 +919,12 @@ begin
     end;
 end;
 
+type
+  TCountIndex = (ciCount, ciIndex);
+  TCountIndexArray = array[Low(TCountIndex)..High(TCountIndex)] of Integer;
+  PCountIndexArray = ^TCountIndexArray;
+
+
 function CompareCMU(Item1,Item2,UserParameter:Pointer):Integer;
 begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
@@ -929,18 +932,20 @@ end;
 
 function CompareCMULuma(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PInteger(UserParameter)[PInteger(Item1)[1]], PInteger(UserParameter)[PInteger(Item2)[1]]);
+  Result := CompareValue(PInteger(UserParameter)[PCountIndexArray(Item1)^[ciIndex]], PInteger(UserParameter)[PCountIndexArray(Item2)^[ciIndex]]);
 end;
 
 procedure TMainForm.PreDitherTiles(AFrame: PFrame);
 var
   sx, sy, i, tx, ty: Integer;
-  CMUsage: array[0..cTotalColors - 1] of packed record
-    Count, Index: Integer;
-  end;
+  CMUsage: array of TCountIndexArray;
   Tile_: PTile;
-  Plan: TMixingPlan;
+  Plan, CMPlan: TMixingPlan;
 begin
+  PreparePlan(CMPlan, FColorMap, not FUseOldDithering);
+
+  SetLength(CMUsage, cTotalColors);
+
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
@@ -951,19 +956,19 @@ begin
 
       // dither using full RGB palette
 
-      DitherTile(Tile_, FColorMapPlan, False);
+      DitherTile(Tile_, CMPlan, False);
 
       for i := 0 to High(CMUsage) do
       begin
-        CMUsage[i].Count := 0;
-        CMUsage[i].Index := i;
+        CMUsage[i][ciCount] := 0;
+        CMUsage[i][ciIndex] := i;
       end;
 
       // keep the 16 most used color
 
       for ty := 0 to (cTileWidth - 1) do
         for tx := 0 to (cTileWidth - 1) do
-          Inc(CMUsage[Tile_^.PalPixels[False, ty,tx]].Count, Tile_^.AveragedCount);
+          Inc(CMUsage[Tile_^.PalPixels[False, ty,tx]][ciCount], Tile_^.AveragedCount);
 
       QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMU);
 
@@ -972,8 +977,8 @@ begin
 
       for i := 0 to cTilePaletteSize - 1 do
       begin
-        Tile_^.PaletteIndexes[i] := CMUsage[cTilePaletteSize - 1 - i].Index;
-        Tile_^.PaletteRGB[i] := FColorMap[CMUsage[cTilePaletteSize - 1 - i].Index];
+        Tile_^.PaletteIndexes[i] := CMUsage[cTilePaletteSize - 1 - i][ciIndex];
+        Tile_^.PaletteRGB[i] := FColorMap[CMUsage[cTilePaletteSize - 1 - i][ciIndex]];
       end;
 
       // dither again using that 16 color palette

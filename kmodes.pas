@@ -28,6 +28,9 @@ var I, J, K, P: Integer;
     PData,P1,P2:PByte;
     Tmp:integer;
 begin
+  if ALastItem <= AFirstItem then
+    Exit;
+
   Assert((AItemSize and 3)=0,'AItemSize doit être multiple de 4 pour le moment');
   PData:=PByte(@AData);
   repeat
