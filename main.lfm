@@ -188,7 +188,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 1000
     TabOrder = 4
-    Value = 100
+    Value = 200
   end
   object Label10: TLabel
     Left = 8
@@ -204,7 +204,7 @@ object MainForm: TMainForm
     Top = 62
     Width = 176
     TabOrder = 2
-    Text = '.\sample_taxi\taxi.wav'
+    Text = '.\sample_taxi\soundtrack.wav'
   end
   object Label1: TLabel
     Left = 8
