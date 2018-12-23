@@ -20,6 +20,7 @@ type
 
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
 procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities, n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2);
+// negative n_init means use -n_init as starting point
 
 implementation
 
@@ -278,7 +279,7 @@ begin
   end;
 end;
 
-procedure InitFarthestFirst(const X: TByteDynArray2; n_clusters: Integer; var centroids: TByteDynArray2);
+procedure InitFarthestFirst(const X: TByteDynArray2; n_clusters, init_point: Integer; var centroids: TByteDynArray2);  // negative init_point means randomly chosen
 var
   nattrs, npoints, icentroid, ifarthest: Integer;
   used: TBooleanDynArray;
@@ -325,12 +326,17 @@ begin
   FillChar(used[0], npoints, False);
   FillByte(mindistance[0], npoints, High(Byte));
 
-  for icentroid := 0 to n_clusters - 1 do
+  ifarthest := init_point;
+  if ifarthest < 0  then
+    ifarthest := Random(npoints);
+
+  Move(X[ifarthest, 0], centroids[icentroid, 0], nattrs);
+  used[ifarthest] := True;
+  UpdateMinDistance(ifarthest);
+
+  for icentroid := 1 to n_clusters - 1 do
   begin
-    if icentroid = 0 then
-      ifarthest := Random(npoints)
-    else
-      ifarthest := FarthestAway;
+    ifarthest := FarthestAway;
 
     Move(X[ifarthest, 0], centroids[icentroid, 0], nattrs);
     used[ifarthest] := True;
@@ -429,7 +435,7 @@ end;
 procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities,
   n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2);
 var
-  best, i, j, npoints, nattrs: Integer;
+  best, i, j, npoints, nattrs, n_init_raw: Integer;
   init: TByteDynArray2;
   all: array of record
     Labels: TIntegerDynArray;
@@ -455,7 +461,7 @@ var
     SetLength(cl_attr_freq, n_clusters, nattrs, n_modalities);
 
     if init = nil then
-      InitFarthestFirst(X, n_clusters, centroids)
+      InitFarthestFirst(X, n_clusters, -NativeInt(AData), centroids)
     else
       centroids := init;
 
@@ -510,6 +516,7 @@ var
   end;
 
 begin
+  n_init_raw := n_init;
   npoints := Length(X);
   nattrs := 0;
   if npoints > 0 then
@@ -524,8 +531,10 @@ begin
     n_clusters := Length(init);
   end;
 
+  n_init := Max(1, n_init);
   SetLength(all, n_init);
-  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, n_init - 1, nil, n_threads);
+
+  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, n_init - 1, Pointer(n_init_raw), n_threads);
 
   j := -1;
   best := MaxInt;
