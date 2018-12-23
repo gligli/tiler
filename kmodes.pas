@@ -19,19 +19,19 @@ type
   TByteDynArray2 = array of TByteDynArray;
 
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities, n_threads: Integer; var FinalLabels: TIntegerDynArray);
+procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities, n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2);
 
 implementation
 
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
 var I, J, K, P: Integer;
-    PData,P1,P2:PByte;
-    Tmp:integer;
+    PData,P1,P2: PByte;
+    Tmp: array[0..4095] of Byte;
 begin
   if ALastItem <= AFirstItem then
     Exit;
 
-  Assert((AItemSize and 3)=0,'AItemSize doit être multiple de 4 pour le moment');
+  Assert(AItemSize < SizeOf(Tmp),'AItemSize too big!');
   PData:=PByte(@AData);
   repeat
     I := AFirstItem;
@@ -46,7 +46,7 @@ begin
         Inc(P1,AItemSize);
       end;
       P1:=PData;Inc(P1,J*AItemSize);
-      //P2:=PData;Inc(P2,P*AItemSize); déjà fait avant
+      //P2:=PData;Inc(P2,P*AItemSize); already done
       while ACompareFunction(P1, P2, AUserParameter) > 0 do
       begin
         Dec(J);
@@ -54,17 +54,11 @@ begin
       end;
       if I <= J then
       begin
-        // Swap 4 octets par 4 octets
         P1:=PData;Inc(P1,I*AItemSize);
         P2:=PData;Inc(P2,J*AItemSize);
-        for k:=1 to AItemSize shr 2 do
-        begin
-          Tmp:=PInteger(P2)^;
-          PInteger(P2)^:=PInteger(P1)^;
-          PInteger(P1)^:=Tmp;
-          Inc(P1,4);
-          Inc(P2,4);
-        end;
+        Move(P2^, Tmp[0], AItemSize);
+        Move(P1^, P2^, AItemSize);
+        Move(Tmp[0], P1^, AItemSize);
 
         if P = I then
           P := J
@@ -433,12 +427,13 @@ begin
 end;
 
 procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities,
-  n_threads: Integer; var FinalLabels: TIntegerDynArray);
+  n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2);
 var
   best, i, j, npoints, nattrs: Integer;
   init: TByteDynArray2;
   all: array of record
     Labels: TIntegerDynArray;
+    Centroids: TByteDynArray2;
     Cost: Integer;
     NIter: Integer;
     TotalMoves: Integer;
@@ -508,6 +503,7 @@ var
     end;
 
     all[init_no].Labels := Copy(labels);
+    all[init_no].Centroids := Copy(centroids);
     all[init_no].Cost := cost;
     all[init_no].NIter := itr;
     all[init_no].TotalMoves := totalmoves;
@@ -541,6 +537,7 @@ begin
     end;
 
   FinalLabels := all[j].Labels;
+  FinalCentroids := all[j].Centroids;
 end;
 
 end.
