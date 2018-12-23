@@ -2011,7 +2011,7 @@ begin
 
     // run KModes, reducing the tile count to fit "Max tiles per frame"
 
-    ComputeKModes(Dataset, DesiredNbTiles, MaxInt, RestartCount, cTilePaletteSize, 1, Labels, Centroids);
+    ComputeKModes(Dataset, DesiredNbTiles, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
 
     for j := 0 to DesiredNbTiles - 1 do
     begin
