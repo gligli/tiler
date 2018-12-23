@@ -110,7 +110,7 @@ object MainForm: TMainForm
     Top = 10
     Width = 176
     TabOrder = 0
-    Text = 'c:\taxi_sms\pics0\%.4d.png'
+    Text = '.\sample_taxi\test\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -204,7 +204,7 @@ object MainForm: TMainForm
     Top = 62
     Width = 176
     TabOrder = 2
-    Text = 'c:\taxi_sms\taxi.wav'
+    Text = '.\sample_taxi\taxi.wav'
   end
   object Label1: TLabel
     Left = 8
@@ -220,7 +220,7 @@ object MainForm: TMainForm
     Top = 36
     Width = 176
     TabOrder = 1
-    Text = 'c:\taxi_sms\tiled'
+    Text = '.\sms\tiled'
   end
   object pbPalette: TPaintBox
     Left = 8

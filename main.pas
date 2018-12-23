@@ -11,7 +11,7 @@ uses
 const
   // Tweakable params
   cKeyframeFixedColors = 2;
-  cGamma = 2.2;
+  cGamma = 2.1;
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;

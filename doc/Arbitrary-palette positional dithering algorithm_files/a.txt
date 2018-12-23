@@ -1,0 +1,319 @@
+html
+{
+  background-color: #FDC;
+  /*border:3px solid black;
+  margin:3em;*/
+}
+body
+{
+  background-color: white;
+  border: 1px solid black;
+  font-family:Arial,Verdana,Helvetica,Serif
+}
+@media only screen and (min-width:700px)
+{
+  body
+  {
+    margin-left: 7%;
+    margin-top: 16px;
+    margin-right: 7%;
+    padding-top: 2em;
+    padding-left: 7%;
+    padding-right: 7%;
+    padding-bottom: 2%;
+  }
+}
+
+@media only screen and (max-width:700px)
+{
+  body
+  {
+    margin-top: 16px;
+    padding-top: 2em;
+    padding-bottom: 2%;
+    padding-left:2pt;
+    padding-right:2pt;
+  }
+}
+
+h1
+{
+  text-align: center;
+  background-color: #FEB;
+  padding-bottom: 0.2em;
+  padding-top: 0.1em;
+}
+
+h2
+{
+  background-color: #EFC;
+  padding-left: 0.5em;
+  border-bottom:1px dashed #888;
+}
+h3
+{
+  background-color: #FFC;
+  padding-left: 0.5em;
+}
+h4
+{
+  background-color: #FFE;
+  padding-left: 0.5em;
+}
+
+blockquote
+{
+  padding-left: 2em;
+  padding-right: 2em;
+  font-style: italic;
+  background-color: #FFFAF0;
+}
+
+li
+{
+  padding-top: 0.3em;
+}
+
+div.lastedit
+{
+  font-size:70%;
+  font-family:arial,sans-serif
+}
+
+div.toc
+{
+  border-collapse:collapse;
+  padding:0px;
+  margin:0px;
+  background:#EEE; color:#000;
+  font-size:80%;
+  border:1px solid #000;
+  padding:5px;
+  font-family:sans-serif
+}
+div.toc ul { margin-top:0px; margin-bottom:0px; margin-left:1em; padding:0 }
+div.toc li { margin-top:0px; margin-bottom:0px }
+.mktreecmd { cursor:pointer; text-decoration:underline; color:#008 }
+/* Put this inside a @media qualifier so Netscape 4 ignores it */
+@media screen, print { 
+	/* Turn off list bullets */
+	ul.mktree  li { list-style: none; } 
+	/* Control how "spaced out" the tree is */
+	ul.mktree, ul.mktree ul , ul.mktree li { margin-left:10px; padding:0px; }
+	/* Provide space for our own "bullet" inside the LI */
+	ul.mktree  li           .bullet { padding-left: 15px; }
+	/* Show "bullets" in the links, depending on the class of the LI that the link's in */
+	ul.mktree  li.liClosed > .bullet { cursor: pointer; background: url("/web/20171101231352im_/http://bisqwit.iki.fi/wikipages/css/mktree.png")   0px 0px /*center left*/ no-repeat; }
+	ul.mktree  li.liOpen   > .bullet { cursor: pointer; background: url("/web/20171101231352im_/http://bisqwit.iki.fi/wikipages/css/mktree.png") -19px 0px /*center left*/ no-repeat; }
+	ul.mktree  li.liBullet > .bullet { cursor: default; background: url("/web/20171101231352im_/http://bisqwit.iki.fi/wikipages/css/mktree.png") -38px 0px /*center left*/ no-repeat; }
+	/* Sublists are visible or not based on class of parent LI */
+	ul.mktree  li.liOpen    ul { display: block; }
+	ul.mktree  li.liClosed  ul { display: none; }
+	/* Format menu items differently depending on what level of the tree they are in */
+	/*ul.mktree  li { font-size: 12pt; }
+	ul.mktree  li ul li { font-size: 10pt; }
+	ul.mktree  li ul li ul li { font-size: 8pt; }
+	ul.mktree  li ul li ul li ul li { font-size: 6pt; }*/
+}
+
+div.deeper { padding-left:0.5em }
+
+.nonmail { visibility:hidden;position:absolute; top:0px;left:0px }
+.ismail { font-weight:normal }
+
+img.embed { border:0px }
+img.embedleft { border:0px; float:left }
+img.embedright { border:0px; float:right } 
+img.extlink { border:0px; width:10px; height:10px }
+p.clear { clear:both }
+
+
+.diggbutton {
+ font-size:13px; height:4em; width:44px; border:2px outset #555; background:#66E;
+ padding:3px; text-align:center
+}
+.diggbutton a:visited, .diggbutton a:link { color:#FF5 }
+
+.source_snippet,code,tt {
+  font-family:
+    "Bitstream Vera Sans Mono",
+    "Lucida Console",
+    console,system,terminal,
+    "Courier New",
+    monospace }
+.source_snippet
+{
+  font-size:92%;
+  background:#FFF; color:#000;
+  border:1px dashed #888;
+  border:4px solid #DDD;
+  padding:3px
+}
+@media screen
+{
+  .source_snippet { overflow:auto }
+}
+code,tt { background:#F7F7F7 }
+
+/* JSF formatting rules */
+.jSf6Z2BR2{background:#FFF;color:#000}
+.jSf5o7kl1{background:#FFF;color:#1A1}
+.jSfpLmX01{background:#FFF;color:#1AA}
+.jSf-sSI-1{background:#FFF;color:#A1A}
+.jSfWtbTI{background:#FFF;color:#000;font-weight:700}
+.jSff4-Rt{background:#FFF;color:#1A1;font-weight:700}
+.jSf5Rm2f1{background:#FFF;color:#A51;font-weight:700}
+.jSfLonVN1{background:#FFF;color:#A51}
+.jSfXLs1_3{background:#FFF;color:#1AA;font-weight:700}
+.jSfdimO02{background:#FFF;color:#A11;font-weight:700}
+.jSf67t_z2{background:#FFF;color:#33A}
+.jSfgGxiu{background:#FFF;color:#33A;font-weight:700}
+.jSfkmAai3{background:#FFF;color:#666}
+.jSf1vtiR2{background:#FFF;color:#06C}
+.jSfvqCcj3{background:#FFF;color:#09F}
+.jSf0WwF51{background:#FFF;color:#099}
+.jSfQStH_2{background:#FFF;color:#600}
+.jSf5mjvt{background:#FFF;color:#909}
+.jSfQdlY03{background:#000;color:#666}
+.jSfUkRJV2{background:#000;color:#099;text-decoration:underline}
+.jSfZibow{background:#000;color:#C39;text-decoration:underline}
+.jSfiqL-I2{background:#000;color:#996;text-decoration:underline}
+.jSfQ-vrd3{background:#000;color:#C33}
+.jSfqtV9f1{background:#000;color:#099}
+.jSftov6G2{background:#000;color:#630}
+.jSfdxhrB3{background:#000;color:#696}
+.jSfFN63f3{background:#000;color:#6F3}
+.jSfHAL7n2{background:#000;color:#93F}
+.jSflLyBh3{background:#FC6;color:#F00}
+.jSff9ndr2{background:#000;color:#C3F}
+.jSfrkIgt2{background:#000;color:#06C}
+.jSfDZfW13{background:#000;color:#09F}
+.jSf39bbO2{background:#000;color:#063}
+.jSfMvC4n2{background:#000;color:#0F6}
+.jSfeUZkP{background:#000;color:#939}
+.jSfm2YY42{background:#000;color:#F6F}
+.jSfqhbmk3{background:#000;color:#993}
+.jSfM43H-3{background:#000;color:#FF6}
+.jSfZEvzH3{background:#300;color:#666}
+.jSfWZqUG3{background:#000;color:#FFF}
+.jSf_9RBK{background:#000;color:#999}
+.jSfAdB3O2{background:#FFF;color:#066;text-decoration:underline}
+.jSfQHvUD{background:#FFF;color:#906;text-decoration:underline}
+.jSfSZ8e03{background:#FFF;color:#996;text-decoration:underline}
+.jSfTJArG3{background:#FFF;color:#600;font-style:italic}
+.jSfVQfQP2{background:#FFF;color:#030}
+.jSfqHLeV2{background:#FFF;color:#060}
+.jSfPXQEc2{background:#FFF;color:#363}
+.jSfLoabn2{background:#FFF;color:#690}
+.jSfA8tmj1{background:#FFF;color:#639}
+.jSfbTm1T2{background:#FFF;color:#93F}
+.jSfMt2g81{background:#FFF;color:#039}
+.jSfFJxf23{background:#FFF;color:#096}
+.jSfYkf2T2{background:#FFF;color:#0F6}
+.jSf5xsMg3{background:#FFF;color:#636}
+.jSfp4NEY3{background:#FFF;color:#C6C}
+.jSfhXrvH2{background:#FFF;color:#663}
+.jSfYJcNJ3{background:#FFF;color:#FF6}
+.jSfiY0553{background:#300;color:#FF5}
+.jSf4ooiC1{background:#FFF;color:#333;font-weight:600}
+.jSfTvV9Y2{background:#FFF;color:#000;font-style:italic}
+.jSf-8GPi2{background:#FFF;color:#036;text-decoration:underline}
+.jSfJgFBM{background:#FFF;color:#663;text-decoration:underline}
+.jSfnT6pa2{background:#FFF;color:#C33;font-style:italic}
+.jSfoF-_93{background:#FFF;color:#066}
+.jSf9DH-K2{background:#FFF;color:#090}
+.jSfJiEpd3{background:#FFF;color:#696}
+.jSfdoBI62{background:#FFF;color:#390}
+.jSfJnSXl1{background:#FFF;color:#609}
+.jSfvraDY3{background:#FFF;color:#90C}
+.jSftU0Zq2{background:#FFF;color:#063}
+.jSfS2T7e3{background:#FFF;color:#606}
+.jSfOFhya3{background:#FFF;color:#C3C}
+.jSf0y0s23{background:#FFF;color:#993}
+.jSfdCu7W2{background:#300;color:#03C}
+.jSf5gZog2{background:#FFF;color:#000;font-weight:600}
+.jSf9HhTG1{background:#FFF;color:#A11}
+.jSfPvJnn{background:#FFF;color:#AAA;font-weight:700}
+.jSfZ1wVn2{background:#A51;color:#A11;font-weight:700}
+.jSf4gNwI3{background:#A11;color:#000;font-weight:700}
+.jSfAWjK32{background:#A11;color:#A11}
+.jSf3n2-01{background:#A11;color:#A11;font-weight:700}
+.jSfmaseJ2{background:#A11;color:#1AA}
+.jSficCdu3{background:#A11;color:#AAA}
+.jSfED9Bu3{background:#A11;color:#33A;font-weight:700}
+.jSf584c_{background:#A11;color:#1AA;font-weight:700}
+.jSfzaXMn3{background:#A11;color:#AAA;font-weight:700}
+.jSfM3tM42{background:#A11;color:#A51}
+.jSfX62bf2{background:#A11;color:#A51;font-weight:700}
+.jSf631dy2{background:#A11;color:#1A1}
+.jSfDPDyt3{background:#A11;color:#1A1;font-weight:700}
+.jSfR0le7{background:#000;color:#AAA}
+.jSfDSbbt3{background:#000;color:#A11;font-weight:700}
+.jSf72Ldi1{background:#000;color:#1AA}
+.jSfnbYe31{background:#000;color:#1A1}
+.jSf3qgc01{background:#000;color:#1A1;font-weight:700}
+.jSf0WkHF1{background:#000;color:#33A;font-weight:700}
+.jSfE_BX{background:#A51;color:#00C;font-weight:700}
+.jSfBXvKJ1{background:#000;color:#A1A}
+.jSf5Di-_{background:#000;color:#A1A;font-weight:700}
+.jSflhb-U{background:#000;color:#A51;font-weight:700}
+.jSfp96C61{background:#000;color:#AAA;font-weight:700}
+.jSflzv291{background:#FFF;color:#A1A;font-weight:700}
+.jSfHSSwa3{background:#000;color:#69F}
+.jSfUUH_93{background:#666;color:#00C}
+.jSfVsG-z2{background:#000;color:#663}
+.jSfniJG63{background:#000;color:#636}
+.jSfqAGSd{background:#000;color:#F99}
+.jSftR1fS1{background:#003;color:#CCF}
+.jSfZw2Rf2{background:#003;color:#FFF;font-weight:700}
+.jSf4zabD1{background:#003;color:#FFC;font-weight:700}
+.jSf9v_DN2{background:#000;color:#C96}
+.jSfFFGKE3{background:#000;color:#CC6}
+.jSfqw7MI2{background:#330;color:#FF6}
+.jSf2TmPz2{background:#330;color:#FFF}
+.jSfsgXz21{background:#000;color:#630;font-weight:700}
+.jSfqziDx2{background:#000;color:#633}
+.jSf0yHo91{background:#000;color:#CC9}
+.jSfoy_5_1{background:#000;color:#FC9}
+.jSfyvO6S2{background:#000;color:#CCC}
+.jSfbBvy83{background:#FFF;color:#69F}
+.jSfy9RSm{background:#03C;color:#FC18}
+.jSf1s0jc3{background:#FFF;color:#C0C}
+.jSfEpZoY2{background:#FFF;color:#666;font-style:italic}
+.jSfogcyW2{background:#FFF;color:#333}
+.jSfIrCd62{background:#FFC;color:#06C}
+.jSfHXdIz1{background:#FFC;color:#039;font-weight:700}
+.jSfsr2ug{background:#FFC;color:#330;font-weight:700}
+.jSfzW4X93{background:#FFF;color:#963}
+.jSfG-ksq3{background:#FFC;color:#990}
+.jSfLlv062{background:#FFC;color:#000}
+.jSfeSOc92{background:#FFF;color:#300}
+.jSfJ3arS1{background:#FFF;color:#369}
+.jSflNAkh{background:#FFF;color:#AAA}
+.jSf5I4281{background:#A11;color:#000}
+.jSf5gJ1q{background:#FFF;color:#1AA;text-decoration:underline}
+.jSfo27cC2{background:#FFF;color:#A51;text-decoration:underline}
+.jSfZ9XzR3{background:#FFF;color:#A11;text-decoration:underline}
+.jSfTUKXP2{background:#FFF;color:#C3F}
+
+/*
+     FILE ARCHIVED ON 23:13:52 Nov 01, 2017 AND RETRIEVED FROM THE
+     INTERNET ARCHIVE ON 09:08:38 Dec 20, 2018.
+     JAVASCRIPT APPENDED BY WAYBACK MACHINE, COPYRIGHT INTERNET ARCHIVE.
+
+     ALL OTHER CONTENT MAY ALSO BE PROTECTED BY COPYRIGHT (17 U.S.C.
+     SECTION 108(a)(3)).
+*/
+/*
+playback timings (ms):
+  LoadShardBlock: 135.069 (3)
+  esindex: 0.008
+  captures_list: 156.4
+  CDXLines.iter: 14.941 (3)
+  PetaboxLoader3.datanode: 77.524 (4)
+  exclusion.robots: 0.284
+  exclusion.robots.policy: 0.249
+  RedisCDXSource: 1.7
+  PetaboxLoader3.resolve: 84.704 (3)
+  load_resource: 49.767
+*/
