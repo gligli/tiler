@@ -1326,14 +1326,14 @@ begin
 
   if GammaCor then
   begin
-    if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
-    if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
-    if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
+    if r > 0.04045 then r := power((r + 0.055) / 1.055, cGamma) else r := r / 12.92;
+    if g > 0.04045 then g := power((g + 0.055) / 1.055, cGamma) else g := g / 12.92;
+    if b > 0.04045 then b := power((b + 0.055) / 1.055, cGamma) else b := b / 12.92;
   end;
 
-  x := (r * 0.4124 + g * 0.3576 + b * 0.1805) / 0.95047;
-  y := (r * 0.2126 + g * 0.7152 + b * 0.0722) / 1.00000;
-  z := (r * 0.0193 + g * 0.1192 + b * 0.9505) / 1.08883;
+  x := (r * 0.4124 + g * 0.3576 + b * 0.1805) / 95.047;
+  y := (r * 0.2126 + g * 0.7152 + b * 0.0722) / 100.000;
+  z := (r * 0.0193 + g * 0.1192 + b * 0.9505) / 108.883;
 
   if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
   if y > 0.008856 then y := power(y, 1/3) else y := (7.787 * y) + 16/116;
@@ -1954,7 +1954,8 @@ procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset, Centroids: TByteDynArray2;
   Labels: TIntegerDynArray;
-  i, j, k, x, y, Cnt: Integer;
+  i, j, k, x, y, Cnt, acc, StartingPointLo, StartingPointUp: Integer;
+  b: Byte;
   ToMerge: array of Integer;
   WasActive: TBooleanDynArray;
 begin
@@ -1963,6 +1964,8 @@ begin
 
   // prepare KModes dataset, one line per tile, 64 palette indexes per line
 
+  StartingPointLo := -RestartCount; // by default, random starting point
+  StartingPointUp := -RestartCount; // by default, random starting point
   Cnt := 0;
   for i := 0 to High(FTiles) do
   begin
@@ -1972,12 +1975,20 @@ begin
       Continue;
 
     j := 0;
+    acc := 0;
     for y := 0 to cTileWidth - 1 do
       for x := 0 to cTileWidth - 1 do
       begin
-        Dataset[Cnt, j] := FTiles[i]^.PalPixels[False, y, x];
+        b := FTiles[i]^.PalPixels[False, y, x];
+        Inc(acc, b);
+        Dataset[Cnt, j] := b;
         Inc(j);
       end;
+
+    if (StartingPointLo < 0) and (acc = 0) then
+      StartingPointLo := i
+    else if (StartingPointUp < 0) and (acc = sqr(cTileWidth) * (cTilePaletteSize - 1)) then
+      StartingPointUp := i;
 
     Inc(Cnt);
   end;
@@ -1986,7 +1997,7 @@ begin
 
   // run the KModes algorighm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ComputeKModes(Dataset, DesiredNbTiles, MaxInt, RestartCount, cTilePaletteSize, 0, Labels, Centroids);
+  ComputeKModes(Dataset, DesiredNbTiles, MaxInt, -min(StartingPointLo, StartingPointUp), cTilePaletteSize, 0, Labels, Centroids);
 
   // for each group, merge the tiles
 
