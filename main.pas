@@ -8,6 +8,9 @@ uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
   StdCtrls, ComCtrls, Spin, Menus, Math, MTProcs, syncobjs, types, Process, strutils, kmodes;
 
+type
+  TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
+
 const
   // Tweakable params
   cKeyframeFixedColors = 2;
@@ -132,6 +135,7 @@ const
     42, 26, 38, 22, 41, 25, 37, 21
   );
 
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 3, 10, 3, -1, 3, 1, 2);
 type
   PTile = ^TTile;
   PPTile = ^PTile;
@@ -203,6 +207,7 @@ type
     edInput: TEdit;
     edOutputDir: TEdit;
     edWAV: TEdit;
+    imgPalette: TImage;
     Label1: TLabel;
     Label10: TLabel;
     Label2: TLabel;
@@ -221,9 +226,9 @@ type
     MenuItem7: TMenuItem;
     miLoad: TMenuItem;
     MenuItem1: TMenuItem;
-    pbPalette: TPaintBox;
     pmProcesses: TPopupMenu;
     PopupMenu1: TPopupMenu;
+    pbProgress: TProgressBar;
     seAvgTPF: TSpinEdit;
     seTempoSmoo: TSpinEdit;
     seMaxTPF: TSpinEdit;
@@ -235,22 +240,22 @@ type
     imgDest: TImage;
     seFrameCount: TSpinEdit;
     tbFrame: TTrackBar;
+
+    procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
-    procedure btnDoFrameTilingClick(Sender: TObject);
     procedure btnDoMakeUniqueClick(Sender: TObject);
     procedure btnDoGlobalTilingClick(Sender: TObject);
-    procedure btnLoadClick(Sender: TObject);
+    procedure btnDoFrameTilingClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
-    procedure btnRunAllClick(Sender: TObject);
-    procedure btnSaveClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
-    procedure chkPlayChange(Sender: TObject);
+    procedure btnSaveClick(Sender: TObject);
+
+    procedure btnRunAllClick(Sender: TObject);
     procedure chkUseOldDitheringChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
+    procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure IdleTimerTimer(Sender: TObject);
-    procedure pbPaletteClick(Sender: TObject);
-    procedure pbPalettePaint(Sender: TObject);
     procedure tbFrameChange(Sender: TObject);
   private
     FKeyFrames: array of TKeyFrame;
@@ -258,8 +263,11 @@ type
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FColorMapLuma: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
-    FCS: TCriticalSection;
     FUseOldDithering: Boolean;
+    FProgressStep: TEncoderStep;
+    FProgressPosition, FOldProgressPosition: Integer;
+
+    FLoadCS: TCriticalSection;
 
     procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Single);
     procedure RGBToLAB(ir,ig,ib: Integer; GammaCor: Boolean; out ol,oa,ob: Single);
@@ -279,7 +287,8 @@ type
 
     procedure LoadTiles;
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
-    procedure Render(AFrameIndex: Integer; dithered: Boolean; page: Integer);
+    procedure Render(AFrameIndex: Integer; dithered: Boolean; ATilePage: Integer);
+    procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: PFrame): Integer;
 
@@ -457,7 +466,9 @@ begin
   if Length(FFrames) = 0 then
     Exit;
 
+  ProgressRedraw(-1, esGlobalTiling);
   DoGlobalTiling(seAvgTPF.Value * Length(FFrames), seKMRest.Value);
+
   tbFrameChange(nil);
 end;
 
@@ -478,9 +489,14 @@ procedure TMainForm.btnDitherClick(Sender: TObject);
   end;
 
 begin
+  ProgressRedraw(-1, esDither);
   ProcThreadPool.DoParallelLocalProc(@DoPre, 0, High(FFrames));
+  ProgressRedraw(1);
   ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, High(FKeyFrames));
+  ProgressRedraw(2);
   ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
+  ProgressRedraw(3);
+
   tbFrameChange(nil);
 end;
 
@@ -506,6 +522,8 @@ procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
 
 var i, j, first, last: Integer;
 begin
+  ProgressRedraw(-1, esFrameTiling);
+
   if Length(FFrames) = 0 then
     Exit;
 
@@ -530,30 +548,37 @@ begin
       end;
 
     ProcThreadPool.DoParallelLocalProc(@DoFrame, first, last);
+
+    ProgressRedraw(j);
   end;
 
   tbFrameChange(nil);
 end;
 
 procedure TMainForm.btnDoMakeUniqueClick(Sender: TObject);
-const
-  cTilesAtATime = 100 * cMaxTiles;
+var
+  TilesAtATime: Integer;
 
   procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    MakeTilesUnique(AIndex * cTilesAtATime, Min(Length(FTiles) - AIndex * cTilesAtATime, cTilesAtATime));
+    MakeTilesUnique(AIndex * TilesAtATime, Min(Length(FTiles) - AIndex * TilesAtATime, TilesAtATime));
+    ProgressRedraw(AIndex);
   end;
 
 begin
+  ProgressRedraw(-1, esMakeUnique);
+
+  TilesAtATime := (Length(FFrames) * cMaxTiles - 1) div 10 + 1;
+
   if Length(FFrames) = 0 then
     Exit;
 
-  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div cTilesAtATime);
+  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
+
   tbFrameChange(nil);
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
-
 var
   inPath: String;
 
@@ -563,12 +588,13 @@ var
   begin
     bmp := TPicture.Create;
     try
-      FCS.Enter;
+      FLoadCS.Acquire;
       try
         bmp.LoadFromFile(Format(inPath, [AIndex]));
       finally
-        FCS.Leave;
+        FLoadCS.Release;
       end;
+
       LoadFrame(@FFrames[AIndex], bmp.Bitmap);
     finally
       bmp.Free;
@@ -581,6 +607,13 @@ var
   kfCnt: Integer;
   isKf: Boolean;
 begin
+  ProgressRedraw;
+
+  SetLength(FFrames, 0);
+  SetLength(FKeyFrames, 0);
+  SetLength(FTiles, 0);
+
+  ProgressRedraw(-1, esLoad);
   SetLength(FFrames, seFrameCount.Value);
   tbFrame.Max := High(FFrames);
 
@@ -619,7 +652,11 @@ begin
     FFrames[i].KeyFrame := @FKeyFrames[kfCnt];
   end;
 
+  ProgressRedraw(1);
+
   LoadTiles;
+
+  ProgressRedraw(2);
 
   tbFrameChange(nil);
 end;
@@ -645,12 +682,18 @@ procedure TMainForm.btnReindexClick(Sender: TObject);
   end;
 
 begin
+  ProgressRedraw(-1, esReindex);
+
   if Length(FFrames) = 0 then
     Exit;
 
   ProcThreadPool.DoParallelLocalProc(@DoPruneUnusedTiles, 0, High(FTiles));
+  ProgressRedraw(1);
   ReindexTiles;
+  ProgressRedraw(2);
   ProcThreadPool.DoParallelLocalProc(@DoIndexFrameTiles, 0, High(FFrames));
+  ProgressRedraw(3);
+
   tbFrameChange(nil);
 end;
 
@@ -664,12 +707,17 @@ begin
   btnReindexClick(nil);
   btnSmoothClick(nil);
   btnSaveClick(nil);
+
+  ProgressRedraw;
+  tbFrameChange(nil);
 end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
 var
   dataFS, soundFS: TFileStream;
 begin
+  ProgressRedraw(-1, esSave);
+
   if Length(FFrames) = 0 then
     Exit;
 
@@ -677,6 +725,9 @@ begin
   soundFS := nil;
   if Trim(edWAV.Text) <> '' then
     soundFS := TFileStream.Create(DoExternalPCMEnc(edWAV.Text, 100), fmOpenRead or fmShareDenyWrite);
+
+  ProgressRedraw(1);
+
   try
     Save(dataFS, soundFS);
   finally
@@ -684,6 +735,10 @@ begin
     if Assigned(soundFS) then
       soundFS.Free;
   end;
+
+  ProgressRedraw(2);
+
+  tbFrameChange(nil);
 end;
 
 procedure TMainForm.btnSmoothClick(Sender: TObject);
@@ -694,16 +749,16 @@ procedure TMainForm.btnSmoothClick(Sender: TObject);
       DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 10);
   end;
 begin
+  ProgressRedraw(-1, esSmooth);
+
   if Length(FFrames) = 0 then
     Exit;
 
   ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, cTileMapHeight - 1);
-  tbFrameChange(nil);
-end;
 
-procedure TMainForm.chkPlayChange(Sender: TObject);
-begin
-  IdleTimer.Enabled := chkPlay.Checked;
+  ProgressRedraw(1);
+
+  tbFrameChange(nil);
 end;
 
 procedure TMainForm.chkUseOldDitheringChange(Sender: TObject);
@@ -715,14 +770,15 @@ procedure TMainForm.FormCreate(Sender: TObject);
 var
   r,g,b,i,col,sr: Integer;
 begin
+  FLoadCS := TCriticalSection.Create;
+
   FormatSettings.DecimalSeparator := '.';
+
 {$ifdef DEBUG}
   ProcThreadPool.MaxThreadCount := 1;
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}
-
-  FCS := TCriticalSection.Create;
 
   imgDest.Picture.Bitmap.Width:=cScreenWidth;
   imgDest.Picture.Bitmap.Height:=cScreenHeight;
@@ -731,6 +787,10 @@ begin
   imgTiles.Picture.Bitmap.Width:=cScreenWidth;
   imgTiles.Picture.Bitmap.Height:=cScreenHeight * 2;
   imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  imgPalette.Picture.Bitmap.Width := cScreenWidth;
+  imgPalette.Picture.Bitmap.Height := 32;
+  imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
 
   chkUseOldDitheringChange(nil);
 
@@ -761,49 +821,44 @@ procedure TMainForm.FormDestroy(Sender: TObject);
 var
   i: Integer;
 begin
-  FCS.Free;
+  FLoadCS.Destroy;
+
   for i := 0 to High(FTiles) do
     Dispose(FTiles[i]);
 end;
 
+procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  case Key of
+    VK_F1: btnLoadClick(nil);
+    VK_F2: btnDitherClick(nil);
+    VK_F3: btnDoMakeUniqueClick(nil);
+    VK_F4: btnDoGlobalTilingClick(nil);
+    VK_F5: btnDoFrameTilingClick(nil);
+    VK_F6: btnReindexClick(nil);
+    VK_F7: btnSmoothClick(nil);
+    VK_F8: btnSaveClick(nil);
+    VK_F9: btnRunAllClick(nil);
+  end;
+end;
+
 procedure TMainForm.IdleTimerTimer(Sender: TObject);
 begin
-  if tbFrame.Position >= tbFrame.Max then
+  if chkPlay.Checked then
   begin
-    tbFrame.Position := 0;
-    Exit;
+    if tbFrame.Position >= tbFrame.Max then
+    begin
+      tbFrame.Position := 0;
+      Exit;
+    end;
+
+    tbFrame.Position := tbFrame.Position + 1;
   end;
-
-  tbFrame.Position := tbFrame.Position + 1;
-end;
-
-procedure TMainForm.pbPaletteClick(Sender: TObject);
-begin
-
-end;
-
-procedure TMainForm.pbPalettePaint(Sender: TObject);
-var x, y: Integer;
-begin
-  if Length(FFrames) > 0 then
-    for y := 0 to pbPalette.Height - 1 do
-      for x := 0 to pbPalette.Width - 1 do
-        pbPalette.Canvas.Pixels[x, y] := FFrames[tbFrame.Position].KeyFrame^.PaletteRGB[y >= pbPalette.Height div 2, x * cTilePaletteSize div pbPalette.Width];
 end;
 
 procedure TMainForm.tbFrameChange(Sender: TObject);
-var
-  fn: String;
 begin
-  fn := Format(edInput.Text, [tbFrame.Position]);
-  if FileExists(fn) then
-    imgSource.Picture.LoadFromFile(fn);
-  if Length(FFrames) > 0 then
-    Render(tbFrame.Position, chkDithered.Checked, sePage.Value);
-
-  pbPalette.Invalidate;
-
-  Repaint;
+  Render(tbFrame.Position, chkDithered.Checked, sePage.Value);
 end;
 
 procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
@@ -953,6 +1008,7 @@ var
   sx, sy, i, tx, ty: Integer;
   CMUsage: array of TCountIndexArray;
   Tile_: PTile;
+  FullPalTile: TTile;
   Plan, CMPlan: TMixingPlan;
 begin
   PreparePlan(CMPlan, FColorMap, not FUseOldDithering);
@@ -969,7 +1025,9 @@ begin
 
       // dither using full RGB palette
 
-      DitherTile(Tile_, CMPlan, False);
+      Move(Tile_^, FullPalTile, SizeOf(TTile));
+
+      DitherTile(@FullPalTile, CMPlan, False);
 
       for i := 0 to High(CMUsage) do
       begin
@@ -981,7 +1039,7 @@ begin
 
       for ty := 0 to (cTileWidth - 1) do
         for tx := 0 to (cTileWidth - 1) do
-          Inc(CMUsage[Tile_^.PalPixels[False, ty,tx]][ciCount], Tile_^.AveragedCount);
+          Inc(CMUsage[FullPalTile.PalPixels[False, ty,tx]][ciCount], FullPalTile.AveragedCount);
 
       QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMU);
 
@@ -1440,12 +1498,12 @@ end;
 function SumOf8Squares(pa, pb: PSingle): Single; assembler;
 asm
   // load 8 singles from pa
-  movups xmm0, oword ptr [rcx]
-  movups xmm1, oword ptr [rcx + $10]
+  movups xmm0, oword ptr [pa]
+  movups xmm1, oword ptr [pa + $10]
 
   // load 8 singles from pb
-  movups xmm2, oword ptr [rdx]
-  movups xmm3, oword ptr [rdx + $10]
+  movups xmm2, oword ptr [pb]
+  movups xmm3, oword ptr [pb + $10]
 
   // pa - pb for 8 singles
   subps xmm0, xmm2
@@ -1460,6 +1518,7 @@ asm
   haddps xmm0, xmm0
   haddps xmm0, xmm0
 end ['xmm1', 'xmm2', 'xmm3'];
+
 {$endif}
 
 
@@ -1475,9 +1534,9 @@ begin
   pa := @ATileA^.DCTCoeffs[SpritePalA, 0, 0, 0];
   pb := @ATileB^.DCTCoeffs[SpritePalB, 0, 0, 0];
 
+{$if not defined(CPUX86_64)}
   for i := 0 to cTileWidth * 3 - 1 do
   begin
-{$if not defined(CPUX86_64)}
     // unroll by cTileWidth
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
@@ -1487,13 +1546,33 @@ begin
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-{$else}
-    // use SIMD optimised version
-    Result += SumOf8Squares(pa, pb);
-    Inc(pa, 8);
-    Inc(pb, 8);
-{$endif}
   end;
+{$else}
+    // unroll by cTileWidth * 3
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+{$endif}
 
   Result := sqrt(Result * cSqrtFactor);
 end;
@@ -1536,14 +1615,21 @@ begin
       end;
 end;
 
-procedure TMainForm.Render(AFrameIndex: Integer; dithered: Boolean; page: Integer);
+procedure TMainForm.Render(AFrameIndex: Integer; dithered: Boolean; ATilePage: Integer);
 var
   i, j, r, g, b, ti, tx, ty, col: Integer;
   pTiles, pDest, p: PInteger;
   tilePtr: PTile;
   TMItem: TTileMapItem;
   Frame: PFrame;
+  fn: String;
 begin
+  if Length(FFrames) <= 0 then
+    Exit;
+
+  AFrameIndex := EnsureRange(AFrameIndex, 0, high(FFrames));
+  ATilePage := EnsureRange(ATilePage, 0, high(FFrames));
+
   Frame := @FFrames[AFrameIndex];
 
   if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
@@ -1561,7 +1647,7 @@ begin
 
       for i := 0 to (cScreenWidth - 1) do
         begin
-          ti := 32 * (j shr 3) + (i shr 3) + cMaxTiles * page;
+          ti := 32 * (j shr 3) + (i shr 3) + cMaxTiles * ATilePage;
 
           tx := i and (cTileWidth - 1);
           ty := j and (cTileWidth - 1);
@@ -1593,7 +1679,7 @@ begin
               r := 255;
               g := 0;
               b := 255;
-				    end;
+		       end;
           end;
 
           p := pTiles;
@@ -1612,32 +1698,93 @@ begin
             TMItem.GlobalTileIndex := Frame^.TilesIndexes[TMItem.FrameTileIndex];
           end;
           ti := TMItem.GlobalTileIndex;
-          tilePtr := FTiles[ti];
 
-          if TMItem.HMirror then tx := cTileWidth - 1 - tx;
-          if TMItem.VMirror then ty := cTileWidth - 1 - ty;
+          if ti < Length(FTiles) then
+          begin
+            tilePtr := FTiles[ti];
 
-          if dithered then
-          begin
-            col := FColorMap[Frame^.KeyFrame^.PaletteIndexes[TMItem.SpritePal, tilePtr^.PalPixels[False, tx, ty]]];
-            b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
-          end
-          else
-          begin
-            r := tilePtr^.RGBPixels[tx, ty, 0];
-            g := tilePtr^.RGBPixels[tx, ty, 1];
-            b := tilePtr^.RGBPixels[tx, ty, 2];
+            if TMItem.HMirror then tx := cTileWidth - 1 - tx;
+            if TMItem.VMirror then ty := cTileWidth - 1 - ty;
+
+            if dithered then
+            begin
+              col := FColorMap[Frame^.KeyFrame^.PaletteIndexes[TMItem.SpritePal, tilePtr^.PalPixels[False, tx, ty]]];
+              b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
+            end
+            else
+            begin
+              r := tilePtr^.RGBPixels[tx, ty, 0];
+              g := tilePtr^.RGBPixels[tx, ty, 1];
+              b := tilePtr^.RGBPixels[tx, ty, 2];
+            end;
+
+            p := pDest;
+            Inc(p, i);
+            p^ := RGBToColor(b, g, r);
           end;
-
-          p := pDest;
-          Inc(p, i);
-          p^ := RGBToColor(b, g, r);
         end;
     end;
   finally
     imgTiles.Picture.Bitmap.EndUpdate;
     imgDest.Picture.Bitmap.EndUpdate;
   end;
+
+  imgPalette.Picture.Bitmap.BeginUpdate;
+  try
+    for j := 0 to imgPalette.Height - 1 do
+    begin
+      p := imgPalette.Picture.Bitmap.ScanLine[j];
+      for i := 0 to imgPalette.Width - 1 do
+        p[i] := Frame^.KeyFrame^.PaletteRGB[j >= imgPalette.Height div 2, i * cTilePaletteSize div imgPalette.Width];
+    end;
+  finally
+    imgPalette.Picture.Bitmap.EndUpdate;
+  end;
+
+  fn := Format(edInput.Text, [AFrameIndex]);
+  if FileExists(fn) then
+    imgSource.Picture.LoadFromFile(fn);
+
+  imgSource.Invalidate;
+  imgDest.Invalidate;
+  imgTiles.Invalidate;
+  imgPalette.Invalidate;
+end;
+
+procedure TMainForm.ProgressRedraw(CurFrameIdx: Integer; ProgressStep: TEncoderStep);
+const
+  cProgressMul = 100;
+var
+  esLen: Integer;
+begin
+  pbProgress.Max := (Ord(High(TEncoderStep)) + 1) * cProgressMul;
+
+  if CurFrameIdx >= 0 then
+  begin
+    esLen := Max(0, cEncoderStepLen[FProgressStep]) + Max(0, -cEncoderStepLen[FProgressStep]) * Length(FKeyFrames);
+    FProgressPosition := iDiv0(CurFrameIdx * cProgressMul, esLen);
+  end;
+
+  if ProgressStep <> esNone then
+  begin
+    FProgressPosition := 0;
+    FOldProgressPosition := 0;
+    FProgressStep := ProgressStep;
+    pbProgress.Position := Ord(FProgressStep) * cProgressMul;
+  end;
+
+  if (CurFrameIdx < 0) and (ProgressStep = esNone) then
+  begin
+    FProgressPosition := 0;
+    FOldProgressPosition := 0;
+    FProgressStep := esNone;
+  end;
+
+  pbProgress.Position := pbProgress.Position + (FProgressPosition - FOldProgressPosition);
+  pbProgress.Invalidate;
+  Application.ProcessMessages;
+
+  FOldProgressPosition := FProgressPosition;
 end;
 
 function TMainForm.GetGlobalTileCount: Integer;
@@ -1995,9 +2142,13 @@ begin
 
   SetLength(Dataset, Cnt);
 
+  ProgressRedraw(1);
+
   // run the KModes algorighm, which will group similar tiles until it reaches a fixed amount of groups
 
   ComputeKModes(Dataset, DesiredNbTiles, MaxInt, -min(StartingPointLo, StartingPointUp), cTilePaletteSize, 0, Labels, Centroids);
+
+  ProgressRedraw(2);
 
   // for each group, merge the tiles
 
@@ -2027,6 +2178,8 @@ begin
     if Cnt >= 2 then
       MergeTiles(ToMerge, Cnt, ToMerge[0]);
   end;
+
+  ProgressRedraw(3);
 end;
 
 function CompareTileUseCountRev(Item1, Item2, UserParameter:Pointer):Integer;

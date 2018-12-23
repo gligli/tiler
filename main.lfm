@@ -6,14 +6,16 @@ object MainForm: TMainForm
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 837
+  VertScrollBar.Page = 840
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
   ClientHeight = 842
   ClientWidth = 808
+  KeyPreview = True
   OnCreate = FormCreate
   OnDestroy = FormDestroy
+  OnKeyDown = FormKeyDown
   Position = poScreenCenter
   LCLVersion = '2.0.0.2'
   object imgSource: TImage
@@ -56,13 +58,12 @@ object MainForm: TMainForm
     Top = 787
     Width = 42
     Caption = 'Play'
-    OnChange = chkPlayChange
     TabOrder = 11
   end
   object lblTileCount: TLabel
     Left = 8
     Height = 15
-    Top = 787
+    Top = 788
     Width = 157
     AutoSize = False
     ParentColor = False
@@ -124,8 +125,8 @@ object MainForm: TMainForm
     Left = 8
     Height = 25
     Top = 256
-    Width = 123
-    Caption = 'Run all'
+    Width = 69
+    Caption = 'Run all (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
     TabOrder = 9
@@ -222,16 +223,6 @@ object MainForm: TMainForm
     TabOrder = 1
     Text = '.\sms\tiled'
   end
-  object pbPalette: TPaintBox
-    Left = 8
-    Height = 32
-    Top = 805
-    Width = 256
-    Color = clBlack
-    ParentColor = False
-    OnClick = pbPaletteClick
-    OnPaint = pbPalettePaint
-  end
   object Label9: TLabel
     Left = 8
     Height = 15
@@ -257,8 +248,22 @@ object MainForm: TMainForm
     OnChange = chkUseOldDitheringChange
     TabOrder = 13
   end
+  object pbProgress: TProgressBar
+    Left = 84
+    Height = 16
+    Top = 261
+    Width = 180
+    Smooth = True
+    TabOrder = 14
+  end
+  object imgPalette: TImage
+    Left = 8
+    Height = 32
+    Top = 808
+    Width = 256
+  end
   object IdleTimer: TIdleTimer
-    Enabled = False
+    AutoEnabled = True
     Interval = 80
     OnTimer = IdleTimerTimer
     left = 744
@@ -269,34 +274,42 @@ object MainForm: TMainForm
     top = 352
     object miLoad: TMenuItem
       Caption = 'Load'
+      ShortCut = 112
       OnClick = btnLoadClick
     end
     object MenuItem1: TMenuItem
       Caption = 'Dither'
+      ShortCut = 113
       OnClick = btnDitherClick
     end
     object MenuItem7: TMenuItem
       Caption = 'Tile (make unique, deprecated)'
+      ShortCut = 114
       OnClick = btnDoMakeUniqueClick
     end
     object MenuItem2: TMenuItem
       Caption = 'Tile (global)'
+      ShortCut = 115
       OnClick = btnDoGlobalTilingClick
     end
     object MenuItem3: TMenuItem
       Caption = 'Tile (frame)'
+      ShortCut = 116
       OnClick = btnDoFrameTilingClick
     end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'
+      ShortCut = 117
       OnClick = btnReindexClick
     end
     object MenuItem5: TMenuItem
       Caption = 'Smooth'
+      ShortCut = 118
       OnClick = btnSmoothClick
     end
     object MenuItem6: TMenuItem
       Caption = 'Save'
+      ShortCut = 119
       OnClick = btnSaveClick
     end
   end
