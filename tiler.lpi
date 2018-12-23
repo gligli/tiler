@@ -29,6 +29,9 @@
           </SearchPaths>
           <Parsing>
             <Style Value="1"/>
+            <SyntaxOptions>
+              <IncludeAssertionCode Value="True"/>
+            </SyntaxOptions>
           </Parsing>
           <CodeGeneration>
             <SmartLinkUnit Value="True"/>
@@ -40,6 +43,7 @@
           <Linking>
             <Debugging>
               <DebugInfoType Value="dsStabs"/>
+              <UseExternalDbgSyms Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
           </Linking>
@@ -64,6 +68,9 @@
           </SearchPaths>
           <Parsing>
             <Style Value="1"/>
+            <SyntaxOptions>
+              <IncludeAssertionCode Value="True"/>
+            </SyntaxOptions>
           </Parsing>
           <CodeGeneration>
             <SmartLinkUnit Value="True"/>
@@ -74,7 +81,8 @@
           </CodeGeneration>
           <Linking>
             <Debugging>
-              <GenerateDebugInfo Value="False"/>
+              <DebugInfoType Value="dsStabs"/>
+              <UseExternalDbgSyms Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
             <Options>
@@ -101,9 +109,13 @@
           </SearchPaths>
           <Parsing>
             <Style Value="1"/>
+            <SyntaxOptions>
+              <IncludeAssertionCode Value="True"/>
+            </SyntaxOptions>
           </Parsing>
           <CodeGeneration>
             <SmartLinkUnit Value="True"/>
+            <TargetCPU Value="x86_64"/>
             <Optimizations>
               <OptimizationLevel Value="4"/>
             </Optimizations>
@@ -111,6 +123,7 @@
           <Linking>
             <Debugging>
               <GenerateDebugInfo Value="False"/>
+              <DebugInfoType Value="dsStabs"/>
               <UseExternalDbgSyms Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
