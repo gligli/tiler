@@ -88,39 +88,50 @@ const
   cLineJitterCompensation = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
+  cDCTPremul = 256.0;
+  cUV = 2;
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of Single = (
     (
       // JPEG standard
-      (16,  11,  10,  16,  24,  40,  51,  61),
-      (12,  12,  14,  19,  26,  58,  60,  55),
-      (14,  13,  16,  24,  40,  57,  69,  56),
-      (14,  17,  22,  29,  51,  87,  80,  62),
-      (18,  22,  37,  56,  68, 109, 103,  77),
-      (24,  35,  55,  64,  81, 104, 113,  92),
-      (49,  64,  78,  87, 103, 121, 120, 101),
-      (72,  92,  95,  98, 112, 100, 103,  99)
+      //(16,  11,  10,  16,  24,  40,  51,  61),
+      //(12,  12,  14,  19,  26,  58,  60,  55),
+      //(14,  13,  16,  24,  40,  57,  69,  56),
+      //(14,  17,  22,  29,  51,  87,  80,  62),
+      //(18,  22,  37,  56,  68, 109, 103,  77),
+      //(24,  35,  55,  64,  81, 104, 113,  92),
+      //(49,  64,  78,  87, 103, 121, 120, 101),
+      //(72,  92,  95,  98, 112, 100, 103,  99)
+
+      (16, 11, 12, 15,  21,  32,  50,  66),
+      (11, 12, 13, 18,  24,  46,  62,  73),
+      (12, 13, 16, 23,  38,  56,  73,  75),
+      (15, 18, 23, 29,  53,  75,  83,  80),
+      (21, 24, 38, 53,  68,  95, 103,  94),
+      (32, 46, 56, 75,  95, 104, 117,  96),
+      (50, 62, 73, 83, 103, 117, 120, 102),
+      (66, 73, 75, 80,  94,  96, 102,  87)
     ),
     (
       // Improved (reduced high frequency chroma importance)
-      (17,  18,  24,  47,  99,  99,  99,  99),
-      (18,  21,  26,  66,  99,  99,  99, 128),
-      (24,  26,  56,  99,  99,  99, 128, 160),
-      (47,  66,  99,  99,  99, 128, 160, 192),
-      (99,  99,  99,  99, 128, 160, 192, 224),
-      (99,  99,  99, 128, 160, 192, 224, 224),
-      (99,  99, 128, 160, 192, 224, 224, 256),
-      (99, 128, 160, 192, 224, 224, 256, 256)
+      (17*cUV,  18*cUV,  24*cUV,  47*cUV,  99*cUV,  99*cUV,  99*cUV,  99*cUV),
+      (18*cUV,  21*cUV,  26*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV),
+      (24*cUV,  26*cUV,  56*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV),
+      (47*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV),
+      (99*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV),
+      (99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV),
+      (99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV, 256*cUV),
+      (99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV, 256*cUV, 256*cUV)
     ),
     (
       // Improved (reduced high frequency chroma importance)
-      (17,  18,  24,  47,  99,  99,  99,  99),
-      (18,  21,  26,  66,  99,  99,  99, 128),
-      (24,  26,  56,  99,  99,  99, 128, 160),
-      (47,  66,  99,  99,  99, 128, 160, 192),
-      (99,  99,  99,  99, 128, 160, 192, 224),
-      (99,  99,  99, 128, 160, 192, 224, 224),
-      (99,  99, 128, 160, 192, 224, 224, 256),
-      (99, 128, 160, 192, 224, 224, 256, 256)
+      (17*cUV,  18*cUV,  24*cUV,  47*cUV,  99*cUV,  99*cUV,  99*cUV,  99*cUV),
+      (18*cUV,  21*cUV,  26*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV),
+      (24*cUV,  26*cUV,  56*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV),
+      (47*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV),
+      (99*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV),
+      (99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV),
+      (99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV, 256*cUV),
+      (99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV, 256*cUV, 256*cUV)
     )
   );
 
@@ -332,6 +343,16 @@ begin
   Result:=0;
   if y <> 0 then
     Result:=x div y;
+end;
+
+function SwapRB(c: Integer): Integer; inline;
+begin
+  Result := ((c and $ff) shl 16) or ((c shr 16) and $ff) or (c and $ff00ff00);
+end;
+
+function ToRGB(r, g, b: Byte): Integer; inline;
+begin
+  Result := (R shl 16) or (G shl 8) or B;
 end;
 
 var
@@ -1403,10 +1424,12 @@ begin
 end;
 
 procedure TMainForm.ComputeTileDCT(ATile: PTile; FromPal, SpritePal, GammaCor: Boolean; const pal: array of Integer);
+const
+  cUVRatio: array[0..cTileWidth-1] of Double = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
 var
-  col, u, v, x, y, cpn: Integer;
-  Cu, Cv, z, s, q, coeff: Single;
-  YUVPixels: array[0..cTileWidth-1,0..cTileWidth-1,0..2] of Single;
+  i, col, u, v, x, y, cpn: Integer;
+  coeff, vRatio, z, yFac: Double;
+  YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of Single;
 begin
   if FromPal then
   begin
@@ -1416,10 +1439,10 @@ begin
         col := pal[ATile^.PalPixels[SpritePal,y,x]];
 {$if cUseLABColors}
         RGBToLAB(col and $ff, (col shr 8) and $ff, (col shr 16) and $ff, GammaCor,
-                 YUVPixels[y,x,0], YUVPixels[y,x,1], YUVPixels[y,x,2]);
+                  YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
 {$else}
         RGBToYUV(col and $ff, (col shr 8) and $ff, (col shr 16) and $ff, GammaCor,
-                 YUVPixels[y,x,0], YUVPixels[y,x,1], YUVPixels[y,x,2]);
+                  YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
 {$endif}
       end;
   end
@@ -1429,37 +1452,39 @@ begin
       for x := 0 to (cTileWidth - 1) do
 {$if cUseLABColors}
         RGBToLAB(ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2], GammaCor,
-                 YUVPixels[y,x,0], YUVPixels[y,x,1], YUVPixels[y,x,2]);
+                  YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
 {$else}
         RGBToYUV(ATile^.RGBPixels[y,x,0], ATile^.RGBPixels[y,x,1], ATile^.RGBPixels[y,x,2], GammaCor,
-                 YUVPixels[y,x,0], YUVPixels[y,x,1], YUVPixels[y,x,2]);
+                  YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
 {$endif}
   end;
 
   for cpn := 0 to 2 do
     for v := 0 to (cTileWidth - 1) do
+    begin
+      vRatio := cUVRatio[v];
       for u := 0 to (cTileWidth - 1) do
       begin
-		    z := 0.0;
-
-      	if (u = 0) then Cu := 1.0 / sqrt(2.0) else Cu := 1.0;
-      	if (v = 0) then Cv := 1.0 / sqrt(2.0) else Cv := 1.0;
-
+		    z := 0;
         for y := 0 to (cTileWidth - 1) do
-          for x := 0 to (cTileWidth - 1) do
-		      begin
-			      s := YUVPixels[y,x,cpn];
+        begin
+          yFac := cos(Single((2*y+1) * v) * PI/16.0);
 
-			      q := s * cos(Single((2*x+1) * u) * PI/16.0) * cos(Single((2*y+1) * v) * PI/16.0);
+          // unroll by cTileWidth
+  	      z += YUVPixels[cpn,y,0] * cos(Single((2*0+1) * u) * PI/16.0) * yFac;
+  	      z += YUVPixels[cpn,y,1] * cos(Single((2*1+1) * u) * PI/16.0) * yFac;
+  	      z += YUVPixels[cpn,y,2] * cos(Single((2*2+1) * u) * PI/16.0) * yFac;
+  	      z += YUVPixels[cpn,y,3] * cos(Single((2*3+1) * u) * PI/16.0) * yFac;
+  	      z += YUVPixels[cpn,y,4] * cos(Single((2*4+1) * u) * PI/16.0) * yFac;
+  	      z += YUVPixels[cpn,y,5] * cos(Single((2*5+1) * u) * PI/16.0) * yFac;
+  	      z += YUVPixels[cpn,y,6] * cos(Single((2*6+1) * u) * PI/16.0) * yFac;
+  	      z += YUVPixels[cpn,y,7] * cos(Single((2*7+1) * u) * PI/16.0) * yFac;
+        end;
 
-			      z += q;
-          end;
-
-		    coeff := 0.25 * Cu * Cv * z;
-        coeff := coeff * 255.0 / cDCTQuantization[cpn, v, u];
-
+		    coeff := vRatio * cUVRatio[u] * z * cDCTPremul / cDCTQuantization[cpn, v, u];
         ATile^.DCTCoeffs[SpritePal,v,u,cpn] := coeff;
 	    end;
+    end;
 end;
 
 procedure TMainForm.HMirrorPalTile(ATile: PTile; SpritePal: Boolean);
@@ -1528,6 +1553,7 @@ const
 var
   i: Integer;
   pa, pb: PSingle;
+  r0, r1, r2 , r3: Single;
 begin
   Result := 0;
 
@@ -1548,30 +1574,35 @@ begin
     Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
   end;
 {$else}
-    // unroll by cTileWidth * 3
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+  // unroll by cTileWidth * 3
+  r0 := SumOf8Squares(@pa[$00], @pb[$00]);
+  r1 := SumOf8Squares(@pa[$08], @pb[$08]);
+  r0 += SumOf8Squares(@pa[$10], @pb[$10]);
+  r1 += SumOf8Squares(@pa[$18], @pb[$18]);
+  r2 := SumOf8Squares(@pa[$20], @pb[$20]);
+  r3 := SumOf8Squares(@pa[$28], @pb[$28]);
+  r2 += SumOf8Squares(@pa[$30], @pb[$30]);
+  r3 += SumOf8Squares(@pa[$38], @pb[$38]);
 
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+  r0 += SumOf8Squares(@pa[$40], @pb[$40]);
+  r1 += SumOf8Squares(@pa[$48], @pb[$48]);
+  r0 += SumOf8Squares(@pa[$50], @pb[$50]);
+  r1 += SumOf8Squares(@pa[$58], @pb[$58]);
+  r2 += SumOf8Squares(@pa[$60], @pb[$60]);
+  r3 += SumOf8Squares(@pa[$68], @pb[$68]);
+  r2 += SumOf8Squares(@pa[$70], @pb[$70]);
+  r3 += SumOf8Squares(@pa[$78], @pb[$78]);
 
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
-    Result += SumOf8Squares(pa, pb); Inc(pa, 8); Inc(pb, 8);
+  r0 += SumOf8Squares(@pa[$80], @pb[$80]);
+  r1 += SumOf8Squares(@pa[$88], @pb[$88]);
+  r0 += SumOf8Squares(@pa[$90], @pb[$90]);
+  r1 += SumOf8Squares(@pa[$98], @pb[$98]);
+  r2 += SumOf8Squares(@pa[$a0], @pb[$a0]);
+  r3 += SumOf8Squares(@pa[$a8], @pb[$a8]);
+  r2 += SumOf8Squares(@pa[$b0], @pb[$b0]);
+  r3 += SumOf8Squares(@pa[$b8], @pb[$b8]);
+
+  Result := r0 + r1 + r2 + r3;
 {$endif}
 
   Result := sqrt(Result * cSqrtFactor);
@@ -1684,7 +1715,7 @@ begin
 
           p := pTiles;
           Inc(p, i);
-          p^ := RGBToColor(b, g, r);
+          p^ := ToRGB(r, g, b);
 
           if j >= cScreenHeight then Continue;
 
@@ -1720,7 +1751,7 @@ begin
 
             p := pDest;
             Inc(p, i);
-            p^ := RGBToColor(b, g, r);
+            p^ := ToRGB(r, g, b);
           end;
         end;
     end;
@@ -1735,7 +1766,7 @@ begin
     begin
       p := imgPalette.Picture.Bitmap.ScanLine[j];
       for i := 0 to imgPalette.Width - 1 do
-        p[i] := Frame^.KeyFrame^.PaletteRGB[j >= imgPalette.Height div 2, i * cTilePaletteSize div imgPalette.Width];
+        p[i] := SwapRB(Frame^.KeyFrame^.PaletteRGB[j >= imgPalette.Height div 2, i * cTilePaletteSize div imgPalette.Width]);
     end;
   finally
     imgPalette.Picture.Bitmap.EndUpdate;
