@@ -138,9 +138,6 @@
               <ShowAll Value="True"/>
             </Verbosity>
             <CustomOptions Value="-OWall -FWfeedbackfile.wpo -Xs- -Or"/>
-            <OtherDefines Count="1">
-              <Define0 Value="DEBUG"/>
-            </OtherDefines>
           </Other>
         </CompilerOptions>
       </Item4>
