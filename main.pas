@@ -16,7 +16,7 @@ const
   cKeyframeFixedColors = 2;
   cGamma = 2.1;
   cInvertSpritePalette = True;
-  cGammaCorrectFrameTiling = False;
+  cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
   cUseLABColors = True;
 {$if false}
@@ -89,7 +89,7 @@ const
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
   cDCTPremul = 256.0;
-  cUV = 2.0;
+  cUV = 1; //TODO: make this a user param
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of Single = (
     (
 {$if false}
@@ -231,7 +231,6 @@ type
     Label4: TLabel;
     Label6: TLabel;
     Label7: TLabel;
-    Label8: TLabel;
     Label9: TLabel;
     lblTileCount: TLabel;
     MenuItem2: TMenuItem;
@@ -248,7 +247,6 @@ type
     seAvgTPF: TSpinEdit;
     seTempoSmoo: TSpinEdit;
     seMaxTPF: TSpinEdit;
-    seKMRest: TSpinEdit;
     sePage: TSpinEdit;
     IdleTimer: TIdleTimer;
     imgTiles: TImage;
@@ -321,7 +319,7 @@ type
 
     procedure HMirrorPalTile(ATile: PTile; SpritePal: Boolean);
     procedure VMirrorPalTile(ATile: PTile; SpritePal: Boolean);
-    procedure DoFrameTiling(AFrame: PFrame; DesiredNbTiles, RestartCount: Integer);
+    procedure DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -495,7 +493,7 @@ begin
     Exit;
 
   ProgressRedraw(-1, esGlobalTiling);
-  DoGlobalTiling(seAvgTPF.Value * Length(FFrames), seKMRest.Value);
+  DoGlobalTiling(seAvgTPF.Value * Length(FFrames), 7);
 
   tbFrameChange(nil);
 end;
@@ -545,7 +543,7 @@ procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
 
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(@FFrames[AIndex], seMaxTPF.Value, seKMRest.Value);
+    DoFrameTiling(@FFrames[AIndex], seMaxTPF.Value);
   end;
 
 var i, j, first, last: Integer;
@@ -1349,7 +1347,7 @@ begin
   begin
     tileCnt := i * cMaxTiles;
     for j := 0 to cMaxTiles - 1 do
-      Move(FFrames[i].Tiles[j], FTiles[tileCnt+j]^, Sizeof(FFrames[i].Tiles[j]));
+      FTiles[tileCnt+j]^ := FFrames[i].Tiles[j];
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
         Inc(FFrames[i].TileMap[y,x].GlobalTileIndex, tileCnt);
@@ -1480,9 +1478,9 @@ begin
 
   if GammaCor then
   begin
-    if r > 0.04045 then r := power((r + 0.055) / 1.055, cGamma) else r := r / 12.92;
-    if g > 0.04045 then g := power((g + 0.055) / 1.055, cGamma) else g := g / 12.92;
-    if b > 0.04045 then b := power((b + 0.055) / 1.055, cGamma) else b := b / 12.92;
+    if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
+    if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
+    if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
   end;
 
   x := (r * 0.4124 + g * 0.3576 + b * 0.1805) / 95.047;
@@ -1992,7 +1990,7 @@ begin
   SpritePal := sp;
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles, RestartCount: Integer);
+procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 var
   TilesRepo: array of TTilesRepoItem;
   Cnt, i, j, k, sy, sx, ty, tx: Integer;

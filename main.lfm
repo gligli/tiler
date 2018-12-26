@@ -1,7 +1,7 @@
 object MainForm: TMainForm
   Left = 392
-  Height = 849
-  Top = 116
+  Height = 848
+  Top = 117
   Width = 808
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
@@ -10,7 +10,7 @@ object MainForm: TMainForm
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
-  ClientHeight = 849
+  ClientHeight = 848
   ClientWidth = 808
   KeyPreview = True
   OnCreate = FormCreate
@@ -53,7 +53,7 @@ object MainForm: TMainForm
     ShowSelRange = False
     TickMarks = tmBoth
     TickStyle = tsNone
-    TabOrder = 15
+    TabOrder = 14
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -61,7 +61,7 @@ object MainForm: TMainForm
     Top = 787
     Width = 42
     Caption = 'Play'
-    TabOrder = 12
+    TabOrder = 11
   end
   object lblTileCount: TLabel
     Left = 8
@@ -80,7 +80,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 13
+    TabOrder = 12
   end
   object Label2: TLabel
     Left = 8
@@ -127,12 +127,12 @@ object MainForm: TMainForm
   object btnRunAll: TButton
     Left = 8
     Height = 25
-    Top = 256
+    Top = 224
     Width = 69
     Caption = 'Run all (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 8
+    TabOrder = 7
   end
   object sePage: TSpinEdit
     Left = 208
@@ -141,7 +141,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 11
+    TabOrder = 10
   end
   object Label6: TLabel
     Left = 8
@@ -167,23 +167,6 @@ object MainForm: TMainForm
     MaxValue = 0
     TabOrder = 5
     Value = 207
-  end
-  object Label8: TLabel
-    Left = 8
-    Height = 15
-    Top = 172
-    Width = 110
-    Caption = 'KModes parallel runs'
-    ParentColor = False
-  end
-  object seKMRest: TSpinEdit
-    Left = 208
-    Height = 23
-    Top = 168
-    Width = 56
-    MinValue = 1
-    TabOrder = 6
-    Value = 6
   end
   object seAvgTPF: TSpinEdit
     Left = 208
@@ -229,7 +212,7 @@ object MainForm: TMainForm
   object Label9: TLabel
     Left = 8
     Height = 15
-    Top = 199
+    Top = 172
     Width = 159
     Caption = 'Temporal smoothing strength'
     ParentColor = False
@@ -237,28 +220,27 @@ object MainForm: TMainForm
   object seTempoSmoo: TSpinEdit
     Left = 208
     Height = 23
-    Top = 195
+    Top = 168
     Width = 56
-    TabOrder = 7
+    TabOrder = 6
     Value = 1
   end
   object chkUseOldDithering: TCheckBox
     Left = 8
     Height = 19
-    Top = 224
+    Top = 197
     Width = 134
     Caption = 'Use V6 (old) dithering'
     OnChange = chkUseOldDitheringChange
-    TabOrder = 16
+    TabOrder = 15
   end
   object pbProgress: TProgressBar
     Left = 84
     Height = 16
-    Top = 261
+    Top = 229
     Width = 180
     Smooth = True
-    TabOrder = 9
-    Visible = False
+    TabOrder = 8
   end
   object imgPalette: TImage
     Left = 8
@@ -270,11 +252,11 @@ object MainForm: TMainForm
   object btnDebug: TButton
     Left = 8
     Height = 25
-    Top = 288
+    Top = 256
     Width = 69
     Caption = 'Test debug'
     OnClick = btnDebugClick
-    TabOrder = 10
+    TabOrder = 9
     Visible = False
   end
   object chkMirrored: TCheckBox
@@ -286,7 +268,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 14
+    TabOrder = 13
   end
   object IdleTimer: TIdleTimer
     AutoEnabled = True
