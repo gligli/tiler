@@ -18,7 +18,7 @@ const
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
-  cUseLABColors = True;
+  cUseLABColors = False;
 {$if false}
   cRedMultiplier = 224;
   cGreenMultiplier = 608;
@@ -89,7 +89,7 @@ const
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
   cDCTPremul = 256.0;
-  cUV = 1; //TODO: make this a user param
+  cUV = sqrt(2); //TODO: make this a user param
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of Single = (
     (
 {$if false}
@@ -110,8 +110,8 @@ const
       (15, 18, 23, 29,  53,  75,  83,  80),
       (21, 24, 38, 53,  68,  95, 103,  94),
       (32, 46, 56, 75,  95, 104, 117,  96),
-      (50, 62, 73, 83, 103, 117, 120, 102),
-      (66, 73, 75, 80,  94,  96, 102,  87)
+      (50, 62, 73, 83, 103, 117, 120, 128),
+      (66, 73, 75, 80,  94,  96, 128, 160)
 {$endif}
     ),
     (
@@ -189,7 +189,7 @@ type
   PKeyFrame = ^TKeyFrame;
 
   TFrame = record
-    Tiles: array[0..(cMaxTiles - 1)] of TTile;
+    Tiles: array[Boolean{Unreduced?}, 0..(cMaxTiles - 1)] of TTile;
     TilesIndexes: array of Integer;
     TileMap: array[0..(cTileMapHeight - 1),0..(cTileMapWidth - 1)] of TTileMapItem;
     KeyFrame: PKeyFrame;
@@ -1262,7 +1262,8 @@ begin
       Move(Tile_^.PalPixels[SpritePal, 0, 0], Tile_^.PalPixels[not SpritePal, 0, 0], sqr(cTileWidth) * SizeOf(TPalPixel));
 
       AFrame^.TileMap[sy, sx].SpritePal := SpritePal;
-      AFrame^.Tiles[sx + sy * cTileMapWidth] := Tile_^;
+      AFrame^.Tiles[False, sx + sy * cTileMapWidth] := Tile_^;
+      AFrame^.Tiles[True, sx + sy * cTileMapWidth] := Tile_^;
     end;
 end;
 
@@ -1347,7 +1348,7 @@ begin
   begin
     tileCnt := i * cMaxTiles;
     for j := 0 to cMaxTiles - 1 do
-      FTiles[tileCnt+j]^ := FFrames[i].Tiles[j];
+      FTiles[tileCnt+j]^ := FFrames[i].Tiles[False, j];
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
         Inc(FFrames[i].TileMap[y,x].GlobalTileIndex, tileCnt);
@@ -1705,14 +1706,16 @@ begin
         tx := i and (cTileWidth - 1);
         ty := j and (cTileWidth - 1);
 
-        AFrame^.Tiles[ti].RGBPixels[ty, tx, 0] := r;
-        AFrame^.Tiles[ti].RGBPixels[ty, tx, 1] := g;
-        AFrame^.Tiles[ti].RGBPixels[ty, tx, 2] := b;
-        AFrame^.Tiles[ti].PalPixels[False, ty, tx] := 0;
-        AFrame^.Tiles[ti].PalPixels[True, ty, tx] := 0;
-        AFrame^.Tiles[ti].Active := True;
-        AFrame^.Tiles[ti].AveragedCount := 1;
-        AFrame^.Tiles[ti].TmpIndex := -1;
+        AFrame^.Tiles[False, ti].RGBPixels[ty, tx, 0] := r;
+        AFrame^.Tiles[False, ti].RGBPixels[ty, tx, 1] := g;
+        AFrame^.Tiles[False, ti].RGBPixels[ty, tx, 2] := b;
+        AFrame^.Tiles[False, ti].PalPixels[False, ty, tx] := 0;
+        AFrame^.Tiles[False, ti].PalPixels[True, ty, tx] := 0;
+        AFrame^.Tiles[False, ti].Active := True;
+        AFrame^.Tiles[False, ti].AveragedCount := 1;
+        AFrame^.Tiles[False, ti].TmpIndex := -1;
+
+        AFrame^.Tiles[True, ti] := AFrame^.Tiles[False, ti];
       end;
 end;
 
@@ -2022,7 +2025,7 @@ begin
       begin
         // make a copy of the tile
 
-        FrameTile := AFrame^.Tiles[sx + sy * cTileMapWidth];
+        FrameTile := AFrame^.Tiles[True, sx + sy * cTileMapWidth];
 
         // regular orientation
 
