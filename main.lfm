@@ -271,7 +271,6 @@ object MainForm: TMainForm
     TabOrder = 13
   end
   object IdleTimer: TIdleTimer
-    AutoEnabled = True
     Interval = 80
     OnTimer = IdleTimerTimer
     left = 744
