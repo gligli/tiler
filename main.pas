@@ -15,9 +15,9 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 2;
-  cGamma = 2.1;
+  cGamma = 1.8;
   cInvertSpritePalette = True;
-  cGammaCorrectFrameTiling = True;
+  cGammaCorrectFrameTiling = False;
   cGammaCorrectSmoothing = False;
   cUseLABColors = False;
 {$if false}
@@ -1936,13 +1936,13 @@ end;
 procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 var
   TilesRepo: array of TTilesRepoItem;
-  Cnt, i, j, k, sy, sx, ty, tx: Integer;
+  i, j, k, sy, sx, ty, tx: Integer;
   FrameTile: TTile;
   cmp, cmpH, cmpV, cmpHV, rcmp: Double;
   idx, idxH, idxV, idxHV: Integer;
-  pass, sp, spH, spV, spHV: Boolean;
+  sp, spH, spV, spHV: Boolean;
   Dataset, Centroids: TByteDynArray2;
-  Labels: TIntegerDynArray;
+  Labels, Ds2Gi: TIntegerDynArray;
 begin
   // make a list of all active tiles
 
@@ -1958,134 +1958,126 @@ begin
     end;
   SetLength(TilesRepo, j);
 
-  for pass := False to True do
+  for sy := 0 to cTileMapHeight - 1 do
+    for sx := 0 to cTileMapWidth - 1 do
+    begin
+      // make a copy of the tile
+
+      FrameTile := AFrame^.Tiles[True, sx + sy * cTileMapWidth];
+
+      // regular orientation
+
+      ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
+      cmp := FindBestComparison(TilesRepo, FrameTile, idx, sp);
+
+      // H mirrored
+
+      HMirrorPalTile(@FrameTile, False);
+      HMirrorPalTile(@FrameTile, True);
+      ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
+      cmpH := FindBestComparison(TilesRepo, FrameTile, idxH, spH);
+
+      // H/V mirrored
+
+      VMirrorPalTile(@FrameTile, False);
+      VMirrorPalTile(@FrameTile, True);
+      ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
+      cmpHV := FindBestComparison(TilesRepo, FrameTile, idxHV, spHV);
+
+      // V mirrored
+
+      HMirrorPalTile(@FrameTile, False);
+      HMirrorPalTile(@FrameTile, True);
+      ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
+      cmpV := FindBestComparison(TilesRepo, FrameTile, idxV, spV);
+
+      // choose best orientation
+
+      rcmp := minvalue([cmp, cmpH, cmpHV, cmpV]);
+
+      AFrame^.TileMap[sy, sx].GlobalTileIndex := idx;
+      AFrame^.TileMap[sy, sx].SpritePal := sp;
+      AFrame^.TileMap[sy, sx].HMirror := False;
+      AFrame^.TileMap[sy, sx].VMirror := False;
+      if rcmp = cmpH then
+      begin
+        AFrame^.TileMap[sy, sx].GlobalTileIndex := idxH;
+        AFrame^.TileMap[sy, sx].SpritePal := spH;
+        AFrame^.TileMap[sy, sx].HMirror := True;
+      end
+      else if rcmp = cmpV then
+      begin
+        AFrame^.TileMap[sy, sx].GlobalTileIndex := idxV;
+        AFrame^.TileMap[sy, sx].SpritePal := spV;
+        AFrame^.TileMap[sy, sx].VMirror := True;
+      end
+      else if rcmp = cmpHV then
+      begin
+        AFrame^.TileMap[sy, sx].GlobalTileIndex := idxHV;
+        AFrame^.TileMap[sy, sx].SpritePal := spHV;
+        AFrame^.TileMap[sy, sx].HMirror := True;
+        AFrame^.TileMap[sy, sx].VMirror := True;
+      end;
+    end;
+
+  if GetFrameTileCount(AFrame) <= DesiredNbTiles then
+    Exit;
+
+  // sort repo by descending tile use count by the frame
+
+  j := Length(TilesRepo);
+  for i := 0 to High(TilesRepo) do
   begin
+    TilesRepo[i].UseCount := 0;
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
-      begin
-        // make a copy of the tile
+        if TilesRepo[i].GlobalIndex = AFrame^.TileMap[sy, sx].GlobalTileIndex then
+          Inc(TilesRepo[i].UseCount);
 
-        FrameTile := AFrame^.Tiles[True, sx + sy * cTileMapWidth];
-
-        // regular orientation
-
-        ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
-        cmp := FindBestComparison(TilesRepo, FrameTile, idx, sp);
-
-        // H mirrored
-
-        HMirrorPalTile(@FrameTile, False);
-        HMirrorPalTile(@FrameTile, True);
-        ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
-        cmpH := FindBestComparison(TilesRepo, FrameTile, idxH, spH);
-
-        // H/V mirrored
-
-        VMirrorPalTile(@FrameTile, False);
-        VMirrorPalTile(@FrameTile, True);
-        ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
-        cmpHV := FindBestComparison(TilesRepo, FrameTile, idxHV, spHV);
-
-        // V mirrored
-
-        HMirrorPalTile(@FrameTile, False);
-        HMirrorPalTile(@FrameTile, True);
-        ComputeTileDCT(@FrameTile, True, False, cGammaCorrectFrameTiling, FrameTile.PaletteRGB);
-        cmpV := FindBestComparison(TilesRepo, FrameTile, idxV, spV);
-
-        // choose best orientation
-
-        rcmp := minvalue([cmp, cmpH, cmpHV, cmpV]);
-
-        AFrame^.TileMap[sy, sx].GlobalTileIndex := idx;
-        AFrame^.TileMap[sy, sx].SpritePal := sp;
-        AFrame^.TileMap[sy, sx].HMirror := False;
-        AFrame^.TileMap[sy, sx].VMirror := False;
-        if rcmp = cmpH then
-        begin
-          AFrame^.TileMap[sy, sx].GlobalTileIndex := idxH;
-          AFrame^.TileMap[sy, sx].SpritePal := spH;
-          AFrame^.TileMap[sy, sx].HMirror := True;
-        end
-        else if rcmp = cmpV then
-        begin
-          AFrame^.TileMap[sy, sx].GlobalTileIndex := idxV;
-          AFrame^.TileMap[sy, sx].SpritePal := spV;
-          AFrame^.TileMap[sy, sx].VMirror := True;
-        end
-        else if rcmp = cmpHV then
-        begin
-          AFrame^.TileMap[sy, sx].GlobalTileIndex := idxHV;
-          AFrame^.TileMap[sy, sx].SpritePal := spHV;
-          AFrame^.TileMap[sy, sx].HMirror := True;
-          AFrame^.TileMap[sy, sx].VMirror := True;
-        end;
-      end;
-
-    if pass or (GetFrameTileCount(AFrame) <= DesiredNbTiles) then
-      Break;
-
-    // sort repo by descending tile use count by the frame
-
-    j := Length(TilesRepo);
-    for i := 0 to High(TilesRepo) do
+    if TilesRepo[i].UseCount = 0 then
     begin
-      TilesRepo[i].UseCount := 0;
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
-          if TilesRepo[i].GlobalIndex = AFrame^.TileMap[sy, sx].GlobalTileIndex then
-            Inc(TilesRepo[i].UseCount);
-
-      if TilesRepo[i].UseCount = 0 then
-      begin
-        TilesRepo[i].GlobalIndex := -1;
-        Dec(j);
-      end;
+      TilesRepo[i].GlobalIndex := -1;
+      Dec(j);
     end;
-    QuickSort(TilesRepo[0], 0, High(TilesRepo), SIzeOf(TilesRepo[0]), @CompareTRUseCountInv);
+  end;
+  QuickSort(TilesRepo[0], 0, High(TilesRepo), SIzeOf(TilesRepo[0]), @CompareTRUseCountInv);
 
-    // prepare a dataset of used tiles for KModes
+  // prepare a dataset of used tiles for KModes
 
-    SetLength(Dataset, j, sqr(cTileWidth));
-    j := 0;
-    for i := 0 to High(TilesRepo) do
-    begin
-      if TilesRepo[i].GlobalIndex < 0 then
-        Continue;
+  SetLength(Dataset, j, sqr(cTileWidth));
+  SetLength(Ds2Gi, j);
+  j := 0;
+  for i := 0 to High(TilesRepo) do
+  begin
+    if TilesRepo[i].GlobalIndex < 0 then
+      Continue;
 
-      for ty := 0 to cTileWidth - 1 do
-        for tx := 0 to cTileWidth - 1 do
-          Dataset[j, ty * cTileWidth + tx] := TilesRepo[i].Tile^.PalPixels[False, ty, tx];
-      Inc(j);
-    end;
+    for ty := 0 to cTileWidth - 1 do
+      for tx := 0 to cTileWidth - 1 do
+        Dataset[j, ty * cTileWidth + tx] := TilesRepo[i].Tile^.PalPixels[False, ty, tx];
 
-    Assert(j = Length(Dataset));
+    Ds2Gi[j] := TilesRepo[i].GlobalIndex;
 
-    // run KModes, reducing the tile count to fit "Max tiles per frame"
+    Inc(j);
+  end;
 
-    ComputeKModes(Dataset, DesiredNbTiles, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
+  Assert(j = Length(Dataset));
 
-    for j := 0 to DesiredNbTiles - 1 do
-    begin
-      Cnt := 0;
-      k := 0;
-      for i := 0 to High(TilesRepo) do
-      begin
-        if TilesRepo[i].GlobalIndex = -1 then
-          Continue;
+  // run KModes, reducing the tile count to fit "Max tiles per frame"
 
-        if Labels[k] = j then
-        begin
-          if Cnt <> 0 then // first has highest use count, so keep that one
-            TilesRepo[i].GlobalIndex := -2;
-          Inc(Cnt);
-        end;
+  ComputeKModes(Dataset, DesiredNbTiles, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
 
-        Inc(k);
-      end;
-    end;
+  for i := 0 to DesiredNbTiles - 1 do
+  begin
+    k := GetMinMatchingDissim(Dataset, Centroids[i], k); // match centroid to an existing tile in the dataset
+    k := Ds2Gi[k]; // get corresponding FTiles[] index
 
-    // run tile choosing algo again
+    for j := 0 to High(Labels) do
+      if Labels[j] = i then
+        for sy := 0 to cTileMapHeight - 1 do
+          for sx := 0 to cTileMapWidth - 1 do
+            if AFrame^.TileMap[sy, sx].GlobalTileIndex = Ds2Gi[j] then
+              AFrame^.TileMap[sy, sx].GlobalTileIndex := k
   end;
 end;
 

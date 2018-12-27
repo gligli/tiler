@@ -4,9 +4,6 @@
     <Version Value="11"/>
     <PathDelim Value="\"/>
     <General>
-      <Flags>
-        <AlwaysBuild Value="True"/>
-      </Flags>
       <SessionStorage Value="InProjectDir"/>
       <MainUnit Value="0"/>
       <Title Value="tiler"/>
@@ -51,11 +48,11 @@
             <LinkSmart Value="True"/>
           </Linking>
           <Other>
-            <CustomOptions Value="-or"/>
+            <CustomOptions Value="-Or"/>
           </Other>
         </CompilerOptions>
       </Item2>
-      <Item3 Name="Release">
+      <Item3 Name="Test">
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
@@ -92,7 +89,7 @@
             </Options>
           </Linking>
           <Other>
-            <CustomOptions Value="-or"/>
+            <CustomOptions Value="-Or"/>
           </Other>
         </CompilerOptions>
       </Item3>
@@ -137,7 +134,7 @@
             <Verbosity>
               <ShowAll Value="True"/>
             </Verbosity>
-            <CustomOptions Value="-OWall -Xs- -FWfb.wpo -or"/>
+            <CustomOptions Value="-OWall -Xs- -FWfb.wpo -Or"/>
           </Other>
         </CompilerOptions>
       </Item4>
