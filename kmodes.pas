@@ -19,6 +19,8 @@ type
   TByteDynArray2 = array of TByteDynArray;
 
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): Byte;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
 procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities, n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2);
 // negative n_init means use -n_init as starting point
 
@@ -327,9 +329,6 @@ begin
   FillByte(mindistance[0], npoints, High(Byte));
 
   ifarthest := init_point;
-  if ifarthest < 0  then
-    ifarthest := Random(npoints);
-
   Move(X[ifarthest, 0], centroids[icentroid, 0], nattrs);
   used[ifarthest] := True;
   UpdateMinDistance(ifarthest);
@@ -432,18 +431,22 @@ begin
   end;
 end;
 
-procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities,
-  n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2);
-var
-  best, i, j, npoints, nattrs, n_init_raw: Integer;
-  init: TByteDynArray2;
-  all: array of record
+type
+  TKmodesRun = packed record
     Labels: TIntegerDynArray;
     Centroids: TByteDynArray2;
     Cost: Integer;
     NIter: Integer;
     TotalMoves: Integer;
+    StartingPoint: Integer;
   end;
+
+procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities,
+  n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2);
+var
+  init: TByteDynArray2;
+  npoints, nattrs: Integer;
+  all: array of TKmodesRun;
 
   procedure DoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -461,7 +464,7 @@ var
     SetLength(cl_attr_freq, n_clusters, nattrs, n_modalities);
 
     if init = nil then
-      InitFarthestFirst(X, n_clusters, -NativeInt(AData), centroids)
+      InitFarthestFirst(X, n_clusters, all[AIndex].StartingPoint, centroids)
     else
       centroids := init;
 
@@ -515,8 +518,10 @@ var
     all[init_no].TotalMoves := totalmoves;
   end;
 
+var
+  best, i, j : Integer;
+  InvGoldenRatio, GRAcc: Double;
 begin
-  n_init_raw := n_init;
   npoints := Length(X);
   nattrs := 0;
   if npoints > 0 then
@@ -531,10 +536,26 @@ begin
     n_clusters := Length(init);
   end;
 
-  n_init := Max(1, n_init);
-  SetLength(all, n_init);
+  if n_init <= 0 then
+  begin
+    SetLength(all, 1);
+    all[0].StartingPoint := -n_init;
+  end
+  else
+  begin
+    SetLength(all, n_init);
+    InvGoldenRatio := power(npoints, 1 / n_init);
+    GRAcc := 1;
+    for i := 0 to n_init - 1 do
+    begin
+      all[i].StartingPoint := Round(GRAcc) - 1;
+      if (i > 0) and (all[i].StartingPoint <= all[i - 1].StartingPoint) then
+        all[i].StartingPoint := Min(npoints - 1, all[i - 1].StartingPoint + 1);
+      GRAcc := GRAcc * InvGoldenRatio;
+    end;
+  end;
 
-  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, n_init - 1, Pointer(n_init_raw), n_threads);
+  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, High(all), nil, n_threads);
 
   j := -1;
   best := MaxInt;
