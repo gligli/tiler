@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 392
+  Left = 393
   Height = 848
-  Top = 117
+  Top = 108
   Width = 808
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
@@ -17,7 +17,7 @@ object MainForm: TMainForm
   OnDestroy = FormDestroy
   OnKeyDown = FormKeyDown
   Position = poScreenCenter
-  LCLVersion = '2.0.0.2'
+  LCLVersion = '2.0.0.3'
   object imgSource: TImage
     Left = 272
     Height = 384
@@ -114,7 +114,7 @@ object MainForm: TMainForm
     Top = 10
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\test\%.4d.png'
+    Text = '.\sample_taxi\tests\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -191,7 +191,7 @@ object MainForm: TMainForm
     Top = 62
     Width = 176
     TabOrder = 2
-    Text = '.\sample_taxi\soundtrack.wav'
+    Text = '.\sample_taxi\soundtrack2.wav'
   end
   object Label1: TLabel
     Left = 8

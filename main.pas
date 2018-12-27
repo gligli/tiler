@@ -13,6 +13,7 @@ type
 
 const
   // Tweakable params
+  cRandomKModesCount = 26;
   cKeyframeFixedColors = 2;
   cGamma = 2.1;
   cInvertSpritePalette = True;
@@ -149,7 +150,7 @@ const
     42, 26, 38, 22, 41, 25, 37, 21
   );
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 3, 10, 3, -1, 3, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 3, -1, 3, 1, 2);
 type
   PTile = ^TTile;
   PPTile = ^PTile;
@@ -493,7 +494,7 @@ begin
     Exit;
 
   ProgressRedraw(-1, esGlobalTiling);
-  DoGlobalTiling(seAvgTPF.Value * Length(FFrames), 7);
+  DoGlobalTiling(seAvgTPF.Value * Length(FFrames), cRandomKModesCount);
 
   tbFrameChange(nil);
 end;
@@ -588,7 +589,6 @@ var
   procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
     MakeTilesUnique(AIndex * TilesAtATime, Min(Length(FTiles) - AIndex * TilesAtATime, TilesAtATime));
-    ProgressRedraw(AIndex);
   end;
 
 begin
@@ -600,6 +600,8 @@ begin
     Exit;
 
   ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
+
+  ProgressRedraw(1);
 
   tbFrameChange(nil);
 end;
@@ -857,68 +859,6 @@ end;
 procedure TMainForm.chkUseOldDitheringChange(Sender: TObject);
 begin
   FUseOldDithering := chkUseOldDithering.Checked;
-end;
-
-procedure TMainForm.FormCreate(Sender: TObject);
-var
-  r,g,b,i,col,sr: Integer;
-begin
-  FLoadCS := TCriticalSection.Create;
-
-  FormatSettings.DecimalSeparator := '.';
-
-{$ifdef DEBUG}
-  ProcThreadPool.MaxThreadCount := 1;
-  btnDebug.Visible := True;
-{$else}
-  SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
-{$endif}
-
-  imgDest.Picture.Bitmap.Width:=cScreenWidth;
-  imgDest.Picture.Bitmap.Height:=cScreenHeight;
-  imgDest.Picture.Bitmap.PixelFormat:=pf32bit;
-
-  imgTiles.Picture.Bitmap.Width:=cScreenWidth;
-  imgTiles.Picture.Bitmap.Height:=cScreenHeight * 2;
-  imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
-
-  imgPalette.Picture.Bitmap.Width := cScreenWidth;
-  imgPalette.Picture.Bitmap.Height := 32;
-  imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
-
-  chkUseOldDitheringChange(nil);
-
-  sr := (1 shl cBitsPerComp) - 1;
-
-  for i := 0 to cTotalColors - 1 do
-  begin
-    col :=
-      (((i and sr) * 255 div sr) and $ff) or //R
-      (((((i shr (cBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
-      (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
-
-    FColorMap[i] := col;
-  end;
-
-  for i := 0 to cTotalColors - 1 do
-  begin
-    col := FColorMap[i];
-    r := col and $ff;
-    g := (col shr 8) and $ff;
-    b := col shr 16;
-
-    FColorMapLuma[i] := r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier;
-  end;
-end;
-
-procedure TMainForm.FormDestroy(Sender: TObject);
-var
-  i: Integer;
-begin
-  FLoadCS.Destroy;
-
-  for i := 0 to High(FTiles) do
-    Dispose(FTiles[i]);
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -2222,6 +2162,7 @@ begin
   SetLength(WasActive, Length(FTiles));
 
   // prepare KModes dataset, one line per tile, 64 palette indexes per line
+  // also choose KModes starting point
 
   StartingPointLo := -RestartCount; // by default, random starting point
   StartingPointUp := -RestartCount; // by default, random starting point
@@ -2836,6 +2777,68 @@ begin
   end;
 
   DebugLn(['Total frames size: ', ADataStream.Position - pp2]);
+end;
+
+procedure TMainForm.FormCreate(Sender: TObject);
+var
+  r,g,b,i,col,sr: Integer;
+begin
+  FLoadCS := TCriticalSection.Create;
+
+  FormatSettings.DecimalSeparator := '.';
+
+{$ifdef DEBUG}
+  //ProcThreadPool.MaxThreadCount := 1;
+  btnDebug.Visible := True;
+{$else}
+  SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
+{$endif}
+
+  imgDest.Picture.Bitmap.Width:=cScreenWidth;
+  imgDest.Picture.Bitmap.Height:=cScreenHeight;
+  imgDest.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  imgTiles.Picture.Bitmap.Width:=cScreenWidth;
+  imgTiles.Picture.Bitmap.Height:=cScreenHeight * 2;
+  imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  imgPalette.Picture.Bitmap.Width := cScreenWidth;
+  imgPalette.Picture.Bitmap.Height := 32;
+  imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  chkUseOldDitheringChange(nil);
+
+  sr := (1 shl cBitsPerComp) - 1;
+
+  for i := 0 to cTotalColors - 1 do
+  begin
+    col :=
+      (((i and sr) * 255 div sr) and $ff) or //R
+      (((((i shr (cBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
+      (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
+
+    FColorMap[i] := col;
+  end;
+
+  for i := 0 to cTotalColors - 1 do
+  begin
+    col := FColorMap[i];
+    r := col and $ff;
+    g := (col shr 8) and $ff;
+    b := col shr 16;
+
+    FColorMapLuma[i] := r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier;
+  end;
+end;
+
+procedure TMainForm.FormDestroy(Sender: TObject);
+var
+  i: Integer;
+begin
+  FLoadCS.Destroy;
+
+  for i := 0 to High(FTiles) do
+    Dispose(FTiles[i]);
 end;
 
 initialization

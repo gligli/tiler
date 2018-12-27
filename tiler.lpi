@@ -4,6 +4,9 @@
     <Version Value="11"/>
     <PathDelim Value="\"/>
     <General>
+      <Flags>
+        <AlwaysBuild Value="True"/>
+      </Flags>
       <SessionStorage Value="InProjectDir"/>
       <MainUnit Value="0"/>
       <Title Value="tiler"/>
@@ -48,10 +51,7 @@
             <LinkSmart Value="True"/>
           </Linking>
           <Other>
-            <CustomOptions Value="-Or"/>
-            <OtherDefines Count="1">
-              <Define0 Value="DEBUG"/>
-            </OtherDefines>
+            <CustomOptions Value="-or"/>
           </Other>
         </CompilerOptions>
       </Item2>
@@ -92,7 +92,7 @@
             </Options>
           </Linking>
           <Other>
-            <CustomOptions Value="-Or"/>
+            <CustomOptions Value="-or"/>
           </Other>
         </CompilerOptions>
       </Item3>
@@ -137,7 +137,7 @@
             <Verbosity>
               <ShowAll Value="True"/>
             </Verbosity>
-            <CustomOptions Value="-OWall -FWfeedbackfile.wpo -Xs- -Or"/>
+            <CustomOptions Value="-OWall -Xs- -FWfb.wpo -or"/>
           </Other>
         </CompilerOptions>
       </Item4>
@@ -206,15 +206,13 @@
     </CodeGeneration>
     <Linking>
       <Debugging>
+        <DebugInfoType Value="dsStabs"/>
         <UseHeaptrc Value="True"/>
       </Debugging>
     </Linking>
     <Other>
       <CustomOptions Value="-Si-
 -dDEBUG"/>
-      <OtherDefines Count="1">
-        <Define0 Value="DEBUG"/>
-      </OtherDefines>
     </Other>
   </CompilerOptions>
   <Debugging>
