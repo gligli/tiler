@@ -296,7 +296,7 @@ type
 
     function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
 
-    function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
+    function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Double): Double;
     procedure DeviseBestMixingPlan(var Plan: TMixingPlan; r,g,b: Integer);
 
     procedure PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
@@ -538,8 +538,8 @@ procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
     SpritePal: Boolean;
   begin
     if FTiles[AIndex]^.Active then
-      for SpritePal := False to True do
-        ComputeTileDCT(FTiles[AIndex], True, SpritePal, cGammaCorrectFrameTiling, PKeyFrame(AData)^.PaletteRGB[SpritePal]);
+      //for SpritePal := False to True do
+        ComputeTileDCT(FTiles[AIndex], False, False, cGammaCorrectFrameTiling, []);
   end;
 
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -1311,7 +1311,7 @@ begin
   Result += lumadiff * lumadiff;
 end;
 
-function TMainForm.EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
+function TMainForm.EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Double): Double;
 begin
   Result := ColorCompare(r,g,b, r0,g0,b0) + ColorCompare(r1,g1,b1, r2,g2,b2) * 0.025;
 end;
@@ -1319,13 +1319,13 @@ end;
 procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r,g,b: Integer);
 var
   r0,r1,r2,g0,g1,g2,b0,b1,b2,index1,index2,ratio,color1,color2,t1,t2,t3,d1,d2,d3: Integer;
-  least_penalty, penalty: Single;
+  least_penalty, penalty: Double;
 begin
   Plan.Colors[False] := 0;
   Plan.Colors[True] := 0;
   Plan.Ratio := 32;
 
-  least_penalty := MaxSingle;
+  least_penalty := MaxDouble;
   // Loop through every unique combination of two colors from the palette,
   // and through each possible way to mix those two colors. They can be
   // mixed in exactly 64 ways, when the threshold matrix is 8x8.
@@ -1865,14 +1865,14 @@ procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: I
 var
   i, j, k: Integer;
 begin
-  if TileCount < 2 then
+  if TileCount <= 0 then
     Exit;
 
   for k := 0 to TileCount - 1 do
   begin
     j := TileIndexes[k];
 
-    if j = BestIdx then
+    if FTiles[j]^.TmpIndex = -2 then // -2 as TmpIndex means tile is a centroid
       Continue;
 
     Inc(FTiles[BestIdx]^.AveragedCount, FTiles[j]^.AveragedCount);
@@ -1917,17 +1917,16 @@ begin
   sp := False;
   Result := MaxSingle;
   for i := 0 to High(TilesRepo) do
-    if TilesRepo[i].GlobalIndex >= 0 then
-      for isp := False to True do
+    for isp := False to False do
+    begin
+      cmp := TMainForm.CompareTilesDCT(FrameTile, TilesRepo[i].Tile^, isp, False);
+      if cmp < Result then
       begin
-        cmp := TMainForm.CompareTilesDCT(FrameTile, TilesRepo[i].Tile^, False, isp);
-        if cmp < Result then
-        begin
-          Result := cmp;
-          gi := TilesRepo[i].GlobalIndex;
-          sp := isp;
-        end;
+        Result := cmp;
+        gi := TilesRepo[i].GlobalIndex;
+        sp := isp;
       end;
+    end;
 
   GlobalIndex := gi;
   SpritePal := sp;
@@ -1936,7 +1935,7 @@ end;
 procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 var
   TilesRepo: array of TTilesRepoItem;
-  i, j, k, sy, sx, ty, tx: Integer;
+  i, j, k, sy, sx, ty, tx, dummy: Integer;
   FrameTile: TTile;
   cmp, cmpH, cmpV, cmpHV, rcmp: Double;
   idx, idxH, idxV, idxHV: Integer;
@@ -2069,7 +2068,7 @@ begin
 
   for i := 0 to DesiredNbTiles - 1 do
   begin
-    k := GetMinMatchingDissim(Dataset, Centroids[i], k); // match centroid to an existing tile in the dataset
+    k := GetMinMatchingDissim(Dataset, Centroids[i], dummy); // match centroid to an existing tile in the dataset
     k := Ds2Gi[k]; // get corresponding FTiles[] index
 
     for j := 0 to High(Labels) do
@@ -2146,7 +2145,9 @@ var
   Dataset, Centroids: TByteDynArray2;
   Labels: TIntegerDynArray;
   i, j, k, x, y, Cnt, acc, StartingPointLo, StartingPointUp: Integer;
+  DsTileIdxs: TIntegerDynArray;
   b: Byte;
+  Found: Boolean;
   ToMerge: array of Integer;
   WasActive: TBooleanDynArray;
 begin
@@ -2195,6 +2196,34 @@ begin
 
   ProgressRedraw(2);
 
+  // match centroid to an existing tile in the dataset
+
+  SetLength(DsTileIdxs, DesiredNbTiles - 1);
+
+  for j := 0 to DesiredNbTiles - 1 do
+  begin
+    DsTileIdxs[j] := GetMinMatchingDissim(Dataset, Centroids[j], acc);
+
+    Found := False;
+    k := 0;
+    for i := 0 to High(FTiles) do
+    begin
+      if not WasActive[i] then
+        Continue;
+
+      if k = DsTileIdxs[j] then
+      begin
+        DsTileIdxs[j] := i;
+        FTiles[i]^.TmpIndex := -2;
+        Found := True;
+      end;
+
+      Inc(k);
+    end;
+
+    Assert(Found, 'DsTileIdx not found!');
+  end;
+
   // for each group, merge the tiles
 
   SetLength(ToMerge, Length(FTiles));
@@ -2210,9 +2239,6 @@ begin
 
       if Labels[k] = j then
       begin
-        if Cnt = 0 then
-          Move(Centroids[j, 0], FTiles[i]^.PalPixels[False, 0, 0], sqr(cTileWidth) * SizeOf(TPalPixel));
-
         ToMerge[Cnt] := i;
         Inc(Cnt);
       end;
@@ -2220,8 +2246,7 @@ begin
       Inc(k);
     end;
 
-    if Cnt >= 2 then
-      MergeTiles(ToMerge, Cnt, ToMerge[0]);
+    MergeTiles(ToMerge, Cnt, DsTileIdxs[j])
   end;
 
   ProgressRedraw(3);
