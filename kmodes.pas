@@ -559,7 +559,7 @@ begin
 
   j := -1;
   best := MaxInt;
-  for i := 0 to n_init - 1 do
+  for i := 0 to High(all) do
     if all[i].Cost < best then
     begin
       best := all[i].Cost;
