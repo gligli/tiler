@@ -15,7 +15,7 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 2;
-  cGamma : array[0..2] of Single = (2.0, 1.8, 2.2);
+  cGamma : array[0..3{R-G-B-All}] of Single = (2.0, 1.8, 2.2, 2.0); // All mostly for RGB->YUV; RGB for dithering
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
@@ -360,13 +360,13 @@ begin
 end;
 
 var
-  GammaCorLut: array[0..2{RGB}, 0..High(Byte)] of Single;
-  GammaUncorLut: array[0..2{RGB}, 0..High(Word)] of Byte;
+  GammaCorLut: array[0..3{R-G-B-All}, 0..High(Byte)] of Single;
+  GammaUncorLut: array[0..3{R-G-B-All}, 0..High(Word)] of Byte;
 
 procedure InitGammaLuts;
 var rgb, i: Integer;
 begin
-  for rgb := 0 to 2 do
+  for rgb := 0 to 3 do
   begin
     for i := 0 to High(GammaCorLut[0]) do
       GammaCorLut[rgb, i] := power(i / 255.0, cGamma[rgb]);
@@ -1371,9 +1371,9 @@ var
 begin
   if GammaCor then
   begin
-    sr := GammaCorrect(0, r);
-    sg := GammaCorrect(1, g);
-    sb := GammaCorrect(2, b);
+    sr := GammaCorrect(3, r);
+    sg := GammaCorrect(3, g);
+    sb := GammaCorrect(3, b);
   end
   else
   begin
@@ -1709,16 +1709,16 @@ begin
 
             if gamma = 1 then
             begin
-              r := round(GammaCorrect(0, r) * 255.0);
-              g := round(GammaCorrect(1, g) * 255.0);
-              b := round(GammaCorrect(2, b) * 255.0);
+              r := round(GammaCorrect(3, r) * 255.0);
+              g := round(GammaCorrect(3, g) * 255.0);
+              b := round(GammaCorrect(3, b) * 255.0);
             end;
 
             if gamma = 2 then
             begin
-              r := GammaUnCorrect(0, r / 255.0);
-              g := GammaUnCorrect(1, g / 255.0);
-              b := GammaUnCorrect(2, b / 255.0);
+              r := GammaUnCorrect(3, r / 255.0);
+              g := GammaUnCorrect(3, g / 255.0);
+              b := GammaUnCorrect(3, b / 255.0);
             end;
 
             if j and 1 = 1 then
