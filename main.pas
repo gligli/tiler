@@ -1889,9 +1889,9 @@ var
   LocalTile: TTile;
   gidx: Integer;
   cmp, best: Double;
-  sp, vm, hm, ovm, ohm, osp: Boolean;
+  pass, sp, vm, hm, ovm, ohm, osp: Boolean;
   Dataset, Centroids: TByteDynArray2;
-  Labels, Ds2Gi: TIntegerDynArray;
+  Labels, Ds2Tr: TIntegerDynArray;
 begin
   // make a list of all active tiles
 
@@ -1920,100 +1920,109 @@ begin
     end;
   SetLength(TilesRepo, j);
 
-  for sy := 0 to cTileMapHeight - 1 do
-    for sx := 0 to cTileMapWidth - 1 do
-    begin
-      CopyTile(AFrame^.Tiles[False, sy * cTileMapWidth + sx], LocalTile); // we want RGB data
-
-      ComputeTileDCT(LocalTile, False, cGammaCorrectFrameTiling, []);
-
-      ogi := -1;
-      ovm := False;
-      ohm := False;
-      osp := False;
-      best := MaxDouble;
-      for i := 0 to High(TilesRepo) do
-        for sp := False to True do
-          for vm := False to True do
-            for hm := False to True do
-            begin
-              cmp := TMainForm.CompareTilesDCT(LocalTile, TilesRepo[i].Tile[sp, vm, hm]^);
-              if cmp < best then
-              begin
-                best := cmp;
-                ogi := TilesRepo[i].GlobalIndex;
-                ovm := vm;
-                ohm := hm;
-                osp := sp;
-              end;
-            end;
-
-      //writeln(sx,#9,sy,#9,ogi,#9,ovm,#9,ohm,#9,osp,#9,FloatToStr(best));
-
-      AFrame^.TileMap[sy, sx].GlobalTileIndex := ogi;
-      AFrame^.TileMap[sy, sx].SpritePal := osp;
-      AFrame^.TileMap[sy, sx].VMirror := ovm;
-      AFrame^.TileMap[sy, sx].HMirror := ohm;
-    end;
-
-  if GetFrameTileCount(AFrame) <= DesiredNbTiles then
-    Exit;
-
-  // sort repo by descending tile use count by the frame
-
-  j := Length(TilesRepo);
-  for i := 0 to High(TilesRepo) do
+  for pass := False to True do
   begin
-    TilesRepo[i].UseCount := 0;
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
-        if TilesRepo[i].GlobalIndex = AFrame^.TileMap[sy, sx].GlobalTileIndex then
-          Inc(TilesRepo[i].UseCount);
+      begin
+        CopyTile(AFrame^.Tiles[False, sy * cTileMapWidth + sx], LocalTile); // we want RGB data
 
-    if TilesRepo[i].UseCount = 0 then
+        ComputeTileDCT(LocalTile, False, cGammaCorrectFrameTiling, []);
+
+        ogi := -1;
+        ovm := False;
+        ohm := False;
+        osp := False;
+        best := MaxDouble;
+        for i := 0 to High(TilesRepo) do
+          if TilesRepo[i].GlobalIndex >= 0 then
+            for sp := False to True do
+              for vm := False to True do
+                for hm := False to True do
+                begin
+                  cmp := TMainForm.CompareTilesDCT(LocalTile, TilesRepo[i].Tile[sp, vm, hm]^);
+                  if cmp < best then
+                  begin
+                    best := cmp;
+                    ogi := TilesRepo[i].GlobalIndex;
+                    ovm := vm;
+                    ohm := hm;
+                    osp := sp;
+                  end;
+                end;
+
+        //writeln(sx,#9,sy,#9,ogi,#9,ovm,#9,ohm,#9,osp,#9,FloatToStr(best));
+
+        AFrame^.TileMap[sy, sx].GlobalTileIndex := ogi;
+        AFrame^.TileMap[sy, sx].SpritePal := osp;
+        AFrame^.TileMap[sy, sx].VMirror := ovm;
+        AFrame^.TileMap[sy, sx].HMirror := ohm;
+      end;
+
+    if pass or (GetFrameTileCount(AFrame) <= DesiredNbTiles) then
+      Break;
+
+    // sort repo by descending tile use count by the frame
+
+    j := Length(TilesRepo);
+    for i := 0 to High(TilesRepo) do
     begin
-      TilesRepo[i].GlobalIndex := -1;
-      Dec(j);
+      TilesRepo[i].UseCount := 0;
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
+          if TilesRepo[i].GlobalIndex = AFrame^.TileMap[sy, sx].GlobalTileIndex then
+            Inc(TilesRepo[i].UseCount);
+
+      if TilesRepo[i].UseCount = 0 then
+      begin
+        TilesRepo[i].GlobalIndex := -1;
+        Dec(j);
+      end;
     end;
-  end;
-  QuickSort(TilesRepo[0], 0, High(TilesRepo), SizeOf(TilesRepo[0]), @CompareTRUseCountInv);
+    QuickSort(TilesRepo[0], 0, High(TilesRepo), SizeOf(TilesRepo[0]), @CompareTRUseCountInv);
 
-  // prepare a dataset of used tiles for KModes
+    // prepare a dataset of used tiles for KModes
 
-  SetLength(Dataset, j, sqr(cTileWidth));
-  SetLength(Ds2Gi, j);
-  j := 0;
-  for i := 0 to High(TilesRepo) do
-  begin
-    if TilesRepo[i].GlobalIndex < 0 then
-      Continue;
+    SetLength(Dataset, j, sqr(cTileWidth));
+    SetLength(Ds2Tr, j);
+    j := 0;
+    for i := 0 to High(TilesRepo) do
+    begin
+      if TilesRepo[i].GlobalIndex < 0 then
+        Continue;
 
-    for ty := 0 to cTileWidth - 1 do
-      for tx := 0 to cTileWidth - 1 do
-        Dataset[j, ty * cTileWidth + tx] := TilesRepo[i].GlobalTile^.PalPixels[ty, tx];
+      for ty := 0 to cTileWidth - 1 do
+        for tx := 0 to cTileWidth - 1 do
+          Dataset[j, ty * cTileWidth + tx] := TilesRepo[i].GlobalTile^.PalPixels[ty, tx];
 
-    Ds2Gi[j] := TilesRepo[i].GlobalIndex;
+      Ds2Tr[j] := i;
 
-    Inc(j);
-  end;
+      Inc(j);
+    end;
 
-  Assert(j = Length(Dataset));
+    Assert(j = Length(Dataset));
 
-  // run KModes, reducing the tile count to fit "Max tiles per frame"
+    // run KModes, reducing the tile count to fit "Max tiles per frame"
 
-  ComputeKModes(Dataset, DesiredNbTiles, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
+    ComputeKModes(Dataset, DesiredNbTiles, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
 
-  for i := 0 to DesiredNbTiles - 1 do
-  begin
-    k := GetMinMatchingDissim(Dataset, Centroids[i], dummy); // match centroid to an existing tile in the dataset
-    k := Ds2Gi[k]; // get corresponding FTiles[] index
+    for i := 0 to DesiredNbTiles - 1 do
+    begin
+      k := GetMinMatchingDissim(Dataset, Centroids[i], dummy); // match centroid to an existing tile in the dataset
+      k := Ds2Tr[k]; // get corresponding TilesRepo index
 
-    for j := 0 to High(Labels) do
-      if Labels[j] = i then
-        for sy := 0 to cTileMapHeight - 1 do
-          for sx := 0 to cTileMapWidth - 1 do
-            if AFrame^.TileMap[sy, sx].GlobalTileIndex = Ds2Gi[j] then
-              AFrame^.TileMap[sy, sx].GlobalTileIndex := k
+      for j := 0 to High(Labels) do
+        if Labels[j] = i then
+          for sy := 0 to cTileMapHeight - 1 do
+            for sx := 0 to cTileMapWidth - 1 do
+              if (AFrame^.TileMap[sy, sx].GlobalTileIndex = TilesRepo[Ds2Tr[j]].GlobalIndex) and (Ds2Tr[j] <> k)  then
+              begin
+                AFrame^.TileMap[sy, sx].GlobalTileIndex := TilesRepo[Ds2Tr[k]].GlobalIndex;
+                TilesRepo[Ds2Tr[j]].GlobalIndex := -2;
+              end;
+    end;
+
+    // second pass to find a better way to use the reduced tiles
   end;
 
   // free allocated Tiles
