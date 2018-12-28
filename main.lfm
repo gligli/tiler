@@ -31,6 +31,7 @@ object MainForm: TMainForm
     Height = 384
     Top = 8
     Width = 512
+    AntialiasingMode = amOn
     PopupMenu = pmProcesses
     Stretch = True
   end
@@ -39,6 +40,7 @@ object MainForm: TMainForm
     Height = 384
     Top = 400
     Width = 512
+    AntialiasingMode = amOn
     PopupMenu = pmProcesses
     Stretch = True
   end
