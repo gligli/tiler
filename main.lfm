@@ -18,6 +18,14 @@ object MainForm: TMainForm
   OnKeyDown = FormKeyDown
   Position = poScreenCenter
   LCLVersion = '2.0.0.3'
+  object pbProgress: TProgressBar
+    Left = 8
+    Height = 16
+    Top = 256
+    Width = 224
+    Smooth = True
+    TabOrder = 9
+  end
   object imgSource: TImage
     Left = 272
     Height = 384
@@ -53,7 +61,7 @@ object MainForm: TMainForm
     ShowSelRange = False
     TickMarks = tmBoth
     TickStyle = tsNone
-    TabOrder = 14
+    TabOrder = 16
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -61,7 +69,7 @@ object MainForm: TMainForm
     Top = 787
     Width = 42
     Caption = 'Play'
-    TabOrder = 11
+    TabOrder = 12
   end
   object lblTileCount: TLabel
     Left = 8
@@ -80,7 +88,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 12
+    TabOrder = 13
   end
   object Label2: TLabel
     Left = 8
@@ -98,7 +106,7 @@ object MainForm: TMainForm
     MaxValue = 10000
     MinValue = 1
     TabOrder = 3
-    Value = 10
+    Value = 1
   end
   object Label3: TLabel
     Left = 8
@@ -114,7 +122,7 @@ object MainForm: TMainForm
     Top = 10
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\tests\%.4d.png'
+    Text = '.\sample_taxi\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -132,7 +140,7 @@ object MainForm: TMainForm
     Caption = 'Run all (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 7
+    TabOrder = 8
   end
   object sePage: TSpinEdit
     Left = 208
@@ -141,7 +149,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 10
+    TabOrder = 11
   end
   object Label6: TLabel
     Left = 8
@@ -232,15 +240,7 @@ object MainForm: TMainForm
     Width = 134
     Caption = 'Use V6 (old) dithering'
     OnChange = chkUseOldDitheringChange
-    TabOrder = 15
-  end
-  object pbProgress: TProgressBar
-    Left = 84
-    Height = 16
-    Top = 229
-    Width = 180
-    Smooth = True
-    TabOrder = 8
+    TabOrder = 7
   end
   object imgPalette: TImage
     Left = 8
@@ -250,13 +250,13 @@ object MainForm: TMainForm
     PopupMenu = pmProcesses
   end
   object btnDebug: TButton
-    Left = 8
+    Left = 80
     Height = 25
-    Top = 256
+    Top = 224
     Width = 69
     Caption = 'Test debug'
     OnClick = btnDebugClick
-    TabOrder = 9
+    TabOrder = 10
     Visible = False
   end
   object chkMirrored: TCheckBox
@@ -268,7 +268,28 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 13
+    TabOrder = 14
+  end
+  object lblPct: TLabel
+    Left = 232
+    Height = 15
+    Top = 257
+    Width = 32
+    Alignment = taRightJustify
+    AutoSize = False
+    Caption = '0%'
+    ParentColor = False
+  end
+  object chkSprite: TCheckBox
+    Left = 480
+    Height = 19
+    Top = 787
+    Width = 89
+    AllowGrayed = True
+    Caption = 'Sprite palette'
+    OnChange = tbFrameChange
+    State = cbGrayed
+    TabOrder = 15
   end
   object IdleTimer: TIdleTimer
     Interval = 80

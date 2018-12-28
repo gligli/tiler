@@ -48,6 +48,9 @@
             <LinkSmart Value="True"/>
           </Linking>
           <Other>
+            <CompilerMessages>
+              <IgnoredMessages idx5044="True" idx5024="True"/>
+            </CompilerMessages>
             <CustomOptions Value="-Or"/>
           </Other>
         </CompilerOptions>
@@ -82,13 +85,11 @@
               <UseExternalDbgSyms Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
-            <Options>
-              <Win32>
-                <GraphicApplication Value="True"/>
-              </Win32>
-            </Options>
           </Linking>
           <Other>
+            <CompilerMessages>
+              <IgnoredMessages idx5044="True" idx5024="True"/>
+            </CompilerMessages>
             <CustomOptions Value="-Or"/>
           </Other>
         </CompilerOptions>
@@ -134,6 +135,9 @@
             <Verbosity>
               <ShowAll Value="True"/>
             </Verbosity>
+            <CompilerMessages>
+              <IgnoredMessages idx5044="True" idx5024="True"/>
+            </CompilerMessages>
             <CustomOptions Value="-OWall -Xs- -FWfb.wpo -Or"/>
           </Other>
         </CompilerOptions>
@@ -208,6 +212,9 @@
       </Debugging>
     </Linking>
     <Other>
+      <CompilerMessages>
+        <IgnoredMessages idx5044="True" idx5024="True"/>
+      </CompilerMessages>
       <CustomOptions Value="-Si-
 -dDEBUG"/>
     </Other>
