@@ -27,7 +27,7 @@ procedure ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n
 implementation
 
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-var I, J, K, P: Integer;
+var I, J, P: Integer;
     PData,P1,P2: PByte;
     Tmp: array[0..4095] of Byte;
 begin
