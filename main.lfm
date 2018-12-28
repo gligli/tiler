@@ -6,7 +6,7 @@ object MainForm: TMainForm
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 840
+  VertScrollBar.Page = 803
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
@@ -41,6 +41,7 @@ object MainForm: TMainForm
     Top = 400
     Width = 720
     AntialiasingMode = amOn
+    Anchors = [akTop, akLeft, akRight, akBottom]
     PopupMenu = pmProcesses
     Stretch = True
   end
@@ -49,6 +50,7 @@ object MainForm: TMainForm
     Height = 384
     Top = 400
     Width = 256
+    Anchors = [akTop, akLeft, akBottom]
     PopupMenu = pmProcesses
   end
   object tbFrame: TTrackBar
@@ -63,6 +65,7 @@ object MainForm: TMainForm
     ShowSelRange = False
     TickMarks = tmBoth
     TickStyle = tsNone
+    Anchors = [akLeft, akRight, akBottom]
     TabOrder = 16
   end
   object chkPlay: TCheckBox
@@ -70,6 +73,7 @@ object MainForm: TMainForm
     Height = 19
     Top = 787
     Width = 42
+    Anchors = [akLeft, akBottom]
     Caption = 'Play'
     TabOrder = 12
   end
@@ -86,6 +90,7 @@ object MainForm: TMainForm
     Height = 19
     Top = 787
     Width = 65
+    Anchors = [akLeft, akBottom]
     Caption = 'Dithered'
     Checked = True
     OnChange = tbFrameChange
@@ -106,16 +111,14 @@ object MainForm: TMainForm
     Top = 88
     Width = 56
     MaxValue = 10000
-    MinValue = 1
     TabOrder = 3
-    Value = 1
   end
   object Label3: TLabel
     Left = 8
     Height = 15
     Top = 92
-    Width = 67
-    Caption = 'Frame count'
+    Width = 144
+    Caption = 'Frame count (0: automatic)'
     ParentColor = False
   end
   object edInput: TEdit
@@ -124,7 +127,7 @@ object MainForm: TMainForm
     Top = 10
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\%.4d.png'
+    Text = '.\sample_taxi\tests\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -249,6 +252,7 @@ object MainForm: TMainForm
     Height = 32
     Top = 808
     Width = 256
+    Anchors = [akLeft, akBottom]
     PopupMenu = pmProcesses
   end
   object btnDebug: TButton
@@ -266,6 +270,7 @@ object MainForm: TMainForm
     Height = 19
     Top = 787
     Width = 66
+    Anchors = [akLeft, akBottom]
     Caption = 'Mirrored'
     Checked = True
     OnChange = tbFrameChange
@@ -288,6 +293,7 @@ object MainForm: TMainForm
     Top = 787
     Width = 89
     AllowGrayed = True
+    Anchors = [akLeft, akBottom]
     Caption = 'Sprite palette'
     OnChange = tbFrameChange
     State = cbGrayed
@@ -296,12 +302,12 @@ object MainForm: TMainForm
   object IdleTimer: TIdleTimer
     Interval = 80
     OnTimer = IdleTimerTimer
-    left = 744
-    top = 744
+    left = 944
+    top = 736
   end
   object pmProcesses: TPopupMenu
-    left = 168
-    top = 352
+    left = 944
+    top = 688
     object miLoad: TMenuItem
       Caption = 'Load'
       ShortCut = 112

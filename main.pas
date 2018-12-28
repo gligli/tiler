@@ -15,7 +15,7 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 2;
-  cGamma = 1.8;
+  cGamma = 2.0;
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
@@ -601,7 +601,7 @@ var
 var
   i: Integer;
   fn: String;
-  kfCnt: Integer;
+  kfCnt, frc: Integer;
   isKf: Boolean;
 begin
   ProgressRedraw;
@@ -611,10 +611,23 @@ begin
   SetLength(FTiles, 0);
 
   ProgressRedraw(-1, esLoad);
-  SetLength(FFrames, seFrameCount.Value);
-  tbFrame.Max := High(FFrames);
 
   inPath := edInput.Text;
+  frc := seFrameCount.Value;
+
+  if frc <= 0 then
+  begin
+    i := 0;
+    repeat
+      fn := Format(inPath, [i]);
+      Inc(i);
+    until not FileExists(fn);
+
+    frc := i - 1;
+  end;
+
+  SetLength(FFrames, frc);
+  tbFrame.Max := High(FFrames);
 
   for i := 0 to High(FFrames) do
   begin
@@ -1149,7 +1162,7 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile, False, False, OrigTile.PaletteRGB);
+      ComputeTileDCT(OrigTile, False, True, OrigTile.PaletteRGB);
 
       KF := AFrame^.KeyFrame;
 
@@ -1912,7 +1925,7 @@ begin
     begin
       CopyTile(AFrame^.Tiles[False, sy * cTileMapWidth + sx], LocalTile); // we want RGB data
 
-      ComputeTileDCT(LocalTile, False, False, []);
+      ComputeTileDCT(LocalTile, False, cGammaCorrectFrameTiling, []);
 
       ogi := -1;
       ovm := False;
