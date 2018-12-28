@@ -112,7 +112,6 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 24
   end
   object Label3: TLabel
     Left = 8
@@ -125,10 +124,10 @@ object MainForm: TMainForm
   object edInput: TEdit
     Left = 88
     Height = 23
-    Top = 10
+    Top = 8
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\tests\%.4d.png'
+    Text = '.\sample_taxi\test\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -189,7 +188,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 1000
     TabOrder = 4
-    Value = 200
+    Value = 100
   end
   object Label10: TLabel
     Left = 8
@@ -342,9 +341,9 @@ object MainForm: TMainForm
       OnClick = btnDoGlobalTilingClick
     end
     object MenuItem3: TMenuItem
-      Caption = 'Tile (frame)'
+      Caption = 'Tile (key frame)'
       ShortCut = 116
-      OnClick = btnDoFrameTilingClick
+      OnClick = btnDoKeyFrameTilingClick
     end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'

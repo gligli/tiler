@@ -15,7 +15,7 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 2;
-  cGamma = 1.6;
+  cGamma = 2.0;
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
@@ -180,6 +180,7 @@ type
   TKeyFrame = record
     PaletteIndexes: array[Boolean{SpritePal?}, 0..(cTilePaletteSize - 1)] of Integer;
     PaletteRGB: array[Boolean{SpritePal?}, 0..(cTilePaletteSize - 1)] of Integer;
+    StartFrame, EndFrame: Integer;
   end;
 
   PKeyFrame = ^TKeyFrame;
@@ -258,7 +259,7 @@ type
     procedure btnDitherClick(Sender: TObject);
     procedure btnDoMakeUniqueClick(Sender: TObject);
     procedure btnDoGlobalTilingClick(Sender: TObject);
-    procedure btnDoFrameTilingClick(Sender: TObject);
+    procedure btnDoKeyFrameTilingClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
@@ -319,7 +320,7 @@ type
 
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
-    procedure DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
+    procedure DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -529,22 +530,19 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
-  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
+  procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(@FFrames[AIndex], seMaxTPF.Value);
+    DoKeyframeTiling(@FKeyFrames[AIndex], seMaxTPF.Value);
   end;
 
-var i, j, first, last: Integer;
 begin
   ProgressRedraw(-1, esFrameTiling);
 
   if Length(FFrames) = 0 then
     Exit;
 
-  //for i := 0 to High(FFrames) do
-  //  DoFrameTiling(@FFrames[i], seMaxTPF.Value);
-  ProcThreadPool.DoParallelLocalProc(@DoFrame, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoKF, 0, High(FKeyFrames));
 
   ProgressRedraw(1);
 
@@ -718,7 +716,7 @@ begin
   btnDitherClick(nil);
   //btnDoMakeUniqueClick(nil); // useless and may alter tiles weighting
   btnDoGlobalTilingClick(nil);
-  btnDoFrameTilingClick(nil);
+  btnDoKeyFrameTilingClick(nil);
   btnReindexClick(nil);
   btnSmoothClick(nil);
   btnSaveClick(nil);
@@ -850,7 +848,7 @@ begin
     VK_F2: btnDitherClick(nil);
     VK_F3: btnDoMakeUniqueClick(nil);
     VK_F4: btnDoGlobalTilingClick(nil);
-    VK_F5: btnDoFrameTilingClick(nil);
+    VK_F5: btnDoKeyFrameTilingClick(nil);
     VK_F6: btnReindexClick(nil);
     VK_F7: btnSmoothClick(nil);
     VK_F8: btnSaveClick(nil);
@@ -1011,8 +1009,8 @@ type
 
 function CompareCMU(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]);
-  Result += CompareValue(PCountIndexArray(Item2)^[ciImportance], PCountIndexArray(Item1)^[ciImportance]) shl 16;
+  Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]) shl 16;
+  Result += CompareValue(PCountIndexArray(Item2)^[ciImportance], PCountIndexArray(Item1)^[ciImportance]);
 end;
 
 function CompareCMULuma(Item1,Item2,UserParameter:Pointer):Integer;
@@ -1084,6 +1082,7 @@ procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
 var sx, sy, tx, ty, i, idx, idx2: Integer;
     GTile: PTile;
     CMUsage: array of TCountIndexArray;
+    sfr, efr: Integer;
 begin
   SetLength(CMUsage, cTotalColors);
 
@@ -1097,9 +1096,14 @@ begin
 
   // get color usage stats
 
+  sfr := High(Integer);
+  efr := Low(Integer);
   for i := 0 to High(FFrames) do
     if FFrames[i].KeyFrame = AKeyFrame then
     begin
+      sfr := Min(sfr, i);
+      efr := Max(efr, i);
+
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
@@ -1143,6 +1147,8 @@ begin
     AKeyFrame^.PaletteIndexes[True, i] := CMUsage[idx2][ciIndex];
     AKeyFrame^.PaletteRGB[False, i] := FColorMap[AKeyFrame^.PaletteIndexes[False, i]];
     AKeyFrame^.PaletteRGB[True, i] := FColorMap[AKeyFrame^.PaletteIndexes[True, i]];
+    AKeyFrame^.StartFrame := sfr;
+    AKeyFrame^.EndFrame := efr;
   end;
 end;
 
@@ -1915,14 +1921,23 @@ begin
   Result := CompareValue(PTilesRepoItem(Item2)^.UseCount, PTilesRepoItem(Item1)^.UseCount);
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
+procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
+
+  function GetMaxTPF: Integer;
+  var
+    frame: Integer;
+  begin
+    Result := 0;
+    for frame := AKF^.StartFrame to AKF^.EndFrame do
+      Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
+  end;
+
 var
   TilesRepo: TTileRepo;
-  i, j, k, sy, sx, ty, tx, dummy, ogi: Integer;
+  pass, MaxTPF, PassTileCount, i, j, k, sy, sx, ty, tx, dummy, ogi, frame: Integer;
   LocalTile: TTile;
-  gidx: Integer;
   cmp, best: Double;
-  pass, sp, vm, hm, ovm, ohm, osp: Boolean;
+  sp, vm, hm, ovm, ohm, osp: Boolean;
   Dataset, Centroids: TByteDynArray2;
   Labels, Ds2Tr: TIntegerDynArray;
 begin
@@ -1942,7 +1957,7 @@ begin
 
             if hm then HMirrorPalTile(TilesRepo[j].Tile[sp, vm, hm]^);
             if vm then VMirrorPalTile(TilesRepo[j].Tile[sp, vm, hm]^);
-            ComputeTileDCT(TilesRepo[j].Tile[sp, vm, hm]^, True, cGammaCorrectFrameTiling, AFrame^.KeyFrame^.PaletteRGB[sp]);
+            ComputeTileDCT(TilesRepo[j].Tile[sp, vm, hm]^, True, cGammaCorrectFrameTiling, AKF^.PaletteRGB[sp]);
 
             TilesRepo[j].GlobalTile := FTiles[i];
             TilesRepo[j].GlobalIndex := i;
@@ -1953,46 +1968,49 @@ begin
     end;
   SetLength(TilesRepo, j);
 
-  for pass := False to True do
+  pass := 0;
+  PassTileCount := 0;
+  while True do
   begin
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
-      begin
-        CopyTile(AFrame^.Tiles[False, sy * cTileMapWidth + sx], LocalTile); // we want RGB data
+    for frame := AKF^.StartFrame to AKF^.EndFrame do
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
+        begin
+          CopyTile(FFrames[frame].Tiles[False, sy * cTileMapWidth + sx], LocalTile); // we want RGB data
 
-        ComputeTileDCT(LocalTile, False, cGammaCorrectFrameTiling, []);
+          ComputeTileDCT(LocalTile, False, cGammaCorrectFrameTiling, []);
 
-        ogi := -1;
-        ovm := False;
-        ohm := False;
-        osp := False;
-        best := MaxDouble;
-        for i := 0 to High(TilesRepo) do
-          if TilesRepo[i].GlobalIndex >= 0 then
-            for sp := False to True do
-              for vm := False to True do
-                for hm := False to True do
-                begin
-                  cmp := TMainForm.CompareTilesDCT(LocalTile, TilesRepo[i].Tile[sp, vm, hm]^);
-                  if cmp < best then
+          ogi := -1;
+          ovm := False;
+          ohm := False;
+          osp := False;
+          best := MaxDouble;
+          for i := 0 to High(TilesRepo) do
+            if TilesRepo[i].GlobalIndex >= 0 then
+              for sp := False to True do
+                for vm := False to True do
+                  for hm := False to True do
                   begin
-                    best := cmp;
-                    ogi := TilesRepo[i].GlobalIndex;
-                    ovm := vm;
-                    ohm := hm;
-                    osp := sp;
+                    cmp := TMainForm.CompareTilesDCT(LocalTile, TilesRepo[i].Tile[sp, vm, hm]^);
+                    if cmp < best then
+                    begin
+                      best := cmp;
+                      ogi := TilesRepo[i].GlobalIndex;
+                      ovm := vm;
+                      ohm := hm;
+                      osp := sp;
+                    end;
                   end;
-                end;
 
-        //writeln(sx,#9,sy,#9,ogi,#9,ovm,#9,ohm,#9,osp,#9,FloatToStr(best));
+          //writeln(sx,#9,sy,#9,ogi,#9,ovm,#9,ohm,#9,osp,#9,FloatToStr(best));
 
-        AFrame^.TileMap[sy, sx].GlobalTileIndex := ogi;
-        AFrame^.TileMap[sy, sx].SpritePal := osp;
-        AFrame^.TileMap[sy, sx].VMirror := ovm;
-        AFrame^.TileMap[sy, sx].HMirror := ohm;
-      end;
+          FFrames[frame].TileMap[sy, sx].GlobalTileIndex := ogi;
+          FFrames[frame].TileMap[sy, sx].SpritePal := osp;
+          FFrames[frame].TileMap[sy, sx].VMirror := ovm;
+          FFrames[frame].TileMap[sy, sx].HMirror := ohm;
+        end;
 
-    if pass or (GetFrameTileCount(AFrame) <= DesiredNbTiles) then
+    if GetMaxTPF <= DesiredNbTiles then
       Break;
 
     // sort repo by descending tile use count by the frame
@@ -2001,10 +2019,11 @@ begin
     for i := 0 to High(TilesRepo) do
     begin
       TilesRepo[i].UseCount := 0;
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
-          if TilesRepo[i].GlobalIndex = AFrame^.TileMap[sy, sx].GlobalTileIndex then
-            Inc(TilesRepo[i].UseCount);
+      for frame := AKF^.StartFrame to AKF^.EndFrame do
+        for sy := 0 to cTileMapHeight - 1 do
+          for sx := 0 to cTileMapWidth - 1 do
+            if TilesRepo[i].GlobalIndex = FFrames[frame].TileMap[sy, sx].GlobalTileIndex then
+              Inc(TilesRepo[i].UseCount);
 
       if TilesRepo[i].UseCount = 0 then
       begin
@@ -2037,25 +2056,28 @@ begin
 
     // run KModes, reducing the tile count to fit "Max tiles per frame"
 
-    ComputeKModes(Dataset, DesiredNbTiles, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
+    PassTileCount := (6 * j + 4 * DesiredNbTiles) div 10;
 
-    for i := 0 to DesiredNbTiles - 1 do
+    ComputeKModes(Dataset, PassTileCount, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
+
+    for i := 0 to PassTileCount - 1 do
     begin
       k := GetMinMatchingDissim(Dataset, Centroids[i], dummy); // match centroid to an existing tile in the dataset
       k := Ds2Tr[k]; // get corresponding TilesRepo index
 
       for j := 0 to High(Labels) do
         if Labels[j] = i then
-          for sy := 0 to cTileMapHeight - 1 do
-            for sx := 0 to cTileMapWidth - 1 do
-              if (AFrame^.TileMap[sy, sx].GlobalTileIndex = TilesRepo[Ds2Tr[j]].GlobalIndex) and (Ds2Tr[j] <> k)  then
-              begin
-                AFrame^.TileMap[sy, sx].GlobalTileIndex := TilesRepo[Ds2Tr[k]].GlobalIndex;
-                TilesRepo[Ds2Tr[j]].GlobalIndex := -2;
-              end;
+          for frame := AKF^.StartFrame to AKF^.EndFrame do
+            for sy := 0 to cTileMapHeight - 1 do
+              for sx := 0 to cTileMapWidth - 1 do
+                if (FFrames[frame].TileMap[sy, sx].GlobalTileIndex = TilesRepo[Ds2Tr[j]].GlobalIndex) and (Ds2Tr[j] <> k)  then
+                begin
+                  FFrames[frame].TileMap[sy, sx].GlobalTileIndex := TilesRepo[Ds2Tr[k]].GlobalIndex;
+                  TilesRepo[Ds2Tr[j]].GlobalIndex := -2;
+                end;
     end;
 
-    // second pass to find a better way to use the reduced tiles
+    // multi pass to get down to max DesiredNbTiles per frame
   end;
 
   // free allocated Tiles
