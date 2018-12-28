@@ -15,7 +15,7 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 2;
-  cGamma : array[0..3{R-G-B-All}] of Single = (2.0, 1.8, 2.2, 2.0); // All mostly for RGB->YUV; RGB for dithering
+  cGamma = 1.6;
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
@@ -276,6 +276,7 @@ type
     FFrames: array of TFrame;
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FColorMapLuma: array[0..cTotalColors - 1] of Integer;
+    FColorMapImportance: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
     FUseOldDithering: Boolean;
     FProgressStep: TEncoderStep;
@@ -360,30 +361,27 @@ begin
 end;
 
 var
-  GammaCorLut: array[0..3{R-G-B-All}, 0..High(Byte)] of Single;
-  GammaUncorLut: array[0..3{R-G-B-All}, 0..High(Word)] of Byte;
+  GammaCorLut: array[0..High(Byte)] of Single;
+  GammaUncorLut: array[0..High(Word)] of Byte;
 
 procedure InitGammaLuts;
-var rgb, i: Integer;
+var i: Integer;
 begin
-  for rgb := 0 to 3 do
-  begin
-    for i := 0 to High(GammaCorLut[0]) do
-      GammaCorLut[rgb, i] := power(i / 255.0, cGamma[rgb]);
+  for i := 0 to High(GammaCorLut) do
+    GammaCorLut[i] := power(i / 255.0, cGamma);
 
-    for i := 0 to High(GammaUncorLut[0]) do
-      GammaUncorLut[rgb, i] := EnsureRange(Round(power(i / Double(High(GammaUncorLut[0])), 1 / cGamma[rgb]) * 255.0), 0, 255);
-  end;
+  for i := 0 to High(GammaUncorLut) do
+    GammaUncorLut[i] := EnsureRange(Round(power(i / Double(High(GammaUncorLut)), 1 / cGamma) * 255.0), 0, 255);
 end;
 
-function GammaCorrect(rgb: Integer; x: Byte): Single; inline;
+function GammaCorrect(x: Byte): Single; inline;
 begin
-  Result := GammaCorLut[rgb, x];
+  Result := GammaCorLut[x];
 end;
 
-function GammaUnCorrect(rgb: Integer; x: Single): Integer; inline;
+function GammaUnCorrect(x: Single): Integer; inline;
 begin
-  Result := GammaUncorLut[rgb, EnsureRange(Round(x * Single(High(GammaUncorLut[0]))), 0, High(GammaUncorLut[0]))];
+  Result := GammaUncorLut[EnsureRange(Round(x * Single(High(GammaUncorLut))), 0, High(GammaUncorLut))];
 end;
 
 Const
@@ -618,15 +616,20 @@ begin
   frc := seFrameCount.Value;
 
   if frc <= 0 then
-  begin
-    i := 0;
-    repeat
-      fn := Format(inPath, [i]);
-      Inc(i);
-    until not FileExists(fn);
+    if Pos('%', inPath) > 0 then
+    begin
+      i := 0;
+      repeat
+        fn := Format(inPath, [i]);
+        Inc(i);
+      until not FileExists(fn);
 
-    frc := i - 1;
-  end;
+      frc := i - 1;
+    end
+    else
+    begin
+      frc := 1;
+    end;
 
   SetLength(FFrames, frc);
   tbFrame.Max := High(FFrames);
@@ -895,9 +898,9 @@ begin
       g := (col shr 8) and $ff;
       b := (col shr 16) and $ff;
 
-      fr := GammaCorrect(0, r);
-      fg := GammaCorrect(1, g);
-      fb := GammaCorrect(2, b);
+      fr := GammaCorrect(r);
+      fg := GammaCorrect(g);
+      fb := GammaCorrect(b);
 
       Plan.LumaPal[i] := trunc((fr*cRedMultiplier + fg*cGreenMultiplier + fb*cBlueMultiplier) / cLumaMultiplier * (1 shl 16));
 
@@ -948,7 +951,7 @@ begin
 
         t := Plan.Count + p;
 
-        penalty := ColorCompareRGB(r, g, b, GammaUnCorrect(0, sum[0] / t), GammaUnCorrect(1, sum[1] / t), GammaUnCorrect(2, sum[2] / t));
+        penalty := ColorCompareRGB(r, g, b, GammaUnCorrect(sum[0] / t), GammaUnCorrect(sum[1] / t), GammaUnCorrect(sum[2] / t));
 
         if penalty < least_penalty then
         begin
@@ -1001,19 +1004,20 @@ begin
 end;
 
 type
-  TCountIndex = (ciCount, ciIndex);
+  TCountIndex = (ciCount, ciIndex, ciImportance, ciLuma);
   TCountIndexArray = array[Low(TCountIndex)..High(TCountIndex)] of Integer;
   PCountIndexArray = ^TCountIndexArray;
 
 
 function CompareCMU(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
+  Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]);
+  Result += CompareValue(PCountIndexArray(Item2)^[ciImportance], PCountIndexArray(Item1)^[ciImportance]) shl 16;
 end;
 
 function CompareCMULuma(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PInteger(UserParameter)[PCountIndexArray(Item1)^[ciIndex]], PInteger(UserParameter)[PCountIndexArray(Item2)^[ciIndex]]);
+  Result := CompareValue(PCountIndexArray(Item1)^[ciLuma], PCountIndexArray(Item2)^[ciLuma]);
 end;
 
 procedure TMainForm.PreDitherTiles(AFrame: PFrame);
@@ -1046,6 +1050,8 @@ begin
       begin
         CMUsage[i][ciCount] := 0;
         CMUsage[i][ciIndex] := i;
+        CMUsage[i][ciImportance] := FColorMapImportance[i];
+        CMUsage[i][ciLuma] := FColorMapLuma[i];
       end;
 
       // keep the 16 most used color
@@ -1057,7 +1063,7 @@ begin
       QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMU);
 
       // sort those by luma
-      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULuma, @FColorMapLuma[0]);
+      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULuma);
 
       SetLength(Tile_^.PaletteIndexes, cTilePaletteSize);
       SetLength(Tile_^.PaletteRGB, cTilePaletteSize);
@@ -1077,14 +1083,16 @@ end;
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
 var sx, sy, tx, ty, i, idx, idx2: Integer;
     GTile: PTile;
-    CMUsage: array[0..cTotalColors - 1] of packed record
-      Count, Index: Integer;
-    end;
+    CMUsage: array of TCountIndexArray;
 begin
+  SetLength(CMUsage, cTotalColors);
+
   for i := 0 to High(CMUsage) do
   begin
-    CMUsage[i].Count := 0;
-    CMUsage[i].Index := i;
+    CMUsage[i][ciCount] := 0;
+    CMUsage[i][ciIndex] := i;
+    CMUsage[i][ciImportance] := FColorMapImportance[i];
+    CMUsage[i][ciLuma] := FColorMapLuma[i];
   end;
 
   // get color usage stats
@@ -1099,7 +1107,7 @@ begin
 
           for ty := 0 to cTileWidth - 1 do
             for tx := 0 to cTileWidth - 1 do
-              Inc(CMUsage[GTile^.PaletteIndexes[GTile^.PalPixels[ty, tx]]].Count);
+              Inc(CMUsage[GTile^.PaletteIndexes[GTile^.PalPixels[ty, tx]]][ciCount]);
         end;
     end;
 
@@ -1109,7 +1117,7 @@ begin
 
   // split most used colors into two 16 color palettes, with brightest and darkest colors repeated in both
 
-  QuickSort(CMUsage[0], 0, (cTilePaletteSize - cKeyframeFixedColors) * 2 - 1, SizeOf(CMUsage[0]), @CompareCMULuma, @FColorMapLuma[0]);
+  QuickSort(CMUsage[0], 0, (cTilePaletteSize - cKeyframeFixedColors) * 2 - 1, SizeOf(CMUsage[0]), @CompareCMULuma);
   for i := 0 to cTilePaletteSize - 1 do
   begin
     if i < cKeyframeFixedColors then
@@ -1131,8 +1139,8 @@ begin
     if cInvertSpritePalette then
       idx2 := (cTilePaletteSize - cKeyframeFixedColors) * 2 - 1 - idx; // invert second palette
 
-    AKeyFrame^.PaletteIndexes[False, i] := CMUsage[idx].Index;
-    AKeyFrame^.PaletteIndexes[True, i] := CMUsage[idx2].Index;
+    AKeyFrame^.PaletteIndexes[False, i] := CMUsage[idx][ciIndex];
+    AKeyFrame^.PaletteIndexes[True, i] := CMUsage[idx2][ciIndex];
     AKeyFrame^.PaletteRGB[False, i] := FColorMap[AKeyFrame^.PaletteIndexes[False, i]];
     AKeyFrame^.PaletteRGB[True, i] := FColorMap[AKeyFrame^.PaletteIndexes[True, i]];
   end;
@@ -1367,9 +1375,9 @@ var
 begin
   if GammaCor then
   begin
-    sr := GammaCorrect(3, r);
-    sg := GammaCorrect(3, g);
-    sb := GammaCorrect(3, b);
+    sr := GammaCorrect(r);
+    sg := GammaCorrect(g);
+    sb := GammaCorrect(b);
   end
   else
   begin
@@ -1716,16 +1724,16 @@ begin
 
             if gamma = 1 then
             begin
-              r := round(GammaCorrect(3, r) * 255.0);
-              g := round(GammaCorrect(3, g) * 255.0);
-              b := round(GammaCorrect(3, b) * 255.0);
+              r := round(GammaCorrect(r) * 255.0);
+              g := round(GammaCorrect(g) * 255.0);
+              b := round(GammaCorrect(b) * 255.0);
             end;
 
             if gamma = 2 then
             begin
-              r := GammaUnCorrect(3, r / 255.0);
-              g := GammaUnCorrect(3, g / 255.0);
-              b := GammaUnCorrect(3, b / 255.0);
+              r := GammaUnCorrect(r / 255.0);
+              g := GammaUnCorrect(g / 255.0);
+              b := GammaUnCorrect(b / 255.0);
             end;
 
             if j and 1 = 1 then
@@ -2780,7 +2788,7 @@ end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
 var
-  r,g,b,i,col,sr: Integer;
+  r,g,b,i,col,prim_col,sr: Integer;
 begin
   FLoadCS := TCriticalSection.Create;
 
@@ -2820,7 +2828,13 @@ begin
       (((((i shr (cBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
       (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
 
+    prim_col :=
+      ((i and 1) * 255) or //R
+      ((((i shr 2) and 1) * 255) shl 8) or //G
+      ((((i shr 4) and 1) * 255) shl 16);  //B
+
     FColorMap[i] := col;
+    FColorMapImportance[i] := Ord(col = prim_col);
   end;
 
   for i := 0 to cTotalColors - 1 do
