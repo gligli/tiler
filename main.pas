@@ -265,7 +265,6 @@ type
 
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
-    procedure chkMirroredChange(Sender: TObject);
     procedure chkUseOldDitheringChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -284,7 +283,8 @@ type
 
     FLoadCS: TCriticalSection;
 
-    procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Single);
+    procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Single); overload;
+    procedure RGBToYUV(r, g, b: Single; out y, u, v: Single); overload;
 
     procedure ComputeTileDCT(var ATile: TTile; FromPal, GammaCor: Boolean; const pal: array of Integer);
     class function CompareTilesDCT(const ATileA, ATileB: TTile): Double;
@@ -786,11 +786,6 @@ begin
   tbFrameChange(nil);
 end;
 
-procedure TMainForm.chkMirroredChange(Sender: TObject);
-begin
-
-end;
-
 procedure TMainForm.btnSaveClick(Sender: TObject);
 var
   dataFS, soundFS: TFileStream;
@@ -876,6 +871,7 @@ end;
 
 procedure TMainForm.tbFrameChange(Sender: TObject);
 begin
+  Screen.Cursor := crDefault;
   Render(tbFrame.Position, chkDithered.Checked, chkMirrored.Checked, Ord(chkSprite.State), Ord(chkGamma.State), sePage.Value);
 end;
 
@@ -1391,6 +1387,17 @@ begin
   v := 0.615/0.299*sr - 0.515/0.587*sg - 0.100/0.114*sb;
 end;
 
+procedure TMainForm.RGBToYUV(r, g, b: Single; out y, u, v: Single); inline;
+begin
+  r *= cRedMultiplier;
+  g *= cGreenMultiplier;
+  b *= cBlueMultiplier;
+
+  y := r + g + b;
+  u := -0.147/0.299*r - 0.289/0.587*g + 0.436/0.114*b;
+  v := 0.615/0.299*r - 0.515/0.587*g - 0.100/0.114*b;
+end;
+
 procedure TMainForm.ComputeTileDCT(var ATile: TTile; FromPal, GammaCor: Boolean; const pal: array of Integer);
 const
   cUVRatio: array[0..cTileWidth-1] of Double = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
@@ -1782,6 +1789,7 @@ begin
     FOldProgressPosition := 0;
     FProgressStep := ProgressStep;
     pbProgress.Position := Ord(FProgressStep) * cProgressMul;
+    Screen.Cursor := crHourGlass;
   end;
 
   if (CurFrameIdx < 0) and (ProgressStep = esNone) then
