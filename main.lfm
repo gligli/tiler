@@ -6,7 +6,7 @@ object MainForm: TMainForm
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 803
+  VertScrollBar.Page = 806
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
@@ -66,7 +66,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 16
+    TabOrder = 17
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -297,6 +297,18 @@ object MainForm: TMainForm
     Caption = 'Sprite palette'
     OnChange = tbFrameChange
     State = cbGrayed
+    TabOrder = 16
+  end
+  object chkGamma: TCheckBox
+    Left = 568
+    Height = 19
+    Top = 787
+    Width = 62
+    AllowGrayed = True
+    Anchors = [akTop, akLeft, akBottom]
+    AutoSize = False
+    Caption = 'Gamma'
+    OnChange = tbFrameChange
     TabOrder = 15
   end
   object IdleTimer: TIdleTimer

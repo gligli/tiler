@@ -15,7 +15,7 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 2;
-  cGamma = 2.0;
+  cGamma : array[0..2] of Single = (2.0, 1.8, 2.2);
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
@@ -212,6 +212,7 @@ type
   TMainForm = class(TForm)
     btnRunAll: TButton;
     btnDebug: TButton;
+    chkGamma: TCheckBox;
     chkSprite: TCheckBox;
     chkMirrored: TCheckBox;
     chkUseOldDithering: TCheckBox;
@@ -300,7 +301,7 @@ type
 
     procedure LoadTiles;
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
-    procedure Render(AFrameIndex: Integer; dithered, mirrored: Boolean; spritePal: Integer; ATilePage: Integer);
+    procedure Render(AFrameIndex: Integer; dithered, mirrored: Boolean; spritePal, gamma: Integer; ATilePage: Integer);
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: PFrame): Integer;
@@ -359,29 +360,30 @@ begin
 end;
 
 var
-  GammaCorLut: array[0..High(Byte)] of Single;
-  GammaUncorLut: array[0..High(Word)] of Byte;
+  GammaCorLut: array[0..2{RGB}, 0..High(Byte)] of Single;
+  GammaUncorLut: array[0..2{RGB}, 0..High(Word)] of Byte;
 
 procedure InitGammaLuts;
-var i: Integer;
+var rgb, i: Integer;
 begin
-  for i := 0 to High(GammaCorLut) do
-    GammaCorLut[i] := power(i / 255.0, cGamma);
+  for rgb := 0 to 2 do
+  begin
+    for i := 0 to High(GammaCorLut[0]) do
+      GammaCorLut[rgb, i] := power(i / 255.0, cGamma[rgb]);
 
-  FillByte(GammaUncorLut[0], High(GammaUncorLut), 0);
-
-  for i := 0 to High(GammaUncorLut) do
-    GammaUncorLut[i] := EnsureRange(Round(power(i / Double(High(GammaUncorLut)), 1 / cGamma) * 255.0), 0, 255);
+    for i := 0 to High(GammaUncorLut[0]) do
+      GammaUncorLut[rgb, i] := EnsureRange(Round(power(i / Double(High(GammaUncorLut[0])), 1 / cGamma[rgb]) * 255.0), 0, 255);
+  end;
 end;
 
-function GammaCorrect(x: Byte): Single; inline;
+function GammaCorrect(rgb: Integer; x: Byte): Single; inline;
 begin
-  Result := GammaCorLut[x];
+  Result := GammaCorLut[rgb, x];
 end;
 
-function GammaUnCorrect(x: Single): Integer; inline;
+function GammaUnCorrect(rgb: Integer; x: Single): Integer; inline;
 begin
-  Result := GammaUncorLut[Min(High(GammaUncorLut), Round(x * Single(High(GammaUncorLut))))];
+  Result := GammaUncorLut[rgb, EnsureRange(Round(x * Single(High(GammaUncorLut[0]))), 0, High(GammaUncorLut[0]))];
 end;
 
 Const
@@ -874,7 +876,7 @@ end;
 
 procedure TMainForm.tbFrameChange(Sender: TObject);
 begin
-  Render(tbFrame.Position, chkDithered.Checked, chkMirrored.Checked, Ord(chkSprite.State), sePage.Value);
+  Render(tbFrame.Position, chkDithered.Checked, chkMirrored.Checked, Ord(chkSprite.State), Ord(chkGamma.State), sePage.Value);
 end;
 
 procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
@@ -897,9 +899,9 @@ begin
       g := (col shr 8) and $ff;
       b := (col shr 16) and $ff;
 
-      fr := GammaCorrect(r);
-      fg := GammaCorrect(g);
-      fb := GammaCorrect(b);
+      fr := GammaCorrect(0, r);
+      fg := GammaCorrect(1, g);
+      fb := GammaCorrect(2, b);
 
       Plan.LumaPal[i] := trunc((fr*cRedMultiplier + fg*cGreenMultiplier + fb*cBlueMultiplier) / cLumaMultiplier * (1 shl 16));
 
@@ -950,7 +952,7 @@ begin
 
         t := Plan.Count + p;
 
-        penalty := ColorCompareRGB(r, g, b, GammaUnCorrect(sum[0] / t), GammaUnCorrect(sum[1] / t), GammaUnCorrect(sum[2] / t));
+        penalty := ColorCompareRGB(r, g, b, GammaUnCorrect(0, sum[0] / t), GammaUnCorrect(1, sum[1] / t), GammaUnCorrect(2, sum[2] / t));
 
         if penalty < least_penalty then
         begin
@@ -1369,9 +1371,9 @@ var
 begin
   if GammaCor then
   begin
-    sr := GammaCorrect(r);
-    sg := GammaCorrect(g);
-    sb := GammaCorrect(b);
+    sr := GammaCorrect(0, r);
+    sg := GammaCorrect(1, g);
+    sb := GammaCorrect(2, b);
   end
   else
   begin
@@ -1590,7 +1592,8 @@ begin
       end;
 end;
 
-procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored: Boolean; spritePal: Integer; ATilePage: Integer);
+procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored: Boolean; spritePal, gamma: Integer;
+  ATilePage: Integer);
 var
   i, j, r, g, b, ti, tx, ty, col: Integer;
   pTiles, pDest, p: PInteger;
@@ -1702,6 +1705,20 @@ begin
               r := tilePtr^.RGBPixels[ty, tx, 0];
               g := tilePtr^.RGBPixels[ty, tx, 1];
               b := tilePtr^.RGBPixels[ty, tx, 2];
+            end;
+
+            if gamma = 1 then
+            begin
+              r := round(GammaCorrect(0, r) * 255.0);
+              g := round(GammaCorrect(1, g) * 255.0);
+              b := round(GammaCorrect(2, b) * 255.0);
+            end;
+
+            if gamma = 2 then
+            begin
+              r := GammaUnCorrect(0, r / 255.0);
+              g := GammaUnCorrect(1, g / 255.0);
+              b := GammaUnCorrect(2, b / 255.0);
             end;
 
             if j and 1 = 1 then
