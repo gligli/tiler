@@ -1611,10 +1611,10 @@ begin
         begin
           ti := 32 * (j shr 3) + (i shr 3) + cMaxTiles * ATilePage;
 
+          // tile pages
+
           tx := i and (cTileWidth - 1);
           ty := j and (cTileWidth - 1);
-
-          // tile pages
 
           if ti >= Length(FTiles) then
           begin
@@ -1654,15 +1654,16 @@ begin
           Inc(p, i);
           p^ := ToRGB(r, g, b);
 
-          if j >= cScreenHeight then Continue;
-
           // dest screen
 
-          TMItem := Frame^.TileMap[j shr 3, i shr 3];
+          tx := i and (cTileWidth - 1);
+          ty := (j shr 1) and (cTileWidth - 1);
+
+          TMItem := Frame^.TileMap[j shr 4, i shr 3];
           if TMItem.Smoothed then
           begin
             // emulate smoothing (use previous frame tilemap item)
-            TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 3, i shr 3];
+            TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 4, i shr 3];
             TMItem.GlobalTileIndex := Frame^.TilesIndexes[TMItem.FrameTileIndex];
           end;
           ti := TMItem.GlobalTileIndex;
@@ -1688,6 +1689,14 @@ begin
               r := tilePtr^.RGBPixels[ty, tx, 0];
               g := tilePtr^.RGBPixels[ty, tx, 1];
               b := tilePtr^.RGBPixels[ty, tx, 2];
+            end;
+
+            if j and 1 = 1 then
+            begin
+              // 25% scanlines
+              r := r - r shr 2;
+              g := g - g shr 2;
+              b := b - b shr 2;
             end;
 
             p := pDest;
@@ -2742,7 +2751,7 @@ begin
   imgSource.Picture.Bitmap.PixelFormat:=pf32bit;
 
   imgDest.Picture.Bitmap.Width:=cScreenWidth;
-  imgDest.Picture.Bitmap.Height:=cScreenHeight;
+  imgDest.Picture.Bitmap.Height:=cScreenHeight * 2;
   imgDest.Picture.Bitmap.PixelFormat:=pf32bit;
 
   imgTiles.Picture.Bitmap.Width:=cScreenWidth;
