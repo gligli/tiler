@@ -238,7 +238,6 @@ type
     MenuItem4: TMenuItem;
     MenuItem5: TMenuItem;
     MenuItem6: TMenuItem;
-    MenuItem7: TMenuItem;
     miLoad: TMenuItem;
     MenuItem1: TMenuItem;
     pmProcesses: TPopupMenu;
@@ -257,7 +256,6 @@ type
 
     procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
-    procedure btnDoMakeUniqueClick(Sender: TObject);
     procedure btnDoGlobalTilingClick(Sender: TObject);
     procedure btnDoKeyFrameTilingClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
@@ -314,7 +312,6 @@ type
     procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame);
     procedure FinalDitherTiles(AFrame: PFrame);
 
-    procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
@@ -543,30 +540,6 @@ begin
     Exit;
 
   ProcThreadPool.DoParallelLocalProc(@DoKF, 0, High(FKeyFrames));
-
-  ProgressRedraw(1);
-
-  tbFrameChange(nil);
-end;
-
-procedure TMainForm.btnDoMakeUniqueClick(Sender: TObject);
-var
-  TilesAtATime: Integer;
-
-  procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    MakeTilesUnique(AIndex * TilesAtATime, Min(Length(FTiles) - AIndex * TilesAtATime, TilesAtATime));
-  end;
-
-begin
-  ProgressRedraw(-1, esMakeUnique);
-
-  TilesAtATime := (Length(FFrames) * cMaxTiles - 1) div 10 + 1;
-
-  if Length(FFrames) = 0 then
-    Exit;
-
-  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
 
   ProgressRedraw(1);
 
@@ -846,13 +819,12 @@ begin
   case Key of
     VK_F1: btnLoadClick(nil);
     VK_F2: btnDitherClick(nil);
-    VK_F3: btnDoMakeUniqueClick(nil);
-    VK_F4: btnDoGlobalTilingClick(nil);
-    VK_F5: btnDoKeyFrameTilingClick(nil);
-    VK_F6: btnReindexClick(nil);
-    VK_F7: btnSmoothClick(nil);
-    VK_F8: btnSaveClick(nil);
-    VK_F9: btnRunAllClick(nil);
+    VK_F3: btnDoGlobalTilingClick(nil);
+    VK_F4: btnDoKeyFrameTilingClick(nil);
+    VK_F5: btnReindexClick(nil);
+    VK_F6: btnSmoothClick(nil);
+    VK_F7: btnSaveClick(nil);
+    VK_F8: btnRunAllClick(nil);
   end;
 end;
 
@@ -1068,7 +1040,7 @@ begin
       for i := 0 to cTilePaletteSize - 1 do
       begin
         Tile_^.PaletteIndexes[i] := CMUsage[cTilePaletteSize - 1 - i][ciIndex];
-        Tile_^.PaletteRGB[i] := FColorMap[CMUsage[cTilePaletteSize - 1 - i][ciIndex]];
+        Tile_^.PaletteRGB[i] := FColorMap[Tile_^.PaletteIndexes[i]];
       end;
 
       // dither again using that 16 color palette
@@ -1161,6 +1133,7 @@ var
   OrigTile: TTile;
   Tile_: array[Boolean] of TTile;
   Plan: TMixingPlan;
+  PalIdxs, PalRGB: TIntegerDynArray;
 begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
@@ -1193,69 +1166,17 @@ begin
 
       AFrame^.TileMap[sy, sx].SpritePal := SpritePal;
 
-      CopyTile(Tile_[SpritePal], FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^);
       CopyTile(Tile_[False], AFrame^.Tiles[False, sx + sy * cTileMapWidth]);
       CopyTile(Tile_[True], AFrame^.Tiles[True, sx + sy * cTileMapWidth]);
+
+      PalIdxs := AFrame^.KeyFrame^.PaletteIndexes[SpritePal];
+      PalRGB := AFrame^.KeyFrame^.PaletteRGB[SpritePal];
+
+      Move(PalIdxs[0], Tile_[SpritePal].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
+      Move(PalRGB[0], Tile_[SpritePal].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
+
+      CopyTile(Tile_[SpritePal], FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^);
     end;
-end;
-
-
-function CompareTilePalPixels(Item1, Item2, UserParameter:Pointer):Integer;
-var
-  t1, t2: PTile;
-begin
-  t1 := PPTile(Item1)^;
-  t2 := PPTile(Item2)^;
-{$if cTotalColors <= 256}
-  Result := CompareByte(t1^.PalPixels[0, 0], t2^.PalPixels[0, 0], sqr(cTileWidth));
-{$else}
-  Result := CompareDWord(t1^.PalPixels[0, 0], t2^.PalPixels[0, 0], sqr(cTileWidth));
-{$endif}
-end;
-
-procedure TMainForm.MakeTilesUnique(FirstTileIndex, TileCount: Integer);
-var
-  i, firstSameIdx: Integer;
-  sortArr: array of PTile;
-  sameIdxArr: array of Integer;
-
-  procedure DoOneMerge;
-  var
-    j: Integer;
-  begin
-    if i - firstSameIdx >= 2 then
-    begin
-      for j := firstSameIdx to i - 1 do
-        sameIdxArr[j - firstSameIdx] := sortArr[j]^.TmpIndex;
-      MergeTiles(sameIdxArr, i - firstSameIdx, sameIdxArr[0]);
-    end;
-    firstSameIdx := i;
-  end;
-
-begin
-  // sort global tiles by palette indexes (L to R, T to B)
-
-  SetLength(sameIdxArr, TileCount);
-  sortArr := Copy(FTiles, FirstTileIndex, TileCount);
-
-  for i := 0 to High(sortArr) do
-    sortArr[i]^.TmpIndex := i + FirstTileIndex;
-
-  QuickSort(sortArr[0], 0, High(sortArr), SizeOf(PTile), @CompareTilePalPixels);
-
-  // merge exactly similar tiles (so, consecutive after prev code)
-
-  firstSameIdx := 0;
-  for i := 1 to High(sortArr) do
-{$if cTotalColors <= 256}
-    if CompareByte(sortArr[i - 1]^.PalPixels[0, 0], sortArr[i]^.PalPixels[0, 0], sqr(cTileWidth)) <> 0 then
-{$else}
-    if CompareDWord(sortArr[i - 1]^.PalPixels[0, 0], sortArr[i]^.PalPixels[0, 0], sqr(cTileWidth)) <> 0 then
-{$endif}
-      DoOneMerge;
-
-  i := High(sortArr);
-  DoOneMerge;
 end;
 
 procedure TMainForm.LoadTiles;
