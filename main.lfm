@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 393
+  Left = 394
   Height = 848
-  Top = 108
+  Top = 103
   Width = 1001
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
@@ -112,6 +112,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
+    Value = 100
   end
   object Label3: TLabel
     Left = 8
@@ -127,7 +128,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\test\%.4d.png'
+    Text = '.\sample_taxi\pics\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -188,7 +189,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 1000
     TabOrder = 4
-    Value = 100
+    Value = 150
   end
   object Label10: TLabel
     Left = 8

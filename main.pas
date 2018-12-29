@@ -15,7 +15,7 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 2;
-  cGamma = 2.0;
+  cGamma = 1.618;
   cInvertSpritePalette = True;
   cGammaCorrectFrameTiling = True;
   cGammaCorrectSmoothing = False;
@@ -2056,9 +2056,8 @@ begin
 
     // run KModes, reducing the tile count to fit "Max tiles per frame"
 
-    PassTileCount := (6 * j + 4 * DesiredNbTiles) div 10;
-
-    ComputeKModes(Dataset, PassTileCount, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
+    PassTileCount := round(j / 1.618);
+    PassTileCount := ComputeKModes(Dataset, PassTileCount, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
 
     for i := 0 to PassTileCount - 1 do
     begin
@@ -2151,12 +2150,11 @@ begin
         Inc(Result, Ord(FFrames[i].TileMap[sy, sx].GlobalTileIndex = ATileIndex));
 end;
 
-
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset, Centroids: TByteDynArray2;
   Labels: TIntegerDynArray;
-  i, j, k, x, y, Cnt, acc, StartingPointLo, StartingPointUp: Integer;
+  i, j, k, x, y, Cnt, acc, StartingPointLo, StartingPointUp, ActualNbTiles: Integer;
   DsTileIdxs: TIntegerDynArray;
   b: Byte;
   Found: Boolean;
@@ -2204,15 +2202,15 @@ begin
 
   // run the KModes algorighm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ComputeKModes(Dataset, DesiredNbTiles, MaxInt, -min(StartingPointLo, StartingPointUp), cTilePaletteSize, 0, Labels, Centroids);
+  ActualNbTiles := ComputeKModes(Dataset, DesiredNbTiles, MaxInt, -min(StartingPointLo, StartingPointUp), cTilePaletteSize, 0, Labels, Centroids);
 
   ProgressRedraw(2);
 
   // match centroid to an existing tile in the dataset
 
-  SetLength(DsTileIdxs, DesiredNbTiles);
+  SetLength(DsTileIdxs, ActualNbTiles);
 
-  for j := 0 to DesiredNbTiles - 1 do
+  for j := 0 to ActualNbTiles - 1 do
   begin
     DsTileIdxs[j] := GetMinMatchingDissim(Dataset, Centroids[j], acc);
 
@@ -2240,7 +2238,7 @@ begin
 
   SetLength(ToMerge, Length(FTiles));
 
-  for j := 0 to DesiredNbTiles - 1 do
+  for j := 0 to ActualNbTiles - 1 do
   begin
     Cnt := 0;
     k := 0;
