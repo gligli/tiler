@@ -14,20 +14,13 @@ type
 const
   // Tweakable params
   cRandomKModesCount = 26;
-  cKeyframeFixedColors = 2;
-  cGamma = 1.618;
-  cInvertSpritePalette = True;
+  cKeyframeFixedColors = 4;
+  cGamma = 2.0;
   cGammaCorrectFrameTiling = True;
-  cGammaCorrectSmoothing = False;
-{$if false}
-  cRedMultiplier = 224;
-  cGreenMultiplier = 608;
-  cBlueMultiplier = 192;
-{$else}
+  cGammaCorrectSmoothing = True;
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
-{$endif}
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
@@ -85,6 +78,7 @@ const
 
   cDCTPremul = 256.0;
   cUV = sqrt(2); //TODO: make this a user param
+  cInvUV = 1.0 / cUV; //TODO: make this a user param
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of Single = (
     (
 {$if false}
@@ -274,8 +268,9 @@ type
     FKeyFrames: array of TKeyFrame;
     FFrames: array of TFrame;
     FColorMap: array[0..cTotalColors - 1] of Integer;
-    FColorMapLuma: array[0..cTotalColors - 1] of Integer;
-    FColorMapImportance: array[0..cTotalColors - 1] of Integer;
+    FColorMapLuma: array[0..cTotalColors - 1] of SmallInt;
+    FColorMapHue: array[0..cTotalColors - 1] of SmallInt;
+    FColorMapImportance: array[0..cTotalColors - 1] of ShortInt;
     FTiles: array of PTile;
     FUseOldDithering: Boolean;
     FProgressStep: TEncoderStep;
@@ -291,7 +286,8 @@ type
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
-    function ColorCompareRGB(r1, g1, b1, r2, g2, b2: Integer): Int64;
+    function ColorCompareRGB(r1, g1, b1, r2, g2, b2: Single): Single; overload;
+    function ColorCompareRGB(r1, g1, b1, r2, g2, b2: Integer): Int64; overload;
 
     function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Double): Double;
     procedure DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
@@ -360,26 +356,17 @@ end;
 
 var
   GammaCorLut: array[0..High(Byte)] of Single;
-  GammaUncorLut: array[0..High(Word)] of Byte;
 
 procedure InitGammaLuts;
 var i: Integer;
 begin
   for i := 0 to High(GammaCorLut) do
     GammaCorLut[i] := power(i / 255.0, cGamma);
-
-  for i := 0 to High(GammaUncorLut) do
-    GammaUncorLut[i] := EnsureRange(Round(power(i / Double(High(GammaUncorLut)), 1 / cGamma) * 255.0), 0, 255);
 end;
 
 function GammaCorrect(x: Byte): Single; inline;
 begin
   Result := GammaCorLut[x];
-end;
-
-function GammaUnCorrect(x: Single): Integer; inline;
-begin
-  Result := GammaUncorLut[EnsureRange(Round(x * Single(High(GammaUncorLut))), 0, High(GammaUncorLut))];
 end;
 
 Const
@@ -851,7 +838,6 @@ end;
 procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
 var
   i, col, r, g, b: Integer;
-  fr, fg, fb: Single;
 begin
   Plan.Count := 0;
   Plan.IsYiluoma2 := IsYiluoma2;
@@ -868,15 +854,11 @@ begin
       g := (col shr 8) and $ff;
       b := (col shr 16) and $ff;
 
-      fr := GammaCorrect(r);
-      fg := GammaCorrect(g);
-      fb := GammaCorrect(b);
+      Plan.LumaPal[i] := ((r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier) shl 7) div cLumaMultiplier;
 
-      Plan.LumaPal[i] := trunc((fr*cRedMultiplier + fg*cGreenMultiplier + fb*cBlueMultiplier) / cLumaMultiplier * (1 shl 16));
-
-      Plan.GammaPal[i][0] := fr;
-      Plan.GammaPal[i][1] := fg;
-      Plan.GammaPal[i][2] := fb;
+      Plan.GammaPal[i][0] := GammaCorrect(r);
+      Plan.GammaPal[i][1] := GammaCorrect(g);
+      Plan.GammaPal[i][2] := GammaCorrect(b);
     end;
 end;
 
@@ -888,13 +870,17 @@ end;
 procedure TMainForm.DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
 var
   p, t, index, max_test_count, chosen_amount, chosen: Integer;
-  least_penalty, penalty: Int64;
+  least_penalty, penalty: Single;
+  fr, fg, fb, t_inv: Single;
   so_far: array[0..2] of Single;
   sum: array[0..2] of Single;
   add: array[0..2] of Single;
 begin
   Plan.Count := 0;
 
+  fr := GammaCorrect(r);
+  fg := GammaCorrect(g);
+  fb := GammaCorrect(b);
   so_far[0] := 0; so_far[1] := 0; so_far[2] := 0;
 
   while (Plan.Count < cTilePaletteSize) do
@@ -902,7 +888,7 @@ begin
     chosen_amount := 1;
     chosen := 0;
     max_test_count := IfThen(Plan.Count = 0, 1, Plan.Count);
-    least_penalty := High(Int64);
+    least_penalty := MaxSingle;
     for index := 0 to High(Plan.GammaPal) do
     begin
       sum[0] := so_far[0]; sum[1] := so_far[1]; sum[2] := so_far[2];
@@ -920,8 +906,9 @@ begin
         add[2] *= 2;
 
         t := Plan.Count + p;
+        t_inv := 1.0 / t;
 
-        penalty := ColorCompareRGB(r, g, b, GammaUnCorrect(sum[0] / t), GammaUnCorrect(sum[1] / t), GammaUnCorrect(sum[2] / t));
+        penalty := ColorCompareRGB(fr, fg, fb, sum[0] * t_inv, sum[1] * t_inv, sum[2] * t_inv);
 
         if penalty < least_penalty then
         begin
@@ -974,7 +961,7 @@ begin
 end;
 
 type
-  TCountIndex = (ciCount, ciIndex, ciImportance, ciLuma);
+  TCountIndex = (ciCount, ciIndex, ciImportance, ciLuma, ciHue);
   TCountIndexArray = array[Low(TCountIndex)..High(TCountIndex)] of Integer;
   PCountIndexArray = ^TCountIndexArray;
 
@@ -985,9 +972,16 @@ begin
   Result += CompareValue(PCountIndexArray(Item2)^[ciImportance], PCountIndexArray(Item1)^[ciImportance]);
 end;
 
-function CompareCMULuma(Item1,Item2,UserParameter:Pointer):Integer;
+function CompareCMUHueLuma(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item1)^[ciLuma], PCountIndexArray(Item2)^[ciLuma]);
+  Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]) shl 16;
+  Result += CompareValue(PCountIndexArray(Item1)^[ciLuma], PCountIndexArray(Item2)^[ciLuma]) ;
+end;
+
+function CompareCMULumaHue(Item1,Item2,UserParameter:Pointer):Integer;
+begin
+  Result := CompareValue(PCountIndexArray(Item2)^[ciLuma], PCountIndexArray(Item1)^[ciLuma]) shl 16;
+  Result += CompareValue(PCountIndexArray(Item2)^[ciHue], PCountIndexArray(Item1)^[ciHue]) ;
 end;
 
 procedure TMainForm.PreDitherTiles(AFrame: PFrame);
@@ -1022,6 +1016,7 @@ begin
         CMUsage[i][ciIndex] := i;
         CMUsage[i][ciImportance] := FColorMapImportance[i];
         CMUsage[i][ciLuma] := FColorMapLuma[i];
+        CMUsage[i][ciHue] := FColorMapHue[i];
       end;
 
       // keep the 16 most used color
@@ -1032,8 +1027,8 @@ begin
 
       QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMU);
 
-      // sort those by luma
-      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULuma);
+      // sort those by importance and luma
+      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULumaHue);
 
       SetLength(Tile_^.PaletteIndexes, cTilePaletteSize);
       SetLength(Tile_^.PaletteRGB, cTilePaletteSize);
@@ -1064,6 +1059,7 @@ begin
     CMUsage[i][ciIndex] := i;
     CMUsage[i][ciImportance] := FColorMapImportance[i];
     CMUsage[i][ciLuma] := FColorMapLuma[i];
+    CMUsage[i][ciHue] := FColorMapHue[i];
   end;
 
   // get color usage stats
@@ -1093,27 +1089,20 @@ begin
 
   // split most used colors into two 16 color palettes, with brightest and darkest colors repeated in both
 
-  QuickSort(CMUsage[0], 0, (cTilePaletteSize - cKeyframeFixedColors) * 2 - 1, SizeOf(CMUsage[0]), @CompareCMULuma);
+  QuickSort(CMUsage[0], 0, cKeyframeFixedColors - 1, SizeOf(CMUsage[0]), @CompareCMULumaHue);
+  QuickSort(CMUsage[0], cKeyframeFixedColors, cTilePaletteSize * 2 - 1, SizeOf(CMUsage[0]), @CompareCMUHueLuma);
   for i := 0 to cTilePaletteSize - 1 do
   begin
-    if i < cKeyframeFixedColors then
+    if i >= cTilePaletteSize - cKeyframeFixedColors then
     begin
-      idx := i;
-      idx2 := idx;
-    end
-    else if i >= (cTilePaletteSize - cKeyframeFixedColors) then
-    begin
-      idx := i + cTilePaletteSize - cKeyframeFixedColors * 2;
+      idx := i - (cTilePaletteSize - cKeyframeFixedColors);
       idx2 := idx;
     end
     else
     begin
-      idx := (i - cKeyframeFixedColors) * 2 + cKeyframeFixedColors;
+      idx := (i shl 1) + cKeyframeFixedColors;
       idx2 := idx + 1;
     end;
-
-    if cInvertSpritePalette then
-      idx2 := (cTilePaletteSize - cKeyframeFixedColors) * 2 - 1 - idx; // invert second palette
 
     AKeyFrame^.PaletteIndexes[False, i] := CMUsage[idx][ciIndex];
     AKeyFrame^.PaletteIndexes[True, i] := CMUsage[idx2][ciIndex];
@@ -1166,16 +1155,20 @@ begin
 
       AFrame^.TileMap[sy, sx].SpritePal := SpritePal;
 
-      CopyTile(Tile_[False], AFrame^.Tiles[False, sx + sy * cTileMapWidth]);
-      CopyTile(Tile_[True], AFrame^.Tiles[True, sx + sy * cTileMapWidth]);
-
-      PalIdxs := AFrame^.KeyFrame^.PaletteIndexes[SpritePal];
-      PalRGB := AFrame^.KeyFrame^.PaletteRGB[SpritePal];
-
-      Move(PalIdxs[0], Tile_[SpritePal].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
-      Move(PalRGB[0], Tile_[SpritePal].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
+      Move(AFrame^.KeyFrame^.PaletteIndexes[SpritePal][0], Tile_[SpritePal].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
+      Move(AFrame^.KeyFrame^.PaletteRGB[SpritePal][0], Tile_[SpritePal].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
 
       CopyTile(Tile_[SpritePal], FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^);
+
+      Move(AFrame^.KeyFrame^.PaletteIndexes[False][0], Tile_[False].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
+      Move(AFrame^.KeyFrame^.PaletteRGB[False][0], Tile_[False].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
+
+      CopyTile(Tile_[False], AFrame^.Tiles[False, sx + sy * cTileMapWidth]);
+
+      Move(AFrame^.KeyFrame^.PaletteIndexes[True][0], Tile_[True].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
+      Move(AFrame^.KeyFrame^.PaletteRGB[True][0], Tile_[True].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
+
+      CopyTile(Tile_[True], AFrame^.Tiles[True, sx + sy * cTileMapWidth]);
     end;
 end;
 
@@ -1218,9 +1211,9 @@ begin
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * (cRedMultiplier * cLumaMultiplier * 3 div 4); // 3 div 4 for 0.75 chroma importance reduction
-  Result += diffG * diffG * (cGreenMultiplier * cLumaMultiplier * 3 div 4);
-  Result += diffB * diffB * (cBlueMultiplier * cLumaMultiplier * 3 div 4);
+  Result := diffR * diffR * ((cRedMultiplier * cLumaMultiplier * 181) shr 8); // around 1 / sqrt(2) chroma importance reduction
+  Result += diffG * diffG * ((cGreenMultiplier * cLumaMultiplier * 181) shr 8);
+  Result += diffB * diffB * ((cBlueMultiplier * cLumaMultiplier * 181) shr 8);
   Result += lumadiff * lumadiff;
 end;
 
@@ -1494,6 +1487,16 @@ begin
 {$endif}
 end;
 
+function TMainForm.ColorCompareRGB(r1, g1, b1, r2, g2, b2: Single): Single;
+var
+  y1, u1, v1, y2, u2, v2: Single;
+begin
+  RGBToYUV(r1, g1, b1, y1, u1, v1);
+  RGBToYUV(r2, g2, b2, y2, u2, v2);
+
+  Result := sqr(y1 - y2) + (sqr(u1 - u2) + sqr(v1 - v2)) * cInvUV;
+end;
+
 procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
 var
   i, j, px, r, g, b, ti, tx, ty: Integer;
@@ -1656,13 +1659,6 @@ begin
               b := round(GammaCorrect(b) * 255.0);
             end;
 
-            if gamma = 2 then
-            begin
-              r := GammaUnCorrect(r / 255.0);
-              g := GammaUnCorrect(g / 255.0);
-              b := GammaUnCorrect(b / 255.0);
-            end;
-
             if j and 1 = 1 then
             begin
               // 25% scanlines
@@ -1783,16 +1779,9 @@ begin
   Dest.PaletteIndexes := Copy(src.PaletteIndexes);
   Dest.PaletteRGB := Copy(src.PaletteRGB);
 
-  for y := 0 to cTileWidth - 1 do
-    for x := 0 to cTileWidth - 1 do
-    begin
-      for c := 0 to 2 do
-      begin
-        Dest.RGBPixels[y,x,c] := Src.RGBPixels[y,x,c];
-        Dest.DCTCoeffs[y,x,c] := Src.DCTCoeffs[y,x,c];
-      end;
-      Dest.PalPixels[y,x] := Src.PalPixels[y,x];
-    end;
+  move(Src.RGBPixels[0,0,0], Dest.RGBPixels[0,0,0], SizeOf(Src.RGBPixels));
+  move(Src.DCTCoeffs[0,0,0], Dest.DCTCoeffs[0,0,0], SizeOf(Src.DCTCoeffs));
+  move(Src.PalPixels[0,0], Dest.PalPixels[0,0], SizeOf(Src.PalPixels));
 end;
 
 procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer);
@@ -1829,13 +1818,13 @@ type
   TTilesRepoItem = record
     UseCount: Integer;
     GlobalIndex: Integer;
-    Tile: array[Boolean{SpritePal?}, Boolean{VMirror?}, Boolean{HMirror?}] of PTile;
     GlobalTile: PTile;
+    SpritePal, VMirror, HMirror: Boolean;
+    Tile: TTile;
   end;
 
   PTilesRepoItem = ^TTilesRepoItem;
   TTileRepo = array of TTilesRepoItem;
-
 
 function CompareTRUseCountInv(Item1,Item2,UserParameter:Pointer):Integer;
 begin
@@ -1843,6 +1832,9 @@ begin
 end;
 
 procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
+
+var
+  TilesRepo: TTileRepo;
 
   function GetMaxTPF: Integer;
   var
@@ -1853,18 +1845,49 @@ procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
       Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
   end;
 
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    i, oi, sy, sx: Integer;
+    LocalTile: PTile;
+    cmp, best: Double;
+  begin
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
+      begin
+        LocalTile := @FFrames[AIndex].Tiles[False, sy * cTileMapWidth + sx];
+
+        ComputeTileDCT(LocalTile^, True, cGammaCorrectFrameTiling, LocalTile^.PaletteRGB);
+
+        oi := -1;
+        best := MaxDouble;
+        for i := 0 to High(TilesRepo) do
+          if TilesRepo[i].GlobalIndex >= 0 then
+          begin
+            cmp := TMainForm.CompareTilesDCT(LocalTile^, TilesRepo[i].Tile);
+            if cmp < best then
+            begin
+              best := cmp;
+              oi := i;
+            end;
+          end;
+
+        FFrames[AIndex].TileMap[sy, sx].GlobalTileIndex := TilesRepo[oi].GlobalIndex;
+        FFrames[AIndex].TileMap[sy, sx].SpritePal := TilesRepo[oi].SpritePal;
+        FFrames[AIndex].TileMap[sy, sx].VMirror := TilesRepo[oi].VMirror;
+        FFrames[AIndex].TileMap[sy, sx].HMirror := TilesRepo[oi].HMirror;
+      end;
+  end;
+
 var
-  TilesRepo: TTileRepo;
-  pass, MaxTPF, PassTileCount, i, j, k, sy, sx, ty, tx, dummy, ogi, frame: Integer;
-  LocalTile: TTile;
-  cmp, best: Double;
-  sp, vm, hm, ovm, ohm, osp: Boolean;
+  PassTileCount, i, j, k, ty, tx, dummy, sy, sx, frame: Integer;
+  sp, vm, hm: Boolean;
   Dataset, Centroids: TByteDynArray2;
   Labels, Ds2Tr: TIntegerDynArray;
 begin
   // make a list of all active tiles
 
-  SetLength(TilesRepo, Length(FTiles));
+  SetLength(TilesRepo, Length(FTiles) shr 1);
+
   j := 0;
   for i := 0 to High(FTiles) do
     if FTiles[i]^.Active then
@@ -1873,63 +1896,31 @@ begin
         for vm := False to True do
           for hm := False to True do
           begin
-            New(TilesRepo[j].Tile[sp, vm, hm]);
-            CopyTile(FTiles[i]^, TilesRepo[j].Tile[sp, vm, hm]^);
+            CopyTile(FTiles[i]^, TilesRepo[j].Tile);
 
-            if hm then HMirrorPalTile(TilesRepo[j].Tile[sp, vm, hm]^);
-            if vm then VMirrorPalTile(TilesRepo[j].Tile[sp, vm, hm]^);
-            ComputeTileDCT(TilesRepo[j].Tile[sp, vm, hm]^, True, cGammaCorrectFrameTiling, AKF^.PaletteRGB[sp]);
+            if hm then HMirrorPalTile(TilesRepo[j].Tile);
+            if vm then VMirrorPalTile(TilesRepo[j].Tile);
+            ComputeTileDCT(TilesRepo[j].Tile, True, cGammaCorrectFrameTiling, AKF^.PaletteRGB[sp]);
 
             TilesRepo[j].GlobalTile := FTiles[i];
             TilesRepo[j].GlobalIndex := i;
             TilesRepo[j].UseCount := 0;
-          end;
+            TilesRepo[j].SpritePal := sp;
+            TilesRepo[j].VMirror := vm;
+            TilesRepo[j].HMirror := hm;
 
-      Inc(j);
+            Inc(j);
+            if j >= Length(TilesRepo) then
+              SetLength(TilesRepo, ceil(Length(TilesRepo) * 1.618));
+          end;
     end;
+
   SetLength(TilesRepo, j);
 
-  pass := 0;
   PassTileCount := 0;
   while True do
   begin
-    for frame := AKF^.StartFrame to AKF^.EndFrame do
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
-        begin
-          CopyTile(FFrames[frame].Tiles[False, sy * cTileMapWidth + sx], LocalTile); // we want RGB data
-
-          ComputeTileDCT(LocalTile, False, cGammaCorrectFrameTiling, []);
-
-          ogi := -1;
-          ovm := False;
-          ohm := False;
-          osp := False;
-          best := MaxDouble;
-          for i := 0 to High(TilesRepo) do
-            if TilesRepo[i].GlobalIndex >= 0 then
-              for sp := False to True do
-                for vm := False to True do
-                  for hm := False to True do
-                  begin
-                    cmp := TMainForm.CompareTilesDCT(LocalTile, TilesRepo[i].Tile[sp, vm, hm]^);
-                    if cmp < best then
-                    begin
-                      best := cmp;
-                      ogi := TilesRepo[i].GlobalIndex;
-                      ovm := vm;
-                      ohm := hm;
-                      osp := sp;
-                    end;
-                  end;
-
-          //writeln(sx,#9,sy,#9,ogi,#9,ovm,#9,ohm,#9,osp,#9,FloatToStr(best));
-
-          FFrames[frame].TileMap[sy, sx].GlobalTileIndex := ogi;
-          FFrames[frame].TileMap[sy, sx].SpritePal := osp;
-          FFrames[frame].TileMap[sy, sx].VMirror := ovm;
-          FFrames[frame].TileMap[sy, sx].HMirror := ohm;
-        end;
+    ProcThreadPool.DoParallelLocalProc(@DoFrame, AKF^.StartFrame, AKF^.EndFrame);
 
     if GetMaxTPF <= DesiredNbTiles then
       Break;
@@ -1977,8 +1968,8 @@ begin
 
     // run KModes, reducing the tile count to fit "Max tiles per frame"
 
-    PassTileCount := round(j / 1.618);
-    PassTileCount := ComputeKModes(Dataset, PassTileCount, MaxInt, 0, cTilePaletteSize, 1, Labels, Centroids);
+    PassTileCount := (2 * DesiredNbTiles + 8 * j) div 10;
+    PassTileCount := ComputeKModes(Dataset, PassTileCount, MaxInt, 0, cTilePaletteSize, 0, Labels, Centroids);
 
     for i := 0 to PassTileCount - 1 do
     begin
@@ -1999,14 +1990,6 @@ begin
 
     // multi pass to get down to max DesiredNbTiles per frame
   end;
-
-  // free allocated Tiles
-
-  for i := 0 to High(TilesRepo) do
-    for sp := False to True do
-      for vm := False to True do
-        for hm := False to True do
-          Dispose(TilesRepo[i].Tile[sp, vm, hm]);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: Single);
@@ -2729,7 +2712,7 @@ end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
 var
-  r,g,b,i,col,prim_col,sr: Integer;
+  r,g,b,i,mx,mn,col,prim_col,sr: Integer;
 begin
   FLoadCS := TCriticalSection.Create;
 
@@ -2785,7 +2768,14 @@ begin
     g := (col shr 8) and $ff;
     b := col shr 16;
 
-    FColorMapLuma[i] := r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier;
+    FColorMapLuma[i] := ((r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier) shl 7) div cLumaMultiplier;
+
+    mx := MaxIntValue([r, g, b]);
+    mn := MinIntValue([r, g, b]);
+
+    if r = mx then FColorMapHue[i] := iDiv0((g - b) shl 7, mx - mn);
+    if g = mx then FColorMapHue[i] := iDiv0((b - r) shl 7, mx - mn);
+    if b = mx then FColorMapHue[i] := iDiv0((r - g) shl 7, mx - mn);
   end;
 end;
 

@@ -112,7 +112,6 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 100
   end
   object Label3: TLabel
     Left = 8
@@ -128,7 +127,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\pics\%.4d.png'
+    Text = '.\sample_taxi\tests\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -237,7 +236,7 @@ object MainForm: TMainForm
     Top = 168
     Width = 56
     TabOrder = 6
-    Value = 1
+    Value = 3
   end
   object chkUseOldDithering: TCheckBox
     Left = 8
@@ -305,7 +304,6 @@ object MainForm: TMainForm
     Height = 19
     Top = 787
     Width = 62
-    AllowGrayed = True
     Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = 'Gamma'
