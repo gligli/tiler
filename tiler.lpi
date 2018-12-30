@@ -84,11 +84,6 @@
               <UseExternalDbgSyms Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
-            <Options>
-              <Win32>
-                <GraphicApplication Value="True"/>
-              </Win32>
-            </Options>
           </Linking>
           <Other>
             <Verbosity>
@@ -97,7 +92,12 @@
             <CompilerMessages>
               <IgnoredMessages idx5044="True" idx5024="True"/>
             </CompilerMessages>
-            <CustomOptions Value="-OWall -Xs- -FWfb.wpo"/>
+            <CustomOptions Value="-O4
+-OwALL
+-OWALL
+-Xs-
+-Fwfb.wpo
+-FWfb.wpo"/>
           </Other>
         </CompilerOptions>
       </Item3>
