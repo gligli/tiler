@@ -474,7 +474,7 @@ end;
 
 function KModesIter(const X: TByteDynArray2; var cl_attr_freq: TIntegerDynArray3; var centroids: TByteDynArray2; var membship: TIntegerDynArray; var Seed: Cardinal): Integer;
 var
-  npoints, ipoint, ipoint2, dummy, clust, old_clust, from_clust, rindx, cnt, dis, n_clusters: Integer;
+  npoints, ipoint, dummy, clust, old_clust, from_clust, rindx, cnt, dis, n_clusters: Integer;
   choices: TIntegerDynArray;
 begin
   n_clusters := Length(centroids);
@@ -498,12 +498,6 @@ begin
       begin
         from_clust := GetMaxClusterMembers(n_clusters, membship, dummy);
         cnt := CountClusterMembers(from_clust, membship);
-        //for ipoint2 := 0 to npoints - 1 do
-        //  if membship[ipoint2] = from_clust then
-        //  begin
-        //    choices[cnt] := ipoint2;
-        //    Inc(cnt);
-        //  end;
         rindx := choices[RandInt(cnt, Seed)];
 
         MovePointCat(X[rindx], rindx, old_clust, from_clust, cl_attr_freq, centroids, membship);

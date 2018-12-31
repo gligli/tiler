@@ -1807,7 +1807,6 @@ begin
 end;
 
 procedure TMainForm.CopyTile(const Src: TTile; var Dest: TTile);
-var x, y, c: Integer;
 begin
   Dest.Active := Src.Active;
   Dest.AveragedCount := Src.AveragedCount;
@@ -2035,7 +2034,7 @@ begin
     PassTileCount := (3 * DesiredNbTiles + 7 * j) div 10; // 33% of target each time
     PassTileCount := ComputeKModes(Dataset, PassTileCount, MaxInt, 0, cTilePaletteSize, 0, Labels, Centroids);
 
-    DebugLn([(3 * DesiredNbTiles + 7 * j) div 10,#9, PassTileCount, #9, j, #9, FloatToStr(mean(AvgBests))]);
+    DebugLn([PassTileCount, #9, j, #9, FloatToStr(mean(AvgBests))]);
 
     for i := 0 to PassTileCount - 1 do
     begin
@@ -2694,7 +2693,7 @@ begin
 
   for i := 0 to High(FTiles) do
   begin
-    FillChar(tilesPlanes, Sizeof(tilesPlanes), 0);
+    FillByte(tilesPlanes[0, 0], Sizeof(tilesPlanes), 0);
     for y := 0 to cTileWidth - 1 do
     begin
       for x := 0 to cTileWidth - 1 do
