@@ -6,7 +6,7 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
-  StdCtrls, ComCtrls, Spin, Menus, Math, MTProcs, syncobjs, types, Process, strutils, kmodes;
+  StdCtrls, ComCtrls, Spin, Menus, Math, MTProcs, syncobjs, types, Process, strutils, kmodes, extern;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -15,9 +15,8 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 4;
-  cGamma = 2.0;
-  cGammaCorrectFrameTiling = True;
-  cGammaCorrectSmoothing = True;
+  cGamma = 1.8;
+  cGammaCorrectSmoothing = False;
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
@@ -180,7 +179,7 @@ type
   PKeyFrame = ^TKeyFrame;
 
   TFrame = record
-    Tiles: array[Boolean{SpritePal?}, 0..(cMaxTiles - 1)] of TTile;
+    Tiles: array[0..(cMaxTiles - 1)] of TTile;
     TilesIndexes: array of Integer;
     TileMap: array[0..(cTileMapHeight - 1),0..(cTileMapWidth - 1)] of TTileMapItem;
     KeyFrame: PKeyFrame;
@@ -1188,18 +1187,11 @@ begin
 
       Move(KF^.PaletteIndexes[SpritePal][0], Tile_[SpritePal].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
       Move(KF^.PaletteRGB[SpritePal][0], Tile_[SpritePal].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
-
       CopyTile(Tile_[SpritePal], FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^);
 
-      Move(KF^.PaletteIndexes[False][0], Tile_[False].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
-      Move(KF^.PaletteRGB[False][0], Tile_[False].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
-
-      CopyTile(Tile_[False], AFrame^.Tiles[False, sx + sy * cTileMapWidth]);
-
-      Move(KF^.PaletteIndexes[True][0], Tile_[True].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
-      Move(KF^.PaletteRGB[True][0], Tile_[True].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
-
-      CopyTile(Tile_[True], AFrame^.Tiles[True, sx + sy * cTileMapWidth]);
+      Move(KF^.PaletteIndexes[SpritePal][0], Tile_[False].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
+      Move(KF^.PaletteRGB[SpritePal][0], Tile_[False].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
+      CopyTile(Tile_[SpritePal], AFrame^.Tiles[sx + sy * cTileMapWidth]);
     end;
 end;
 
@@ -1225,7 +1217,7 @@ begin
   begin
     tileCnt := i * cMaxTiles;
     for j := 0 to cMaxTiles - 1 do
-      CopyTile(FFrames[i].Tiles[False, j], FTiles[tileCnt+j]^);
+      CopyTile(FFrames[i].Tiles[j], FTiles[tileCnt+j]^);
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
         Inc(FFrames[i].TileMap[y,x].GlobalTileIndex, tileCnt);
@@ -1560,16 +1552,14 @@ begin
         tx := i and (cTileWidth - 1);
         ty := j and (cTileWidth - 1);
 
-        AFrame^.Tiles[False, ti].RGBPixels[ty, tx, 0] := r;
-        AFrame^.Tiles[False, ti].RGBPixels[ty, tx, 1] := g;
-        AFrame^.Tiles[False, ti].RGBPixels[ty, tx, 2] := b;
+        AFrame^.Tiles[ti].RGBPixels[ty, tx, 0] := r;
+        AFrame^.Tiles[ti].RGBPixels[ty, tx, 1] := g;
+        AFrame^.Tiles[ti].RGBPixels[ty, tx, 2] := b;
 
-        AFrame^.Tiles[False, ti].PalPixels[ty, tx] := 0;
-        AFrame^.Tiles[False, ti].Active := True;
-        AFrame^.Tiles[False, ti].AveragedCount := 1;
-        AFrame^.Tiles[False, ti].TmpIndex := -1;
-
-        CopyTile(AFrame^.Tiles[False, ti], AFrame^.Tiles[True, ti]);
+        AFrame^.Tiles[ti].PalPixels[ty, tx] := 0;
+        AFrame^.Tiles[ti].Active := True;
+        AFrame^.Tiles[ti].AveragedCount := 1;
+        AFrame^.Tiles[ti].TmpIndex := -1;
       end;
   end;
 end;
@@ -1897,9 +1887,9 @@ var
       begin
         sp := FFrames[AIndex].TileMap[sy, sx].SpritePal;
 
-        LocalTile := @FFrames[AIndex].Tiles[sp, sy * cTileMapWidth + sx];
+        LocalTile := @FFrames[AIndex].Tiles[sy * cTileMapWidth + sx];
 
-        ComputeTileDCT(LocalTile^, True, cGammaCorrectFrameTiling, LocalTile^.PaletteRGB);
+        ComputeTileDCT(LocalTile^, True, False, LocalTile^.PaletteRGB);
 
         oi := -1;
         best := MaxDouble;
@@ -1926,12 +1916,16 @@ var
   end;
 
 var
-  PassTileCount, i, j, k, ty, tx, dummy, sy, sx, frame, uc, gidx: Integer;
+  PassTileCount, i, j, k, fi, ty, tx, tc, sy, sx, frame, uc, gidx, iter: Integer;
   sp, vm, hm: Boolean;
-  Dataset, Centroids: TByteDynArray2;
-  Labels, Ds2Tr: TIntegerDynArray;
+  Dataset: TDoubleDynArray2;
+  Centroid: TDoubleDynArray;
+  Centroids: TStringList;
+  Labels: TIntegerDynArray;
+  Ds2Tr: TIntegerDynArray;
   frm: PFrame;
   tmi: PTileMapItem;
+  acc, best: Double;
 begin
   // make a list of all active tiles
 
@@ -1949,7 +1943,7 @@ begin
 
             if hm then HMirrorPalTile(TilesRepo[j].Tile);
             if vm then VMirrorPalTile(TilesRepo[j].Tile);
-            ComputeTileDCT(TilesRepo[j].Tile, True, cGammaCorrectFrameTiling, AKF^.PaletteRGB[sp]);
+            ComputeTileDCT(TilesRepo[j].Tile, True, False, AKF^.PaletteRGB[sp]);
 
             TilesRepo[j].GlobalTile := FTiles[i];
             TilesRepo[j].GlobalIndex := i;
@@ -1967,7 +1961,7 @@ begin
   SetLength(TilesRepo, j);
   SetLength(AvgBests, AKF^.EndFrame - AKF^.StartFrame + 1);
 
-  PassTileCount := 0;
+  iter := 0;
   while True do
   begin
     ProcThreadPool.DoParallelLocalProc(@DoFrame, AKF^.StartFrame, AKF^.EndFrame);
@@ -1982,8 +1976,6 @@ begin
     begin
       uc := 0;
       gidx := TilesRepo[i].GlobalIndex;
-      vm := TilesRepo[i].VMirror;
-      hm := TilesRepo[i].HMirror;
       sp := TilesRepo[i].SpritePal;
       for frame := AKF^.StartFrame to AKF^.EndFrame do
       begin
@@ -1992,7 +1984,7 @@ begin
           for sx := 0 to cTileMapWidth - 1 do
           begin
             tmi := @frm^.TileMap[sy, sx];
-            if (gidx = tmi^.GlobalTileIndex) and (vm = tmi^.VMirror) and (hm = tmi^.HMirror) and (sp = tmi^.SpritePal) then
+            if (gidx = tmi^.GlobalTileIndex) and (sp = tmi^.SpritePal) then
               Inc(uc);
           end;
       end;
@@ -2010,7 +2002,7 @@ begin
 
     // prepare a dataset of used tiles for KModes
 
-    SetLength(Dataset, j, sqr(cTileWidth));
+    SetLength(Dataset, j, sqr(cTileWidth) * 3);
     SetLength(Ds2Tr, j);
     j := 0;
     for i := 0 to High(TilesRepo) do
@@ -2020,7 +2012,8 @@ begin
 
       for ty := 0 to cTileWidth - 1 do
         for tx := 0 to cTileWidth - 1 do
-          Dataset[j, ty * cTileWidth + tx] := TilesRepo[i].GlobalTile^.PalPixels[ty, tx];
+          for tc := 0 to 2 do
+            Dataset[j, ty * cTileWidth * 3 + tx * 3 + tc] := TilesRepo[i].GlobalTile^.DCTCoeffs[ty, tx, tc];
 
       Ds2Tr[j] := i;
 
@@ -2031,32 +2024,58 @@ begin
 
     // run KModes, reducing the tile count to fit "Max tiles per frame"
 
-    PassTileCount := (3 * DesiredNbTiles + 7 * j) div 10; // 33% of target each time
-    PassTileCount := ComputeKModes(Dataset, PassTileCount, MaxInt, 0, cTilePaletteSize, 0, Labels, Centroids);
+    PassTileCount := (DesiredNbTiles + j) shr 1;
 
-    DebugLn([PassTileCount, #9, j, #9, FloatToStr(mean(AvgBests))]);
+    Centroids := TStringList.Create;
+    try
+      DoExternalYakmo(Dataset, PassTileCount, 1, False, False, False, Centroids, Labels);
 
-    for i := 0 to PassTileCount - 1 do
-    begin
-      k := GetMinMatchingDissim(Dataset, Centroids[i], dummy); // match centroid to an existing tile in the dataset
-      k := Ds2Tr[k]; // get corresponding TilesRepo index
+      DebugLn([AKF^.StartFrame, #9, iter, #9, PassTileCount, #9, j, #9, FloatToStr(mean(AvgBests))]);
 
-      for j := 0 to High(Labels) do
+      for i := 0 to PassTileCount - 1 do
       begin
-        gidx := TilesRepo[Ds2Tr[j]].GlobalIndex;
-        if Labels[j] = i then
-          for frame := AKF^.StartFrame to AKF^.EndFrame do
+        Centroid := GetSVMLightLine(i, Centroids);
+
+        // match centroid to an existing tile in the dataset
+        k := 0;
+        best := MaxDouble;
+        for j := 0 to High(Dataset) do
+        begin
+          acc := 0.0;
+          for fi := 0 to sqr(cTileWidth) * 3 - 1 do
+            if not IsNan(Centroid[fi]) then // centroids can be NaN, in this case, use first cluster item
+              acc += sqr(Dataset[j, fi] - Centroid[fi]);
+
+          if acc < best then
           begin
-            frm := @FFrames[frame];
-            for sy := 0 to cTileMapHeight - 1 do
-              for sx := 0 to cTileMapWidth - 1 do
-                if (frm^.TileMap[sy, sx].GlobalTileIndex = gidx) and (Ds2Tr[j] <> k)  then
-                  TilesRepo[Ds2Tr[j]].GlobalIndex := -2;
+            k := j;
+            best := acc;
           end;
+        end;
+
+        // get corresponding TilesRepo index
+        k := Ds2Tr[k];
+
+        for j := 0 to High(Labels) do
+        begin
+          gidx := TilesRepo[Ds2Tr[j]].GlobalIndex;
+          if Labels[j] = i then
+            for frame := AKF^.StartFrame to AKF^.EndFrame do
+            begin
+              frm := @FFrames[frame];
+              for sy := 0 to cTileMapHeight - 1 do
+                for sx := 0 to cTileMapWidth - 1 do
+                  if (frm^.TileMap[sy, sx].GlobalTileIndex = gidx) and (Ds2Tr[j] <> k)  then
+                    TilesRepo[Ds2Tr[j]].GlobalIndex := -2;
+            end;
+        end;
       end;
+    finally
+      Centroids.Free;
     end;
 
     // multi pass to get down to max DesiredNbTiles per frame
+    Inc(iter);
   end;
 end;
 
