@@ -3,7 +3,7 @@
 unit kmodes;
 
 //{$define HAS_NO_POPCNT}
-{$define GENERIC_DISSIM}
+//{$define GENERIC_DISSIM}
 
 {$mode objfpc}{$H+}
 
