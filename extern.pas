@@ -368,7 +368,7 @@ end;
 
 function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
 var
-  i, p, pp, clusterCount: Integer;
+  i, p, np, clusterCount: Integer;
   line, val, sc: String;
 begin
   // TODO: so far, only compatible with YAKMO centroids
@@ -390,11 +390,11 @@ begin
       Result[i] := 0.0;
       Continue;
     end;
-    pp := PosEx(' ', line, p) + 1;
-    if pp = 1 then
-      pp := Length(line) + 1;
-    val := Copy(line, p, pp - p - 1);
-    //writeln(i, #9 ,index,#9,p,#9,pp,#9, val);
+    np := PosEx(' ', line, p);
+    if np = 0 then
+      np := Length(line);
+    val := Copy(line, p, np - p);
+    //writeln(i, #9 ,index,#9,p,#9,np,#9, val);
     Result[i] := StrToFloat(val);
   end;
 end;

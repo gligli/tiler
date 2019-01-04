@@ -117,8 +117,6 @@ type
     UseCount, AveragedCount, TmpIndex: Integer;
   end;
 
-  TFloatFunc = function(x: Single; Data: Pointer): Single of object;
-
   PTileMapItem = ^TTileMapItem;
 
   TTileMapItem = record
@@ -148,7 +146,7 @@ type
   TTileRepo = record
     Dataset: TSingleDynArray2;
     DatasetTMIs: TTileMapItems;
-    OutputTMIs: array of array[0..cTileMapHeight, 0..cTileMapWidth] of TTileMapItem;
+    OutputTMIs: array of array[0..(cTileMapHeight - 1), 0..(cTileMapWidth - 1)] of TTileMapItem;
     Tl2Tr: TIntegerDynArray;
     pKF: PKeyFrame;
     DesiredNbTiles: Integer;
@@ -1856,7 +1854,6 @@ begin
 end;
 
 const
-  cGRTol = 1;
   cSpVmHmOffset: array[BooLean{SpritePal?}, Boolean{VMirror?}, BooLean{HMirror?}] of Integer =
     (((0, 1), (2, 3)), ((4, 5), (6, 7)));
 
@@ -1911,40 +1908,40 @@ begin
       Ct2Tr[i] := BestIdx;
       //DebugLn([i,#9,BestIdx,#9,best]);
     end;
-
-    // map frame tilemap items to "centroid" tiles
-
-    SetLength(Used, Length(FTiles));
-
-    MaxTPF := 0;
-    for frame := TR^.pKF^.StartFrame to TR^.pKF^.EndFrame do
-    begin
-      FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
-
-      frm := @FFrames[frame];
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
-        begin
-          tmi := @frm^.TileMap[sy, sx];
-          i := TR^.Tl2Tr[tmi^.GlobalTileIndex] + cSpVmHmOffset[tmi^.SpritePal, tmi^.VMirror, tmi^.HMirror];
-          i := Ct2Tr[Labels[i]];
-
-          tmiO := @TR^.OutputTMIs[frame, sy, sx];
-          tmiO^.GlobalTileIndex := TR^.DatasetTMIs[i].GlobalTileIndex;
-          tmiO^.SpritePal := TR^.DatasetTMIs[i].SpritePal;
-          tmiO^.VMirror := TR^.DatasetTMIs[i].VMirror;
-          tmiO^.HMirror := TR^.DatasetTMIs[i].HMirror;
-
-          Used[tmiO^.GlobalTileIndex] := True;
-        end;
-
-      j := 0;
-      for i := 0 to High(Used) do
-        Inc(j, Ord(Used[i]));
-      MaxTPF := max(MaxTPF, j);
-    end;
   finally
     Centroids.Free;
+  end;
+
+  // map frame tilemap items to "centroid" tiles
+
+  SetLength(Used, Length(FTiles));
+
+  MaxTPF := 0;
+  for frame := TR^.pKF^.StartFrame to TR^.pKF^.EndFrame do
+  begin
+    FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+
+    frm := @FFrames[frame];
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
+      begin
+        tmi := @frm^.TileMap[sy, sx];
+        i := TR^.Tl2Tr[tmi^.GlobalTileIndex] + cSpVmHmOffset[tmi^.SpritePal, tmi^.VMirror, tmi^.HMirror];
+        i := Ct2Tr[Labels[i]];
+
+        tmiO := @TR^.OutputTMIs[frame, sy, sx];
+        tmiO^.GlobalTileIndex := TR^.DatasetTMIs[i].GlobalTileIndex;
+        tmiO^.SpritePal := TR^.DatasetTMIs[i].SpritePal;
+        tmiO^.VMirror := TR^.DatasetTMIs[i].VMirror;
+        tmiO^.HMirror := TR^.DatasetTMIs[i].HMirror;
+
+        Used[tmiO^.GlobalTileIndex] := True;
+      end;
+
+    j := 0;
+    for i := 0 to High(Used) do
+      Inc(j, Ord(Used[i]));
+    MaxTPF := max(MaxTPF, j);
   end;
 
   Result := MaxTPF;
@@ -1952,11 +1949,10 @@ end;
 
 procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 var
-  Error, PrevError, PrevClusters, MaxClusters, MaxTPF, PassTileCount, i, j, fi, ty, tx, tc, frame, sy, sx: Integer;
+  MaxTPF, PassTileCount, i, j, fi, ty, tx, tc, frame, sy, sx: Integer;
   sp, vm, hm: Boolean;
   LocalTile: TTile;
   TilesRepo: TTileRepo;
-  NextGR: Single;
 begin
   TilesRepo.pKF := AKF;
   TilesRepo.DesiredNbTiles := DesiredNbTiles;
