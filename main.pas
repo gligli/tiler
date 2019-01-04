@@ -18,7 +18,7 @@ const
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 4;
   cGamma = 1.8;
-  cInvertSpritePalette = False;
+  cInvertSpritePalette = True;
   cGammaCorrectSmoothing = False;
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
@@ -77,57 +77,6 @@ const
   );
   cLineJitterCompensation = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
-
-  cDCTPremul = 256.0;
-  cUV = sqrt(2); //TODO: make this a user param
-  cInvUV = 1.0 / cUV; //TODO: make this a user param
-  cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of Single = (
-    (
-{$if false}
-      // JPEG standard
-      (16,  11,  10,  16,  24,  40,  51,  61),
-      (12,  12,  14,  19,  26,  58,  60,  55),
-      (14,  13,  16,  24,  40,  57,  69,  56),
-      (14,  17,  22,  29,  51,  87,  80,  62),
-      (18,  22,  37,  56,  68, 109, 103,  77),
-      (24,  35,  55,  64,  81, 104, 113,  92),
-      (49,  64,  78,  87, 103, 121, 120, 101),
-      (72,  92,  95,  98, 112, 100, 103,  99)
-{$else}
-      // optimized
-      (16, 11, 12, 15,  21,  32,  50,  66),
-      (11, 12, 13, 18,  24,  46,  62,  73),
-      (12, 13, 16, 23,  38,  56,  73,  75),
-      (15, 18, 23, 29,  53,  75,  83,  80),
-      (21, 24, 38, 53,  68,  95, 103,  94),
-      (32, 46, 56, 75,  95, 104, 117,  96),
-      (50, 62, 73, 83, 103, 117, 120, 128),
-      (66, 73, 75, 80,  94,  96, 128, 160)
-{$endif}
-    ),
-    (
-      // Improved (reduced high frequency chroma importance)
-      (17*cUV,  18*cUV,  24*cUV,  47*cUV,  99*cUV,  99*cUV,  99*cUV,  99*cUV),
-      (18*cUV,  21*cUV,  26*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV),
-      (24*cUV,  26*cUV,  56*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV),
-      (47*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV),
-      (99*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV),
-      (99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV),
-      (99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV, 256*cUV),
-      (99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV, 256*cUV, 256*cUV)
-    ),
-    (
-      // Improved (reduced high frequency chroma importance)
-      (17*cUV,  18*cUV,  24*cUV,  47*cUV,  99*cUV,  99*cUV,  99*cUV,  99*cUV),
-      (18*cUV,  21*cUV,  26*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV),
-      (24*cUV,  26*cUV,  56*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV),
-      (47*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV),
-      (99*cUV,  99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV),
-      (99*cUV,  99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV),
-      (99*cUV,  99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV, 256*cUV),
-      (99*cUV, 128*cUV, 160*cUV, 192*cUV, 224*cUV, 224*cUV, 256*cUV, 256*cUV)
-    )
-  );
 
   cDitheringMap : array[0..8*8 - 1] of Byte = (
      0, 48, 12, 60,  3, 51, 15, 63,
@@ -1417,7 +1366,6 @@ begin
           end;
 
 		    coeff := cUVRatio[u] * vRatio * z;
-        coeff := coeff * 255.0 / cDCTQuantization[cpn, v, u];
 
         ATile.DCTCoeffs[cpn,v,u] := coeff;
 	    end;
@@ -1547,7 +1495,7 @@ begin
   RGBToYUV(r1, g1, b1, y1, u1, v1);
   RGBToYUV(r2, g2, b2, y2, u2, v2);
 
-  Result := sqr(y1 - y2) + (sqr(u1 - u2) + sqr(v1 - v2)) * cInvUV;
+  Result := sqr(y1 - y2) + (sqr(u1 - u2) + sqr(v1 - v2)) * (1.0 / sqrt(2.0));
 end;
 
 function TMainForm.ColorCompareRGBYUV(r, g, b, y, u, v: Single): Single;
@@ -1556,7 +1504,7 @@ var
 begin
   RGBToYUV(r, g, b, y1, u1, v1);
 
-  Result := sqr(y1 - y) + (sqr(u1 - u) + sqr(v1 - v)) * cInvUV;
+  Result := sqr(y1 - y) + (sqr(u1 - u) + sqr(v1 - v)) * (1.0 / sqrt(2.0));
 end;
 
 procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
@@ -1980,12 +1928,16 @@ begin
     for i := 0 to High(TilesRepo) do
       Dataset[i] := TilesRepo[i].Occurence;
 
-    PassTileCount := (DesiredNbTiles * Length(cSpVmHmOffset) + Length(Dataset)) div 2;
+    PassTileCount := round(DesiredNbTiles * Length(cSpVmHmOffset) * ln(1 + Length(Dataset) / Length(cSpVmHmOffset)));
     PassTileCount -= Ord(odd(PassTileCount));
 
     iter := 0;
     repeat
+      // cluster all tiles duplicated fos SpritePal? / VMirror? / HMirror?
+
       DoExternalYakmo(Dataset, PassTileCount, 1, False, False, False, Centroids, Labels);
+
+      // search tiles closest to centroids
 
       SetLength(Ct2Tr, PassTileCount);
       for i := 0 to PassTileCount - 1 do
@@ -2010,6 +1962,8 @@ begin
         //DebugLn([i,#9,BestIdx,#9,best]);
       end;
 
+      // map frame tilemap items to "centroid" tiles
+
       j := 0;
       for frame := AKF^.StartFrame to AKF^.EndFrame do
       begin
@@ -2033,7 +1987,7 @@ begin
       DebugLn([AKF^.StartFrame, #9, iter, #9, PassTileCount, #9, Length(Dataset), #9, GetMaxTPF]);
 
       Inc(iter);
-      PassTileCount := round(PassTileCount * 0.9);
+      PassTileCount := round(PassTileCount * 0.95);
 
     until GetMaxTPF <= DesiredNbTiles;
 
