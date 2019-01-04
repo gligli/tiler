@@ -7,7 +7,7 @@ uses
   cthreads,
   {$ENDIF}{$ENDIF}
   Interfaces, // this includes the LCL widgetset
-  Forms, main, kmodes, sysutils, LCLType;
+  Forms, main, kmodes, sysutils, LCLType, Controls;
 
 {$R *.res}
 
@@ -23,6 +23,7 @@ type
 
 procedure TEvtHolder.AppException(Sender: TObject; E: Exception);
 begin
+  Screen.Cursor := crDefault;
   TApplication(Sender).MessageBox(PChar(Format('Exception %s was thwrown:' + sLineBreak + '%s' + sLineBreak, [e.ClassName, e.Message])), PChar(Application.Title), MB_ICONERROR);
 end;
 

@@ -8,19 +8,20 @@ uses
   Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
-  TDoubleDynArray2 = array of TDoubleDynArray;
+  TSingleDynArray2 = array of TSingleDynArray;
 
-procedure DoExternalSKLearn(Dataset: TDoubleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(Dataset: TDoubleDynArray2; ClusterCount, RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+procedure DoExternalSKLearn(Dataset: TSingleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(Dataset: TSingleDynArray2; ClusterCount, RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Double;
 
-procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList);
-function GenerateSVMLightFile(Dataset: TDoubleDynArray2): String;
-function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
+procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList);
+function GenerateSVMLightFile(Dataset: TSingleDynArray2): String;
+function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
 
 implementation
 
 Const
+  QNaN = Abs(0.0/0.0);
   READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
 
 // helperfunction that does the bulk of the work.
@@ -134,7 +135,7 @@ begin
   end;
 end;
 
-procedure DoExternalSKLearn(Dataset: TDoubleDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
+procedure DoExternalSKLearn(Dataset: TSingleDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
   var Clusters: TIntegerDynArray);
 var
   i, j, st: Integer;
@@ -202,7 +203,7 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(Dataset: TDoubleDynArray2; ClusterCount, RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean;
+procedure DoExternalYakmo(Dataset: TSingleDynArray2; ClusterCount, RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean;
   Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
   i, Clu, Inp: Integer;
@@ -226,7 +227,8 @@ begin
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
     Process.Executable := 'yakmo.exe';
 
-    CommonCL := IfThen(not NoClusters, ' -O 2 ') + ' -k ' + IntToStr(ClusterCount) + ' -m ' + IntToStr(RestartCount);
+    CommonCL := IfThen(not NoClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
+    CommonCL += ' --num-result=' + IntToStr(RestartCount) + ' --iteration=9999 ';//--init-centroid=2 ';
 
     if TestMode then
       Process.Parameters.Add('- "' + CrFN + '" "' + InFN + '" ' + CommonCL)
@@ -333,7 +335,7 @@ begin
   end;
 end;
 
-procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList);
+procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList);
 var
   i, j: Integer;
   Line: String;
@@ -349,7 +351,7 @@ begin
   end;
 end;
 
-function GenerateSVMLightFile(Dataset: TDoubleDynArray2): String;
+function GenerateSVMLightFile(Dataset: TSingleDynArray2): String;
 var
   SL: TStringList;
 begin
@@ -365,10 +367,10 @@ begin
   end;
 end;
 
-function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
+function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
 var
   i, p, pp, clusterCount: Integer;
-  line: String;
+  line, val, sc: String;
 begin
   // TODO: so far, only compatible with YAKMO centroids
 
@@ -382,12 +384,19 @@ begin
   line := lines[lines.Count - clusterCount + index];
   for i := 0 to High(Result) do
   begin
-    p := Pos(':', line) + 1;
+    sc := ' ' + IntToStr(i + 1) + ':';
+    p := Pos(sc, line) + Length(sc);
+    if p = Length(sc) then
+    begin
+      Result[i] := 0.0;
+      Continue;
+    end;
     pp := PosEx(' ', line, p) + 1;
     if pp = 1 then
       pp := Length(line) + 1;
-    Result[i] := StrToFloatDef(Copy(line, p, pp - p - 1), NaN);
-    line := Copy(line, pp);
+    val := Copy(line, p, pp - p - 1);
+    //writeln(i, #9 ,index,#9,p,#9,pp,#9, val);
+    Result[i] := StrToFloat(val);
   end;
 end;
 
