@@ -21,7 +21,6 @@ function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
 implementation
 
 Const
-  QNaN = Abs(0.0/0.0);
   READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
 
 // helperfunction that does the bulk of the work.

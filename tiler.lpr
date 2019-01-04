@@ -31,11 +31,15 @@ var
   EvtHolder: TEvtHolder;
 begin
   EvtHolder := TEvtHolder.Create;
-  RequireDerivedFormResource:=True;
-  Application.Initialize;
-  Application.CreateForm(TMainForm, MainForm);
-  Application.Title := MainForm.Caption;
-  Application.OnException := @EvtHolder.AppException;
-  Application.Run;
+  try
+    RequireDerivedFormResource:=True;
+    Application.Initialize;
+    Application.CreateForm(TMainForm, MainForm);
+    Application.Title := MainForm.Caption;
+    Application.OnException := @EvtHolder.AppException;
+    Application.Run;
+  finally
+    EvtHolder.Free;
+  end;
 end.
 
