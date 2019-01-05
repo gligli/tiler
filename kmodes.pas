@@ -636,7 +636,7 @@ begin
       for i := 0 to NumAttrs - 1 do
         FillDWord(cl_attr_freq[j, i, 0], ANumModalities, 0);
 
-    ProcThreadPool.DoParallel(@DoMembship, 0, NumThreads - 1, @Result, NumThreads);
+    ProcThreadPool.DoParallel(@DoMembship, 0, NumThreads - 1, nil, NumThreads);
 
     for ik := 0 to NumClusters - 1  do
     begin
