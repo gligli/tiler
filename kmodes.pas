@@ -1,4 +1,4 @@
-// Ported from https://github.com/nicodv/kmodes
+// Inspired by https://github.com/nicodv/kmodes
 
 unit kmodes;
 
@@ -13,6 +13,7 @@ uses
   Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows;
 
 type
+  PInteger = ^Integer;
   TCompareFunction=function(Item1,Item2,UserParameter:Pointer):Integer;
   TIntegerDynArray2 = array of TIntegerDynArray;
   TIntegerDynArray3 = array of TIntegerDynArray2;
@@ -20,11 +21,46 @@ type
   TUInt64DynArray = array of UInt64;
   TSpinlock = LongInt;
 
+  TKmodesRun = packed record
+    Labels: TIntegerDynArray;
+    Centroids: TByteDynArray2;
+    Cost: Integer;
+    NIter: Integer;
+    TotalMoves: Integer;
+    StartingPoint: Integer;
+  end;
+
+  { TKModes }
+
+  TKModes = class
+  private
+    membship, labels: TIntegerDynArray;
+    X: TByteDynArray2;
+    centroids: TByteDynArray2;
+    cl_attr_freq: TIntegerDynArray3;
+    MaxIter, NumClusters, NumThreads, NumAttrs, NumPoint: Integer;
+
+    procedure DoCost(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure DoMembship(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+
+    function CountClusterMembers(cluster: Integer): Integer;
+    function GetMaxClusterMembers(out member_count: Integer): Integer;
+    function LabelsCost: Integer;
+    function KModesIter(var Seed: Cardinal): Integer;
+    function InitFarthestFirst(init_point: Integer): TByteDynArray2;  // negative init_point means randomly chosen
+    procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
+  public
+    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0);
+    function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
+  end;
+
+
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): Byte;
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
-function ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities, n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
+
+
 // negative n_init means use -n_init as starting point
 // FinalLabels cluster indexes start at 1
 
@@ -96,14 +132,14 @@ begin
   Result := CompareValue(PByte(UserParameter)[PInteger(Item1)^], PByte(UserParameter)[PInteger(Item2)^]);
 end;
 
-function GetLocPoints(AIndex, n_chunks, npoints: Integer; out n_loc_points: Integer): Integer;
+function GetLocPoints(AIndex, n_chunks, NumPoint: Integer; out n_loc_points: Integer): Integer;
 var
   nlp: Integer;
 begin
-  nlp := npoints div n_chunks;
+  nlp := NumPoint div n_chunks;
   Result := AIndex * nlp;
   if AIndex = n_chunks - 1 then
-    nlp := npoints - Result;
+    nlp := NumPoint - Result;
 
   n_loc_points := nlp;
 end;
@@ -176,7 +212,7 @@ end;
 function CountUniqueRows(const X: TByteDynArray2): Integer;
 var
   i, Cnt: Integer;
-  nattrs: Integer;
+  NumAttrs: Integer;
   unique: TByteDynArray2;
 begin
   Result := 0;
@@ -184,14 +220,14 @@ begin
   if Length(X) < 1 then
     Exit;
 
-  nattrs := Length(X[0]);
+  NumAttrs := Length(X[0]);
 
   unique := Copy(X);
-  QuickSort(unique[0], 0, High(unique), SizeOf(TByteDynArray), @CompareLines, Pointer(nattrs));
+  QuickSort(unique[0], 0, High(unique), SizeOf(TByteDynArray), @CompareLines, Pointer(NumAttrs));
 
   Cnt := Length(unique);
   for i := High(unique) - 1 downto 0 do
-    if CompareByte(unique[i, 0], unique[i + 1, 0], nattrs) = 0 then
+    if CompareByte(unique[i, 0], unique[i + 1, 0], NumAttrs) = 0 then
       Dec(Cnt);
   Result := Cnt;
 end;
@@ -289,7 +325,8 @@ begin
   bestDissim := db shr cIdxWidth;
 end;
 
-function CountClusterMembers(cluster: Integer; const membship: TIntegerDynArray): Integer;
+
+function TKModes.CountClusterMembers(cluster: Integer): Integer;
 var
   i: Integer;
   pm: PInteger;
@@ -304,7 +341,7 @@ begin
   end;
 end;
 
-function GetMaxClusterMembers(n_clusters: Integer; const membship: TIntegerDynArray; out member_count: Integer): Integer;
+function TKModes.GetMaxClusterMembers(out member_count: Integer): Integer;
 var
   quantum, mc_loc, mc, cluster, i: Integer;
   pm0, pm1, pm2, pm3: PInteger;
@@ -313,7 +350,7 @@ begin
   mc := 0;
   quantum := Length(membship) shr 2;
 
-  for cluster := 0 to n_clusters - 1 do
+  for cluster := 0 to NumClusters - 1 do
   begin
     mc_loc := 0;
     pm0 := @membship[quantum * 0];
@@ -345,9 +382,9 @@ begin
 end;
 
 
-procedure InitFarthestFirst(const X: TByteDynArray2; n_clusters, init_point: Integer; var centroids: TByteDynArray2);  // negative init_point means randomly chosen
+function TKModes.InitFarthestFirst(init_point: Integer): TByteDynArray2;  // negative init_point means randomly chosen
 var
-  nattrs, npoints, icentroid, ifarthest: Integer;
+  icentroid, ifarthest: Integer;
   used: TBooleanDynArray;
   mindistance: TByteDynArray;
 
@@ -356,7 +393,7 @@ var
     i: Integer;
     dis: Byte;
   begin
-    for i := 0 to npoints - 1 do
+    for i := 0 to NumPoint - 1 do
       if not used[i] then
       begin
         dis := MatchingDissim(X[icenter], X[i]);
@@ -372,7 +409,7 @@ var
   begin
     max := 0;
     Result := -1;
-    for i := 0 to npoints - 1 do
+    for i := 0 to NumPoint - 1 do
       if not used[i] and (max <= mindistance[i]) then
       begin
         max := mindistance[i];
@@ -381,68 +418,61 @@ var
   end;
 
 begin
-  nattrs := Length(X[0]);
-  npoints := Length(X);
-  SetLength(centroids, n_clusters, nattrs);
-  SetLength(used, npoints);
-  SetLength(mindistance, npoints);
+  SetLength(Result, NumClusters, NumAttrs);
+  SetLength(used, NumPoint);
+  SetLength(mindistance, NumPoint);
 
-  for icentroid := 0 to n_clusters - 1 do
-    FillByte(centroids[icentroid, 0], nattrs, High(Byte));
-  FillChar(used[0], npoints, False);
-  FillByte(mindistance[0], npoints, High(Byte));
+  for icentroid := 0 to NumClusters - 1 do
+    FillByte(Result[icentroid, 0], NumAttrs, High(Byte));
+  FillChar(used[0], NumPoint, False);
+  FillByte(mindistance[0], NumPoint, High(Byte));
 
   ifarthest := init_point;
-  Move(X[ifarthest, 0], centroids[icentroid, 0], nattrs);
+  Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
   used[ifarthest] := True;
   UpdateMinDistance(ifarthest);
 
-  for icentroid := 0 to n_clusters - 1 do
+  for icentroid := 0 to NumClusters - 1 do
   begin
     ifarthest := FarthestAway;
 
-    Move(X[ifarthest, 0], centroids[icentroid, 0], nattrs);
+    Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
     used[ifarthest] := True;
     UpdateMinDistance(ifarthest);
   end;
 end;
 
-function LabelsCost(const X, centroids: TByteDynArray2; var labels: TIntegerDynArray; n_threads: Integer): Integer;
-
+procedure TKModes.DoCost(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  npoints: Integer;
+  clust, dis, dis_acc: Integer;
+  n_loc_points, ipoint, iloc: Integer;
+begin
+  ipoint := GetLocPoints(AIndex, NumThreads, NumPoint, n_loc_points);
 
-  procedure DoCost(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    clust, dis, dis_acc: Integer;
-    n_loc_points, ipoint, iloc: Integer;
+  dis_acc := 0;
+
+  for iloc := 0 to n_loc_points - 1 do
   begin
-    ipoint := GetLocPoints(AIndex, n_threads, npoints, n_loc_points);
+    clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
+    labels[ipoint] := clust;
 
-    dis_acc := 0;
-
-    for iloc := 0 to n_loc_points - 1 do
-    begin
-      clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
-      labels[ipoint] := clust;
-
-      Inc(dis_acc, dis);
-      Inc(ipoint);
-    end;
-
-    InterLockedExchangeAdd(Result, dis_acc);
+    Inc(dis_acc, dis);
+    Inc(ipoint);
   end;
 
-begin
-  npoints := Length(X);
-  Result := 0;
-  SetLength(labels, npoints);
-  FillDWord(labels[0], npoints, 0);
-
-  ProcThreadPool.DoParallelLocalProc(@DoCost, 0, n_threads - 1, nil, n_threads);
+  InterLockedExchangeAdd(PInteger(AData)^, dis_acc);
 end;
 
-procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer; var cl_attr_freq: TIntegerDynArray3; var centroids: TByteDynArray2; var membship: TIntegerDynArray);
+function TKModes.LabelsCost: Integer;
+begin
+  Result := 0;
+  SetLength(labels, NumPoint);
+  FillDWord(labels[0], NumPoint, 0);
+
+  ProcThreadPool.DoParallel(@DoCost, 0, NumThreads - 1, @Result, NumThreads);
+end;
+
+procedure TKModes.MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
 var
   iattr, curattr, current_attribute_value_freq, current_centroid_value, current_centroid_freq, old_centroid_value: Integer;
   to_attr_counts, from_attr_counts: TIntegerDynArray;
@@ -472,18 +502,25 @@ begin
   end;
 end;
 
-function KModesIter(const X: TByteDynArray2; var cl_attr_freq: TIntegerDynArray3; var centroids: TByteDynArray2; var membship: TIntegerDynArray; var Seed: Cardinal): Integer;
+constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer);
+begin
+  inherited Create;
+
+  Self.MaxIter := aMaxIter;
+  Self.NumThreads := aNumThreads;
+end;
+
+function TKModes.KModesIter(var Seed: Cardinal): Integer;
 var
-  npoints, ipoint, dummy, clust, old_clust, from_clust, rindx, cnt, dis, n_clusters: Integer;
+  ipoint, clust, old_clust, from_clust, rindx, cnt, dis, n_clusters: Integer;
   choices: TIntegerDynArray;
 begin
   n_clusters := Length(centroids);
-  npoints := Length(X);
   Result := 0;
 
-  SetLength(choices, npoints);
+  SetLength(choices, NumPoint);
 
-  for ipoint := 0 to npoints - 1 do
+  for ipoint := 0 to NumPoint - 1 do
   begin
     clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
 
@@ -492,141 +529,126 @@ begin
       Inc(Result);
       old_clust := membship[ipoint];
 
-      MovePointCat(X[ipoint], ipoint, clust, old_clust, cl_attr_freq, centroids, membship);
+      MovePointCat(X[ipoint], ipoint, clust, old_clust);
 
-      if CountClusterMembers(old_clust, membship) = 0 then
+      if CountClusterMembers(old_clust) = 0 then
       begin
-        from_clust := GetMaxClusterMembers(n_clusters, membship, dummy);
-        cnt := CountClusterMembers(from_clust, membship);
+        from_clust := GetMaxClusterMembers(n_clusters);
+        cnt := CountClusterMembers(from_clust);
         rindx := choices[RandInt(cnt, Seed)];
 
-        MovePointCat(X[rindx], rindx, old_clust, from_clust, cl_attr_freq, centroids, membship);
+        MovePointCat(X[rindx], rindx, old_clust, from_clust);
       end;
     end;
   end;
 end;
 
-type
-  TKmodesRun = packed record
-    Labels: TIntegerDynArray;
-    Centroids: TByteDynArray2;
-    Cost: Integer;
-    NIter: Integer;
-    TotalMoves: Integer;
-    StartingPoint: Integer;
-  end;
+procedure TKModes.DoMembship(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+var
+  iattr, clust, n_loc_points, ipoint, iloc, dummy: Integer;
+begin
+  ipoint := GetLocPoints(AIndex, NumThreads, NumPoint, n_loc_points);
 
-function ComputeKModes(const X: TByteDynArray2; n_clusters, max_iter, n_init, n_modalities,
-  n_threads: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
+  //DebugLn([ipoint,#9,n_loc_points, #9,n_threads]);
+
+  for iloc := 0 to n_loc_points - 1 do
+  begin
+    clust := GetMinMatchingDissim(centroids, X[ipoint], dummy);
+
+    membship[ipoint] := clust;
+
+    for iattr := 0 to NumAttrs - 1 do
+      InterLockedIncrement(cl_attr_freq[clust, iattr, X[ipoint, iattr]]);
+
+    Inc(ipoint);
+  end;
+end;
+
+function TKModes.ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer;
+  var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
 var
   init: TByteDynArray2;
-  npoints, nattrs: Integer;
   all: array of TKmodesRun;
-  cl_attr_freq: TIntegerDynArray3;
-  centroids: TByteDynArray2;
-  membship: TIntegerDynArray;
-
-  procedure DoMembship(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    iattr, clust, dis, dis_acc: Integer;
-    n_loc_points, ipoint, iloc: Integer;
-  begin
-    ipoint := GetLocPoints(AIndex, n_threads, npoints, n_loc_points);
-    dis_acc := 0;
-
-    //DebugLn([ipoint,#9,n_loc_points, #9,n_threads]);
-
-    for iloc := 0 to n_loc_points - 1 do
-    begin
-      clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
-
-      membship[ipoint] := clust;
-
-      for iattr := 0 to nattrs - 1 do
-        InterLockedIncrement(cl_attr_freq[clust, iattr, X[ipoint, iattr]]);
-
-      Inc(dis_acc, dis);
-      Inc(ipoint);
-    end;
-
-    InterLockedExchangeAdd(Result, dis_acc);
-  end;
-
 var
   best, i, j, init_no, iattr, ik, summemb, itr, moves, totalmoves: Integer;
   converged: Boolean;
   cost, ncost: Integer;
-  labels: TIntegerDynArray;
   InvGoldenRatio, GRAcc: Double;
   Seed: Cardinal;
 begin
   Seed := $42381337;
 
-  npoints := Length(X);
+  X := ADataset;
 
-  nattrs := 0;
-  if npoints > 0 then
-    nattrs := Length(X[0]);
+  NumPoint := Length(X);
+  NumClusters := ANumClusters;
 
-  if n_threads <= 0 then
-    n_threads := ProcThreadPool.MaxThreadCount;
+  NumAttrs := 0;
+  if NumPoint > 0 then
+    NumAttrs := Length(X[0]);
+
+  if NumThreads <= 0 then
+    NumThreads := ProcThreadPool.MaxThreadCount;
+
+  if MaxIter <= 0 then
+    MaxIter := MaxInt;
 
   init := nil;
-  if CountUniqueRows(X) <= n_clusters then
+  if CountUniqueRows(X) <= NumClusters then
   begin
-    max_iter := 0;
-    n_init := 1;
+    MaxIter := 0;
+    ANumInit := 1;
     init := GetUniqueRows(X);
-    n_clusters := Length(init);
+    NumClusters := Length(init);
   end;
 
-  if n_init <= 0 then
+  if ANumInit <= 0 then
   begin
     SetLength(all, 1);
-    all[0].StartingPoint := -n_init;
+    all[0].StartingPoint := -ANumInit;
   end
   else
   begin
-    SetLength(all, n_init);
-    InvGoldenRatio := power(npoints, 1 / n_init);
+    SetLength(all, ANumInit);
+    InvGoldenRatio := power(NumPoint, 1 / ANumInit);
     GRAcc := 1;
-    for i := 0 to n_init - 1 do
+    for i := 0 to ANumInit - 1 do
     begin
       all[i].StartingPoint := Round(GRAcc) - 1;
       if (i > 0) and (all[i].StartingPoint <= all[i - 1].StartingPoint) then
-        all[i].StartingPoint := Min(npoints - 1, all[i - 1].StartingPoint + 1);
+        all[i].StartingPoint := Min(NumPoint - 1, all[i - 1].StartingPoint + 1);
       GRAcc := GRAcc * InvGoldenRatio;
     end;
   end;
 
   for init_no := 0 to High(all) do
   begin
-    SetLength(membship, npoints);
-    SetLength(cl_attr_freq, n_clusters, nattrs, n_modalities);
+    SetLength(membship, NumPoint);
+    SetLength(cl_attr_freq, NumClusters, NumAttrs, ANumModalities);
 
     if init = nil then
-      InitFarthestFirst(X, n_clusters, all[init_no].StartingPoint, centroids)
+      centroids := InitFarthestFirst(all[init_no].StartingPoint)
     else
       centroids := init;
 
-    FillDWord(membship[0], npoints, $ffffffff);
-    for j := 0 to n_clusters - 1 do
-      for i := 0 to nattrs - 1 do
-        FillDWord(cl_attr_freq[j, i, 0], n_modalities, 0);
+    FillDWord(membship[0], NumPoint, $ffffffff);
+    for j := 0 to NumClusters - 1 do
+      for i := 0 to NumAttrs - 1 do
+        FillDWord(cl_attr_freq[j, i, 0], ANumModalities, 0);
 
-    ProcThreadPool.DoParallelLocalProc(@DoMembship, 0, n_threads - 1, nil, n_threads);
+    ProcThreadPool.DoParallel(@DoMembship, 0, NumThreads - 1, @Result, NumThreads);
 
-    for ik := 0 to n_clusters - 1  do
+    for ik := 0 to NumClusters - 1  do
     begin
-      summemb := CountClusterMembers(ik, membship);
+      summemb := CountClusterMembers(ik);
       if summemb = 0 then
       begin
-        for iattr := 0 to nattrs - 1 do
-          centroids[ik, iattr] := X[RandInt(npoints, Seed), iattr]
+        for iattr := 0 to NumAttrs - 1 do
+          centroids[ik, iattr] := X[RandInt(NumPoint, Seed), iattr]
       end
       else
       begin
-         for iattr := 0 to nattrs - 1 do
+         for iattr := 0 to NumAttrs - 1 do
            centroids[ik, iattr] := GetMaxValueIndex(cl_attr_freq[ik, iattr]);
       end;
     end;
@@ -636,12 +658,12 @@ begin
     cost := MaxInt;
     totalmoves := 0;
 
-    while (itr <= max_iter) and not converged do
+    while (itr <= MaxIter) and not converged do
     begin
       Inc(itr);
 
-      moves := KModesIter(X, cl_attr_freq, centroids, membship, Seed);
-      ncost := LabelsCost(X, centroids, labels, n_threads);
+      moves := KModesIter(Seed);
+      ncost := LabelsCost;
 
       converged := (moves = 0) or (ncost >= cost);
       cost := ncost;
