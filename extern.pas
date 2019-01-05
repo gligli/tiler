@@ -11,11 +11,11 @@ type
   TSingleDynArray2 = array of TSingleDynArray;
 
 procedure DoExternalSKLearn(Dataset: TSingleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(Dataset: TSingleDynArray2; ClusterCount, RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(Dataset: TSingleDynArray2; var ClusterCount: Integer; RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Double;
 
-procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList);
-function GenerateSVMLightFile(Dataset: TSingleDynArray2): String;
+procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList; Header: Boolean);
+function GenerateSVMLightFile(Dataset: TSingleDynArray2; Header: Boolean): String;
 function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
 
 implementation
@@ -202,8 +202,8 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(Dataset: TSingleDynArray2; ClusterCount, RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean;
-  Centroids: TStringList; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(Dataset: TSingleDynArray2; var ClusterCount: Integer; RestartCount: Integer; TestMode,
+  NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
   i, Clu, Inp: Integer;
   InFN, CrFN, Line, Output, ErrOut, CommonCL: String;
@@ -211,11 +211,25 @@ var
   Process: TProcess;
   OutputStream: TMemoryStream;
 begin
+  if ClusterCount >= Length(Dataset) then
+  begin
+    ClusterCount := Length(Dataset);
+
+    SetLength(Clusters, Length(Dataset));
+    for i := 0 to High(Dataset) do
+      Clusters[i] := i;
+
+    if not TestMode and Assigned(Centroids) then
+      GenerateSVMLightData(Dataset, Centroids, True);
+
+    Exit;
+  end;
+
   Process := TProcess.Create(nil);
   SL := TStringList.Create;
   OutputStream := TMemoryStream.Create;
   try
-    InFN := GenerateSVMLightFile(Dataset);
+    InFN := GenerateSVMLightFile(Dataset, False);
 
     if Assigned(Centroids) then
       CrFN := GetTempFileName('', 'centroids-'+IntToStr(GetCurrentThreadId)+'.txt');
@@ -227,7 +241,7 @@ begin
     Process.Executable := 'yakmo.exe';
 
     CommonCL := IfThen(not NoClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
-    CommonCL += ' --num-result=' + IntToStr(RestartCount) + ' --iteration=9999 ';//--init-centroid=2 ';
+    CommonCL += ' --num-result=' + IntToStr(RestartCount) + ' --iteration=10000 ';//--init-centroid=2 ';
 
     if TestMode then
       Process.Parameters.Add('- "' + CrFN + '" "' + InFN + '" ' + CommonCL)
@@ -247,6 +261,7 @@ begin
 
     if Assigned(Centroids) and not TestMode then
       Centroids.LoadFromFile(CrFN);
+      // TODO: compute real ClusterCount from centroids
 
     if Assigned(Centroids) then
       DeleteFile(PChar(CrFN));
@@ -266,6 +281,8 @@ begin
             TryStrToInt(RightStr(Line, Pos(' ', ReverseString(Line)) - 1), Clu) then
           Clusters[Inp] := Clu;
       end;
+
+      ClusterCount := MaxIntValue(Clusters) + 1;
     end;
   finally
     OutputStream.Free;
@@ -334,12 +351,19 @@ begin
   end;
 end;
 
-procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList);
+procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList; Header: Boolean);
 var
   i, j: Integer;
   Line: String;
 begin
   Output.Clear;
+
+  if Header then
+  begin
+    Output.Add('-1 # m');
+    Output.Add(IntToStr(Length(Dataset)) + ' # k');
+    Output.Add(IntToStr(Length(Dataset[0])) + ' # number of features');
+  end;
 
   for i := 0 to High(Dataset) do
   begin
@@ -350,13 +374,13 @@ begin
   end;
 end;
 
-function GenerateSVMLightFile(Dataset: TSingleDynArray2): String;
+function GenerateSVMLightFile(Dataset: TSingleDynArray2; Header: Boolean): String;
 var
   SL: TStringList;
 begin
   SL := TStringList.Create;
   try
-    GenerateSVMLightData(Dataset, SL);
+    GenerateSVMLightData(Dataset, SL, Header);
 
     Result := GetTempFileName('', 'dataset-'+IntToStr(GetCurrentThreadId)+'.txt');
 
@@ -375,7 +399,7 @@ begin
 
   line := lines[1];
   clusterCount := StrToInt(copy(line, 1, Pos(' ', line) - 1));
-  Assert(InRange(index, 0, clusterCount), 'wrong index!');
+  Assert(InRange(index, 0, clusterCount - 1), 'wrong index!');
 
   line := lines[2];
   SetLength(Result, StrToInt(copy(line, 1, Pos(' ', line) - 1)));
