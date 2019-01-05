@@ -18,12 +18,12 @@ const
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 4;
   cGamma = 1.8;
-  cInvertSpritePalette = True;
+  cInvertSpritePalette = False;
   cGammaCorrectSmoothing = False;
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
-  cKFMaxTPFSearchRatio = 0.95;
+  cKFMaxTPFSearchRatio = 0.92;
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
@@ -471,29 +471,29 @@ begin
   tbFrameChange(nil);
 end;
 
+procedure DoPre(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+begin
+  TMainForm(AData).PreDitherTiles(@TMainForm(AData).FFrames[AIndex]);
+end;
+
+procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+begin
+  TMainForm(AData).FindBestKeyframePalette(@TMainForm(AData).FKeyFrames[AIndex]);
+end;
+
+procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+begin
+  TMainForm(AData).FinalDitherTiles(@TMainForm(AData).FFrames[AIndex]);
+end;
+
 procedure TMainForm.btnDitherClick(Sender: TObject);
-  procedure DoPre(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    PreDitherTiles(@FFrames[AIndex]);
-  end;
-
-  procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    FindBestKeyframePalette(@FKeyFrames[AIndex]);
-  end;
-
-  procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    FinalDitherTiles(@FFrames[AIndex]);
-  end;
-
 begin
   ProgressRedraw(-1, esDither);
-  ProcThreadPool.DoParallelLocalProc(@DoPre, 0, High(FFrames));
+  ProcThreadPool.DoParallel(@DoPre, 0, High(FFrames), Self);
   ProgressRedraw(1);
-  ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, High(FKeyFrames));
+  ProcThreadPool.DoParallel(@DoFindBest, 0, High(FKeyFrames), Self);
   ProgressRedraw(2);
-  ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
+  ProcThreadPool.DoParallel(@DoFinal, 0, High(FFrames), Self);
   ProgressRedraw(3);
 
   tbFrameChange(nil);
@@ -504,24 +504,19 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
-  procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    DoKeyframeTiling(@FKeyFrames[AIndex], seMaxTPF.Value);
-  end;
+procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+begin
+  TMainForm(AData).DoKeyframeTiling(@TMainForm(AData).FKeyFrames[AIndex], TMainForm(AData).seMaxTPF.Value);
+end;
 
-//var
-//  i: Integer;
+procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
 begin
   ProgressRedraw(-1, esFrameTiling);
 
   if Length(FFrames) = 0 then
     Exit;
 
-  //for i := 0 to High(FKeyFrames) do
-  //  DoKeyframeTiling(@FKeyFrames[i], seMaxTPF.Value);
-
-  ProcThreadPool.DoParallelLocalProc(@DoKF, 0, High(FKeyFrames));
+  ProcThreadPool.DoParallel(@DoKF, 0, High(FKeyFrames), Self);
 
   ProgressRedraw(1);
 
@@ -784,7 +779,7 @@ procedure TMainForm.btnSmoothClick(Sender: TObject);
   var i: Integer;
   begin
     for i := cSmoothingPrevFrame to High(FFrames) do
-      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 10);
+      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 80.0);
   end;
 begin
   ProgressRedraw(-1, esSmooth);
@@ -1027,7 +1022,7 @@ begin
 
       // dither using full RGB palette
 
-      Move(Tile_^, FullPalTile, SizeOf(TTile));
+      CopyTile(Tile_^, FullPalTile);
 
       DitherTile(FullPalTile, CMPlan);
 
@@ -2105,6 +2100,7 @@ var
   Found: Boolean;
   ToMerge: array of Integer;
   WasActive: TBooleanDynArray;
+  KModes: TKModes;
 begin
   SetLength(Dataset, Length(FTiles), sqr(cTileWidth));
   SetLength(WasActive, Length(FTiles));
@@ -2145,9 +2141,14 @@ begin
 
   ProgressRedraw(1);
 
-  // run the KModes algorighm, which will group similar tiles until it reaches a fixed amount of groups
+  // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ActualNbTiles := ComputeKModes(Dataset, DesiredNbTiles, MaxInt, -min(StartingPointLo, StartingPointUp), cTilePaletteSize, 0, Labels, Centroids);
+  KModes := TKModes.Create;
+  try
+    ActualNbTiles := KModes.ComputeKModes(Dataset, DesiredNbTiles, -min(StartingPointLo, StartingPointUp), cTilePaletteSize, Labels, Centroids);
+  finally
+    KModes.Free;
+  end;
 
   ProgressRedraw(2);
 
