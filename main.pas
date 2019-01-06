@@ -23,7 +23,7 @@ const
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
-  cKFMaxTPFSearchRatio = 0.92;
+  cKFMaxTPFSearchRatio = 0.95;
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
@@ -2008,7 +2008,7 @@ begin
 
   // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
-  PassTileCount := round(DesiredNbTiles * Length(cSpVmHmOffset) * ln(1 + Length(TilesRepo.Dataset) / Length(cSpVmHmOffset)));
+  PassTileCount := round(DesiredNbTiles * Length(cSpVmHmOffset) * ln(1.0 + Length(TilesRepo.Dataset) / 12.0));
   PassTileCount -= Ord(odd(PassTileCount));
 
   repeat
