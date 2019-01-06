@@ -57,7 +57,7 @@ type
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): Byte;
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64;
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
 
 
@@ -260,7 +260,7 @@ begin
   Result := (Result * h1) shr 56; //returns left 8 bits of Result + (Result<<8) + (Result<<16) + (Result<<24) + ...
 end;
 
-function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): Byte; assembler; nostackframe;
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; register; assembler; nostackframe;
 asm
   // SIMD for 64 items
 
@@ -301,20 +301,21 @@ asm
   {$endif}
 
 end ['r8', 'xmm0', 'xmm1', 'xmm2', 'xmm3', 'xmm4', 'xmm5', 'xmm6', 'xmm7'];
+
 {$endif}
 
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
 const
   cIdxWidth = 48;
 var
-  i: Integer;
-  dis: TInt64DynArray;
-  db: Int64;
+  i, db: UInt64;
+  dis: TUint64DynArray;
+  t,t2:TLargeInteger;
 begin
   SetLength(dis, Length(a));
 
   for i := 0 to High(a) do
-    dis[i] := Int64(MatchingDissim(a[i], b)) shl cIdxWidth or i;
+    dis[i] := UInt64(MatchingDissim(a[i], b)) shl cIdxWidth or i;
 
   db := dis[0];
   for i := 1 to High(dis) do
@@ -322,7 +323,7 @@ begin
       db := dis[i];
 
   Result := Integer(db and ((1 shl cIdxWidth) - 1));
-  bestDissim := db shr cIdxWidth;
+  bestDissim := Integer(db shr cIdxWidth);
 end;
 
 
