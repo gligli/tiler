@@ -670,6 +670,8 @@ begin
       cost := ncost;
 
       totalmoves += moves;
+
+      DebugLn(['Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost]);
     end;
 
     all[init_no].Labels := Copy(labels);
