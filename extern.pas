@@ -211,15 +211,18 @@ var
   Process: TProcess;
   OutputStream: TMemoryStream;
 begin
-  if ClusterCount >= Length(Dataset) then
+  if (ClusterCount >= Length(Dataset)) and not TestMode then
   begin
     ClusterCount := Length(Dataset);
 
-    SetLength(Clusters, Length(Dataset));
-    for i := 0 to High(Dataset) do
-      Clusters[i] := i;
+    if not NoClusters then
+    begin
+      SetLength(Clusters, Length(Dataset));
+      for i := 0 to High(Dataset) do
+        Clusters[i] := i;
+    end;
 
-    if not TestMode and Assigned(Centroids) then
+    if Assigned(Centroids) then
       GenerateSVMLightData(Dataset, Centroids, True);
 
     Exit;
@@ -357,10 +360,11 @@ var
   Line: String;
 begin
   Output.Clear;
+  Output.LineBreak := sLineBreak;
 
   if Header then
   begin
-    Output.Add('-1 # m');
+    Output.Add('1 # m');
     Output.Add(IntToStr(Length(Dataset)) + ' # k');
     Output.Add(IntToStr(Length(Dataset[0])) + ' # number of features');
   end;
