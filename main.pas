@@ -1377,7 +1377,8 @@ end;
 
 function TMainForm.ComputeTileDCT(var ATile: TTile; FromPal, GammaCor: Boolean; const pal: array of Integer): TDCTCoeffs;
 const
-  cUVRatio: array[0..cTileWidth-1] of Double = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
+  cUVRatio: array[0..cTileWidth-1] of Single = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
+  cYUVRatio: array[0..2{YUV}] of Single = (1.0, sqrt(1 / cPhi), sqrt(1 / cPhi));
 var
   col, u, v, x, y, cpn: Integer;
   coeff, s, q, vRatio, z: Single;
@@ -1420,7 +1421,7 @@ begin
 			      z += q;
           end;
 
-		    coeff := cUVRatio[u] * vRatio * z * 256.0 / cDCTQuantization[cpn, v, u];
+		    coeff := cUVRatio[u] * vRatio * z * 256.0 / cDCTQuantization[cpn, v, u] * cYUVRatio[cpn];
 
         Result[cpn,v,u] := coeff;
 	    end;
@@ -1908,10 +1909,6 @@ begin
             FFrames[k].TileMap[j, i].GlobalTileIndex := BestIdx;
 end;
 
-const
-  cSpVmHmOffset: array[BooLean{SpritePal?}, Boolean{VMirror?}, BooLean{HMirror?}] of Integer =
-    (((0, 1), (2, 3)), ((4, 5), (6, 7)));
-
 function TMainForm.GetMaxTPF(AKF: PKeyFrame): Integer;
 var
   frame: Integer;
@@ -1931,9 +1928,6 @@ var
   Centroids: TStringList;
   Clusters: TIntegerDynArray;
   Used: TBooleanDynArray;
-  frm: PFrame;
-  Tile_: PTile;
-  DCTCoeffs: TDCTCoeffs;
 begin
   Centroids := TStringList.Create;
   try
@@ -1978,7 +1972,6 @@ begin
     begin
       FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
 
-      frm := @FFrames[TR^.pKF^.StartFrame + frame];
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
@@ -2047,7 +2040,7 @@ begin
 
               if hm then HMirrorPalTile(LocalTile);
               if vm then VMirrorPalTile(LocalTile);
-              DCTCoeffs := ComputeTileDCT(LocalTile, True, False, AKF^.PaletteRGB[sp]);
+              DCTCoeffs := ComputeTileDCT(LocalTile, True, True, AKF^.PaletteRGB[sp]);
 
               SetLength(TilesRepo^.Dataset[j], sqr(cTileWidth) * 3);
               fi := 0;
@@ -2089,7 +2082,7 @@ begin
         for sx := 0 to cTileMapWidth - 1 do
         begin
           Tile_ := @frm^.Tiles[sy * cTileMapWidth + sx];
-          DCTCoeffs := ComputeTileDCT(Tile_^, True, False, Tile_^.PaletteRGB);
+          DCTCoeffs := ComputeTileDCT(Tile_^, True, True, Tile_^.PaletteRGB);
 
           i := 0;
           for tc := 0 to 2 do
@@ -2117,10 +2110,7 @@ begin
       WriteLn('SF: ',AKF^.StartFrame,#9'Iter: ',iter,#9'MaxTPF: ',MaxTPF,#9'TileCnt: ',PassTileCount);
       LeaveCriticalSection(FCS);
 
-      if iter = 0 then
-        PassTileCount := (DesiredNbTiles * Length(cSpVmHmOffset) + Length(TilesRepo^.Dataset)) shr 1
-      else
-        PassTileCount := round(PassTileCount * cKFMaxTPFSearchRatio);
+      PassTileCount := round(PassTileCount * cKFMaxTPFSearchRatio);
 
       Inc(iter);
     until MaxTPF <= DesiredNbTiles;

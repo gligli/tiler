@@ -233,7 +233,7 @@ begin
 end;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
-function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): Byte; inline;
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
 var
   i: Integer;
 begin

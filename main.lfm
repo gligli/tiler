@@ -127,7 +127,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\test\%.4d.png'
+    Text = '.\sample_taxi\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -189,7 +189,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 5
-    Value = 150
+    Value = 300
   end
   object Label10: TLabel
     Left = 8
