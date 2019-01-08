@@ -24,7 +24,7 @@ const
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
   cKFMaxTPFSearchRatio = 0.9;
-  cKFYakmoRestarts = 3;
+  cKFYakmoRestarts = 1;
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
@@ -186,6 +186,7 @@ type
     Dataset: TSingleDynArray2;
     DatasetTMIs: TTileMapItems;
     OutputTMIs: array of array[0..(cTileMapHeight - 1), 0..(cTileMapWidth - 1)] of TTileMapItem;
+    FrameDataset: TSingleDynArray2;
     Tl2Tr: TIntegerDynArray;
     pKF: PKeyFrame;
     DesiredNbTiles: Integer;
@@ -213,6 +214,7 @@ type
     btnRunAll: TButton;
     btnDebug: TButton;
     chkGamma: TCheckBox;
+    chkReduced: TCheckBox;
     chkSprite: TCheckBox;
     chkMirrored: TCheckBox;
     chkUseOldDithering: TCheckBox;
@@ -290,7 +292,7 @@ type
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
-    procedure Render(AFrameIndex: Integer; dithered, mirrored: Boolean; spritePal, gamma: Integer; ATilePage: Integer);
+    procedure Render(AFrameIndex: Integer; dithered, mirrored, reduced: Boolean; spritePal, gamma: Integer; ATilePage: Integer);
 
     procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Single); overload;
     procedure RGBToYUV(r,g,b: Single; out y,u,v: Single); overload;
@@ -879,7 +881,7 @@ procedure TMainForm.tbFrameChange(Sender: TObject);
 begin
   Screen.Cursor := crDefault;
   seAvgTPFEditingDone(nil);
-  Render(tbFrame.Position, chkDithered.Checked, chkMirrored.Checked, Ord(chkSprite.State), Ord(chkGamma.State), sePage.Value);
+  Render(tbFrame.Position, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked, Ord(chkSprite.State), Ord(chkGamma.State), sePage.Value);
 end;
 
 procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
@@ -1188,6 +1190,7 @@ var
   OrigTile: TTile;
   Tile_: array[Boolean] of TTile;
   Plan: TMixingPlan;
+  TilePtr: PTile;
 begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
@@ -1222,11 +1225,13 @@ begin
 
       Move(KF^.PaletteIndexes[SpritePal][0], Tile_[SpritePal].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
       Move(KF^.PaletteRGB[SpritePal][0], Tile_[SpritePal].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
+
+      CopyTile(Tile_[SpritePal], AFrame^.Tiles[sx + sy * cTileMapWidth]);
+
+      SetLength(Tile_[SpritePal].PaletteIndexes, 0);
+      SetLength(Tile_[SpritePal].PaletteRGB, 0);
       CopyTile(Tile_[SpritePal], FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^);
 
-      Move(KF^.PaletteIndexes[SpritePal][0], Tile_[False].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
-      Move(KF^.PaletteRGB[SpritePal][0], Tile_[False].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
-      CopyTile(Tile_[SpritePal], AFrame^.Tiles[sx + sy * cTileMapWidth]);
     end;
 end;
 
@@ -1608,7 +1613,7 @@ begin
   end;
 end;
 
-procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored: Boolean; spritePal, gamma: Integer;
+procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced: Boolean; spritePal, gamma: Integer;
   ATilePage: Integer);
 var
   i, j, r, g, b, ti, tx, ty, col: Integer;
@@ -1617,6 +1622,7 @@ var
   TMItem: TTileMapItem;
   Frame: PFrame;
   fn: String;
+  pal: TIntegerDynArray;
 begin
   if Length(FFrames) <= 0 then
     Exit;
@@ -1658,13 +1664,16 @@ begin
           begin
             tilePtr := FTiles[ti];
 
-            if dithered and Assigned(tilePtr^.PaletteRGB) then
+            case spritePal of
+              0: pal := Frame^.KeyFrame^.PaletteRGB[False];
+              1: pal := Frame^.KeyFrame^.PaletteRGB[True];
+              2: pal := tilePtr^.PaletteRGB;
+            end;
+
+            if dithered and Assigned(pal) then
             begin
-              case spritePal of
-                0: col := Frame^.KeyFrame^.PaletteRGB[False, tilePtr^.PalPixels[ty, tx]];
-                1: col := Frame^.KeyFrame^.PaletteRGB[True, tilePtr^.PalPixels[ty, tx]];
-                2: col := tilePtr^.PaletteRGB[tilePtr^.PalPixels[ty, tx]];
-              end;
+              col := pal[tilePtr^.PalPixels[ty, tx]];
+
               b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
             end
             else
@@ -1702,18 +1711,27 @@ begin
 
           if ti < Length(FTiles) then
           begin
-            tilePtr := FTiles[ti];
-
-            if mirrored and TMItem.HMirror then tx := cTileWidth - 1 - tx;
-            if mirrored and TMItem.VMirror then ty := cTileWidth - 1 - ty;
-
-            if dithered and Assigned(FTiles[ti]^.PaletteRGB) then
+            if reduced then
             begin
+              tilePtr := FTiles[ti];
+              if mirrored and TMItem.HMirror then tx := cTileWidth - 1 - tx;
+              if mirrored and TMItem.VMirror then ty := cTileWidth - 1 - ty;
               case spritePal of
-                0: col := Frame^.KeyFrame^.PaletteRGB[False, tilePtr^.PalPixels[ty, tx]];
-                1: col := Frame^.KeyFrame^.PaletteRGB[True, tilePtr^.PalPixels[ty, tx]];
-                2: col := Frame^.KeyFrame^.PaletteRGB[TMItem.SpritePal, tilePtr^.PalPixels[ty, tx]];
-              end;
+                0: pal := Frame^.KeyFrame^.PaletteRGB[False];
+                1: pal := Frame^.KeyFrame^.PaletteRGB[True];
+                2: pal := Frame^.KeyFrame^.PaletteRGB[TMItem.SpritePal];
+              end
+            end
+            else
+            begin
+              tilePtr :=  @Frame^.Tiles[(j shr 4) * cTileMapWidth + (i shr 3)];
+              pal := tilePtr^.PaletteRGB;
+            end;
+
+            if dithered and Assigned(pal) then
+            begin
+              col := pal[tilePtr^.PalPixels[ty, tx]];
+
               b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
             end
             else
@@ -1846,8 +1864,14 @@ begin
   Dest.AveragedCount := Src.AveragedCount;
   Dest.TmpIndex := Src.TmpIndex;
   Dest.UseCount := Src.UseCount;
-  Dest.PaletteIndexes := Copy(src.PaletteIndexes);
-  Dest.PaletteRGB := Copy(src.PaletteRGB);
+
+  SetLength(Dest.PaletteIndexes, Length(Src.PaletteIndexes));
+  SetLength(Dest.PaletteRGB, Length(Src.PaletteRGB));
+
+  if Assigned(Dest.PaletteIndexes) then
+    move(Src.PaletteIndexes[0], Dest.PaletteIndexes[0], Length(Src.PaletteIndexes) * SizeOf(Integer));
+  if Assigned(Dest.PaletteRGB) then
+    move(Src.PaletteRGB[0], Dest.PaletteRGB[0], Length(Src.PaletteRGB) * SizeOf(Integer));
 
   move(Src.RGBPixels[0,0,0], Dest.RGBPixels[0,0,0], SizeOf(Src.RGBPixels));
   move(Src.DCTCoeffs[0,0,0], Dest.DCTCoeffs[0,0,0], SizeOf(Src.DCTCoeffs));
@@ -1900,23 +1924,22 @@ end;
 function TMainForm.TestTMICount(PassTileCount: Integer; TR: PTileRepo): Integer;
 var
   Centroid: TSingleDynArray;
-  BestIdx, MaxTPF, dsi, i, j, ty, tx, tc, frame, sy, sx: Integer;
+  BestIdx, MaxTPF, dsi, i, j, frame, sy, sx: Integer;
   best, cur: Single;
-  frm: PFrame;
-  tmi, tmiO: PTileMapItem;
-  Tile_: PTile;
+  tmiO: PTileMapItem;
   Ct2Tr: TIntegerDynArray;
   Centroids: TStringList;
-  Labels: TIntegerDynArray;
+  Clusters: TIntegerDynArray;
   Used: TBooleanDynArray;
+  frm: PFrame;
+  Tile_: PTile;
   DCTCoeffs: TDCTCoeffs;
-  FrameDataset: TSingleDynArray2;
 begin
   Centroids := TStringList.Create;
   try
     // cluster all tiles duplicated fos SpritePal? / VMirror? / HMirror?
 
-    DoExternalYakmo(TR^.Dataset, PassTileCount, cKFYakmoRestarts, False, False, False, Centroids, Labels);
+    DoExternalYakmo(TR^.Dataset, PassTileCount, cKFYakmoRestarts, False, False, False, Centroids, Clusters);
 
     // search tiles closest to centroids
 
@@ -1927,7 +1950,7 @@ begin
       best := MaxDouble;
       BestIdx := -1;
       for j := 0 to High(TR^.Dataset) do
-        if Labels[j] = i then
+        if Clusters[j] = i then
         begin
           if BestIdx = -1 then
             BestIdx := j;
@@ -1940,38 +1963,10 @@ begin
           end;
         end;
       Ct2Tr[i] := BestIdx;
-      //DebugLn([i,#9,BestIdx,#9,best]);
     end;
-
-    SetLength(FrameDataset, TR^.pKF^.FrameCount * cTileMapSize, sqr(cTileWidth) * 3);
-
-    j := 0;
-    for frame := 0 to TR^.pKF^.FrameCount - 1 do
-    begin
-      frm := @FFrames[TR^.pKF^.StartFrame + frame];
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
-        begin
-          Tile_ := @frm^.Tiles[sy * cTileMapWidth + sx];
-          DCTCoeffs := ComputeTileDCT(Tile_^, True, False, Tile_^.PaletteRGB);
-
-          i := 0;
-          for tc := 0 to 2 do
-            for ty := 0 to cTileWidth - 1 do
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                FrameDataset[j, i] := DCTCoeffs[tc, ty, tx];
-                Inc(i);
-              end;
-
-          Inc(j);
-        end;
-    end;
-
-    Assert(j = TR^.pKF^.FrameCount * cTileMapSize);
 
     i := 0;
-    DoExternalYakmo(FrameDataset, i, 1, True, False, False, Centroids, Labels);
+    DoExternalYakmo(TR^.FrameDataset, i, 1, True, False, False, Centroids, Clusters);
 
     // map frame tilemap items to "centroid" tiles
 
@@ -1987,8 +1982,7 @@ begin
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
-          tmi := @frm^.TileMap[sy, sx];
-          dsi := Ct2Tr[Labels[i]];
+          dsi := Ct2Tr[Clusters[i]];
 
           tmiO := @TR^.OutputTMIs[frame, sy, sx];
           tmiO^.GlobalTileIndex := TR^.DatasetTMIs[dsi].GlobalTileIndex;
@@ -2016,8 +2010,10 @@ end;
 
 procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 var
-  MaxTPF, PassTileCount, i, j, fi, ty, tx, tc, frame, sy, sx: Integer;
+  MaxTPF, PassTileCount, i, j, fi, ty, tx, tc, frame, sy, sx, iter: Integer;
   sp, vm, hm: Boolean;
+  frm: PFrame;
+  Tile_: PTile;
   LocalTile: TTile;
   TilesRepo: PTileRepo;
   DCTCoeffs: TDCTCoeffs;
@@ -2081,18 +2077,52 @@ begin
     SetLength(TilesRepo^.Dataset, j);
     SetLength(TilesRepo^.DatasetTMIs, j);
 
+    // build a dataset from frame tiles
+
+    SetLength(TilesRepo^.FrameDataset, TilesRepo^.pKF^.FrameCount * cTileMapSize, sqr(cTileWidth) * 3);
+
+    j := 0;
+    for frame := 0 to AKF^.FrameCount - 1 do
+    begin
+      frm := @FFrames[AKF^.StartFrame + frame];
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
+        begin
+          Tile_ := @frm^.Tiles[sy * cTileMapWidth + sx];
+          DCTCoeffs := ComputeTileDCT(Tile_^, True, False, Tile_^.PaletteRGB);
+
+          i := 0;
+          for tc := 0 to 2 do
+            for ty := 0 to cTileWidth - 1 do
+              for tx := 0 to cTileWidth - 1 do
+              begin
+                TilesRepo^.FrameDataset[j, i] := DCTCoeffs[tc, ty, tx];
+                Inc(i);
+              end;
+
+          Inc(j);
+        end;
+    end;
+
+    Assert(j = TilesRepo^.pKF^.FrameCount * cTileMapSize);
+
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
-    PassTileCount := (DesiredNbTiles * Length(cSpVmHmOffset) + Length(TilesRepo^.Dataset)) shr 1;
-
+    iter := 0;
+    PassTileCount := Length(TilesRepo^.Dataset);
     repeat
       MaxTPF := TestTMICount(PassTileCount, TilesRepo);
 
       EnterCriticalSection(FCS);
-      WriteLn('SF: ',AKF^.StartFrame,#9'MaxTPF: ',MaxTPF,#9'TileCnt: ',PassTileCount);
+      WriteLn('SF: ',AKF^.StartFrame,#9'Iter: ',iter,#9'MaxTPF: ',MaxTPF,#9'TileCnt: ',PassTileCount);
       LeaveCriticalSection(FCS);
 
-      PassTileCount := round(PassTileCount * cKFMaxTPFSearchRatio);
+      if iter = 0 then
+        PassTileCount := (DesiredNbTiles * Length(cSpVmHmOffset) + Length(TilesRepo^.Dataset)) shr 1
+      else
+        PassTileCount := round(PassTileCount * cKFMaxTPFSearchRatio);
+
+      Inc(iter);
     until MaxTPF <= DesiredNbTiles;
 
     // update tilemap
@@ -2172,7 +2202,7 @@ procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset, Centroids: TByteDynArray2;
   Labels: TIntegerDynArray;
-  i, j, k, x, y, Cnt, acc, best, StartingPoint, StartingPointUp, ActualNbTiles: Integer;
+  i, j, k, x, y, Cnt, acc, best, StartingPoint, ActualNbTiles: Integer;
   DsTileIdxs: TIntegerDynArray;
   b: Byte;
   Found: Boolean;

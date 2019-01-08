@@ -66,7 +66,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 18
+    TabOrder = 19
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -267,7 +267,7 @@ object MainForm: TMainForm
     Visible = False
   end
   object chkMirrored: TCheckBox
-    Left = 408
+    Left = 480
     Height = 19
     Top = 787
     Width = 66
@@ -276,7 +276,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 15
+    TabOrder = 16
   end
   object lblPct: TLabel
     Left = 232
@@ -289,7 +289,7 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object chkSprite: TCheckBox
-    Left = 480
+    Left = 552
     Height = 19
     Top = 787
     Width = 89
@@ -301,7 +301,7 @@ object MainForm: TMainForm
     TabOrder = 17
   end
   object chkGamma: TCheckBox
-    Left = 568
+    Left = 648
     Height = 19
     Top = 787
     Width = 62
@@ -309,7 +309,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 16
+    TabOrder = 18
   end
   object seMaxTiles: TSpinEdit
     Left = 152
@@ -319,6 +319,19 @@ object MainForm: TMainForm
     MaxValue = 65536
     OnEditingDone = seMaxTilesEditingDone
     TabOrder = 4
+  end
+  object chkReduced: TCheckBox
+    Left = 408
+    Height = 19
+    Top = 787
+    Width = 64
+    Anchors = [akLeft, akBottom]
+    AutoSize = False
+    Caption = 'Reduced'
+    Checked = True
+    OnChange = tbFrameChange
+    State = cbChecked
+    TabOrder = 15
   end
   object IdleTimer: TIdleTimer
     Interval = 80
