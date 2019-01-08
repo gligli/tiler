@@ -418,8 +418,13 @@ begin
     if np = 0 then
       np := Length(line);
     val := Copy(line, p, np - p);
+
     //writeln(i, #9 ,index,#9,p,#9,np,#9, val);
-    Result[i] := StrToFloat(val);
+
+    if Pos('nan', val) = 0 then
+      Result[i] := StrToFloat(val)
+    else
+      Result[i] := abs(NaN); // Quiet NaN
   end;
 end;
 
