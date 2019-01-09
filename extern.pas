@@ -360,7 +360,7 @@ var
   Line: String;
 begin
   Output.Clear;
-  Output.LineBreak := sLineBreak;
+  Output.LineBreak := #10;
 
   if Header then
   begin
@@ -371,9 +371,11 @@ begin
 
   for i := 0 to High(Dataset) do
   begin
-    Line := IntToStr(i) + ' ';
-    for j := 0 to High(Dataset[0]) do
-      Line := Line + IntToStr(j + 1) + ':' + FloatToStr(Dataset[i, j]) + ' ';
+    Line := Format('%d 1:%e', [i, Dataset[i, 0]]);
+
+    for j := 1 to High(Dataset[0]) do
+      Line := Format('%s %d:%e', [Line, j + 1, Dataset[i, j]]);
+
     Output.Add(Line);
   end;
 end;
@@ -412,23 +414,28 @@ begin
   for i := 0 to High(Result) do
   begin
     sc := ' ' + IntToStr(i + 1) + ':';
-    p := Pos(sc, line) + Length(sc);
-    if p = Length(sc) then
+
+    p := Pos(sc, line);
+    if p = 0 then
     begin
-      Result[i] := 0.0;
-      Continue;
-    end;
-    np := PosEx(' ', line, p);
-    if np = 0 then
-      np := Length(line);
-    val := Copy(line, p, np - p);
-
-    //writeln(i, #9 ,index,#9,p,#9,np,#9, val);
-
-    if Pos('nan', val) = 0 then
-      Result[i] := StrToFloat(val)
+      Result[i] := 0.0; //svmlight zero elimination
+    end
     else
-      Result[i] := abs(NaN); // Quiet NaN
+    begin
+      p += Length(sc);
+
+      np := PosEx(' ', line, p);
+      if np = 0 then
+        np := Length(line) + 1;
+      val := Copy(line, p, np - p);
+
+      //writeln(i, #9 ,index,#9,p,#9,np,#9, val);
+
+      if Pos('nan', val) = 0 then
+        Result[i] := StrToFloat(val)
+      else
+        Result[i] := abs(NaN); // Quiet NaN
+    end;
   end;
 end;
 
