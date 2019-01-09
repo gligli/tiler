@@ -80,7 +80,7 @@ const
   cLineJitterCompensation = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
-  cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of Single = (
+  cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of Double = (
     (
       // optimized
       (16, 11, 12, 15,  21,  32,  50,  66),
@@ -133,7 +133,7 @@ type
   PTile = ^TTile;
   PPTile = ^PTile;
 
-  TDCTCoeffs = array[0..2{YUV},0..(cTileWidth - 1),0..(cTileWidth - 1)] of Single;
+  TDCTCoeffs = array[0..2{YUV},0..(cTileWidth - 1),0..(cTileWidth - 1)] of Double;
 
 {$if cTotalColors <= 256}
   TPalPixel = Byte;
@@ -183,10 +183,10 @@ type
   PFrame = ^TFrame;
 
   TTileRepo = record
-    Dataset: TSingleDynArray2;
+    Dataset: TDoubleDynArray2;
     DatasetTMIs: TTileMapItems;
     OutputTMIs: array of array[0..(cTileMapHeight - 1), 0..(cTileMapWidth - 1)] of TTileMapItem;
-    FrameDataset: TSingleDynArray2;
+    FrameDataset: TDoubleDynArray2;
     Tl2Tr: TIntegerDynArray;
     pKF: PKeyFrame;
     DesiredNbTiles: Integer;
@@ -205,7 +205,7 @@ type
     List: array[0..cTotalColors - 1] of TPalPixel;
     Count: Integer;
     LumaPal: array of Integer;
-    Y2Palette: array of array[0..2] of Single;
+    Y2Palette: array of array[0..2] of Double;
   end;
 
   { TMainForm }
@@ -288,24 +288,24 @@ type
 
     FCS: TRTLCriticalSection;
 
-    class function CompareEuclidean192(pa, pb: PSingle): Single;
+    class function CompareEuclidean192(pa, pb: PDouble): Double;
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     procedure Render(AFrameIndex: Integer; dithered, mirrored, reduced: Boolean; spritePal, gamma: Integer; ATilePage: Integer);
 
-    procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Single); overload;
-    procedure RGBToYUV(r,g,b: Single; out y,u,v: Single); overload;
+    procedure RGBToYUV(r,g,b: Integer; GammaCor: Boolean; out y,u,v: Double); overload;
+    procedure RGBToYUV(r,g,b: Double; out y,u,v: Double); overload;
 
     function ComputeTileDCT(var ATile: TTile; FromPal, GammaCor: Boolean; const pal: array of Integer): TDCTCoeffs;
-    class function CompareTilesDCT(const ATileA, ATileB: TTile): Single;
+    class function CompareTilesDCT(const ATileA, ATileB: TTile): Double;
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
-    function ColorCompareRGB(r1, g1, b1, r2, g2, b2: Single): Single;
-    function ColorCompareRGBYUV(r, g, b, y, u, v: Single): Single;
+    function ColorCompareRGB(r1, g1, b1, r2, g2, b2: Double): Double;
+    function ColorCompareRGBYUV(r, g, b, y, u, v: Double): Double;
 
-    function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
+    function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Double): Double;
     procedure DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
 
     procedure PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
@@ -333,7 +333,7 @@ type
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
     procedure IndexFrameTiles(AFrame: PFrame);
-    procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: Single);
+    procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: Double);
 
     function DoExternalPCMEnc(AFN: String; Volume: Integer): String;
 
@@ -380,7 +380,7 @@ begin
 end;
 
 var
-  GammaCorLut: array[0..High(Byte)] of Single;
+  GammaCorLut: array[0..High(Byte)] of Double;
 
 procedure InitGammaLuts;
 var i: Integer;
@@ -389,7 +389,7 @@ begin
     GammaCorLut[i] := power(i / 255.0, cGamma);
 end;
 
-function GammaCorrect(x: Byte): Single; inline;
+function GammaCorrect(x: Byte): Double; inline;
 begin
   Result := GammaCorLut[x];
 end;
@@ -922,11 +922,11 @@ end;
 procedure TMainForm.DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
 var
   p, t, index, max_test_count, chosen_amount, chosen: Integer;
-  least_penalty, penalty: Single;
-  cc0, cc1, cc2, t_inv: Single;
-  so_far: array[0..2] of Single;
-  sum: array[0..2] of Single;
-  add: array[0..2] of Single;
+  least_penalty, penalty: Double;
+  cc0, cc1, cc2, t_inv: Double;
+  so_far: array[0..2] of Double;
+  sum: array[0..2] of Double;
+  add: array[0..2] of Double;
 begin
   Plan.Count := 0;
 
@@ -942,7 +942,7 @@ begin
     chosen_amount := 1;
     chosen := 0;
     max_test_count := IfThen(Plan.Count = 0, 1, Plan.Count);
-    least_penalty := MaxSingle;
+    least_penalty := MaxDouble;
     for index := 0 to High(Plan.Y2Palette) do
     begin
       sum[0] := so_far[0]; sum[1] := so_far[1]; sum[2] := so_far[2];
@@ -1186,11 +1186,10 @@ var
   sx, sy: Integer;
   KF: PKeyFrame;
   SpritePal: Boolean;
-  cmp: array[Boolean] of Single;
+  cmp: array[Boolean] of Double;
   OrigTile: TTile;
   Tile_: array[Boolean] of TTile;
   Plan: TMixingPlan;
-  TilePtr: PTile;
 begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
@@ -1264,7 +1263,7 @@ begin
   end;
 end;
 
-function TMainForm.EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Single): Single;
+function TMainForm.EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: Double): Double;
 begin
   Result := ColorCompareRGB(r,g,b, r0,g0,b0) + ColorCompareRGB(r1,g1,b1, r2,g2,b2) * 0.1 * (abs(ratio-0.5)+0.5);
 end;
@@ -1272,7 +1271,7 @@ end;
 procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
 var
   r0,r1,r2,g0,g1,g2,b0,b1,b2,index1,index2,ratio,t1,t2,t3,d1,d2,d3: Integer;
-  least_penalty, penalty: Single;
+  least_penalty, penalty: Double;
 begin
   Plan.Colors[False] := 0;
   Plan.Colors[True] := 0;
@@ -1340,9 +1339,9 @@ begin
   end;
 end;
 
-procedure TMainForm.RGBToYUV(r, g, b: Integer;  GammaCor: Boolean; out y, u, v: Single); inline;
+procedure TMainForm.RGBToYUV(r, g, b: Integer;  GammaCor: Boolean; out y, u, v: Double); inline;
 var
-  sr, sg, sb: Single;
+  sr, sg, sb: Double;
 begin
   if GammaCor then
   begin
@@ -1362,9 +1361,9 @@ begin
   v := 0.615*sr - 0.515*sg - 0.100*sb;
 end;
 
-procedure TMainForm.RGBToYUV(r,g,b: Single; out y,u,v: Single); inline;
+procedure TMainForm.RGBToYUV(r,g,b: Double; out y,u,v: Double); inline;
 var
-  sr, sg, sb: Single;
+  sr, sg, sb: Double;
 begin
   sr := r;
   sg := g;
@@ -1377,12 +1376,12 @@ end;
 
 function TMainForm.ComputeTileDCT(var ATile: TTile; FromPal, GammaCor: Boolean; const pal: array of Integer): TDCTCoeffs;
 const
-  cUVRatio: array[0..cTileWidth-1] of Single = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
-  cYUVRatio: array[0..2{YUV}] of Single = (1.0, sqrt(1 / cPhi), sqrt(1 / cPhi));
+  cUVRatio: array[0..cTileWidth-1] of Double = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
+  cYUVRatio: array[0..2{YUV}] of Double = (1.0, sqrt(1 / cPhi), sqrt(1 / cPhi));
 var
   col, u, v, x, y, cpn: Integer;
-  coeff, s, q, vRatio, z: Single;
-  YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of Single;
+  coeff, s, q, vRatio, z: Double;
+  YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of Double;
 begin
   if FromPal then
   begin
@@ -1416,7 +1415,7 @@ begin
 		      begin
 			      s := YUVPixels[cpn,y,x];
 
-			      q := s * cos(Single((2*x+1) * u) * PI/16.0) * cos(Single((2*y+1) * v) * PI/16.0);
+			      q := s * cos(Double((2*x+1) * u) * PI/16.0) * cos(Double((2*y+1) * v) * PI/16.0);
 
 			      z += q;
           end;
@@ -1461,35 +1460,47 @@ begin
 end;
 
 {$if defined(CPUX86_64)}
-function SumOf8Squares(pa, pb: PSingle): Single; assembler; nostackframe;
+function SumOf8Squares(pa, pb: PDouble): Double; assembler; nostackframe;
 asm
-  // load 8 singles from pa
-  movups xmm0, oword ptr [pa]
-  movups xmm1, oword ptr [pa + $10]
+  // load 8 Doubles from pa
+  movupd xmm0, oword ptr [pa]
+  movupd xmm1, oword ptr [pa + $10]
+  movupd xmm2, oword ptr [pa + $20]
+  movupd xmm3, oword ptr [pa + $30]
 
-  // load 8 singles from pb
-  movups xmm2, oword ptr [pb]
-  movups xmm3, oword ptr [pb + $10]
+  // load 8 Doubles from pb
+  movupd xmm4, oword ptr [pb]
+  movupd xmm5, oword ptr [pb + $10]
+  movupd xmm6, oword ptr [pb + $20]
+  movupd xmm7, oword ptr [pb + $30]
 
-  // pa - pb for 8 singles
-  subps xmm0, xmm2
-  subps xmm1, xmm3
+  // pa - pb for 8 Doubles
+  subpd xmm0, xmm4
+  subpd xmm1, xmm5
+  subpd xmm2, xmm6
+  subpd xmm3, xmm7
 
   // result of prev operation squared
-  mulps xmm0, xmm0
-  mulps xmm1, xmm1
+  mulpd xmm0, xmm0
+  mulpd xmm1, xmm1
+  mulpd xmm2, xmm2
+  mulpd xmm3, xmm3
 
   // sum the 8 squared differences
-  addps xmm0, xmm1
-  haddps xmm0, xmm0
-  haddps xmm0, xmm0
-end ['xmm0', 'xmm1', 'xmm2', 'xmm3'];
+  addpd xmm2, xmm3
+  addpd xmm0, xmm1
+
+  addpd xmm0, xmm2
+
+  haddpd xmm0, xmm0
+  haddpd xmm0, xmm0
+end ['xmm0', 'xmm1', 'xmm2', 'xmm3', 'xmm4', 'xmm5', 'xmm6', 'xmm7'];
 
 {$endif}
 
-class function TMainForm.CompareEuclidean192(pa, pb: PSingle): Single;
+class function TMainForm.CompareEuclidean192(pa, pb: PDouble): Double;
 var
-  r0, r1, r2: Single;
+  r0, r1, r2: Double;
 begin
   // unroll by cTileWidth * 3
   r0 := SumOf8Squares(@pa[$00], @pb[$00]);
@@ -1522,20 +1533,21 @@ begin
   Result := r0 + r1 + r2;
 end;
 
-class function TMainForm.CompareTilesDCT(const ATileA, ATileB: TTile): Single;
+class function TMainForm.CompareTilesDCT(const ATileA, ATileB: TTile): Double;
 var
 {$if not defined(CPUX86_64)}
   j, i, c: Integer;
 {$else}
-  pa, pb: PSingle;
+  pa, pb: PDouble;
 {$endif}
 begin
 
 {$if not defined(CPUX86_64)}
-  for j := 0 to cTileWidth - 1 do
-    for i := 0 to cTileWidth - 1 do
-      for c := 0 to 2 do
-          Result += sqr(ATileA.DCTCoeffs[j, i, c] - ATileB.DCTCoeffs[j, i, c])
+  Result := 0;
+  for c := 0 to 2 do
+    for j := 0 to cTileWidth - 1 do
+      for i := 0 to cTileWidth - 1 do
+          Result += sqr(ATileA.DCTCoeffs[c, j, i] - ATileB.DCTCoeffs[c, j, i]);
 {$else}
   pa := @ATileA.DCTCoeffs[0, 0, 0];
   pb := @ATileB.DCTCoeffs[0, 0, 0];
@@ -1544,9 +1556,9 @@ begin
 {$endif}
 end;
 
-function TMainForm.ColorCompareRGB(r1, g1, b1, r2, g2, b2: Single): Single;
+function TMainForm.ColorCompareRGB(r1, g1, b1, r2, g2, b2: Double): Double;
 var
-  y1, u1, v1, y2, u2, v2: Single;
+  y1, u1, v1, y2, u2, v2: Double;
 begin
   RGBToYUV(r1, g1, b1, y1, u1, v1);
   RGBToYUV(r2, g2, b2, y2, u2, v2);
@@ -1554,9 +1566,9 @@ begin
   Result := sqr(y1 - y2) + (sqr(u1 - u2) + sqr(v1 - v2)) * (1.0 / sqrt(2.0));
 end;
 
-function TMainForm.ColorCompareRGBYUV(r, g, b, y, u, v: Single): Single;
+function TMainForm.ColorCompareRGBYUV(r, g, b, y, u, v: Double): Double;
 var
-  y1, u1, v1: Single;
+  y1, u1, v1: Double;
 begin
   RGBToYUV(r, g, b, y1, u1, v1);
 
@@ -1920,9 +1932,9 @@ end;
 
 function TMainForm.TestTMICount(PassTileCount: Integer; TR: PTileRepo): Integer;
 var
-  Centroid: TSingleDynArray;
+  Centroid: TDoubleDynArray;
   BestIdx, MaxTPF, dsi, i, j, frame, sy, sx: Integer;
-  best, cur: Single;
+  best, cur: Double;
   tmiO: PTileMapItem;
   Ct2Tr: TIntegerDynArray;
   Centroids: TStringList;
@@ -2126,12 +2138,12 @@ begin
   end;
 end;
 
-procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: Single);
+procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: Double);
 const
   cSqrtFactor = 1 / (sqr(cTileWidth) * 3);
 var
   sx: Integer;
-  cmp: Single;
+  cmp: Double;
   TMI, PrevTMI: PTileMapItem;
   Tile_, PrevTile: TTile;
 begin

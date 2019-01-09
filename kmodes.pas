@@ -310,7 +310,6 @@ const
 var
   i, db: UInt64;
   dis: TUint64DynArray;
-  t,t2:TLargeInteger;
 begin
   SetLength(dis, Length(a));
 
