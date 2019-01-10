@@ -285,7 +285,7 @@ begin
           Clusters[Inp] := Clu;
       end;
 
-      ClusterCount := MaxIntValue(Clusters) + 1;
+      //ClusterCount := MaxIntValue(Clusters) + 1;
     end;
   finally
     OutputStream.Free;

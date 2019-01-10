@@ -1459,76 +1459,71 @@ begin
 end;
 
 {$if defined(CPUX86_64)}
-function SumOf8Squares(pa, pb: PDouble): Double; assembler; nostackframe;
+function SumOf8Squares(pa, pb: PDouble): Double; register; assembler; nostackframe;
 asm
   // load 8 Doubles from pa
   movupd xmm0, oword ptr [pa]
-  movupd xmm1, oword ptr [pa + $10]
-  movupd xmm2, oword ptr [pa + $20]
-  movupd xmm3, oword ptr [pa + $30]
+  movupd xmm9, oword ptr [pa + $10]
+  movupd xmm10, oword ptr [pa + $20]
+  movupd xmm11, oword ptr [pa + $30]
 
   // load 8 Doubles from pb
-  movupd xmm4, oword ptr [pb]
-  movupd xmm5, oword ptr [pb + $10]
-  movupd xmm6, oword ptr [pb + $20]
-  movupd xmm7, oword ptr [pb + $30]
+  movupd xmm12, oword ptr [pb]
+  movupd xmm13, oword ptr [pb + $10]
+  movupd xmm14, oword ptr [pb + $20]
+  movupd xmm15, oword ptr [pb + $30]
 
   // pa - pb for 8 Doubles
-  subpd xmm0, xmm4
-  subpd xmm1, xmm5
-  subpd xmm2, xmm6
-  subpd xmm3, xmm7
+  subpd xmm0, xmm12
+  subpd xmm9, xmm13
+  subpd xmm10, xmm14
+  subpd xmm11, xmm15
 
   // result of prev operation squared
   mulpd xmm0, xmm0
-  mulpd xmm1, xmm1
-  mulpd xmm2, xmm2
-  mulpd xmm3, xmm3
+  mulpd xmm9, xmm9
+  mulpd xmm10, xmm10
+  mulpd xmm11, xmm11
 
   // sum the 8 squared differences
-  addpd xmm2, xmm3
-  addpd xmm0, xmm1
+  addpd xmm10, xmm11
+  addpd xmm0, xmm9
 
-  addpd xmm0, xmm2
+  addpd xmm0, xmm10
 
   haddpd xmm0, xmm0
-end ['xmm0', 'xmm1', 'xmm2', 'xmm3', 'xmm4', 'xmm5', 'xmm6', 'xmm7'];
-
+end ['xmm0', 'xmm9', 'xmm10', 'xmm11', 'xmm12', 'xmm13', 'xmm14', 'xmm15'];
 {$endif}
 
 class function TMainForm.CompareEuclidean192(pa, pb: PDouble): Double;
-var
-  r0, r1, r2: Double;
 begin
   // unroll by cTileWidth * 3
-  r0 := SumOf8Squares(@pa[$00], @pb[$00]);
-  r0 += SumOf8Squares(@pa[$08], @pb[$08]);
-  r0 += SumOf8Squares(@pa[$10], @pb[$10]);
-  r0 += SumOf8Squares(@pa[$18], @pb[$18]);
-  r0 += SumOf8Squares(@pa[$20], @pb[$20]);
-  r0 += SumOf8Squares(@pa[$28], @pb[$28]);
-  r0 += SumOf8Squares(@pa[$30], @pb[$30]);
-  r0 += SumOf8Squares(@pa[$38], @pb[$38]);
+  Result := SumOf8Squares(@pa[$00], @pb[$00]);
+  Result += SumOf8Squares(@pa[$08], @pb[$08]);
+  Result += SumOf8Squares(@pa[$10], @pb[$10]);
+  Result += SumOf8Squares(@pa[$18], @pb[$18]);
+  Result += SumOf8Squares(@pa[$20], @pb[$20]);
+  Result += SumOf8Squares(@pa[$28], @pb[$28]);
+  Result += SumOf8Squares(@pa[$30], @pb[$30]);
+  Result += SumOf8Squares(@pa[$38], @pb[$38]);
 
-  r1 := SumOf8Squares(@pa[$40], @pb[$40]);
-  r1 += SumOf8Squares(@pa[$48], @pb[$48]);
-  r1 += SumOf8Squares(@pa[$50], @pb[$50]);
-  r1 += SumOf8Squares(@pa[$58], @pb[$58]);
-  r1 += SumOf8Squares(@pa[$60], @pb[$60]);
-  r1 += SumOf8Squares(@pa[$68], @pb[$68]);
-  r1 += SumOf8Squares(@pa[$70], @pb[$70]);
-  r1 += SumOf8Squares(@pa[$78], @pb[$78]);
+  Result += SumOf8Squares(@pa[$40], @pb[$40]);
+  Result += SumOf8Squares(@pa[$48], @pb[$48]);
+  Result += SumOf8Squares(@pa[$50], @pb[$50]);
+  Result += SumOf8Squares(@pa[$58], @pb[$58]);
+  Result += SumOf8Squares(@pa[$60], @pb[$60]);
+  Result += SumOf8Squares(@pa[$68], @pb[$68]);
+  Result += SumOf8Squares(@pa[$70], @pb[$70]);
+  Result += SumOf8Squares(@pa[$78], @pb[$78]);
 
-  r2 := SumOf8Squares(@pa[$80], @pb[$80]);
-  r2 += SumOf8Squares(@pa[$88], @pb[$88]);
-  r2 += SumOf8Squares(@pa[$90], @pb[$90]);
-  r2 += SumOf8Squares(@pa[$98], @pb[$98]);
-  r2 += SumOf8Squares(@pa[$a0], @pb[$a0]);
-  r2 += SumOf8Squares(@pa[$a8], @pb[$a8]);
-  r2 += SumOf8Squares(@pa[$b0], @pb[$b0]);
-  r2 += SumOf8Squares(@pa[$b8], @pb[$b8]);
-
-  Result := r0 + r1 + r2;
+  Result += SumOf8Squares(@pa[$80], @pb[$80]);
+  Result += SumOf8Squares(@pa[$88], @pb[$88]);
+  Result += SumOf8Squares(@pa[$90], @pb[$90]);
+  Result += SumOf8Squares(@pa[$98], @pb[$98]);
+  Result += SumOf8Squares(@pa[$a0], @pb[$a0]);
+  Result += SumOf8Squares(@pa[$a8], @pb[$a8]);
+  Result += SumOf8Squares(@pa[$b0], @pb[$b0]);
+  Result += SumOf8Squares(@pa[$b8], @pb[$b8]);
 end;
 
 class function TMainForm.CompareTilesDCT(const ATileA, ATileB: TTile): Double;
@@ -1676,9 +1671,8 @@ begin
             tilePtr := FTiles[ti];
 
             case spritePal of
-              0: pal := Frame^.KeyFrame^.PaletteRGB[False];
+              0, 2: pal := Frame^.KeyFrame^.PaletteRGB[False];
               1: pal := Frame^.KeyFrame^.PaletteRGB[True];
-              2: pal := tilePtr^.PaletteRGB;
             end;
 
             if dithered and Assigned(pal) then
@@ -1931,7 +1925,7 @@ end;
 function TMainForm.TestTMICount(Iteration, PassTileCount: Integer; TR: PTileRepo): Integer;
 var
   Centroid: TDoubleDynArray;
-  BestIdx, MaxTPF, dsi, i, j, frame, sy, sx: Integer;
+  BestIdx, MaxTPF, dsi, ci, i, j, frame, sy, sx: Integer;
   best, cur: Double;
   tmiO: PTileMapItem;
   Ct2Tr: TIntegerDynArray;
@@ -1973,7 +1967,8 @@ begin
     i := PassTileCount;
     DoExternalYakmo(TR^.FrameDataset, i, 1, True, False, False, Centroids, Clusters);
     EnterCriticalSection(FCS);
-    WriteLn('SF: ', TR^.pKF^.StartFrame, #9'Iter: ', Iteration, #9'PTC: ', i, #9, PassTileCount);
+    j := StrToInt(copy(Centroids[1], 1, Pos(' ', Centroids[1]) - 1));
+    WriteLn('SF: ', TR^.pKF^.StartFrame, #9'Iter: ', Iteration, #9'PTC: ', i, #9, PassTileCount, #9, j);
     LeaveCriticalSection(FCS);
 
     // map frame tilemap items to "centroid" tiles
@@ -1981,7 +1976,7 @@ begin
     SetLength(Used, Length(FTiles));
 
     MaxTPF := 0;
-    i := 0;
+    ci := 0;
     for frame := 0 to TR^.pKF^.FrameCount - 1 do
     begin
       FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
@@ -1989,7 +1984,7 @@ begin
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
-          dsi := Ct2Tr[Clusters[i]];
+          dsi := Ct2Tr[Clusters[ci]];
 
           tmiO := @TR^.OutputTMIs[frame, sy, sx];
           tmiO^.GlobalTileIndex := TR^.DatasetTMIs[dsi].GlobalTileIndex;
@@ -1999,7 +1994,7 @@ begin
 
           Used[tmiO^.GlobalTileIndex] := True;
 
-          Inc(i);
+          Inc(ci);
         end;
 
       j := 0;
@@ -2017,7 +2012,7 @@ end;
 
 procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 var
-  TRSize, MaxTPF, PassTileCount, i, j, fi, ty, tx, tc, frame, sy, sx, iter: Integer;
+  TRSize, MaxTPF, PassTileCount, fdi, i, j, fi, ty, tx, tc, frame, sy, sx, iter: Integer;
   sp, vm, hm: Boolean;
   frm: PFrame;
   Tile_: PTile;
@@ -2085,7 +2080,7 @@ begin
 
     SetLength(TilesRepo^.FrameDataset, AKF^.FrameCount * cTileMapSize, sqr(cTileWidth) * 3);
 
-    j := 0;
+    fdi := 0;
     for frame := 0 to AKF^.FrameCount - 1 do
     begin
       frm := @FFrames[AKF^.StartFrame + frame];
@@ -2100,15 +2095,15 @@ begin
             for ty := 0 to cTileWidth - 1 do
               for tx := 0 to cTileWidth - 1 do
               begin
-                TilesRepo^.FrameDataset[j, fi] := DCTCoeffs[tc, ty, tx];
+                TilesRepo^.FrameDataset[fdi, fi] := DCTCoeffs[tc, ty, tx];
                 Inc(fi);
               end;
 
-          Inc(j);
+          Inc(fdi);
         end;
     end;
 
-    Assert(j = AKF^.FrameCount * cTileMapSize);
+    Assert(fdi = AKF^.FrameCount * cTileMapSize);
 
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
