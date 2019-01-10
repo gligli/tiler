@@ -23,7 +23,7 @@ const
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
-  cKFMaxTPFSearchRatio = 0.9;
+  cKFMaxTPFSearchRatio = 0.8;
   cKFYakmoRestarts = 1;
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
@@ -2012,7 +2012,7 @@ end;
 
 procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 var
-  TRSize, MaxTPF, PassTileCount, fdi, i, j, fi, ty, tx, tc, frame, sy, sx, iter: Integer;
+  TRSize, MaxTPF, PassTileCount, di, i, frame, sy, sx, iter: Integer;
   sp, vm, hm: Boolean;
   frm: PFrame;
   Tile_: PTile;
@@ -2035,14 +2035,14 @@ begin
     SetLength(TilesRepo^.Tl2Tr, Length(FTiles));
     SetLength(TilesRepo^.OutputTMIs, AKF^.FrameCount);
 
-    j := 0;
+    di := 0;
     for i := 0 to High(FTiles) do
     begin
       TilesRepo^.Tl2Tr[i] := -1;
 
       if FTiles[i]^.Active then
       begin
-        TilesRepo^.Tl2Tr[i] := j;
+        TilesRepo^.Tl2Tr[i] := di;
 
         for sp := False to True do
           for vm := False to True do
@@ -2054,33 +2054,26 @@ begin
               if vm then VMirrorPalTile(LocalTile);
               DCTCoeffs := ComputeTileDCT(LocalTile, True, False, AKF^.PaletteRGB[sp]);
 
-              SetLength(TilesRepo^.Dataset[j], sqr(cTileWidth) * 3);
-              fi := 0;
-              for tc := 0 to 2 do
-                for ty := 0 to cTileWidth - 1 do
-                  for tx := 0 to cTileWidth - 1 do
-                  begin
-                    TilesRepo^.Dataset[j, fi] := DCTCoeffs[tc, ty, tx];
-                    Inc(fi);
-                  end;
+              SetLength(TilesRepo^.Dataset[di], sqr(cTileWidth) * 3);
+              Move(DCTCoeffs[0, 0, 0], TilesRepo^.Dataset[di, 0], sqr(cTileWidth) * 3 * SizeOf(Double));
 
-              TilesRepo^.DatasetTMIs[j].GlobalTileIndex := i;
-              TilesRepo^.DatasetTMIs[j].SpritePal := sp;
-              TilesRepo^.DatasetTMIs[j].VMirror := vm;
-              TilesRepo^.DatasetTMIs[j].HMirror := hm;
+              TilesRepo^.DatasetTMIs[di].GlobalTileIndex := i;
+              TilesRepo^.DatasetTMIs[di].SpritePal := sp;
+              TilesRepo^.DatasetTMIs[di].VMirror := vm;
+              TilesRepo^.DatasetTMIs[di].HMirror := hm;
 
-              Inc(j);
+              Inc(di);
             end;
       end;
     end;
 
-    Assert(j = TRSize);
+    Assert(di = TRSize);
 
     // build a dataset from frame tiles
 
     SetLength(TilesRepo^.FrameDataset, AKF^.FrameCount * cTileMapSize, sqr(cTileWidth) * 3);
 
-    fdi := 0;
+    di := 0;
     for frame := 0 to AKF^.FrameCount - 1 do
     begin
       frm := @FFrames[AKF^.StartFrame + frame];
@@ -2090,20 +2083,13 @@ begin
           Tile_ := @frm^.Tiles[sy * cTileMapWidth + sx];
           DCTCoeffs := ComputeTileDCT(Tile_^, True, False, Tile_^.PaletteRGB);
 
-          fi := 0;
-          for tc := 0 to 2 do
-            for ty := 0 to cTileWidth - 1 do
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                TilesRepo^.FrameDataset[fdi, fi] := DCTCoeffs[tc, ty, tx];
-                Inc(fi);
-              end;
+          Move(DCTCoeffs[0, 0, 0], TilesRepo^.FrameDataset[di, 0], sqr(cTileWidth) * 3 * SizeOf(Double));
 
-          Inc(fdi);
+          Inc(di);
         end;
     end;
 
-    Assert(fdi = AKF^.FrameCount * cTileMapSize);
+    Assert(di = AKF^.FrameCount * cTileMapSize);
 
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 

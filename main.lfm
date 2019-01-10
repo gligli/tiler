@@ -189,7 +189,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 5
-    Value = 300
+    Value = 200
   end
   object Label10: TLabel
     Left = 8
