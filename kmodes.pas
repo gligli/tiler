@@ -265,29 +265,29 @@ asm
   // SIMD for 64 items
 
   movdqu xmm0, oword ptr [rcx]
-  movdqu xmm2, oword ptr [rcx + $10]
-  movdqu xmm4, oword ptr [rcx + $20]
-  movdqu xmm6, oword ptr [rcx + $30]
+  movdqu xmm9, oword ptr [rcx + $10]
+  movdqu xmm10, oword ptr [rcx + $20]
+  movdqu xmm11, oword ptr [rcx + $30]
 
-  movdqu xmm1, oword ptr [rdx]
-  movdqu xmm3, oword ptr [rdx + $10]
-  movdqu xmm5, oword ptr [rdx + $20]
-  movdqu xmm7, oword ptr [rdx + $30]
+  movdqu xmm12, oword ptr [rdx]
+  movdqu xmm13, oword ptr [rdx + $10]
+  movdqu xmm14, oword ptr [rdx + $20]
+  movdqu xmm15, oword ptr [rdx + $30]
 
-  pcmpeqb xmm0, xmm1
-  pcmpeqb xmm2, xmm3
-  pcmpeqb xmm4, xmm5
-  pcmpeqb xmm6, xmm7
+  pcmpeqb xmm0, xmm12
+  pcmpeqb xmm9, xmm13
+  pcmpeqb xmm10, xmm14
+  pcmpeqb xmm11, xmm15
 
   pmovmskb r8d, xmm0
   mov rax, r8
-  pmovmskb r8d, xmm2
+  pmovmskb r8d, xmm9
   rol rax, 16
   or rax, r8
-  pmovmskb r8d, xmm4
+  pmovmskb r8d, xmm10
   rol rax, 16
   or rax, r8
-  pmovmskb r8d, xmm6
+  pmovmskb r8d, xmm11
   rol rax, 16
   or rax, r8
 
@@ -300,7 +300,7 @@ asm
   popcnt rax, rax
   {$endif}
 
-end ['r8', 'xmm0', 'xmm1', 'xmm2', 'xmm3', 'xmm4', 'xmm5', 'xmm6', 'xmm7'];
+end ['r8', 'xmm0', 'xmm9', 'xmm10', 'xmm11', 'xmm12', 'xmm13', 'xmm14', 'xmm15'];
 
 {$endif}
 
