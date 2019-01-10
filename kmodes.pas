@@ -665,7 +665,7 @@ begin
       moves := KModesIter(Seed);
       ncost := LabelsCost;
 
-      converged := (moves = 0) or (ncost >= cost);
+      converged := (moves = 0) and (ncost >= cost);
       cost := ncost;
 
       totalmoves += moves;
