@@ -397,20 +397,26 @@ begin
 end;
 
 function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
+
+  function GetLineInt(line: String): Integer;
+  begin
+    Result := StrToInt(copy(line, 1, Pos(' ', line) - 1));
+  end;
+
 var
-  i, p, np, clusterCount: Integer;
+  i, p, np, clusterCount, restartCount: Integer;
   line, val, sc: String;
+
 begin
   // TODO: so far, only compatible with YAKMO centroids
 
-  line := lines[1];
-  clusterCount := StrToInt(copy(line, 1, Pos(' ', line) - 1));
+  restartCount := GetLineInt(lines[0]);
+  clusterCount := GetLineInt(lines[1]);
+  SetLength(Result, GetLineInt(lines[2]));
+
   Assert(InRange(index, 0, clusterCount - 1), 'wrong index!');
 
-  line := lines[2];
-  SetLength(Result, StrToInt(copy(line, 1, Pos(' ', line) - 1)));
-
-  line := lines[lines.Count - clusterCount + index];
+  line := lines[3 + clusterCount * (restartCount - 1) + index];
   for i := 0 to High(Result) do
   begin
     sc := ' ' + IntToStr(i + 1) + ':';
