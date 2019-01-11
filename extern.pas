@@ -11,7 +11,7 @@ type
   TDoubleDynArray2 = array of TDoubleDynArray;
 
 procedure DoExternalSKLearn(Dataset: TDoubleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(Dataset: TDoubleDynArray2; var ClusterCount: Integer; RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(Dataset: TDoubleDynArray2; ClusterCount: Integer; RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Double;
 
 procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList; Header: Boolean);
@@ -202,19 +202,16 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(Dataset: TDoubleDynArray2; var ClusterCount: Integer; RestartCount: Integer; TestMode,
+procedure DoExternalYakmo(Dataset: TDoubleDynArray2; ClusterCount: Integer; RestartCount: Integer; TestMode,
   NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
   i, Clu, Inp: Integer;
   InFN, CrFN, Line, Output, ErrOut, CommonCL: String;
   SL: TStringList;
   Process: TProcess;
-  OutputStream: TMemoryStream;
 begin
   if (ClusterCount >= Length(Dataset)) and not TestMode then
   begin
-    ClusterCount := Length(Dataset);
-
     if not NoClusters then
     begin
       SetLength(Clusters, Length(Dataset));
@@ -230,7 +227,6 @@ begin
 
   Process := TProcess.Create(nil);
   SL := TStringList.Create;
-  OutputStream := TMemoryStream.Create;
   try
     InFN := GenerateSVMLightFile(Dataset, False);
 
@@ -264,7 +260,6 @@ begin
 
     if Assigned(Centroids) and not TestMode then
       Centroids.LoadFromFile(CrFN);
-      // TODO: compute real ClusterCount from centroids
 
     if Assigned(Centroids) then
       DeleteFile(PChar(CrFN));
@@ -284,11 +279,8 @@ begin
             TryStrToInt(RightStr(Line, Pos(' ', ReverseString(Line)) - 1), Clu) then
           Clusters[Inp] := Clu;
       end;
-
-      //ClusterCount := MaxIntValue(Clusters) + 1;
     end;
   finally
-    OutputStream.Free;
     SL.Free;
   end;
 end;
