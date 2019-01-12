@@ -6,7 +6,7 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
-  StdCtrls, ComCtrls, Spin, Menus, Math, syncobjs, types, Process, strutils, kmodes, extern, MTProcs;
+  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, extern, MTProcs;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -89,9 +89,9 @@ const
       (12, 13, 16, 23,  38,  56,  73,  75),
       (15, 18, 23, 29,  53,  75,  83,  80),
       (21, 24, 38, 53,  68,  95, 103,  94),
-      (32, 46, 56, 75,  95, 104, 117, 112),
-      (50, 62, 73, 83, 103, 117, 128, 160),
-      (66, 73, 75, 80,  94, 112, 160, 192)
+      (32, 46, 56, 75,  95, 104, 117,  96),
+      (50, 62, 73, 83, 103, 117, 120, 128),
+      (66, 73, 75, 80,  94,  96, 128, 160)
     ),
     (
       // Improved (reduced high frequency chroma importance)
@@ -545,6 +545,9 @@ end;
 
 procedure TMainForm.btnDitherClick(Sender: TObject);
 begin
+  if Length(FFrames) = 0 then
+    Exit;
+
   ProgressRedraw(-1, esDither);
   ProcThreadPool.DoParallel(@DoPre, 0, High(FFrames));
   ProgressRedraw(1);
@@ -568,10 +571,10 @@ end;
 
 procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
 begin
-  ProgressRedraw(-1, esFrameTiling);
-
   if Length(FKeyFrames) = 0 then
     Exit;
+
+  ProgressRedraw(-1, esFrameTiling);
 
   ProcThreadPool.DoParallel(@DoKF, 0, High(FKeyFrames));
 
@@ -712,10 +715,10 @@ procedure TMainForm.btnReindexClick(Sender: TObject);
   end;
 
 begin
-  ProgressRedraw(-1, esReindex);
-
   if Length(FFrames) = 0 then
     Exit;
+
+  ProgressRedraw(-1, esReindex);
 
   ProcThreadPool.DoParallelLocalProc(@DoPruneUnusedTiles, 0, High(FTiles));
   ProgressRedraw(1);
@@ -811,10 +814,10 @@ procedure TMainForm.btnSaveClick(Sender: TObject);
 var
   dataFS, soundFS: TFileStream;
 begin
-  ProgressRedraw(-1, esSave);
-
   if Length(FFrames) = 0 then
     Exit;
+
+  ProgressRedraw(-1, esSave);
 
   dataFS := TFileStream.Create(IncludeTrailingPathDelimiter(edOutputDir.Text) + 'data.bin', fmCreate);
   soundFS := nil;
@@ -844,10 +847,10 @@ procedure TMainForm.btnSmoothClick(Sender: TObject);
       DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 80.0);
   end;
 begin
-  ProgressRedraw(-1, esSmooth);
-
   if Length(FFrames) = 0 then
     Exit;
+
+  ProgressRedraw(-1, esSmooth);
 
   ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, cTileMapHeight - 1);
 
@@ -923,16 +926,16 @@ begin
   x := lerp(Mini, Maxi, 1.0 - cInvPhi);
   y := Func(x, Data);
 
-  EnterCriticalSection(FCS);
-  WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
-  LeaveCriticalSection(FCS);
+  //EnterCriticalSection(FCS);
+  //WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
+  //LeaveCriticalSection(FCS);
 
   case CompareValue(y, ObjectiveY, Epsilon) of
     LessThanValue:
       Result := GoldenRatioSearch(Func, x, Maxi, ObjectiveY, Epsilon, Data);
     GreaterThanValue:
       Result := GoldenRatioSearch(Func, Mini, x, ObjectiveY, Epsilon, Data);
-    EqualsValue:
+  else
       Result := x;
   end;
 end;
@@ -1960,37 +1963,35 @@ begin
 
   Centroids := TStringList.Create;
   try
-    // cluster all tiles duplicated fos SpritePal? / VMirror? / HMirror?
+    // cluster all tiles split for SpritePal? / VMirror? / HMirror?
 
-    DoExternalYakmo(TR^.Dataset, PassTileCount, cKFYakmoRestarts, False, False, False, Centroids, Clusters);
+    DoExternalYakmo(TR^.Dataset, TR^.FrameDataset, PassTileCount, cKFYakmoRestarts, True, False, Centroids, Clusters);
 
     // search tiles closest to centroids
 
+    PassTileCount := GetSVMLightClusterCount(Centroids);
     SetLength(Ct2Tr, PassTileCount);
+
     for i := 0 to PassTileCount - 1 do
     begin
       Centroid := GetSVMLightLine(i, Centroids);
       best := MaxSingle;
       BestIdx := -1;
       for j := 0 to High(TR^.Dataset) do
-        if Clusters[j] = i then
-        begin
-          if best = MaxSingle then
-            BestIdx := j;
+      begin
+        if best = MaxSingle then
+          BestIdx := j;
 
-          cur := CompareEuclidean192(@Centroid[0], @TR^.Dataset[j, 0]);
-          if not IsNan(cur) and (cur < best) then
-          begin
-            best := cur;
-            BestIdx := j;
-          end;
+        cur := CompareEuclidean192(@Centroid[0], @TR^.Dataset[j, 0]);
+        if not IsNan(cur) and (cur < best) then
+        begin
+          best := cur;
+          BestIdx := j;
         end;
+      end;
 
       Ct2Tr[i] := BestIdx;
     end;
-
-    i := PassTileCount;
-    DoExternalYakmo(TR^.FrameDataset, i, 1, True, False, False, Centroids, Clusters);
 
     // map frame tilemap items to "centroid" tiles
 
@@ -2029,7 +2030,7 @@ begin
   end;
 
   EnterCriticalSection(FCS);
-  WriteLn('SF: ', TR^.pKF^.StartFrame, #9'Iter: ', TR^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount);
+  DebugLn(['SF: ', TR^.pKF^.StartFrame, #9'Iter: ', TR^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount]);
   LeaveCriticalSection(FCS);
 
   Inc(TR^.Iteration);
@@ -2047,7 +2048,6 @@ var
   Tile_: PTile;
   LocalTile: TTile;
   TilesRepo: PTileRepo;
-  DCTCoeffs: TDCTCoeffs;
   tmiO, tmiI: PTileMapItem;
 begin
   TilesRepo := New(PTileRepo);
@@ -2082,10 +2082,8 @@ begin
 
               if hm then HMirrorPalTile(LocalTile);
               if vm then VMirrorPalTile(LocalTile);
-              DCTCoeffs := ComputeTileDCT(LocalTile, True, False, AKF^.PaletteRGB[sp]);
 
-              SetLength(TilesRepo^.Dataset[di], sqr(cTileWidth) * 3);
-              Move(DCTCoeffs[0], TilesRepo^.Dataset[di, 0], SizeOf(DCTCoeffs));
+              TilesRepo^.Dataset[di] := ComputeTileDCT(LocalTile, True, False, AKF^.PaletteRGB[sp]);
 
               TilesRepo^.DatasetTMIs[di].GlobalTileIndex := i;
               TilesRepo^.DatasetTMIs[di].SpritePal := sp;
@@ -2111,9 +2109,7 @@ begin
         for sx := 0 to cTileMapWidth - 1 do
         begin
           Tile_ := @frm^.Tiles[sy * cTileMapWidth + sx];
-          DCTCoeffs := ComputeTileDCT(Tile_^, True, False, Tile_^.PaletteRGB);
-
-          Move(DCTCoeffs[0], TilesRepo^.FrameDataset[di, 0], SizeOf(DCTCoeffs));
+          TilesRepo^.FrameDataset[di] := ComputeTileDCT(Tile_^, True, False, Tile_^.PaletteRGB);
 
           Inc(di);
         end;

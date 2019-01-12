@@ -5,18 +5,20 @@ unit extern;
 interface
 
 uses
-  Windows, Classes, SysUtils, Types, Process, strutils, math;
+  LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
   TSingleDynArray2 = array of TSingleDynArray;
 
 procedure DoExternalSKLearn(Dataset: TSingleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(Dataset: TSingleDynArray2; ClusterCount: Integer; RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(TrainDS, TestDS: TSingleDynArray2; ClusterCount: Integer; RestartCount: Integer;
+  OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Single;
 
 procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList; Header: Boolean);
 function GenerateSVMLightFile(Dataset: TSingleDynArray2; Header: Boolean): String;
 function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
+function GetSVMLightClusterCount(lines: TStringList): Integer;
 
 implementation
 
@@ -202,69 +204,73 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(Dataset: TSingleDynArray2; ClusterCount: Integer; RestartCount: Integer; TestMode,
-  NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(TrainDS, TestDS: TSingleDynArray2; ClusterCount: Integer; RestartCount: Integer;
+  OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
-  i, Clu, Inp: Integer;
-  InFN, CrFN, Line, Output, ErrOut, CommonCL: String;
+  i, PrevLen, Clu, Inp, RetCode: Integer;
+  TrainFN, TestFN, CrFN, Line, Output, ErrOut, CmdLine: String;
   SL: TStringList;
   Process: TProcess;
 begin
-  if (ClusterCount >= Length(Dataset)) and not TestMode then
+  if ClusterCount >= Length(TrainDS) then
   begin
-    if not NoClusters then
-    begin
-      SetLength(Clusters, Length(Dataset));
-      for i := 0 to High(Dataset) do
-        Clusters[i] := i;
-    end;
-
-    if Assigned(Centroids) then
-      GenerateSVMLightData(Dataset, Centroids, True);
-
-    Exit;
+    // force a valid dataset by duplicating some lines
+    PrevLen := Length(TrainDS);
+    SetLength(TrainDS, ClusterCount + 1);
+    for i := PrevLen to ClusterCount do
+      TrainDS[i] := TrainDS[i - PrevLen];
   end;
 
   Process := TProcess.Create(nil);
   SL := TStringList.Create;
   try
-    InFN := GenerateSVMLightFile(Dataset, False);
+    TrainFN := GenerateSVMLightFile(TrainDS, False);
+
+    if Assigned(TestDS) then
+      TestFN := GenerateSVMLightFile(TestDS, False);
 
     if Assigned(Centroids) then
       CrFN := GetTempFileName('', 'centroids-'+IntToStr(GetCurrentThreadId)+'.txt');
 
-    if Assigned(Centroids) and TestMode then
-      Centroids.SaveToFile(CrFN);
-
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
     Process.Executable := 'yakmo.exe';
 
-    CommonCL := IfThen(not NoClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
-    CommonCL += ' --num-result=' + IntToStr(RestartCount) + ' --iteration=10000 ';//--init-centroid=2 ';
+    CmdLine := IfThen(OutputClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
+    CmdLine += ' --num-result=' + IntToStr(RestartCount) + ' --iteration=10000 ';//--init-centroid=2 ';
 
-    if TestMode then
-      Process.Parameters.Add('- "' + CrFN + '" "' + InFN + '" ' + CommonCL)
+    if Assigned(TestDS) then
+      CmdLine := '"' + TrainFN + '" "' + CrFN + '" "' + TestFN + '" ' + CmdLine
+    else if Assigned(Centroids) then
+      CmdLine := '"' + TrainFN + '" "' + CrFN + '" - ' + CmdLine
     else
-      if Assigned(Centroids) then
-        Process.Parameters.Add('"' + InFN + '" "' + CrFN + '" - ' + CommonCL)
-      else
-        Process.Parameters.Add('"' + InFN + '" - - ' + CommonCL);
+      CmdLine := '"' + TrainFN + '" - - ' + CmdLine;
 
+    Process.Parameters.Add(CmdLine);
     Process.ShowWindow := swoHIDE;
     Process.Priority := ppIdle;
 
-    i := 0;
-    internalRuncommand(Process, Output, ErrOut, i, PrintProgress); // destroys Process
+    RetCode := 0;
+    internalRuncommand(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
 
-    DeleteFile(PChar(InFN));
+    if RetCode <> 0 then
+      DebugLn('Yakmo failed! RetCode: ' + IntToStr(RetCode) + sLineBreak + 'Msg: ' + ErrOut + sLineBreak + 'CmdLine: ' + CmdLine);
 
-    if Assigned(Centroids) and not TestMode then
-      Centroids.LoadFromFile(CrFN);
+    DeleteFile(PChar(TrainFN));
+
+    if Assigned(TestDS) then
+      DeleteFile(PChar(TestDS));
 
     if Assigned(Centroids) then
-      DeleteFile(PChar(CrFN));
+    begin
+      if FileExists(CrFN) then
+        Centroids.LoadFromFile(CrFN)
+      else
+        GenerateSVMLightData(TrainDS, Centroids, True);
 
-    if not NoClusters then
+      DeleteFile(PChar(CrFN));
+    end;
+
+    if OutputClusters then
     begin
       if (Pos(#10, Output) <> Pos(#13#10, Output) + 1) then
         SL.LineBreak := #10;
@@ -388,13 +394,12 @@ begin
   end;
 end;
 
+function GetLineInt(line: String): Integer;
+begin
+  Result := StrToInt(copy(line, 1, Pos(' ', line) - 1));
+end;
+
 function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
-
-  function GetLineInt(line: String): Integer;
-  begin
-    Result := StrToInt(copy(line, 1, Pos(' ', line) - 1));
-  end;
-
 var
   i, p, np, clusterCount, restartCount: Integer;
   line, val, sc: String;
@@ -435,6 +440,11 @@ begin
         Result[i] := abs(NaN); // Quiet NaN
     end;
   end;
+end;
+
+function GetSVMLightClusterCount(lines: TStringList): Integer;
+begin
+  Result := GetLineInt(lines[1]);
 end;
 
 end.
