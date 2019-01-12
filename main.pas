@@ -6,19 +6,20 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
-  StdCtrls, ComCtrls, Spin, Menus, Math, MTProcs, syncobjs, types, Process, strutils, kmodes, extern;
+  StdCtrls, ComCtrls, Spin, Menus, Math, syncobjs, types, Process, strutils, kmodes, extern, MTProcs;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
 
 const
   cPhi = (1 + sqrt(5)) / 2;
+  cInvPhi = 1 / cPhi;
 
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 4;
   cGamma = 1.8;
-  cInvertSpritePalette = False;
+  cInvertSpritePalette = True;
   cGammaCorrectSmoothing = False;
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
@@ -130,10 +131,12 @@ const
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 3, 1, 3, 1, 2);
 
 type
+  TFloatFloatFunction = function(x: Double; Data: Pointer): Double of object;
+
   PTile = ^TTile;
   PPTile = ^PTile;
 
-  TDCTCoeffs = array[0..2{YUV},0..(cTileWidth - 1),0..(cTileWidth - 1)] of Double;
+  TDCTCoeffs = array[0 .. 3 * sqr(cTileWidth) - 1] of Double;
 
 {$if cTotalColors <= 256}
   TPalPixel = Byte;
@@ -189,7 +192,7 @@ type
     FrameDataset: TDoubleDynArray2;
     Tl2Tr: TIntegerDynArray;
     pKF: PKeyFrame;
-    DesiredNbTiles: Integer;
+    Iteration, DesiredNbTiles: Integer;
   end;
 
   PTileRepo = ^TTileRepo;
@@ -256,6 +259,8 @@ type
     seFrameCount: TSpinEdit;
     tbFrame: TTrackBar;
 
+    function testGR(x: Double; Data: Pointer): Double;
+
     procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
     procedure btnDoGlobalTilingClick(Sender: TObject);
@@ -287,6 +292,11 @@ type
     FProgressPosition, FOldProgressPosition: Integer;
 
     FCS: TRTLCriticalSection;
+
+    procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure DoPre(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 
     class function CompareEuclidean192(pa, pb: PDouble): Double;
 
@@ -324,10 +334,11 @@ type
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
+    function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: Double; ObjectiveY: Double = 0.0; Epsilon: Double = 1e-12; Data: Pointer = nil): Double;
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
     function GetMaxTPF(AKF: PKeyFrame): Integer;
-    function TestTMICount(Iteration, PassTileCount: Integer; TR: PTileRepo): Integer;
+    function TestTMICount(PassX: Double; Data: Pointer): Double;
     procedure DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
@@ -493,6 +504,11 @@ begin
   end;
 end;
 
+function lerp(x, y, alpha: Double): Double; inline;
+begin
+  Result := x + (y - x) * alpha;
+end;
+
 { TMainForm }
 
 procedure TMainForm.btnDoGlobalTilingClick(Sender: TObject);
@@ -512,29 +528,29 @@ begin
   tbFrameChange(nil);
 end;
 
-procedure DoPre(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TMainForm.DoPre(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 begin
-  TMainForm(AData).PreDitherTiles(@TMainForm(AData).FFrames[AIndex]);
+  PreDitherTiles(@FFrames[AIndex]);
 end;
 
-procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TMainForm.DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 begin
-  TMainForm(AData).FindBestKeyframePalette(@TMainForm(AData).FKeyFrames[AIndex]);
+  FindBestKeyframePalette(@FKeyFrames[AIndex]);
 end;
 
-procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TMainForm.DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 begin
-  TMainForm(AData).FinalDitherTiles(@TMainForm(AData).FFrames[AIndex]);
+  FinalDitherTiles(@FFrames[AIndex]);
 end;
 
 procedure TMainForm.btnDitherClick(Sender: TObject);
 begin
   ProgressRedraw(-1, esDither);
-  ProcThreadPool.DoParallel(@DoPre, 0, High(FFrames), Self);
+  ProcThreadPool.DoParallel(@DoPre, 0, High(FFrames));
   ProgressRedraw(1);
-  ProcThreadPool.DoParallel(@DoFindBest, 0, High(FKeyFrames), Self);
+  ProcThreadPool.DoParallel(@DoFindBest, 0, High(FKeyFrames));
   ProgressRedraw(2);
-  ProcThreadPool.DoParallel(@DoFinal, 0, High(FFrames), Self);
+  ProcThreadPool.DoParallel(@DoFinal, 0, High(FFrames));
   ProgressRedraw(3);
 
   tbFrameChange(nil);
@@ -545,9 +561,9 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TMainForm.DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 begin
-  TMainForm(AData).DoKeyframeTiling(@TMainForm(AData).FKeyFrames[AIndex], TMainForm(AData).seMaxTPF.Value);
+  DoKeyframeTiling(@FKeyFrames[AIndex], seMaxTPF.Value);
 end;
 
 procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
@@ -557,11 +573,16 @@ begin
   if Length(FKeyFrames) = 0 then
     Exit;
 
-  ProcThreadPool.DoParallel(@DoKF, 0, High(FKeyFrames), Self);
+  ProcThreadPool.DoParallel(@DoKF, 0, High(FKeyFrames));
 
   ProgressRedraw(1);
 
   tbFrameChange(nil);
+end;
+
+function TMainForm.testGR(x: Double; Data: Pointer): Double;
+begin
+  Result := 12 + log10(x - 100) * 7;
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
@@ -728,6 +749,8 @@ var t: PTile;
     pali:array[0..15] of Integer;
     pal:array[0..15] of Integer;
 begin
+  GoldenRatioSearch(@testGR, 111, 555555, 50, 0.0001);
+
   new(t);
   FillChar(t^, sizeof(TTile), 0);
   t^.Active := True;
@@ -758,6 +781,7 @@ begin
   move(pal[0], FKeyFrames[0].PaletteRGB[False, 0], 64);
   move(pal[0], FKeyFrames[0].PaletteRGB[True, 0], 64);
 
+  SetLength(t^.PaletteIndexes, cTilePaletteSize);
   move(pali[0], t^.PaletteIndexes[0], 64);
   move(pali[0], FKeyFrames[0].PaletteIndexes[False, 0], 64);
   move(pali[0], FKeyFrames[0].PaletteIndexes[True, 0], 64);
@@ -883,6 +907,36 @@ begin
   seAvgTPFEditingDone(nil);
   Render(tbFrame.Position, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked, Ord(chkSprite.State), Ord(chkGamma.State), sePage.Value);
 end;
+
+function TMainForm.GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: Double; ObjectiveY: Double;
+  Epsilon: Double; Data: Pointer): Double;
+var
+  x, y: Double;
+begin
+  if SameValue(Mini, Maxi) then
+  begin
+    DebugLn('GoldenRatioSearch failed!');
+    Result := NaN;
+    Exit;
+  end;
+
+  x := lerp(Mini, Maxi, 1.0 - cInvPhi);
+  y := Func(x, Data);
+
+  EnterCriticalSection(FCS);
+  WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
+  LeaveCriticalSection(FCS);
+
+  case CompareValue(y, ObjectiveY, Epsilon) of
+    LessThanValue:
+      Result := GoldenRatioSearch(Func, x, Maxi, ObjectiveY, Epsilon, Data);
+    GreaterThanValue:
+      Result := GoldenRatioSearch(Func, Mini, x, ObjectiveY, Epsilon, Data);
+    EqualsValue:
+      Result := x;
+  end;
+end;
+
 
 procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
 var
@@ -1378,8 +1432,8 @@ function TMainForm.ComputeTileDCT(var ATile: TTile; FromPal, GammaCor: Boolean; 
 const
   cUVRatio: array[0..cTileWidth-1] of Double = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
 var
-  col, u, v, x, y, cpn: Integer;
-  coeff, s, q, vRatio, z: Double;
+  col, u, v, x, y, di, cpn: Integer;
+  s, q, vRatio, z: Double;
   YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of Double;
 begin
   if FromPal then
@@ -1400,6 +1454,7 @@ begin
                   YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
   end;
 
+  di := 0;
   for cpn := 0 to 2 do
     for v := 0 to (cTileWidth - 1) do
     begin
@@ -1419,9 +1474,8 @@ begin
 			      z += q;
           end;
 
-		    coeff := cUVRatio[u] * vRatio * z;
-
-        Result[cpn,v,u] := coeff;
+        Result[di] := cUVRatio[u] * vRatio * z;
+        Inc(di);
 	    end;
     end;
 end;
@@ -1458,95 +1512,82 @@ begin
     end;
 end;
 
-{$if defined(CPUX86_64)}
-function SumOf8Squares(pa, pb: PDouble): Double; register; assembler; nostackframe;
-asm
-  // load 8 Doubles from pa
-  movupd xmm0, oword ptr [pa]
-  movupd xmm9, oword ptr [pa + $10]
-  movupd xmm10, oword ptr [pa + $20]
-  movupd xmm11, oword ptr [pa + $30]
-
-  // load 8 Doubles from pb
-  movupd xmm12, oword ptr [pb]
-  movupd xmm13, oword ptr [pb + $10]
-  movupd xmm14, oword ptr [pb + $20]
-  movupd xmm15, oword ptr [pb + $30]
-
-  // pa - pb for 8 Doubles
-  subpd xmm0, xmm12
-  subpd xmm9, xmm13
-  subpd xmm10, xmm14
-  subpd xmm11, xmm15
-
-  // result of prev operation squared
-  mulpd xmm0, xmm0
-  mulpd xmm9, xmm9
-  mulpd xmm10, xmm10
-  mulpd xmm11, xmm11
-
-  // sum the 8 squared differences
-  addpd xmm10, xmm11
-  addpd xmm0, xmm9
-
-  addpd xmm0, xmm10
-
-  haddpd xmm0, xmm0
-end ['xmm0', 'xmm9', 'xmm10', 'xmm11', 'xmm12', 'xmm13', 'xmm14', 'xmm15'];
-{$endif}
+//{$if defined(CPUX86_64)}
+//function SumOf8Squares(pa, pb: PDouble): Double; register; assembler;
+//asm
+//  // load 8 Doubles from pa
+//  movupd xmm0, oword ptr [pa]
+//  movupd xmm9, oword ptr [pa + $10]
+//  movupd xmm10, oword ptr [pa + $20]
+//  movupd xmm11, oword ptr [pa + $30]
+//
+//  // load 8 Doubles from pb
+//  movupd xmm12, oword ptr [pb]
+//  movupd xmm13, oword ptr [pb + $10]
+//  movupd xmm14, oword ptr [pb + $20]
+//  movupd xmm15, oword ptr [pb + $30]
+//
+//  // pa - pb for 8 Doubles
+//  subpd xmm0, xmm12
+//  subpd xmm9, xmm13
+//  subpd xmm10, xmm14
+//  subpd xmm11, xmm15
+//
+//  // result of prev operation squared
+//  mulpd xmm0, xmm0
+//  mulpd xmm9, xmm9
+//  mulpd xmm10, xmm10
+//  mulpd xmm11, xmm11
+//
+//  // sum the 8 squared differences
+//  addpd xmm10, xmm11
+//  addpd xmm0, xmm9
+//
+//  addpd xmm0, xmm10
+//
+//  haddpd xmm0, xmm0
+//end ['xmm0', 'xmm9', 'xmm10', 'xmm11', 'xmm12', 'xmm13', 'xmm14', 'xmm15'];
+//{$endif}
 
 class function TMainForm.CompareEuclidean192(pa, pb: PDouble): Double;
+var
+  i: Integer;
 begin
-  // unroll by cTileWidth * 3
-  Result := SumOf8Squares(@pa[$00], @pb[$00]);
-  Result += SumOf8Squares(@pa[$08], @pb[$08]);
-  Result += SumOf8Squares(@pa[$10], @pb[$10]);
-  Result += SumOf8Squares(@pa[$18], @pb[$18]);
-  Result += SumOf8Squares(@pa[$20], @pb[$20]);
-  Result += SumOf8Squares(@pa[$28], @pb[$28]);
-  Result += SumOf8Squares(@pa[$30], @pb[$30]);
-  Result += SumOf8Squares(@pa[$38], @pb[$38]);
-
-  Result += SumOf8Squares(@pa[$40], @pb[$40]);
-  Result += SumOf8Squares(@pa[$48], @pb[$48]);
-  Result += SumOf8Squares(@pa[$50], @pb[$50]);
-  Result += SumOf8Squares(@pa[$58], @pb[$58]);
-  Result += SumOf8Squares(@pa[$60], @pb[$60]);
-  Result += SumOf8Squares(@pa[$68], @pb[$68]);
-  Result += SumOf8Squares(@pa[$70], @pb[$70]);
-  Result += SumOf8Squares(@pa[$78], @pb[$78]);
-
-  Result += SumOf8Squares(@pa[$80], @pb[$80]);
-  Result += SumOf8Squares(@pa[$88], @pb[$88]);
-  Result += SumOf8Squares(@pa[$90], @pb[$90]);
-  Result += SumOf8Squares(@pa[$98], @pb[$98]);
-  Result += SumOf8Squares(@pa[$a0], @pb[$a0]);
-  Result += SumOf8Squares(@pa[$a8], @pb[$a8]);
-  Result += SumOf8Squares(@pa[$b0], @pb[$b0]);
-  Result += SumOf8Squares(@pa[$b8], @pb[$b8]);
+  Result := 0;
+  for i := 0 to 191 do
+      Result += sqr(pa[i] - pb[i]);
+  //// unroll by cTileWidth * 3
+  //Result := SumOf8Squares(@pa[$00], @pb[$00]);
+  //Result += SumOf8Squares(@pa[$08], @pb[$08]);
+  //Result += SumOf8Squares(@pa[$10], @pb[$10]);
+  //Result += SumOf8Squares(@pa[$18], @pb[$18]);
+  //Result += SumOf8Squares(@pa[$20], @pb[$20]);
+  //Result += SumOf8Squares(@pa[$28], @pb[$28]);
+  //Result += SumOf8Squares(@pa[$30], @pb[$30]);
+  //Result += SumOf8Squares(@pa[$38], @pb[$38]);
+  //
+  //Result += SumOf8Squares(@pa[$40], @pb[$40]);
+  //Result += SumOf8Squares(@pa[$48], @pb[$48]);
+  //Result += SumOf8Squares(@pa[$50], @pb[$50]);
+  //Result += SumOf8Squares(@pa[$58], @pb[$58]);
+  //Result += SumOf8Squares(@pa[$60], @pb[$60]);
+  //Result += SumOf8Squares(@pa[$68], @pb[$68]);
+  //Result += SumOf8Squares(@pa[$70], @pb[$70]);
+  //Result += SumOf8Squares(@pa[$78], @pb[$78]);
+  //
+  //Result += SumOf8Squares(@pa[$80], @pb[$80]);
+  //Result += SumOf8Squares(@pa[$88], @pb[$88]);
+  //Result += SumOf8Squares(@pa[$90], @pb[$90]);
+  //Result += SumOf8Squares(@pa[$98], @pb[$98]);
+  //Result += SumOf8Squares(@pa[$a0], @pb[$a0]);
+  //Result += SumOf8Squares(@pa[$a8], @pb[$a8]);
+  //Result += SumOf8Squares(@pa[$b0], @pb[$b0]);
+  //Result += SumOf8Squares(@pa[$b8], @pb[$b8]);
 end;
 
 class function TMainForm.CompareTilesDCT(const ATileA, ATileB: TTile): Double;
-var
-{$if not defined(CPUX86_64)}
-  j, i, c: Integer;
-{$else}
-  pa, pb: PDouble;
-{$endif}
 begin
-
-{$if not defined(CPUX86_64)}
-  Result := 0;
-  for c := 0 to 2 do
-    for j := 0 to cTileWidth - 1 do
-      for i := 0 to cTileWidth - 1 do
-          Result += sqr(ATileA.DCTCoeffs[c, j, i] - ATileB.DCTCoeffs[c, j, i]);
-{$else}
-  pa := @ATileA.DCTCoeffs[0, 0, 0];
-  pb := @ATileB.DCTCoeffs[0, 0, 0];
-
-  Result := CompareEuclidean192(pa, pb);
-{$endif}
+  Result := CompareEuclidean192(@ATileA.DCTCoeffs[0], @ATileB.DCTCoeffs[0]);
 end;
 
 function TMainForm.ColorCompareRGB(r1, g1, b1, r2, g2, b2: Double): Double;
@@ -1878,8 +1919,9 @@ begin
   if Assigned(Dest.PaletteRGB) then
     move(Src.PaletteRGB[0], Dest.PaletteRGB[0], Length(Src.PaletteRGB) * SizeOf(Integer));
 
-  move(Src.RGBPixels[0,0,0], Dest.RGBPixels[0,0,0], SizeOf(Src.RGBPixels));
-  move(Src.DCTCoeffs[0,0,0], Dest.DCTCoeffs[0,0,0], SizeOf(Src.DCTCoeffs));
+  assert(SizeOf(Src.RGBPixels) = 3 * sqr(cTileWidth) * SizeOf(Integer));
+  move(Src.RGBPixels[0, 0, 0], Dest.RGBPixels[0, 0, 0], SizeOf(Src.RGBPixels));
+  move(Src.DCTCoeffs[0], Dest.DCTCoeffs[0], SizeOf(Src.DCTCoeffs));
   move(Src.PalPixels[0,0], Dest.PalPixels[0,0], SizeOf(Src.PalPixels));
 end;
 
@@ -1922,17 +1964,21 @@ begin
     Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
 end;
 
-function TMainForm.TestTMICount(Iteration, PassTileCount: Integer; TR: PTileRepo): Integer;
+function TMainForm.TestTMICount(PassX: Double; Data: Pointer): Double;
 var
   Centroid: TDoubleDynArray;
-  BestIdx, MaxTPF, dsi, ci, i, j, frame, sy, sx: Integer;
+  PassTileCount, BestIdx, MaxTPF, dsi, ci, i, j, frame, sy, sx: Integer;
   best, cur: Double;
   tmiO: PTileMapItem;
   Ct2Tr: TIntegerDynArray;
   Centroids: TStringList;
   Clusters: TIntegerDynArray;
   Used: TBooleanDynArray;
+  TR: PTileRepo;
 begin
+  PassTileCount := round(PassX);
+  TR := PTileRepo(Data);
+
   Centroids := TStringList.Create;
   try
     // cluster all tiles duplicated fos SpritePal? / VMirror? / HMirror?
@@ -1966,10 +2012,6 @@ begin
 
     i := PassTileCount;
     DoExternalYakmo(TR^.FrameDataset, i, 1, True, False, False, Centroids, Clusters);
-    EnterCriticalSection(FCS);
-    j := StrToInt(copy(Centroids[1], 1, Pos(' ', Centroids[1]) - 1));
-    WriteLn('SF: ', TR^.pKF^.StartFrame, #9'Iter: ', Iteration, #9'PTC: ', i, #9, PassTileCount, #9, j);
-    LeaveCriticalSection(FCS);
 
     // map frame tilemap items to "centroid" tiles
 
@@ -2007,12 +2049,20 @@ begin
     Centroids.Free;
   end;
 
+  EnterCriticalSection(FCS);
+  WriteLn('SF: ', TR^.pKF^.StartFrame, #9'Iter: ', TR^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount);
+  LeaveCriticalSection(FCS);
+
+  Inc(TR^.Iteration);
+
   Result := MaxTPF;
 end;
 
 procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
+const
+  cNBTilesEpsilon = 2;
 var
-  TRSize, MaxTPF, PassTileCount, di, i, frame, sy, sx, iter: Integer;
+  TRSize, di, i, frame, sy, sx: Integer;
   sp, vm, hm: Boolean;
   frm: PFrame;
   Tile_: PTile;
@@ -2025,6 +2075,7 @@ begin
   try
     TilesRepo^.pKF := AKF;
     TilesRepo^.DesiredNbTiles := DesiredNbTiles;
+    TilesRepo^.Iteration := 0;
 
     // make a list of all active tiles
 
@@ -2055,7 +2106,7 @@ begin
               DCTCoeffs := ComputeTileDCT(LocalTile, True, False, AKF^.PaletteRGB[sp]);
 
               SetLength(TilesRepo^.Dataset[di], sqr(cTileWidth) * 3);
-              Move(DCTCoeffs[0, 0, 0], TilesRepo^.Dataset[di, 0], sqr(cTileWidth) * 3 * SizeOf(Double));
+              Move(DCTCoeffs[0], TilesRepo^.Dataset[di, 0], SizeOf(DCTCoeffs));
 
               TilesRepo^.DatasetTMIs[di].GlobalTileIndex := i;
               TilesRepo^.DatasetTMIs[di].SpritePal := sp;
@@ -2083,7 +2134,7 @@ begin
           Tile_ := @frm^.Tiles[sy * cTileMapWidth + sx];
           DCTCoeffs := ComputeTileDCT(Tile_^, True, False, Tile_^.PaletteRGB);
 
-          Move(DCTCoeffs[0, 0, 0], TilesRepo^.FrameDataset[di, 0], sqr(cTileWidth) * 3 * SizeOf(Double));
+          Move(DCTCoeffs[0], TilesRepo^.FrameDataset[di, 0], SizeOf(DCTCoeffs));
 
           Inc(di);
         end;
@@ -2093,19 +2144,8 @@ begin
 
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
-    iter := 0;
-    PassTileCount := Length(TilesRepo^.Dataset);
-    repeat
-      MaxTPF := TestTMICount(iter, PassTileCount, TilesRepo);
-
-      EnterCriticalSection(FCS);
-      WriteLn('SF: ',AKF^.StartFrame,#9'Iter: ',iter,#9'MaxTPF: ',MaxTPF,#9'TileCnt: ',PassTileCount);
-      LeaveCriticalSection(FCS);
-
-      PassTileCount := round(PassTileCount * cKFMaxTPFSearchRatio);
-
-      Inc(iter);
-    until MaxTPF <= DesiredNbTiles;
+    if TestTMICount(Length(TilesRepo^.Dataset), TilesRepo) > DesiredNbTiles then // no GR in case ok before reducing
+      GoldenRatioSearch(@TestTMICount, DesiredNbTiles, Length(TilesRepo^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, TilesRepo);
 
     // update tilemap
 

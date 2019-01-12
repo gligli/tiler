@@ -127,7 +127,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\tests\%.4d.png'
+    Text = '.\sample_taxi\test\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
