@@ -1474,7 +1474,7 @@ begin
 			      z += q;
           end;
 
-        Result[di] := cUVRatio[u] * vRatio * z;
+        Result[di] := cUVRatio[u] * vRatio * z * cDCTQuantization[cpn, y, x];
         Inc(di);
 	    end;
     end;
