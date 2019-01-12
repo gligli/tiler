@@ -8,15 +8,15 @@ uses
   Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
-  TDoubleDynArray2 = array of TDoubleDynArray;
+  TSingleDynArray2 = array of TSingleDynArray;
 
-procedure DoExternalSKLearn(Dataset: TDoubleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(Dataset: TDoubleDynArray2; ClusterCount: Integer; RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
-function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Double;
+procedure DoExternalSKLearn(Dataset: TSingleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(Dataset: TSingleDynArray2; ClusterCount: Integer; RestartCount: Integer; TestMode, NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Single;
 
-procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList; Header: Boolean);
-function GenerateSVMLightFile(Dataset: TDoubleDynArray2; Header: Boolean): String;
-function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
+procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList; Header: Boolean);
+function GenerateSVMLightFile(Dataset: TSingleDynArray2; Header: Boolean): String;
+function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
 
 implementation
 
@@ -134,7 +134,7 @@ begin
   end;
 end;
 
-procedure DoExternalSKLearn(Dataset: TDoubleDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
+procedure DoExternalSKLearn(Dataset: TSingleDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
   var Clusters: TIntegerDynArray);
 var
   i, j, st: Integer;
@@ -202,7 +202,7 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(Dataset: TDoubleDynArray2; ClusterCount: Integer; RestartCount: Integer; TestMode,
+procedure DoExternalYakmo(Dataset: TSingleDynArray2; ClusterCount: Integer; RestartCount: Integer; TestMode,
   NoClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
   i, Clu, Inp: Integer;
@@ -285,7 +285,7 @@ begin
   end;
 end;
 
-function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Double;
+function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Single;
 var
   i: Integer;
   Line, Output, ErrOut, SilFN: String;
@@ -346,7 +346,7 @@ begin
   end;
 end;
 
-procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList; Header: Boolean);
+procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList; Header: Boolean);
 var
   i, j: Integer;
   Line: String;
@@ -372,7 +372,7 @@ begin
   end;
 end;
 
-function GenerateSVMLightFile(Dataset: TDoubleDynArray2; Header: Boolean): String;
+function GenerateSVMLightFile(Dataset: TSingleDynArray2; Header: Boolean): String;
 var
   SL: TStringList;
 begin
@@ -388,7 +388,7 @@ begin
   end;
 end;
 
-function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
+function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
 
   function GetLineInt(line: String): Integer;
   begin

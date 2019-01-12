@@ -573,7 +573,7 @@ var
   best, i, j, init_no, iattr, ik, summemb, itr, moves, totalmoves: Integer;
   converged: Boolean;
   cost, ncost: Integer;
-  InvGoldenRatio, GRAcc: Double;
+  InvGoldenRatio, GRAcc: Single;
   Seed: Cardinal;
 begin
   Seed := $42381337;
