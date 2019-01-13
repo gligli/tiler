@@ -236,7 +236,7 @@ begin
     Process.Executable := 'yakmo.exe';
 
     CmdLine := IfThen(OutputClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
-    CmdLine += ' --num-result=' + IntToStr(RestartCount) + ' --iteration=10000 ';//--init-centroid=2 ';
+    CmdLine += ' --num-result=' + IntToStr(RestartCount) + ' --iteration=1000 ';//--init-centroid=2 ';
 
     if Assigned(TestDS) then
       CmdLine := '"' + TrainFN + '" "' + CrFN + '" "' + TestFN + '" ' + CmdLine
