@@ -39,6 +39,7 @@ type
     centroids: TByteDynArray2;
     cl_attr_freq: TIntegerDynArray3;
     MaxIter, NumClusters, NumThreads, NumAttrs, NumPoint: Integer;
+    Log: Boolean;
 
     procedure DoCost(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoMembship(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -50,14 +51,14 @@ type
     function InitFarthestFirst(init_point: Integer): TByteDynArray2;  // negative init_point means randomly chosen
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
-    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0);
+    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0; aLog: Boolean = False);
     function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
   end;
 
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64;
+function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64;
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
 
 
@@ -66,11 +67,14 @@ function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; o
 
 implementation
 
+{$PUSH}
+{$RANGECHECKS OFF}
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 begin
   Seed := Integer(Seed * $08088405) + 1;
   Result := (Seed * Range) shr 32;
 end;
+{$POP}
 
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
 var I, J, P: Integer;
@@ -243,6 +247,40 @@ begin
       Inc(Result);
 end;
 {$else}
+
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
+var
+  i: Integer;
+begin
+  Result := 0;
+
+  i := 0;
+  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
+  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
+  i := 8;
+  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
+  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
+  i := 16;
+  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
+  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
+  i := 24;
+  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
+  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
+  i := 32;
+  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
+  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
+  i := 40;
+  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
+  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
+  i := 48;
+  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
+  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
+  i := 56;
+  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
+  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
+
+end;
+
 function CountPopulation(const x:UInt64):UInt64;
 const
   m1:UInt64 = $5555555555555555; //binary: 0101...
@@ -260,69 +298,124 @@ begin
   Result := (Result * h1) shr 56; //returns left 8 bits of Result + (Result<<8) + (Result<<16) + (Result<<24) + ...
 end;
 
-function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; register; assembler; nostackframe;
+const
+  cMatchingIdxWidth = 48;
+
+function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64; register; assembler; nostackframe;
+label loop, worst;
 asm
   // SIMD for 64 items
 
-  movdqu xmm0, oword ptr [rcx]
-  movdqu xmm9, oword ptr [rcx + $10]
-  movdqu xmm10, oword ptr [rcx + $20]
-  movdqu xmm11, oword ptr [rcx + $30]
+  push rbx
+  push rcx
+  push rsi
+  push rdi
+  push r8
+  push rdx
 
-  movdqu xmm12, oword ptr [rdx]
-  movdqu xmm13, oword ptr [rdx + $10]
-  movdqu xmm14, oword ptr [rdx + $20]
-  movdqu xmm15, oword ptr [rdx + $30]
+  sub rsp, 16 * 8
+  movdqu oword ptr [rsp],       xmm0
+  movdqu oword ptr [rsp + $10], xmm1
+  movdqu oword ptr [rsp + $20], xmm2
+  movdqu oword ptr [rsp + $30], xmm3
+  movdqu oword ptr [rsp + $40], xmm4
+  movdqu oword ptr [rsp + $50], xmm5
+  movdqu oword ptr [rsp + $60], xmm6
+  movdqu oword ptr [rsp + $70], xmm7
 
-  pcmpeqb xmm0, xmm12
-  pcmpeqb xmm9, xmm13
-  pcmpeqb xmm10, xmm14
-  pcmpeqb xmm11, xmm15
+  movdqu xmm4, oword ptr [item_rcx]
+  movdqu xmm5, oword ptr [item_rcx + $10]
+  movdqu xmm6, oword ptr [item_rcx + $20]
+  movdqu xmm7, oword ptr [item_rcx + $30]
 
-  pmovmskb r8d, xmm0
-  mov rax, r8
-  pmovmskb r8d, xmm9
-  rol rax, 16
-  or rax, r8
-  pmovmskb r8d, xmm10
-  rol rax, 16
-  or rax, r8
-  pmovmskb r8d, xmm11
-  rol rax, 16
-  or rax, r8
+  lea rbx, [list_rdx + 8 * count_r8 - 8]
 
-  not rax
+  lea r8, [list_rdx - 8]
 
-  {$ifdef HAS_NO_POPCNT}
-  mov rcx, rax
-  call CountPopulation
-  {$else}
-  popcnt rax, rax
-  {$endif}
+  xor rax, rax
+  dec rax
 
-end ['r8', 'xmm0', 'xmm9', 'xmm10', 'xmm11', 'xmm12', 'xmm13', 'xmm14', 'xmm15'];
+  loop:
+    mov rcx, [list_rdx]
+
+    movdqu xmm0, oword ptr [rcx]
+    movdqu xmm1, oword ptr [rcx + $10]
+    movdqu xmm2, oword ptr [rcx + $20]
+    movdqu xmm3, oword ptr [rcx + $30]
+
+    pcmpeqb xmm0, xmm4
+    pcmpeqb xmm1, xmm5
+    pcmpeqb xmm2, xmm6
+    pcmpeqb xmm3, xmm7
+
+    pmovmskb edi, xmm0
+    mov rsi, rdi
+    pmovmskb edi, xmm1
+    shl rsi, 16
+    or rsi, rdi
+    pmovmskb edi, xmm2
+    shl rsi, 16
+    or rsi, rdi
+    pmovmskb edi, xmm3
+    shl rsi, 16
+    or rsi, rdi
+
+    not rsi
+
+{$ifdef HAS_NO_POPCNT}
+    mov rcx, rsi
+    call CountPopulation
+{$else}
+    popcnt rsi, rsi
+{$endif}
+
+    cmp rsi, rax
+    ja worst
+
+      mov rax, rsi
+      mov r8, list_rdx
+
+    worst:
+
+    add rcx, 64
+    add list_rdx, 8
+    cmp list_rdx, rbx
+    jle loop
+
+  movdqu xmm0, oword ptr [rsp]
+  movdqu xmm1, oword ptr [rsp + $10]
+  movdqu xmm2, oword ptr [rsp + $20]
+  movdqu xmm3, oword ptr [rsp + $30]
+  movdqu xmm4, oword ptr [rsp + $40]
+  movdqu xmm5, oword ptr [rsp + $50]
+  movdqu xmm6, oword ptr [rsp + $60]
+  movdqu xmm7, oword ptr [rsp + $70]
+  add rsp, 16 * 8
+
+  pop rdx
+
+  shl rax, cMatchingIdxWidth
+  sub r8, list_rdx
+  sar r8, 3
+  add rax, r8
+
+  pop r8
+  pop rdi
+  pop rsi
+  pop rcx
+  pop rbx
+
+end;
 
 {$endif}
 
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
-const
-  cIdxWidth = 48;
 var
-  i, db: UInt64;
-  dis: TUint64DynArray;
+  db: UInt64;
 begin
-  SetLength(dis, Length(a));
-
-  for i := 0 to High(a) do
-    dis[i] := UInt64(MatchingDissim(a[i], b)) shl cIdxWidth or i;
-
-  db := dis[0];
-  for i := 1 to High(dis) do
-    if dis[i] < db then
-      db := dis[i];
-
-  Result := Integer(db and ((1 shl cIdxWidth) - 1));
-  bestDissim := Integer(db shr cIdxWidth);
+  db := GetMinMatchingDissim_Asm(@b[0], @a[0], Length(a));
+  Result := Integer(db and ((1 shl cMatchingIdxWidth) - 1));
+  bestDissim := Integer(db shr cMatchingIdxWidth);
 end;
 
 
@@ -502,12 +595,13 @@ begin
   end;
 end;
 
-constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer);
+constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolean);
 begin
   inherited Create;
 
   Self.MaxIter := aMaxIter;
   Self.NumThreads := aNumThreads;
+  Self.Log := aLog;
 end;
 
 function TKModes.KModesIter(var Seed: Cardinal): Integer;
@@ -670,7 +764,8 @@ begin
 
       totalmoves += moves;
 
-      DebugLn(['Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost]);
+      if Log then
+        DebugLn(['Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost]);
     end;
 
     all[init_no].Labels := Copy(labels);
