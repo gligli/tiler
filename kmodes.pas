@@ -404,6 +404,115 @@ asm
 
 end;
 
+procedure UpdateMinDistance_Asm(item_rcx: PByte; list_rdx: PPByte; used_r8: PBoolean; mindist_r9: PByte; count: Integer); register; assembler;
+label loop, used, start;
+asm
+  // SIMD for 64 items
+
+  push rbx
+  push rcx
+  push rsi
+  push rdi
+  push rdx
+  push r8
+  push r9
+
+  sub rsp, 16 * 8
+  movdqu oword ptr [rsp],       xmm0
+  movdqu oword ptr [rsp + $10], xmm1
+  movdqu oword ptr [rsp + $20], xmm2
+  movdqu oword ptr [rsp + $30], xmm3
+  movdqu oword ptr [rsp + $40], xmm4
+  movdqu oword ptr [rsp + $50], xmm5
+  movdqu oword ptr [rsp + $60], xmm6
+  movdqu oword ptr [rsp + $70], xmm7
+
+  movdqu xmm4, oword ptr [item_rcx]
+  movdqu xmm5, oword ptr [item_rcx + $10]
+  movdqu xmm6, oword ptr [item_rcx + $20]
+  movdqu xmm7, oword ptr [item_rcx + $30]
+
+  mov eax, count
+  lea rbx, [list_rdx + 8 * rax - 8]
+
+  xor eax, eax
+
+  jmp start
+
+  loop:
+    mov rcx, [list_rdx]
+
+    movdqu xmm0, oword ptr [rcx]
+    movdqu xmm1, oword ptr [rcx + $10]
+    movdqu xmm2, oword ptr [rcx + $20]
+    movdqu xmm3, oword ptr [rcx + $30]
+
+    pcmpeqb xmm0, xmm4
+    pcmpeqb xmm1, xmm5
+    pcmpeqb xmm2, xmm6
+    pcmpeqb xmm3, xmm7
+
+    pmovmskb edi, xmm0
+    mov rsi, rdi
+    pmovmskb edi, xmm1
+    shl rsi, 16
+    or rsi, rdi
+    pmovmskb edi, xmm2
+    shl rsi, 16
+    or rsi, rdi
+    pmovmskb edi, xmm3
+    shl rsi, 16
+    or rsi, rdi
+
+    not rsi
+
+{$ifdef HAS_NO_POPCNT}
+    mov rcx, rsi
+    call CountPopulation
+{$else}
+    popcnt rsi, rsi
+{$endif}
+
+    mov al, byte ptr [mindist_r9]
+    cmp esi, eax
+    cmovb eax, esi
+    mov byte ptr [mindist_r9], al
+
+    used:
+
+    add rcx, 64
+    add list_rdx, 8
+    inc used_r8
+    inc mindist_r9
+
+    start:
+
+    test byte ptr [used_r8], 0
+    jne used
+
+    cmp list_rdx, rbx
+    jle loop
+
+  movdqu xmm0, oword ptr [rsp]
+  movdqu xmm1, oword ptr [rsp + $10]
+  movdqu xmm2, oword ptr [rsp + $20]
+  movdqu xmm3, oword ptr [rsp + $30]
+  movdqu xmm4, oword ptr [rsp + $40]
+  movdqu xmm5, oword ptr [rsp + $50]
+  movdqu xmm6, oword ptr [rsp + $60]
+  movdqu xmm7, oword ptr [rsp + $70]
+  add rsp, 16 * 8
+
+  pop r9
+  pop r8
+  pop rdx
+  pop rdi
+  pop rsi
+  pop rcx
+  pop rbx
+
+end;
+
 {$endif}
 
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
@@ -479,17 +588,8 @@ var
   mindistance: TByteDynArray;
 
   procedure UpdateMinDistance(icenter: Integer);
-  var
-    i: Integer;
-    dis: Byte;
   begin
-    for i := 0 to NumPoint - 1 do
-      if not used[i] then
-      begin
-        dis := MatchingDissim(X[icenter], X[i]);
-        if dis < mindistance[i] then
-          mindistance[i] := dis;
-      end;
+    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoint);
   end;
 
   function FarthestAway: Integer;
