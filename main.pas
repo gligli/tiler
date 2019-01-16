@@ -1993,7 +1993,7 @@ begin
 
   KModes := TKModes.Create(1);
   try
-    PassTileCount := KModes.ComputeKModes(TR^.Dataset, PassTileCount, TR^.StartingPoint, cTilePaletteSize, Clusters, Centroids);
+    PassTileCount := KModes.ComputeKModes(TR^.Dataset, PassTileCount, -TR^.StartingPoint, cTilePaletteSize, Clusters, Centroids);
   finally
     KModes.Free;
   end;
@@ -2018,8 +2018,8 @@ begin
         Inc(j);
       end;
 
-    ComputeTileDCT(LocalTile, True, False, True, TR^.pKF^.PaletteRGB[False], CentroidsDCT[i, False]);
-    ComputeTileDCT(LocalTile, True, False, True, TR^.pKF^.PaletteRGB[True], CentroidsDCT[i, True]);
+    ComputeTileDCT(LocalTile, True, True, True, TR^.pKF^.PaletteRGB[False], CentroidsDCT[i, False]);
+    ComputeTileDCT(LocalTile, True, True, True, TR^.pKF^.PaletteRGB[True], CentroidsDCT[i, True]);
 
     TMIA[False].GlobalTileIndex := -1;
     TMIA[True].GlobalTileIndex := -1;
@@ -2141,7 +2141,7 @@ begin
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
-          ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], True, False, True, frm^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, TilesRepo^.FrameDataset[di]);
+          ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], True, True, True, frm^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, TilesRepo^.FrameDataset[di]);
           Inc(di);
 
           used[frm^.TileMap[sy, sx].GlobalTileIndex] := True;
@@ -2185,20 +2185,20 @@ begin
         if acc < best then
         begin
           best := acc;
-          StartingPoint := i;
+          StartingPoint := di;
         end;
 
-        ComputeTileDCT(Tile_^, True, False, True, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, False, False, di]);
-        ComputeTileDCT(Tile_^, True, False, True, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, False, False, di]);
+        ComputeTileDCT(Tile_^, True, True, True, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, False, False, di]);
+        ComputeTileDCT(Tile_^, True, True, True, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, False, False, di]);
         HMirrorPalTile(Tile_^);
-        ComputeTileDCT(Tile_^, True, False, True, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, False, True, di]);
-        ComputeTileDCT(Tile_^, True, False, True, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, False, True, di]);
+        ComputeTileDCT(Tile_^, True, True, True, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, False, True, di]);
+        ComputeTileDCT(Tile_^, True, True, True, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, False, True, di]);
         VMirrorPalTile(Tile_^);
-        ComputeTileDCT(Tile_^, True, False, True, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, True, True, di]);
-        ComputeTileDCT(Tile_^, True, False, True, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, True, True, di]);
+        ComputeTileDCT(Tile_^, True, True, True, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, True, True, di]);
+        ComputeTileDCT(Tile_^, True, True, True, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, True, True, di]);
         HMirrorPalTile(Tile_^);
-        ComputeTileDCT(Tile_^, True, False, True, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, True, False, di]);
-        ComputeTileDCT(Tile_^, True, False, True, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, True, False, di]);
+        ComputeTileDCT(Tile_^, True, True, True, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, True, False, di]);
+        ComputeTileDCT(Tile_^, True, True, True, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, True, False, di]);
         VMirrorPalTile(Tile_^);
 
         Inc(di);
