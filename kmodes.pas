@@ -3,7 +3,7 @@
 unit kmodes;
 
 //{$define HAS_NO_POPCNT}
-//{$define GENERIC_DISSIM}
+{$define GENERIC_DISSIM}
 
 {$mode objfpc}{$H+}
 
@@ -55,9 +55,7 @@ type
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64;
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
-
 
 // negative n_init means use -n_init as starting point
 // FinalLabels cluster indexes start at 1
@@ -234,6 +232,7 @@ begin
 end;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
+
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
 var
   i: Integer;
@@ -243,6 +242,26 @@ begin
     if a[i] <> b[i] then
       Inc(Result);
 end;
+
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
+var
+  dis, best, i: Integer;
+begin
+  Result := -1;
+  best := MaxInt;
+  for i := 0 to High(a) do
+  begin
+    dis := MatchingDissim(a[i], b);
+    if dis < best then
+    begin
+      best := dis;
+      Result := i;
+    end;
+  end;
+
+  bestDissim := best;
+end;
+
 {$else}
 
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
@@ -513,8 +532,6 @@ asm
 
 end;
 
-{$endif}
-
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
 var
   db: UInt64;
@@ -524,6 +541,7 @@ begin
   bestDissim := Integer(db shr cMatchingIdxWidth);
 end;
 
+{$endif}
 
 function TKModes.CountClusterMembers(cluster: Integer): Integer;
 var
@@ -587,10 +605,30 @@ var
   used: TBooleanDynArray;
   mindistance: TByteDynArray;
 
+{$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
+
+  procedure UpdateMinDistance(icenter: Integer);
+  var
+    i: Integer;
+    dis: Byte;
+  begin
+    for i := 0 to NumPoint - 1 do
+      if not used[i] then
+      begin
+        dis := MatchingDissim(X[icenter], X[i]);
+        if dis < mindistance[i] then
+          mindistance[i] := dis;
+      end;
+  end;
+
+{$else}
+
   procedure UpdateMinDistance(icenter: Integer);
   begin
     UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoint);
   end;
+
+{$endif}
 
   function FarthestAway: Integer;
   var

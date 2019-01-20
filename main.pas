@@ -27,9 +27,9 @@ const
   cBlueMultiplier = 114;
   cKFMaxTPFSearchRatio = 0.8;
   cKFYakmoRestarts = 1;
-  cKFQWeighting = False;
-  cKFFromPal = False;
+  cKFFromPal = True;
   cKFGamma = True;
+  cKFQWeighting = False;
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
@@ -159,10 +159,11 @@ type
   TPalPixel = Integer;
 {$endif}
   PPalPixel = ^TPalPixel;
+  TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of TPalPixel;
 
   TTile = record
     RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1),0..2{RGB}] of Integer;
-    PalPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of TPalPixel;
+    PalPixels: TPalPixels;
 
     PaletteIndexes: TIntegerDynArray;
     PaletteRGB: TIntegerDynArray;
@@ -310,8 +311,6 @@ type
     procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoPre(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 
-    class function CompareEuclidean192(pa, pb: PFloat): TFloat;
-
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     procedure Render(AFrameIndex: Integer; dithered, mirrored, reduced: Boolean; spritePal, gamma: Integer; ATilePage: Integer);
@@ -342,7 +341,10 @@ type
     procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame);
     procedure FinalDitherTiles(AFrame: PFrame);
 
-    procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer);
+    function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer): Integer;
+    function GetTileGridMedian(const ATile: TTile; other: Boolean): Integer;
+    procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: TPalPixels);
+    function WriteTileDatasetLine(const ATile: TTile; var DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat = 0.0; Epsilon: TFloat = 1e-12; Data: Pointer = nil): TFloat;
@@ -518,6 +520,26 @@ end;
 function lerp(x, y, alpha: TFloat): TFloat; inline;
 begin
   Result := x + (y - x) * alpha;
+end;
+
+function CompareEuclidean192(pa, pb: PFloat): TFloat;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 192 div 8 - 1 downto 0 do
+  begin
+    Result += sqr(pa[0] - pb[0]);
+    Result += sqr(pa[1] - pb[1]);
+    Result += sqr(pa[2] - pb[2]);
+    Result += sqr(pa[3] - pb[3]);
+    Result += sqr(pa[4] - pb[4]);
+    Result += sqr(pa[5] - pb[5]);
+    Result += sqr(pa[6] - pb[6]);
+    Result += sqr(pa[7] - pb[7]);
+    Inc(pa, 8);
+    Inc(pb, 8);
+  end;
 end;
 
 { TMainForm }
@@ -1531,54 +1553,6 @@ begin
     end;
 end;
 
-function SumOf8Squares(pa, pb: PFloat): TFloat; inline;
-begin
-  Result := sqr(pa^ - pb^); Inc(pa); Inc(pb);
-  Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-  Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-  Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-  Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-  Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-  Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-  Result += sqr(pa^ - pb^);
-end;
-
-
-class function TMainForm.CompareEuclidean192(pa, pb: PFloat): TFloat;
-begin
-  Result := SumOf8Squares(@pa[$00], @pb[$00]);
-  Result += SumOf8Squares(@pa[$40], @pb[$40]);
-  Result += SumOf8Squares(@pa[$80], @pb[$80]);
-
-  Result += SumOf8Squares(@pa[$08], @pb[$08]);
-  Result += SumOf8Squares(@pa[$48], @pb[$48]);
-  Result += SumOf8Squares(@pa[$88], @pb[$88]);
-
-  Result += SumOf8Squares(@pa[$10], @pb[$10]);
-  Result += SumOf8Squares(@pa[$50], @pb[$50]);
-  Result += SumOf8Squares(@pa[$90], @pb[$90]);
-
-  Result += SumOf8Squares(@pa[$18], @pb[$18]);
-  Result += SumOf8Squares(@pa[$58], @pb[$58]);
-  Result += SumOf8Squares(@pa[$98], @pb[$98]);
-
-  Result += SumOf8Squares(@pa[$20], @pb[$20]);
-  Result += SumOf8Squares(@pa[$60], @pb[$60]);
-  Result += SumOf8Squares(@pa[$a0], @pb[$a0]);
-
-  Result += SumOf8Squares(@pa[$28], @pb[$28]);
-  Result += SumOf8Squares(@pa[$68], @pb[$68]);
-  Result += SumOf8Squares(@pa[$a8], @pb[$a8]);
-
-  Result += SumOf8Squares(@pa[$30], @pb[$30]);
-  Result += SumOf8Squares(@pa[$70], @pb[$70]);
-  Result += SumOf8Squares(@pa[$b0], @pb[$b0]);
-
-  Result += SumOf8Squares(@pa[$38], @pb[$38]);
-  Result += SumOf8Squares(@pa[$78], @pb[$78]);
-  Result += SumOf8Squares(@pa[$b8], @pb[$b8]);
-end;
-
 function TMainForm.ColorCompareRGB(r1, g1, b1, r2, g2, b2: TFloat): TFloat;
 var
   y1, u1, v1, y2, u2, v2: TFloat;
@@ -1924,7 +1898,7 @@ begin
     end;
 end;
 
-procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer);
+procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: TPalPixels);
 var
   i, j, k: Integer;
 begin
@@ -1939,6 +1913,8 @@ begin
       Continue;
 
     Inc(FTiles[BestIdx]^.AveragedCount, FTiles[j]^.AveragedCount);
+
+    Move(NewTile[0, 0], FTiles[BestIdx]^.PalPixels[0, 0], sizeof(TPalPixels));
 
     FTiles[j]^.Active := False;
     FTiles[j]^.TmpIndex := BestIdx;
@@ -1965,7 +1941,7 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  PassTileCount, MaxTPF, ci, i, j, frame, sy, sx, y, x, bestIdx: Integer;
+  PassTileCount, MaxTPF, ci, i, j, frame, sy, sx, y, x, bestIdx, dissim: Integer;
   tmiO: PTileMapItem;
   Centroids: TByteDynArray2;
   CentroidsToTR: TIntegerDynArray;
@@ -2000,31 +1976,38 @@ begin
 
   for i := 0 to PassTileCount - 1 do
   begin
-    j := 0;
-    for y := 0 to cTileWidth - 1 do
-      for x := 0 to cTileWidth - 1 do
-      begin
-        LocalTile.PalPixels[y, x] := Centroids[i, j];
-        Inc(j);
-      end;
+    CentroidsToTR[i] := GetMinMatchingDissim(TR^.Dataset, Centroids[i], dissim);
 
-    ComputeTileDCT(LocalTile, True, cKFGamma, cKFQWeighting, TR^.pKF^.PaletteRGB[False], CentroidsDCT[False]);
-    ComputeTileDCT(LocalTile, True, cKFGamma, cKFQWeighting, TR^.pKF^.PaletteRGB[True], CentroidsDCT[True]);
-
-    bestIdx := -1;
-    best := MaxSingle;
-    for j := 0 to High(Clusters) do
+    if dissim > 0 then
     begin
-      diff := CompareEuclidean192(@CentroidsDCT[False, 0], @TR^.DCTs[False, False, False, j, 0]);
-      diff := max(diff, CompareEuclidean192(@CentroidsDCT[True, 0], @TR^.DCTs[True, False, False, j, 0]));
-      if diff < best then
-      begin
-        bestIdx := j;
-        best := diff;
-      end;
-    end;
+      j := 0;
+      for y := 0 to cTileWidth - 1 do
+        for x := 0 to cTileWidth - 1 do
+        begin
+          LocalTile.PalPixels[y, x] := Centroids[i, j];
+          MainForm.Canvas.Pixels[(i mod 32) * 8 + x + 800, y + (i div 32) * 16] := SwapRB(TR^.pKF^.PaletteRGB[False, Centroids[i, j]]);
+          MainForm.Canvas.Pixels[(i mod 32) * 8 + x + 800, y + (i div 32) * 16 + 8] := SwapRB(TR^.pKF^.PaletteRGB[True, Centroids[i, j]]);
+          Inc(j);
+        end;
 
-    CentroidsToTR[i] := bestIdx;
+      ComputeTileDCT(LocalTile, True, cKFGamma, cKFQWeighting, TR^.pKF^.PaletteRGB[False], CentroidsDCT[False]);
+      ComputeTileDCT(LocalTile, True, cKFGamma, cKFQWeighting, TR^.pKF^.PaletteRGB[True], CentroidsDCT[True]);
+
+      bestIdx := -1;
+      best := MaxSingle;
+      for j := 0 to High(Clusters) do
+      begin
+        diff := CompareEuclidean192(@CentroidsDCT[False, 0], @TR^.DCTs[False, False, False, j, 0]);
+        diff += CompareEuclidean192(@CentroidsDCT[True, 0], @TR^.DCTs[True, False, False, j, 0]);
+        if diff < best then
+        begin
+          bestIdx := j;
+          best := diff;
+        end;
+      end;
+
+      CentroidsToTR[i] := bestIdx;
+    end;
   end;
 
   // map frame tilemap items to "centroid" tiles and mirrors and choose bestA corresponding palette
@@ -2089,8 +2072,7 @@ procedure TMainForm.DoKeyframeTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 const
   cNBTilesEpsilon = 3;
 var
-  TRSize, di, i, j, acc, frame, sy, sx, y, x, StartingPoint, best: Integer;
-  b: Byte;
+  TRSize, di, i, acc, frame, sy, sx, StartingPoint, best: Integer;
   frm: PFrame;
   Tile_: TTile;
   TilesRepo: PTileRepo;
@@ -2132,7 +2114,7 @@ begin
       TRSize += Ord(used[i]);
 
     SetLength(TilesRepo^.TRToTileIdx, TRSize);
-    SetLength(TilesRepo^.Dataset, TRSize, sqr(cTileWidth));
+    SetLength(TilesRepo^.Dataset, TRSize, 64 + 16 + 4 + 1 + 2);
 
     for spal := False to True do
       for vmir := False to True do
@@ -2140,7 +2122,7 @@ begin
            SetLength(TilesRepo^.DCTs[spal, vmir, hmir], TRSize, 3 * sqr(cTileWidth));
 
     di := 0;
-    best := MaxInt;
+    best := -1;
     StartingPoint := -1; // by default, random starting point
     for i := 0 to High(FTiles) do
       if used[i] then
@@ -2148,18 +2130,9 @@ begin
         TilesRepo^.TRToTileIdx[di] := i;
         CopyTile(FTiles[i]^, Tile_);
 
-        j := 0;
-        acc := 0;
-        for y := 0 to cTileWidth - 1 do
-          for x := 0 to cTileWidth - 1 do
-          begin
-            b := Tile_.PalPixels[y, x];
-            Inc(acc, b);
-            TilesRepo^.Dataset[di, j] := b;
-            Inc(j);
-          end;
+        WriteTileDatasetLine(Tile_, TilesRepo^.Dataset[di], acc);
 
-        if acc < best then
+        if acc >= best then
         begin
           best := acc;
           StartingPoint := di;
@@ -2270,27 +2243,114 @@ begin
         Inc(Result, Ord(FFrames[i].TileMap[sy, sx].GlobalTileIndex = ATileIndex));
 end;
 
+function TMainForm.GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer): Integer;
+var i, j: Integer;
+    cnt: array [0..cTilePaletteSize - 1] of Integer;
+    highest: Integer;
+begin
+  FillDWord(cnt[0], cTilePaletteSize, 0);
+
+  for j := y to y + h - 1 do
+    for i := x to x + w - 1 do
+      Inc(cnt[ATile.PalPixels[j, i]]);
+
+  Result := 0;
+  highest := -1;
+  for i := 0 to cTilePaletteSize - 1 do
+    if cnt[i] >= highest then
+    begin
+      Result := i;
+      highest := cnt[i];
+    end;
+end;
+
+function TMainForm.GetTileGridMedian(const ATile: TTile; other: Boolean): Integer;
+var i, j: Integer;
+    cnt: array [0..cTilePaletteSize - 1] of Integer;
+    highest: Integer;
+begin
+  FillDWord(cnt[0], cTilePaletteSize, 0);
+
+  for j := 0 to cTileWidth - 1 do
+    for i := 0 to cTileWidth - 1 do
+      if other xor (odd(i) = not odd(j)) then
+        Inc(cnt[ATile.PalPixels[j, i]]);
+
+  Result := 0;
+  highest := -1;
+  for i := 0 to cTilePaletteSize - 1 do
+    if cnt[i] >= highest then
+    begin
+      Result := i;
+      highest := cnt[i];
+    end;
+end;
+
+function TMainForm.WriteTileDatasetLine(const ATile: TTile; var DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
+var
+  acc, x, y: Integer;
+  b: Byte;
+begin
+  Result := 0;
+  acc := 0;
+  for y := 0 to cTileWidth - 1 do
+    for x := 0 to cTileWidth - 1 do
+    begin
+      b :=ATile.PalPixels[y, x];
+      Inc(acc, b);
+      DataLine[Result] := b;
+      Inc(Result);
+    end;
+
+  for y := 0 to cTileWidth div 2 - 1 do
+    for x := 0 to cTileWidth div 2 - 1 do
+    begin
+      DataLine[Result] := GetTileZoneMedian(ATile, x shl 1, y shl 1, 2, 2);
+      Inc(Result);
+    end;
+
+  DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 4, 4);
+  Inc(Result);
+  DataLine[Result] := GetTileZoneMedian(ATile, 4, 0, 4, 4);
+  Inc(Result);
+  DataLine[Result] := GetTileZoneMedian(ATile, 0, 4, 4, 4);
+  Inc(Result);
+  DataLine[Result] := GetTileZoneMedian(ATile, 4, 4, 4, 4);
+  Inc(Result);
+
+  DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 8, 8);
+  Inc(Result);
+
+  DataLine[Result] := GetTileGridMedian(ATile, True);
+  Inc(Result);
+
+  DataLine[Result] := GetTileGridMedian(ATile, False);
+  Inc(Result);
+
+  PxlAccum := acc;
+end;
+
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset, Centroids: TByteDynArray2;
   Labels: TIntegerDynArray;
-  i, j, k, x, y, Cnt, acc, best, StartingPoint, ActualNbTiles: Integer;
+  i, j, k, x, y, di, acc, best, StartingPoint, ActualNbTiles: Integer;
   DsTileIdxs: TIntegerDynArray;
-  b: Byte;
   Found: Boolean;
   ToMerge: array of Integer;
   WasActive: TBooleanDynArray;
   KModes: TKModes;
+  NewTile: TPalPixels;
 begin
-  SetLength(Dataset, Length(FTiles), sqr(cTileWidth));
+  SetLength(Dataset, Length(FTiles), 64 + 16 + 4 + 1 + 2);
   SetLength(WasActive, Length(FTiles));
 
   // prepare KModes dataset, one line per tile, 64 palette indexes per line
   // also choose KModes starting point
 
   StartingPoint := -RestartCount; // by default, random starting point
-  Cnt := 0;
-  best := MaxInt;
+  di := 0;
+  best := -1;
   for i := 0 to High(FTiles) do
   begin
     WasActive[i] := FTiles[i]^.Active;
@@ -2298,27 +2358,18 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    j := 0;
-    acc := 0;
-    for y := 0 to cTileWidth - 1 do
-      for x := 0 to cTileWidth - 1 do
-      begin
-        b := FTiles[i]^.PalPixels[y, x];
-        Inc(acc, b);
-        Dataset[Cnt, j] := b;
-        Inc(j);
-      end;
+    WriteTileDatasetLine(FTiles[i]^, Dataset[di], acc);
 
-    if acc < best then
+    if acc >= best then
     begin
       best := acc;
       StartingPoint := i;
     end;
 
-    Inc(Cnt);
+    Inc(di);
   end;
 
-  SetLength(Dataset, Cnt);
+  SetLength(Dataset, di);
 
   ProgressRedraw(1);
 
@@ -2367,7 +2418,7 @@ begin
 
   for j := 0 to ActualNbTiles - 1 do
   begin
-    Cnt := 0;
+    di := 0;
     k := 0;
     for i := 0 to High(FTiles) do
     begin
@@ -2376,14 +2427,24 @@ begin
 
       if Labels[k] = j then
       begin
-        ToMerge[Cnt] := i;
-        Inc(Cnt);
+        ToMerge[di] := i;
+        Inc(di);
       end;
 
       Inc(k);
     end;
 
-    MergeTiles(ToMerge, Cnt, DsTileIdxs[j])
+    // recreate a tile from the centroids
+
+    i := 0;
+    for y := 0 to cTileWidth - 1 do
+      for x := 0 to cTileWidth - 1 do
+      begin
+        NewTile[y, x] := Centroids[j, i];
+        Inc(i);
+      end;
+
+    MergeTiles(ToMerge, di, DsTileIdxs[j], NewTile)
   end;
 
   ProgressRedraw(3);
