@@ -19,7 +19,7 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 4;
-  cGamma = 1.8;
+  cGamma: array[Boolean{YUV?}] of TFloat = (sqrt(2), 2.0);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = False;
   cRedMultiplier = 299;
@@ -27,9 +27,9 @@ const
   cBlueMultiplier = 114;
   cKFMaxTPFSearchRatio = 0.8;
   cKFYakmoRestarts = 1;
-  cKFFromPal = True;
+  cKFFromPal = False;
   cKFGamma = True;
-  cKFQWeighting = False;
+  cKFQWeighting = True;
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
@@ -88,23 +88,14 @@ const
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of TFloat = (
     (
       // optimized
-      (16,11,12,15,21,32,50,66),
-      (11,12,13,18,24,46,62,73),
-      (12,13,16,23,38,56,73,75),
-      (15,18,23,29,53,75,83,80),
-      (21,24,38,53,68,95,103,94),
-      (32,46,56,75,95,104,117,96),
-      (50,62,73,83,103,117,120,102),
-      (66,73,75,80,94,96,102,87)
-
-      //(16, 11, 12, 15,  21,  32,  50,  66),
-      //(11, 12, 13, 18,  24,  46,  62,  73),
-      //(12, 13, 16, 23,  38,  56,  73,  75),
-      //(15, 18, 23, 29,  53,  75,  83,  80),
-      //(21, 24, 38, 53,  68,  95, 103,  94),
-      //(32, 46, 56, 75,  95, 104, 117,  96),
-      //(50, 62, 73, 83, 103, 117, 120, 128),
-      //(66, 73, 75, 80,  94,  96, 128, 160)
+      (16, 11, 12, 15,  21,  32,  50,  66),
+      (11, 12, 13, 18,  24,  46,  62,  73),
+      (12, 13, 16, 23,  38,  56,  73,  75),
+      (15, 18, 23, 29,  53,  75,  83,  80),
+      (21, 24, 38, 53,  68,  95, 103,  94),
+      (32, 46, 56, 75,  95, 104, 117,  96),
+      (50, 62, 73, 83, 103, 117, 120, 128),
+      (66, 73, 75, 80,  94,  96, 128, 144)
     ),
     (
       // Improved (reduced high frequency chroma importance)
@@ -404,18 +395,21 @@ begin
 end;
 
 var
-  GammaCorLut: array[0..High(Byte)] of TFloat;
+  gGammaCorLut: array[Boolean, 0..High(Byte)] of TFloat;
 
 procedure InitGammaLuts;
-var i: Integer;
+var
+  i: Integer;
+  b: Boolean;
 begin
-  for i := 0 to High(GammaCorLut) do
-    GammaCorLut[i] := power(i / 255.0, cGamma);
+  for b := False to True do
+    for i := 0 to High(Byte) do
+      gGammaCorLut[b, i] := power(i / 255.0, cGamma[b]);
 end;
 
-function GammaCorrect(x: Byte): TFloat; inline;
+function GammaCorrect(side: Boolean; x: Byte): TFloat; inline;
 begin
-  Result := GammaCorLut[x];
+  Result := gGammaCorLut[side, x];
 end;
 
 Const
@@ -994,9 +988,9 @@ begin
 
     Plan.LumaPal[i] := ((r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier) shl 7) div cLumaMultiplier;
 
-    Plan.Y2Palette[i][0] := GammaCorrect(r);
-    Plan.Y2Palette[i][1] := GammaCorrect(g);
-    Plan.Y2Palette[i][2] := GammaCorrect(b);
+    Plan.Y2Palette[i][0] := GammaCorrect(False, r);
+    Plan.Y2Palette[i][1] := GammaCorrect(False, g);
+    Plan.Y2Palette[i][2] := GammaCorrect(False, b);
 
     Plan.Y1Palette[i][0] := round(Plan.Y2Palette[i][0] * 16383.0);
     Plan.Y1Palette[i][1] := round(Plan.Y2Palette[i][1] * 16383.0);
@@ -1020,9 +1014,9 @@ var
 begin
   Plan.Count := 0;
 
-  cc0 := GammaCorrect(r);
-  cc1 := GammaCorrect(g);
-  cc2 := GammaCorrect(b);
+  cc0 := GammaCorrect(False, r);
+  cc1 := GammaCorrect(False, g);
+  cc2 := GammaCorrect(False, b);
   RGBToYUV(cc0, cc1, cc2, cc0, cc1, cc2);
 
   so_far[0] := 0; so_far[1] := 0; so_far[2] := 0;
@@ -1372,9 +1366,9 @@ begin
   Plan.Colors[True] := 0;
   Plan.Ratio := 32;
 
-  r := round(GammaCorrect(r) * 16383.0);
-  g := round(GammaCorrect(g) * 16383.0);
-  b := round(GammaCorrect(b) * 16383.0);
+  r := round(GammaCorrect(False, r) * 16383.0);
+  g := round(GammaCorrect(False, g) * 16383.0);
+  b := round(GammaCorrect(False, b) * 16383.0);
 
   least_penalty := MaxSingle;
   // Loop through every unique combination of two colors from the palette,
@@ -1440,9 +1434,9 @@ var
 begin
   if GammaCor then
   begin
-    sr := GammaCorrect(r);
-    sg := GammaCorrect(g);
-    sb := GammaCorrect(b);
+    sr := GammaCorrect(True, r);
+    sg := GammaCorrect(True, g);
+    sb := GammaCorrect(True, b);
   end
   else
   begin
@@ -1757,9 +1751,9 @@ begin
 
             if gamma = 1 then
             begin
-              r := round(GammaCorrect(r) * 255.0);
-              g := round(GammaCorrect(g) * 255.0);
-              b := round(GammaCorrect(b) * 255.0);
+              r := round(GammaCorrect(True, r) * 255.0);
+              g := round(GammaCorrect(True, g) * 255.0);
+              b := round(GammaCorrect(True, b) * 255.0);
             end;
 
             if j and 1 = 1 then
