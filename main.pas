@@ -6,7 +6,7 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
-  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs;
+  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation;
 
 type
   TFloat = Single;
@@ -236,6 +236,8 @@ type
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
+    Label5: TLabel;
+    lblCorrel: TLabel;
     lblPct: TLabel;
     Label6: TLabel;
     Label7: TLabel;
@@ -1626,12 +1628,13 @@ procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced: Bo
   ATilePage: Integer);
 var
   i, j, r, g, b, ti, tx, ty, col: Integer;
-  pTiles, pDest, p: PInteger;
+  pTiles, pDest, pDest2, p: PInteger;
   tilePtr: PTile;
   TMItem: TTileMapItem;
   Frame: PFrame;
   fn: String;
   pal: TIntegerDynArray;
+  oriCorr, chgCorr: TDoubleDynArray;
 begin
   if Length(FFrames) <= 0 then
     Exit;
@@ -1649,127 +1652,135 @@ begin
   imgTiles.Picture.Bitmap.BeginUpdate;
   imgDest.Picture.Bitmap.BeginUpdate;
   try
+    // tile pages
+
     for j := 0 to cScreenHeight * 2 - 1 do
     begin
       pTiles := imgTiles.Picture.Bitmap.ScanLine[j];
-      pDest := imgDest.Picture.Bitmap.ScanLine[j];
 
-      for i := 0 to (cScreenWidth - 1) do
+      for i := 0 to cScreenWidth - 1 do
+      begin
+        ti := 32 * (j shr 3) + (i shr 3) + cTileMapSize * ATilePage;
+
+        tx := i and (cTileWidth - 1);
+        ty := j and (cTileWidth - 1);
+
+        if ti >= Length(FTiles) then
         begin
-          ti := 32 * (j shr 3) + (i shr 3) + cTileMapSize * ATilePage;
+          r := 0;
+          g := 255;
+          b := 255;
+        end
+        else
+        begin
+          tilePtr := FTiles[ti];
 
-          // tile pages
+          case spritePal of
+            0, 2: pal := Frame^.KeyFrame^.PaletteRGB[False];
+            1: pal := Frame^.KeyFrame^.PaletteRGB[True];
+          end;
 
-          tx := i and (cTileWidth - 1);
-          ty := j and (cTileWidth - 1);
-
-          if ti >= Length(FTiles) then
+          if dithered and Assigned(pal) then
           begin
-            r := 0;
-            g := 255;
-            b := 255;
+            col := pal[tilePtr^.PalPixels[ty, tx]];
+
+            b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
           end
           else
           begin
-            tilePtr := FTiles[ti];
-
-            case spritePal of
-              0, 2: pal := Frame^.KeyFrame^.PaletteRGB[False];
-              1: pal := Frame^.KeyFrame^.PaletteRGB[True];
-            end;
-
-            if dithered and Assigned(pal) then
-            begin
-              col := pal[tilePtr^.PalPixels[ty, tx]];
-
-              b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
-            end
-            else
-            begin
-              r := tilePtr^.RGBPixels[ty, tx, 0];
-              g := tilePtr^.RGBPixels[ty, tx, 1];
-              b := tilePtr^.RGBPixels[ty, tx, 2];
-            end;
-
-            if not tilePtr^.Active then
-            begin
-              r := 255;
-              g := 0;
-              b := 255;
-		       end;
+            r := tilePtr^.RGBPixels[ty, tx, 0];
+            g := tilePtr^.RGBPixels[ty, tx, 1];
+            b := tilePtr^.RGBPixels[ty, tx, 2];
           end;
 
-          p := pTiles;
-          Inc(p, i);
-          p^ := ToRGB(r, g, b);
-
-          // dest screen
-
-          tx := i and (cTileWidth - 1);
-          ty := (j shr 1) and (cTileWidth - 1);
-
-          TMItem := Frame^.TileMap[j shr 4, i shr 3];
-          if TMItem.Smoothed then
+          if not tilePtr^.Active then
           begin
-            // emulate smoothing (use previous frame tilemap item)
-            TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 4, i shr 3];
-            TMItem.GlobalTileIndex := Frame^.TilesIndexes[TMItem.FrameTileIndex];
-          end;
-          ti := TMItem.GlobalTileIndex;
-
-          if ti < Length(FTiles) then
-          begin
-            if reduced then
-            begin
-              tilePtr := FTiles[ti];
-              if mirrored and TMItem.HMirror then tx := cTileWidth - 1 - tx;
-              if mirrored and TMItem.VMirror then ty := cTileWidth - 1 - ty;
-              case spritePal of
-                0: pal := Frame^.KeyFrame^.PaletteRGB[False];
-                1: pal := Frame^.KeyFrame^.PaletteRGB[True];
-                2: pal := Frame^.KeyFrame^.PaletteRGB[TMItem.SpritePal];
-              end
-            end
-            else
-            begin
-              tilePtr :=  @Frame^.Tiles[(j shr 4) * cTileMapWidth + (i shr 3)];
-              pal := tilePtr^.PaletteRGB;
-            end;
-
-            if dithered and Assigned(pal) then
-            begin
-              col := pal[tilePtr^.PalPixels[ty, tx]];
-
-              b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
-            end
-            else
-            begin
-              r := tilePtr^.RGBPixels[ty, tx, 0];
-              g := tilePtr^.RGBPixels[ty, tx, 1];
-              b := tilePtr^.RGBPixels[ty, tx, 2];
-            end;
-
-            if gamma = 1 then
-            begin
-              r := round(GammaCorrect(True, r) * 255.0);
-              g := round(GammaCorrect(True, g) * 255.0);
-              b := round(GammaCorrect(True, b) * 255.0);
-            end;
-
-            if j and 1 = 1 then
-            begin
-              // 25% scanlines
-              r := r - r shr 2;
-              g := g - g shr 2;
-              b := b - b shr 2;
-            end;
-
-            p := pDest;
-            Inc(p, i);
-            p^ := ToRGB(r, g, b);
-          end;
+            r := 255;
+            g := 0;
+            b := 255;
+		     end;
         end;
+
+        pTiles[i] := ToRGB(r, g, b);
+      end;
     end;
+
+    // dest screen
+
+    SetLength(oriCorr, cScreenHeight * cScreenWidth);
+    SetLength(chgCorr, cScreenHeight * cScreenWidth);
+
+    for j := 0 to cScreenHeight - 1 do
+    begin
+      pDest := imgDest.Picture.Bitmap.ScanLine[j shl 1];
+      pDest2 := imgDest.Picture.Bitmap.ScanLine[(j shl 1) + 1];
+
+      for i := 0 to cScreenWidth - 1 do
+      begin
+        tx := i and (cTileWidth - 1);
+        ty := j and (cTileWidth - 1);
+
+        TMItem := Frame^.TileMap[j shr 3, i shr 3];
+        if TMItem.Smoothed then
+        begin
+          // emulate smoothing (use previous frame tilemap item)
+          TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 3, i shr 3];
+          TMItem.GlobalTileIndex := Frame^.TilesIndexes[TMItem.FrameTileIndex];
+        end;
+        ti := TMItem.GlobalTileIndex;
+
+        if ti < Length(FTiles) then
+        begin
+          tilePtr :=  @Frame^.Tiles[(j shr 3) * cTileMapWidth + (i shr 3)];
+          pal := tilePtr^.PaletteRGB;
+          if Assigned(pal) then
+            oriCorr[j * cScreenWidth + i] := SwapRB(pal[tilePtr^.PalPixels[ty, tx]]);
+
+          if reduced then
+          begin
+            tilePtr := FTiles[ti];
+            if mirrored and TMItem.HMirror then tx := cTileWidth - 1 - tx;
+            if mirrored and TMItem.VMirror then ty := cTileWidth - 1 - ty;
+            case spritePal of
+              0: pal := Frame^.KeyFrame^.PaletteRGB[False];
+              1: pal := Frame^.KeyFrame^.PaletteRGB[True];
+              2: pal := Frame^.KeyFrame^.PaletteRGB[TMItem.SpritePal];
+            end
+          end;
+
+          if dithered and Assigned(pal) then
+          begin
+            col := pal[tilePtr^.PalPixels[ty, tx]];
+            b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
+          end
+          else
+          begin
+            r := tilePtr^.RGBPixels[ty, tx, 0];
+            g := tilePtr^.RGBPixels[ty, tx, 1];
+            b := tilePtr^.RGBPixels[ty, tx, 2];
+          end;
+
+          if gamma = 1 then
+          begin
+            r := round(GammaCorrect(True, r) * 255.0);
+            g := round(GammaCorrect(True, g) * 255.0);
+            b := round(GammaCorrect(True, b) * 255.0);
+          end;
+
+          pDest[i] := ToRGB(r, g, b);
+          chgCorr[j * cScreenWidth + i] := ToRGB(r, g, b);
+
+          // 25% scanlines
+          r := r - r shr 2;
+          g := g - g shr 2;
+          b := b - b shr 2;
+
+          pDest2[i] := ToRGB(r, g, b);
+        end;
+      end;
+    end;
+
+    lblCorrel.Caption := FormatFloat('0.0000', SpearmanRankCorrelation(oriCorr, chgCorr, cScreenHeight * cScreenWidth));
   finally
     imgTiles.Picture.Bitmap.EndUpdate;
     imgDest.Picture.Bitmap.EndUpdate;
