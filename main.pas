@@ -317,10 +317,8 @@ type
 
     function ColorCompareRGB(r1, g1, b1, r2, g2, b2: TFloat): TFloat;
     function ColorCompareRGBYUV(r, g, b, y, u, v: TFloat): TFloat;
-
     function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: TFloat): TFloat;
     procedure DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
-
     procedure PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
     procedure DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
 
@@ -1106,7 +1104,7 @@ type
   PCountIndexArray = ^TCountIndexArray;
 
 
-function CompareCMU(Item1,Item2,UserParameter:Pointer):Integer;
+function CompareCMUCntImp(Item1,Item2,UserParameter:Pointer):Integer;
 begin
   Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]);
   if Result = 0 then
@@ -1115,12 +1113,16 @@ end;
 
 function CompareCMUHueLuma(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]);
+  Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]);
+  if Result = 0 then
+    Result := CompareValue(PCountIndexArray(Item2)^[ciImportance], PCountIndexArray(Item1)^[ciImportance]);
+  if Result = 0 then
+    Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]);
   if Result = 0 then
     Result := CompareValue(PCountIndexArray(Item1)^[ciLuma], PCountIndexArray(Item2)^[ciLuma]);
 end;
 
-function CompareCMULumaHue(Item1,Item2,UserParameter:Pointer):Integer;
+function CompareCMULumaHueInv(Item1,Item2,UserParameter:Pointer):Integer;
 begin
   Result := CompareValue(PCountIndexArray(Item2)^[ciLuma], PCountIndexArray(Item1)^[ciLuma]);
   if Result = 0 then
@@ -1168,10 +1170,10 @@ begin
         for tx := 0 to (cTileWidth - 1) do
           Inc(CMUsage[FullPalTile.PalPixels[ty, tx]][ciCount], FullPalTile.AveragedCount);
 
-      QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMU);
+      QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
 
       // sort those by importance and luma
-      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULumaHue);
+      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
 
       SetLength(Tile_^.PaletteIndexes, cTilePaletteSize);
       SetLength(Tile_^.PaletteRGB, cTilePaletteSize);
@@ -1232,11 +1234,11 @@ begin
 
   // sort colors by use count
 
-  QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMU);
+  QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
 
   // split most used colors into two 16 color palettes, with brightest and darkest colors repeated in both
 
-  QuickSort(CMUsage[0], 0, cKeyframeFixedColors - 1, SizeOf(CMUsage[0]), @CompareCMULumaHue);
+  QuickSort(CMUsage[0], 0, cKeyframeFixedColors - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
   QuickSort(CMUsage[0], cKeyframeFixedColors, cTilePaletteSize * 2 - 1, SizeOf(CMUsage[0]), @CompareCMUHueLuma);
   for i := 0 to cTilePaletteSize - 1 do
   begin
@@ -1990,8 +1992,8 @@ begin
         for x := 0 to cTileWidth - 1 do
         begin
           LocalTile.PalPixels[y, x] := Centroids[i, j];
-          MainForm.Canvas.Pixels[(i mod 32) * 8 + x + 800, y + (i div 32) * 16] := SwapRB(TR^.pKF^.PaletteRGB[False, Centroids[i, j]]);
-          MainForm.Canvas.Pixels[(i mod 32) * 8 + x + 800, y + (i div 32) * 16 + 8] := SwapRB(TR^.pKF^.PaletteRGB[True, Centroids[i, j]]);
+          //MainForm.Canvas.Pixels[(i mod 32) * 8 + x + 800, y + (i div 32) * 16] := SwapRB(TR^.pKF^.PaletteRGB[False, Centroids[i, j]]);
+          //MainForm.Canvas.Pixels[(i mod 32) * 8 + x + 800, y + (i div 32) * 16 + 8] := SwapRB(TR^.pKF^.PaletteRGB[True, Centroids[i, j]]);
           Inc(j);
         end;
 
@@ -2079,7 +2081,7 @@ const
 var
   TRSize, di, i, acc, frame, sy, sx, StartingPoint, best: Integer;
   frm: PFrame;
-  Tile_: TTile;
+  T: PTile;
   TilesRepo: PTileRepo;
   tmiO, tmiI: PTileMapItem;
   used: TBooleanDynArray;
@@ -2133,9 +2135,9 @@ begin
       if used[i] then
       begin
         TilesRepo^.TRToTileIdx[di] := i;
-        CopyTile(FTiles[i]^, Tile_);
+        T := FTiles[i];
 
-        WriteTileDatasetLine(Tile_, TilesRepo^.Dataset[di], acc);
+        WriteTileDatasetLine(T^, TilesRepo^.Dataset[di], acc);
 
         if acc >= best then
         begin
@@ -2143,17 +2145,18 @@ begin
           StartingPoint := di;
         end;
 
-        ComputeTileDCT(Tile_, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, False, False, di]);
-        ComputeTileDCT(Tile_, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, False, False, di]);
-        HMirrorPalTile(Tile_);
-        ComputeTileDCT(Tile_, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, False, True, di]);
-        ComputeTileDCT(Tile_, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, False, True, di]);
-        VMirrorPalTile(Tile_);
-        ComputeTileDCT(Tile_, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, True, True, di]);
-        ComputeTileDCT(Tile_, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, True, True, di]);
-        HMirrorPalTile(Tile_);
-        ComputeTileDCT(Tile_, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, True, False, di]);
-        ComputeTileDCT(Tile_, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, True, False, di]);
+        ComputeTileDCT(T^, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, False, False, di]);
+        ComputeTileDCT(T^, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, False, False, di]);
+        HMirrorPalTile(T^);
+        ComputeTileDCT(T^, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, False, True, di]);
+        ComputeTileDCT(T^, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, False, True, di]);
+        VMirrorPalTile(T^);
+        ComputeTileDCT(T^, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, True, True, di]);
+        ComputeTileDCT(T^, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, True, True, di]);
+        HMirrorPalTile(T^);
+        ComputeTileDCT(T^, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[False], TilesRepo^.DCTs[False, True, False, di]);
+        ComputeTileDCT(T^, True, cKFGamma, cKFQWeighting, AKF^.PaletteRGB[True], TilesRepo^.DCTs[True, True, False, di]);
+        VMirrorPalTile(T^);
 
         Inc(di);
       end;

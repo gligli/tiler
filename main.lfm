@@ -6,7 +6,7 @@ object MainForm: TMainForm
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 803
+  VertScrollBar.Page = 804
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
@@ -111,7 +111,6 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 6
   end
   object Label3: TLabel
     Left = 8
@@ -127,7 +126,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 176
     TabOrder = 0
-    Text = '.\sample_taxi\testg\01%.2d.png'
+    Text = '.\sample_taxi\test\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -336,7 +335,7 @@ object MainForm: TMainForm
   object lblCorrel: TLabel
     Left = 744
     Height = 15
-    Top = 788
+    Top = 789
     Width = 35
     Alignment = taRightJustify
     AutoSize = False
@@ -346,7 +345,7 @@ object MainForm: TMainForm
   object Label5: TLabel
     Left = 704
     Height = 15
-    Top = 788
+    Top = 789
     Width = 35
     Caption = 'Correl:'
     ParentColor = False
