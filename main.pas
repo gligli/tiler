@@ -2121,7 +2121,7 @@ begin
       TRSize += Ord(used[i]);
 
     SetLength(TilesRepo^.TRToTileIdx, TRSize);
-    SetLength(TilesRepo^.Dataset, TRSize, 64 + 16 + 4 + 1 + 2);
+    SetLength(TilesRepo^.Dataset, TRSize, cKModesFeatureCount);
 
     for spal := False to True do
       for vmir := False to True do
@@ -2336,6 +2336,9 @@ begin
   Inc(Result);
 
   PxlAccum := acc;
+
+  // clear remaining bytes
+  FillByte(DataLine[Result], cKModesFeatureCount - Result, 0);
 end;
 
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
@@ -2350,7 +2353,7 @@ var
   KModes: TKModes;
   NewTile: TPalPixels;
 begin
-  SetLength(Dataset, Length(FTiles), 64 + 16 + 4 + 1 + 2);
+  SetLength(Dataset, Length(FTiles), cKModesFeatureCount);
   SetLength(WasActive, Length(FTiles));
 
   // prepare KModes dataset, one line per tile, 64 palette indexes per line

@@ -2,8 +2,7 @@
 
 unit kmodes;
 
-//{$define HAS_NO_POPCNT}
-{$define GENERIC_DISSIM}
+//{$define GENERIC_DISSIM}
 
 {$mode objfpc}{$H+}
 
@@ -11,6 +10,9 @@ interface
 
 uses
   Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows;
+
+const
+  cKModesFeatureCount = 96;
 
 type
   PInteger = ^Integer;
@@ -252,7 +254,7 @@ begin
   for i := 0 to High(a) do
   begin
     dis := MatchingDissim(a[i], b);
-    if dis < best then
+    if dis <= best then
     begin
       best := dis;
       Result := i;
@@ -264,72 +266,21 @@ end;
 
 {$else}
 
-function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
-var
-  i: Integer;
-begin
-  Result := 0;
-
-  i := 0;
-  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
-  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
-  i := 8;
-  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
-  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
-  i := 16;
-  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
-  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
-  i := 24;
-  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
-  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
-  i := 32;
-  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
-  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
-  i := 40;
-  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
-  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
-  i := 48;
-  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
-  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
-  i := 56;
-  Result += Ord(a[i+0] <> b[i+0]); Result += Ord(a[i+1] <> b[i+1]); Result += Ord(a[i+2] <> b[i+2]); Result += Ord(a[i+3] <> b[i+3]);
-  Result += Ord(a[i+4] <> b[i+4]); Result += Ord(a[i+5] <> b[i+5]); Result += Ord(a[i+6] <> b[i+6]); Result += Ord(a[i+7] <> b[i+7]);
-
-end;
-
-function CountPopulation(const x:UInt64):UInt64;
-const
-  m1:UInt64 = $5555555555555555; //binary: 0101...
-  m2:UInt64 = $3333333333333333; //binary: 00110011..
-  m4:UInt64 = $0f0f0f0f0f0f0f0f; //binary:  4 zeros,  4 ones ...
-  h1:UInt64 = $0101010101010101; //the sum of 256 to the power of 0,1,2,3...
-begin
-  Result := x;
-
-  // Wikipedia popcount_3 port ( http://en.wikipedia.org/wiki/Popcnt )
-
-  Result := Result - ((Result shr 1) and m1);          //put count of each 2 bits into those 2 bits
-  Result := (Result and m2) + ((Result shr 2) and m2); //put count of each 4 bits into those 4 bits
-  Result := (Result + (Result shr 4)) and m4;          //put count of each 8 bits into those 8 bits
-  Result := (Result * h1) shr 56; //returns left 8 bits of Result + (Result<<8) + (Result<<16) + (Result<<24) + ...
-end;
-
 const
   cMatchingIdxWidth = 48;
 
 function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64; register; assembler; nostackframe;
 label loop, worst;
 asm
-  // SIMD for 64 items
-
   push rbx
   push rcx
   push rsi
   push rdi
   push r8
+  push r10
   push rdx
 
-  sub rsp, 16 * 8
+  sub rsp, 16 * 12
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -338,11 +289,17 @@ asm
   movdqu oword ptr [rsp + $50], xmm5
   movdqu oword ptr [rsp + $60], xmm6
   movdqu oword ptr [rsp + $70], xmm7
+  movdqu oword ptr [rsp + $80], xmm8
+  movdqu oword ptr [rsp + $90], xmm9
+  movdqu oword ptr [rsp + $a0], xmm10
+  movdqu oword ptr [rsp + $b0], xmm11
 
   movdqu xmm4, oword ptr [item_rcx]
   movdqu xmm5, oword ptr [item_rcx + $10]
   movdqu xmm6, oword ptr [item_rcx + $20]
   movdqu xmm7, oword ptr [item_rcx + $30]
+  movdqu xmm8, oword ptr [item_rcx + $40]
+  movdqu xmm9, oword ptr [item_rcx + $50]
 
   lea rbx, [list_rdx + 8 * count_r8 - 8]
 
@@ -358,11 +315,15 @@ asm
     movdqu xmm1, oword ptr [rcx + $10]
     movdqu xmm2, oword ptr [rcx + $20]
     movdqu xmm3, oword ptr [rcx + $30]
+    movdqu xmm10, oword ptr [rcx + $40]
+    movdqu xmm11, oword ptr [rcx + $50]
 
     pcmpeqb xmm0, xmm4
     pcmpeqb xmm1, xmm5
     pcmpeqb xmm2, xmm6
     pcmpeqb xmm3, xmm7
+    pcmpeqb xmm10, xmm8
+    pcmpeqb xmm11, xmm9
 
     pmovmskb edi, xmm0
     mov rsi, rdi
@@ -375,15 +336,18 @@ asm
     pmovmskb edi, xmm3
     shl rsi, 16
     or rsi, rdi
-
     not rsi
+    popcnt r10, rsi
 
-{$ifdef HAS_NO_POPCNT}
-    mov rcx, rsi
-    call CountPopulation
-{$else}
+    pmovmskb edi, xmm10
+    mov rsi, rdi
+    pmovmskb edi, xmm11
+    shl rsi, 16
+    or rsi, rdi
+    not rsi
     popcnt rsi, rsi
-{$endif}
+
+    add rsi, r10
 
     cmp rsi, rax
     ja worst
@@ -393,7 +357,7 @@ asm
 
     worst:
 
-    add rcx, 64
+    add rcx, cKModesFeatureCount
     add list_rdx, 8
     cmp list_rdx, rbx
     jle loop
@@ -406,7 +370,11 @@ asm
   movdqu xmm5, oword ptr [rsp + $50]
   movdqu xmm6, oword ptr [rsp + $60]
   movdqu xmm7, oword ptr [rsp + $70]
-  add rsp, 16 * 8
+  movdqu xmm8, oword ptr [rsp + $80]
+  movdqu xmm9, oword ptr [rsp + $90]
+  movdqu xmm10, oword ptr [rsp + $a0]
+  movdqu xmm11, oword ptr [rsp + $b0]
+  add rsp, 16 * 12
 
   pop rdx
 
@@ -415,6 +383,7 @@ asm
   sar r8, 3
   add rax, r8
 
+  pop r10
   pop r8
   pop rdi
   pop rsi
@@ -426,8 +395,6 @@ end;
 procedure UpdateMinDistance_Asm(item_rcx: PByte; list_rdx: PPByte; used_r8: PBoolean; mindist_r9: PByte; count: Integer); register; assembler;
 label loop, used, start;
 asm
-  // SIMD for 64 items
-
   push rbx
   push rcx
   push rsi
@@ -435,8 +402,9 @@ asm
   push rdx
   push r8
   push r9
+  push r10
 
-  sub rsp, 16 * 8
+  sub rsp, 16 * 12
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -445,11 +413,17 @@ asm
   movdqu oword ptr [rsp + $50], xmm5
   movdqu oword ptr [rsp + $60], xmm6
   movdqu oword ptr [rsp + $70], xmm7
+  movdqu oword ptr [rsp + $80], xmm8
+  movdqu oword ptr [rsp + $90], xmm9
+  movdqu oword ptr [rsp + $a0], xmm10
+  movdqu oword ptr [rsp + $b0], xmm11
 
   movdqu xmm4, oword ptr [item_rcx]
   movdqu xmm5, oword ptr [item_rcx + $10]
   movdqu xmm6, oword ptr [item_rcx + $20]
   movdqu xmm7, oword ptr [item_rcx + $30]
+  movdqu xmm8, oword ptr [item_rcx + $40]
+  movdqu xmm9, oword ptr [item_rcx + $50]
 
   mov eax, count
   lea rbx, [list_rdx + 8 * rax - 8]
@@ -465,11 +439,15 @@ asm
     movdqu xmm1, oword ptr [rcx + $10]
     movdqu xmm2, oword ptr [rcx + $20]
     movdqu xmm3, oword ptr [rcx + $30]
+    movdqu xmm10, oword ptr [rcx + $40]
+    movdqu xmm11, oword ptr [rcx + $50]
 
     pcmpeqb xmm0, xmm4
     pcmpeqb xmm1, xmm5
     pcmpeqb xmm2, xmm6
     pcmpeqb xmm3, xmm7
+    pcmpeqb xmm10, xmm8
+    pcmpeqb xmm11, xmm9
 
     pmovmskb edi, xmm0
     mov rsi, rdi
@@ -482,15 +460,18 @@ asm
     pmovmskb edi, xmm3
     shl rsi, 16
     or rsi, rdi
-
     not rsi
+    popcnt r10, rsi
 
-{$ifdef HAS_NO_POPCNT}
-    mov rcx, rsi
-    call CountPopulation
-{$else}
+    pmovmskb edi, xmm10
+    mov rsi, rdi
+    pmovmskb edi, xmm11
+    shl rsi, 16
+    or rsi, rdi
+    not rsi
     popcnt rsi, rsi
-{$endif}
+
+    add rsi, r10
 
     mov al, byte ptr [mindist_r9]
     cmp esi, eax
@@ -499,7 +480,7 @@ asm
 
     used:
 
-    add rcx, 64
+    add rcx, cKModesFeatureCount
     add list_rdx, 8
     inc used_r8
     inc mindist_r9
@@ -520,8 +501,13 @@ asm
   movdqu xmm5, oword ptr [rsp + $50]
   movdqu xmm6, oword ptr [rsp + $60]
   movdqu xmm7, oword ptr [rsp + $70]
-  add rsp, 16 * 8
+  movdqu xmm8, oword ptr [rsp + $80]
+  movdqu xmm9, oword ptr [rsp + $90]
+  movdqu xmm10, oword ptr [rsp + $a0]
+  movdqu xmm11, oword ptr [rsp + $b0]
+  add rsp, 16 * 12
 
+  pop r10
   pop r9
   pop r8
   pop rdx

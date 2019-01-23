@@ -69,9 +69,9 @@ object MainForm: TMainForm
   end
   object chkPlay: TCheckBox
     Left = 272
-    Height = 19
-    Top = 787
-    Width = 42
+    Height = 17
+    Top = 789
+    Width = 40
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
     TabOrder = 13
@@ -86,8 +86,8 @@ object MainForm: TMainForm
   end
   object chkDithered: TCheckBox
     Left = 320
-    Height = 19
-    Top = 787
+    Height = 17
+    Top = 789
     Width = 65
     Anchors = [akLeft, akBottom]
     Caption = 'Dithered'
@@ -98,15 +98,15 @@ object MainForm: TMainForm
   end
   object Label2: TLabel
     Left = 8
-    Height = 15
+    Height = 13
     Top = 118
-    Width = 126
+    Width = 118
     Caption = 'Tile limit (all; per frame)'
     ParentColor = False
   end
   object seFrameCount: TSpinEdit
     Left = 208
-    Height = 23
+    Height = 21
     Top = 88
     Width = 56
     MaxValue = 10000
@@ -114,15 +114,15 @@ object MainForm: TMainForm
   end
   object Label3: TLabel
     Left = 8
-    Height = 15
+    Height = 13
     Top = 92
-    Width = 144
+    Width = 136
     Caption = 'Frame count (0: automatic)'
     ParentColor = False
   end
   object edInput: TEdit
     Left = 88
-    Height = 23
+    Height = 21
     Top = 8
     Width = 176
     TabOrder = 0
@@ -130,7 +130,7 @@ object MainForm: TMainForm
   end
   object Label4: TLabel
     Left = 8
-    Height = 15
+    Height = 13
     Top = 14
     Width = 28
     Caption = 'Input'
@@ -148,7 +148,7 @@ object MainForm: TMainForm
   end
   object sePage: TSpinEdit
     Left = 208
-    Height = 23
+    Height = 21
     Top = 369
     Width = 56
     MaxValue = 10000
@@ -157,7 +157,7 @@ object MainForm: TMainForm
   end
   object Label6: TLabel
     Left = 8
-    Height = 15
+    Height = 13
     Top = 373
     Width = 77
     Caption = 'Show tile page'
@@ -165,15 +165,15 @@ object MainForm: TMainForm
   end
   object Label7: TLabel
     Left = 8
-    Height = 15
+    Height = 13
     Top = 145
-    Width = 100
+    Width = 97
     Caption = 'Max tiles per frame'
     ParentColor = False
   end
   object seMaxTPF: TSpinEdit
     Left = 208
-    Height = 23
+    Height = 21
     Top = 141
     Width = 56
     MaxValue = 0
@@ -182,7 +182,7 @@ object MainForm: TMainForm
   end
   object seAvgTPF: TSpinEdit
     Left = 208
-    Height = 23
+    Height = 21
     Top = 114
     Width = 56
     MaxValue = 1000
@@ -192,15 +192,15 @@ object MainForm: TMainForm
   end
   object Label10: TLabel
     Left = 8
-    Height = 15
+    Height = 13
     Top = 66
-    Width = 69
+    Width = 64
     Caption = 'WAV (mono)'
     ParentColor = False
   end
   object edWAV: TEdit
     Left = 88
-    Height = 23
+    Height = 21
     Top = 62
     Width = 176
     TabOrder = 2
@@ -208,7 +208,7 @@ object MainForm: TMainForm
   end
   object Label1: TLabel
     Left = 8
-    Height = 15
+    Height = 13
     Top = 40
     Width = 55
     Caption = 'Output dir'
@@ -216,7 +216,7 @@ object MainForm: TMainForm
   end
   object edOutputDir: TEdit
     Left = 88
-    Height = 23
+    Height = 21
     Top = 36
     Width = 176
     TabOrder = 1
@@ -224,15 +224,15 @@ object MainForm: TMainForm
   end
   object Label9: TLabel
     Left = 8
-    Height = 15
+    Height = 13
     Top = 172
-    Width = 159
+    Width = 153
     Caption = 'Temporal smoothing strength'
     ParentColor = False
   end
   object seTempoSmoo: TSpinEdit
     Left = 208
-    Height = 23
+    Height = 21
     Top = 168
     Width = 56
     TabOrder = 7
@@ -240,9 +240,9 @@ object MainForm: TMainForm
   end
   object chkUseOldDithering: TCheckBox
     Left = 8
-    Height = 19
+    Height = 17
     Top = 197
-    Width = 260
+    Width = 252
     Caption = 'Use Yiluoma1 dithering (better for animation)'
     OnChange = chkUseOldDitheringChange
     TabOrder = 8
@@ -267,9 +267,9 @@ object MainForm: TMainForm
   end
   object chkMirrored: TCheckBox
     Left = 464
-    Height = 19
-    Top = 787
-    Width = 66
+    Height = 17
+    Top = 789
+    Width = 65
     Anchors = [akLeft, akBottom]
     Caption = 'Mirrored'
     Checked = True
@@ -289,8 +289,8 @@ object MainForm: TMainForm
   end
   object chkSprite: TCheckBox
     Left = 536
-    Height = 19
-    Top = 787
+    Height = 17
+    Top = 789
     Width = 89
     AllowGrayed = True
     Anchors = [akLeft, akBottom]
@@ -312,7 +312,7 @@ object MainForm: TMainForm
   end
   object seMaxTiles: TSpinEdit
     Left = 152
-    Height = 23
+    Height = 21
     Top = 114
     Width = 56
     MaxValue = 65536
@@ -344,9 +344,9 @@ object MainForm: TMainForm
   end
   object Label5: TLabel
     Left = 704
-    Height = 15
+    Height = 13
     Top = 789
-    Width = 35
+    Width = 34
     Caption = 'Correl:'
     ParentColor = False
   end
