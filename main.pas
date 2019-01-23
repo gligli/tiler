@@ -9,7 +9,7 @@ uses
   StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation;
 
 type
-  TFloat = Single;
+  TFloat = Double;
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
 
 const
@@ -25,10 +25,8 @@ const
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
-  cKFMaxTPFSearchRatio = 0.8;
-  cKFYakmoRestarts = 1;
   cKFFromPal = False;
-  cKFGamma = True;
+  cKFGamma = False;
   cKFQWeighting = True;
 
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
@@ -1960,7 +1958,7 @@ var
   LocalTile: TTile;
   best, diff: TFloat;
   DCT: TFloatDynArray;
-  vmir, hmir: Boolean;
+  spal, vmir, hmir: Boolean;
   TMI: TTileMapItem;
 begin
   PassTileCount := round(PassX);
@@ -2035,19 +2033,21 @@ begin
         TMI := FFrames[frame].TileMap[sy, sx];
         best := MaxSingle;
 
-        for vmir := False to True do
-          for hmir := False to True do
-            for j := 0 to High(Clusters) do
-            begin
-              diff := CompareEuclidean192(@TR^.DCTs[TMI.SpritePal, vmir, hmir, j, 0], @DCT[0]);
-              if diff < best then
+        for spal := False to True do
+          for vmir := False to True do
+            for hmir := False to True do
+              for j := 0 to High(Clusters) do
               begin
-                best := diff;
-                TMI.GlobalTileIndex := j;
-                TMI.VMirror := vmir;
-                TMI.HMirror := hmir;
+                diff := CompareEuclidean192(@TR^.DCTs[spal, vmir, hmir, j, 0], @DCT[0]);
+                if diff < best then
+                begin
+                  best := diff;
+                  TMI.GlobalTileIndex := j;
+                  TMI.VMirror := vmir;
+                  TMI.HMirror := hmir;
+                  TMI.SpritePal := spal;
+                end;
               end;
-            end;
 
         tmiO := @TR^.OutputTMIs[frame, sy, sx];
         tmiO^.GlobalTileIndex := TR^.TRToTileIdx[CentroidsToTR[Clusters[TMI.GlobalTileIndex]]];
