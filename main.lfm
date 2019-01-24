@@ -6,7 +6,7 @@ object MainForm: TMainForm
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 804
+  VertScrollBar.Page = 803
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
@@ -21,10 +21,10 @@ object MainForm: TMainForm
   object pbProgress: TProgressBar
     Left = 8
     Height = 16
-    Top = 256
+    Top = 280
     Width = 224
     Smooth = True
-    TabOrder = 10
+    TabOrder = 11
   end
   object imgSource: TImage
     Left = 272
@@ -65,7 +65,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 19
+    TabOrder = 20
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -74,7 +74,7 @@ object MainForm: TMainForm
     Width = 40
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 13
+    TabOrder = 14
   end
   object lblTileCount: TLabel
     Left = 8
@@ -94,7 +94,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 14
+    TabOrder = 15
   end
   object Label2: TLabel
     Left = 8
@@ -139,12 +139,12 @@ object MainForm: TMainForm
   object btnRunAll: TButton
     Left = 8
     Height = 25
-    Top = 224
+    Top = 248
     Width = 69
     Caption = 'Run all (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 9
+    TabOrder = 10
   end
   object sePage: TSpinEdit
     Left = 208
@@ -153,7 +153,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 12
+    TabOrder = 13
   end
   object Label6: TLabel
     Left = 8
@@ -258,11 +258,11 @@ object MainForm: TMainForm
   object btnDebug: TButton
     Left = 80
     Height = 25
-    Top = 224
+    Top = 248
     Width = 69
     Caption = 'Test debug'
     OnClick = btnDebugClick
-    TabOrder = 11
+    TabOrder = 12
     Visible = False
   end
   object chkMirrored: TCheckBox
@@ -275,12 +275,12 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 16
+    TabOrder = 17
   end
   object lblPct: TLabel
     Left = 232
     Height = 15
-    Top = 257
+    Top = 281
     Width = 32
     Alignment = taRightJustify
     AutoSize = False
@@ -297,7 +297,7 @@ object MainForm: TMainForm
     Caption = 'Sprite palette'
     OnChange = tbFrameChange
     State = cbGrayed
-    TabOrder = 17
+    TabOrder = 18
   end
   object chkGamma: TCheckBox
     Left = 632
@@ -308,7 +308,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 18
+    TabOrder = 19
   end
   object seMaxTiles: TSpinEdit
     Left = 152
@@ -330,7 +330,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 15
+    TabOrder = 16
   end
   object lblCorrel: TLabel
     Left = 744
@@ -338,6 +338,7 @@ object MainForm: TMainForm
     Top = 789
     Width = 35
     Alignment = taRightJustify
+    Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = '0.0000'
     ParentColor = False
@@ -347,8 +348,20 @@ object MainForm: TMainForm
     Height = 13
     Top = 789
     Width = 34
+    Anchors = [akLeft, akBottom]
     Caption = 'Correl:'
     ParentColor = False
+  end
+  object chkLAB: TCheckBox
+    Left = 8
+    Height = 17
+    Top = 216
+    Width = 211
+    Caption = 'CIE L*a*b* color space instead of YUV'
+    Checked = True
+    OnChange = chkLABChange
+    State = cbChecked
+    TabOrder = 9
   end
   object IdleTimer: TIdleTimer
     Interval = 80
