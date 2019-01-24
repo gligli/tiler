@@ -1971,17 +1971,15 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  PassTileCount, MaxTPF, ci, i, j, sy, sx, y, x, bestIdx, dissim: Integer;
+  PassTileCount, MaxTPF, ci, i, j, sy, sx, dissim: Integer;
   tmiO: PTileMapItem;
   Centroids: TByteDynArray2;
   CentroidsToTR: TIntegerDynArray;
-  CentroidsDCT: array[Boolean] of TFloatDynArray;
   Clusters: TIntegerDynArray;
   Used: TBooleanDynArray;
   FTD: PFrameTilingData;
   DS: PTileDataset;
   KModes: TKModes;
-  LocalTile: TTile;
   best, diff: TFloat;
   DCT: TFloatDynArray;
   spal, vmir, hmir: Boolean;
@@ -2003,44 +2001,9 @@ begin
   // compute colorful DCT of centroid -- search for bestA corresponding tile in dataset, accounting for mirrors
 
   SetLength(CentroidsToTR, PassTileCount);
-  SetLength(CentroidsDCT[False], 3 * sqr(cTileWidth));
-  SetLength(CentroidsDCT[True], 3 * sqr(cTileWidth));
 
   for i := 0 to PassTileCount - 1 do
-  begin
     CentroidsToTR[i] := GetMinMatchingDissim(DS^.Dataset, Centroids[i], dissim);
-
-    if dissim > 0 then
-    begin
-      j := 0;
-      for y := 0 to cTileWidth - 1 do
-        for x := 0 to cTileWidth - 1 do
-        begin
-          LocalTile.PalPixels[y, x] := Centroids[i, j];
-          //MainForm.Canvas.Pixels[(i mod 32) * 8 + x + 800, y + (i div 32) * 16] := SwapRB(FTD^.pKF^.PaletteRGB[False, Centroids[i, j]]);
-          //MainForm.Canvas.Pixels[(i mod 32) * 8 + x + 800, y + (i div 32) * 16 + 8] := SwapRB(FTD^.pKF^.PaletteRGB[True, Centroids[i, j]]);
-          Inc(j);
-        end;
-
-      ComputeTileDCT(LocalTile, True, cKFGamma, cKFQWeighting, FTD^.Frame^.KeyFrame^.PaletteRGB[False], CentroidsDCT[False]);
-      ComputeTileDCT(LocalTile, True, cKFGamma, cKFQWeighting, FTD^.Frame^.KeyFrame^.PaletteRGB[True], CentroidsDCT[True]);
-
-      bestIdx := -1;
-      best := MaxSingle;
-      for j := 0 to High(Clusters) do
-      begin
-        diff := CompareEuclidean192(@CentroidsDCT[False, 0], @DS^.DCTs[False, False, False, j, 0]);
-        diff += CompareEuclidean192(@CentroidsDCT[True, 0], @DS^.DCTs[True, False, False, j, 0]);
-        if diff < best then
-        begin
-          bestIdx := j;
-          best := diff;
-        end;
-      end;
-
-      CentroidsToTR[i] := bestIdx;
-    end;
-  end;
 
   // map frame tilemap items to "centroid" tiles and mirrors and choose bestA corresponding palette
 
@@ -2201,7 +2164,7 @@ begin
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
     if TestTMICount(Length(DS^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      GoldenRatioSearch(@TestTMICount, 1, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+      GoldenRatioSearch(@TestTMICount, DesiredNbTiles, cTileMapSize, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
 
     // update tilemap
 
