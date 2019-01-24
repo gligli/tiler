@@ -52,15 +52,14 @@ type
   public
     constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0; aLog: Boolean = False);
     function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
+    // negative n_init means use -n_init as starting point
+    // FinalLabels cluster indexes start at 1
   end;
 
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
-
-// negative n_init means use -n_init as starting point
-// FinalLabels cluster indexes start at 1
 
 implementation
 
@@ -131,18 +130,6 @@ end;
 function CompareDis(Item1,Item2,UserParameter:Pointer): Integer;
 begin
   Result := CompareValue(PByte(UserParameter)[PInteger(Item1)^], PByte(UserParameter)[PInteger(Item2)^]);
-end;
-
-function GetLocPoints(AIndex, n_chunks, NumPoint: Integer; out n_loc_points: Integer): Integer;
-var
-  nlp: Integer;
-begin
-  nlp := NumPoint div n_chunks;
-  Result := AIndex * nlp;
-  if AIndex = n_chunks - 1 then
-    nlp := NumPoint - Result;
-
-  n_loc_points := nlp;
 end;
 
 function GetMaxValueIndex(const arr: TIntegerDynArray): Integer; overload;
