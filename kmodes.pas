@@ -1,4 +1,4 @@
-// Inspired by https://github.com/nicodv/kmodes
+// Adapted from https://github.com/nicodv/kmodes
 
 unit kmodes;
 
@@ -40,7 +40,7 @@ type
     X: TByteDynArray2;
     centroids: TByteDynArray2;
     cl_attr_freq: TIntegerDynArray3;
-    MaxIter, NumClusters, NumThreads, NumAttrs, NumPoint: Integer;
+    MaxIter, NumClusters, NumThreads, NumAttrs, NumPoints: Integer;
     Log: Boolean;
 
     function CountClusterMembers(cluster: Integer): Integer;
@@ -598,7 +598,7 @@ var
 
   procedure UpdateMinDistance(icenter: Integer);
   begin
-    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoint);
+    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
   end;
 
 {$endif}
@@ -610,7 +610,7 @@ var
   begin
     max := 0;
     Result := -1;
-    for i := 0 to NumPoint - 1 do
+    for i := 0 to NumPoints - 1 do
       if not used[i] and (max <= mindistance[i]) then
       begin
         max := mindistance[i];
@@ -620,13 +620,13 @@ var
 
 begin
   SetLength(Result, NumClusters, NumAttrs);
-  SetLength(used, NumPoint);
-  SetLength(mindistance, NumPoint);
+  SetLength(used, NumPoints);
+  SetLength(mindistance, NumPoints);
 
   for icentroid := 0 to NumClusters - 1 do
     FillByte(Result[icentroid, 0], NumAttrs, High(Byte));
-  FillChar(used[0], NumPoint, False);
-  FillByte(mindistance[0], NumPoint, High(Byte));
+  FillChar(used[0], NumPoints, False);
+  FillByte(mindistance[0], NumPoints, High(Byte));
 
   ifarthest := init_point;
   Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
@@ -645,14 +645,13 @@ end;
 
 function TKModes.LabelsCost: Integer;
 var
-  npoints, ipoint, clust, dis: Integer;
+  ipoint, clust, dis: Integer;
 begin
-  npoints := Length(X);
   Result := 0;
-  SetLength(labels, npoints);
-  FillDWord(labels[0], npoints, 0);
+  SetLength(labels, NumPoints);
+  FillDWord(labels[0], NumPoints, 0);
 
-  for ipoint := 0 to npoints - 1 do
+  for ipoint := 0 to NumPoints - 1 do
   begin
     clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
     labels[ipoint] := clust;
@@ -701,15 +700,14 @@ end;
 
 function TKModes.KModesIter(var Seed: Cardinal): Integer;
 var
-  ipoint, clust, old_clust, from_clust, rindx, cnt, dis, n_clusters: Integer;
+  ipoint, clust, old_clust, from_clust, rindx, cnt, dis, dummy, i: Integer;
   choices: TIntegerDynArray;
 begin
-  n_clusters := Length(centroids);
   Result := 0;
 
-  SetLength(choices, NumPoint);
+  SetLength(choices, NumPoints);
 
-  for ipoint := 0 to NumPoint - 1 do
+  for ipoint := 0 to NumPoints - 1 do
   begin
     clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
 
@@ -722,8 +720,16 @@ begin
 
       if CountClusterMembers(old_clust) = 0 then
       begin
-        from_clust := GetMaxClusterMembers(n_clusters);
-        cnt := CountClusterMembers(from_clust);
+        from_clust := GetMaxClusterMembers(dummy);
+
+        cnt := 0;
+        for i := 0 to High(membship) do
+          if membship[i] = from_clust then
+          begin
+            choices[cnt] := i;
+            Inc(cnt);
+          end;
+
         rindx := choices[RandInt(cnt, Seed)];
 
         MovePointCat(X[rindx], rindx, old_clust, from_clust);
@@ -748,11 +754,11 @@ begin
 
   X := ADataset;
 
-  NumPoint := Length(X);
+  NumPoints := Length(X);
   NumClusters := ANumClusters;
 
   NumAttrs := 0;
-  if NumPoint > 0 then
+  if NumPoints > 0 then
     NumAttrs := Length(X[0]);
 
   if NumThreads <= 0 then
@@ -778,20 +784,20 @@ begin
   else
   begin
     SetLength(all, ANumInit);
-    InvGoldenRatio := power(NumPoint, 1 / ANumInit);
+    InvGoldenRatio := power(NumPoints, 1 / ANumInit);
     GRAcc := 1;
     for i := 0 to ANumInit - 1 do
     begin
       all[i].StartingPoint := Round(GRAcc) - 1;
       if (i > 0) and (all[i].StartingPoint <= all[i - 1].StartingPoint) then
-        all[i].StartingPoint := Min(NumPoint - 1, all[i - 1].StartingPoint + 1);
+        all[i].StartingPoint := Min(NumPoints - 1, all[i - 1].StartingPoint + 1);
       GRAcc := GRAcc * InvGoldenRatio;
     end;
   end;
 
   for init_no := 0 to High(all) do
   begin
-    SetLength(membship, NumPoint);
+    SetLength(membship, NumPoints);
     SetLength(cl_attr_freq, NumClusters, NumAttrs, ANumModalities);
 
     if init = nil then
@@ -799,12 +805,12 @@ begin
     else
       centroids := init;
 
-    FillDWord(membship[0], NumPoint, $ffffffff);
+    FillDWord(membship[0], NumPoints, $ffffffff);
     for j := 0 to NumClusters - 1 do
       for i := 0 to NumAttrs - 1 do
         FillDWord(cl_attr_freq[j, i, 0], ANumModalities, 0);
 
-    for ipoint := 0 to NumPoint - 1 do
+    for ipoint := 0 to NumPoints - 1 do
     begin
       clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
 
@@ -820,7 +826,7 @@ begin
       if summemb = 0 then
       begin
         for iattr := 0 to NumAttrs - 1 do
-          centroids[ik, iattr] := X[RandInt(NumPoint, Seed), iattr]
+          centroids[ik, iattr] := X[RandInt(NumPoints, Seed), iattr]
       end
       else
       begin
