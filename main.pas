@@ -19,8 +19,8 @@ const
   // Tweakable params
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..2{Yiluoma,YUV,LAB}] of TFloat = (1.414, 2.0, 1.5);
-  cInvertSpritePalette = False;
+  cGamma: array[0..2{Yiluoma,YUV,LAB}] of TFloat = (1.2, 2.0, 1.42);
+  cInvertSpritePalette = True;
   cGammaCorrectSmoothing = False;
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
@@ -1291,10 +1291,10 @@ begin
 
 {$if cInvertSpritePalette}
   for i := 0 to (cTilePaletteSize - cKeyframeFixedColors) div 2 - 1 do
-    Exchange(AKeyFrame^.PaletteIndexes[True, cTilePaletteSize - cKeyframeFixedColors - 1 - i], AKeyFrame^.PaletteIndexes[True, i]);
+    Exchange(AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - cKeyframeFixedColors - 1 - i], AKeyFrame^.PaletteIndexes[False, i]);
 
   for i := 0 to cKeyframeFixedColors div 2 - 1 do
-    Exchange(AKeyFrame^.PaletteIndexes[True, cTilePaletteSize - 1 - i], AKeyFrame^.PaletteIndexes[True, cTilePaletteSize - cKeyframeFixedColors + i]);
+    Exchange(AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - 1 - i], AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - cKeyframeFixedColors + i]);
 {$endif}
 
   for i := 0 to cTilePaletteSize - 1 do
@@ -2047,6 +2047,7 @@ begin
   KModes := TKModes.Create(1);
   try
     PassTileCount := KModes.ComputeKModes(DS^.Dataset, PassTileCount, -DS^.StartingPoint, cTilePaletteSize, Clusters, Centroids);
+    Assert(Length(Centroids) = PassTileCount);
   finally
     KModes.Free;
   end;
@@ -2302,44 +2303,80 @@ end;
 
 function TMainForm.GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer): Integer;
 var i, j: Integer;
-    cnt: array [0..cTilePaletteSize - 1] of Integer;
+    px: TPalPixel;
+    cntL, cntH: array [0..cTilePaletteSize - 1] of Integer;
     highest: Integer;
 begin
-  FillDWord(cnt[0], cTilePaletteSize, 0);
+  FillDWord(cntL[0], cTilePaletteSize, DWORD(Low(Integer)));
+  FillDWord(cntH[0], cTilePaletteSize, High(Integer));
 
   for j := y to y + h - 1 do
     for i := x to x + w - 1 do
-      Inc(cnt[ATile.PalPixels[j, i]]);
+    begin
+      px := ATile.PalPixels[j, i];
 
-  Result := 0;
+      if cntL[px] = Low(Integer) then
+        cntL[px] := 1
+      else
+        Inc(cntL[px]);
+
+      if cntH[px] = High(Integer) then
+        cntH[px] := 1
+      else
+        Inc(cntH[px]);
+    end;
+
+  Result := cTilePaletteSize - 1;
+
+  if MaxIntValue(cntL) = MinIntValue(cntH) then // "lack of significativity" test
+    Exit;
+
   highest := -1;
   for i := 0 to cTilePaletteSize - 1 do
-    if cnt[i] >= highest then
+    if cntL[i] >= highest then
     begin
       Result := i;
-      highest := cnt[i];
+      highest := cntL[i];
     end;
 end;
 
 function TMainForm.GetTileGridMedian(const ATile: TTile; other: Boolean): Integer;
 var i, j: Integer;
-    cnt: array [0..cTilePaletteSize - 1] of Integer;
+    px: TPalPixel;
+    cntL, cntH: array [0..cTilePaletteSize - 1] of Integer;
     highest: Integer;
 begin
-  FillDWord(cnt[0], cTilePaletteSize, 0);
+  FillDWord(cntL[0], cTilePaletteSize, DWORD(Low(Integer)));
+  FillDWord(cntH[0], cTilePaletteSize, High(Integer));
 
   for j := 0 to cTileWidth - 1 do
     for i := 0 to cTileWidth - 1 do
       if other xor (odd(i) = not odd(j)) then
-        Inc(cnt[ATile.PalPixels[j, i]]);
+      begin
+        px := ATile.PalPixels[j, i];
 
-  Result := 0;
+        if cntL[px] = Low(Integer) then
+          cntL[px] := 1
+        else
+          Inc(cntL[px]);
+
+        if cntH[px] = High(Integer) then
+          cntH[px] := 1
+        else
+          Inc(cntH[px]);
+      end;
+
+  Result := cTilePaletteSize - 1;
+
+  if MaxIntValue(cntL) = MinIntValue(cntH) then // "lack of significativity" test
+    Exit;
+
   highest := -1;
   for i := 0 to cTilePaletteSize - 1 do
-    if cnt[i] >= highest then
+    if cntL[i] >= highest then
     begin
       Result := i;
-      highest := cnt[i];
+      highest := cntL[i];
     end;
 end;
 
@@ -2438,6 +2475,7 @@ begin
   KModes := TKModes.Create(0, 0, True);
   try
     ActualNbTiles := KModes.ComputeKModes(Dataset, DesiredNbTiles, -StartingPoint, cTilePaletteSize, Labels, Centroids);
+    Assert(Length(Centroids) = ActualNbTiles);
   finally
     KModes.Free;
   end;
