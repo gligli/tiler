@@ -1483,15 +1483,15 @@ begin
   end;
 
   y := 0.299*fr + 0.587*fg + 0.114*fb;
-  u := -0.147*fr - 0.289*fg + 0.436*fb;
-  v := 0.615*fr - 0.515*fg - 0.100*fb;
+  u := -0.16874*fr + -0.33126*fg +  0.50000*fb + 0.5;
+  v :=  0.50000*fr + -0.41869*fg + -0.08131*fb + 0.5;
 end;
 
 procedure TMainForm.RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); inline;
 begin
   y := 0.299*fr + 0.587*fg + 0.114*fb;
-  u := -0.147*fr - 0.289*fg + 0.436*fb;
-  v := 0.615*fr - 0.515*fg - 0.100*fb;
+  u := -0.16874*fr + -0.33126*fg +  0.50000*fb + 0.5;
+  v :=  0.50000*fr + -0.41869*fg + -0.08131*fb + 0.5;
 end;
 
 procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); inline;
@@ -3169,7 +3169,7 @@ begin
   for i := 0 to cTotalColors - 1 do
   begin
     col :=
-      (((i and sr) * 255 div sr) and $ff) or //R
+       ((((i shr (cBitsPerComp * 0)) and sr) * 255 div sr) and $ff) or //R
       (((((i shr (cBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
       (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
 
