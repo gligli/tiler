@@ -317,8 +317,8 @@ type
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     procedure Render(AFrameIndex: Integer; dithered, mirrored, reduced: Boolean; spritePal, gamma: Integer; ATilePage: Integer);
 
-    procedure RGBToYUV(r,g,b: Integer; GammaCor: Integer; out y,u,v: TFloat); overload;
-    procedure RGBToYUV(fr,fg,fb: TFloat; out y,u,v: TFloat); overload;
+    procedure RGBToYUV(r, g, b: Integer; GammaCor: Integer; out y, u, v: TFloat); overload;
+    procedure RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); overload;
     procedure RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); overload;
     procedure RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); overload;
     procedure RGBToColSpc(r, g, b: TFloat; LAB: Boolean; out ol, oa, ob: TFloat); overload;
@@ -1061,7 +1061,7 @@ begin
     for index := 0 to High(Plan.Y2Palette) do
     begin
       sum[0] := so_far[0]; sum[1] := so_far[1]; sum[2] := so_far[2];
-      add[0] := Plan.Y2Palette[index][0]; add[1] := Plan.Y2Palette[index][1];  add[2] := Plan.Y2Palette[index][2];
+      add[0] := Plan.Y2Palette[index][0]; add[1] := Plan.Y2Palette[index][1]; add[2] := Plan.Y2Palette[index][2];
 
       p := 1;
       while p <= max_test_count do
@@ -1082,7 +1082,7 @@ begin
         if penalty < least_penalty then
         begin
           least_penalty := penalty;
-          chosen        := index;
+          chosen := index;
           chosen_amount := p;
         end;
 
@@ -1090,7 +1090,7 @@ begin
       end;
     end;
 
-    chosen_amount := Min(chosen_amount,  High(Plan.List) - Plan.Count);
+    chosen_amount := Min(chosen_amount, Length(Plan.List) - Plan.Count - 1);
 {$if cTotalColors <= 256}
     FillByte(Plan.List[Plan.Count], chosen_amount, chosen);
 {$else}
@@ -1102,6 +1102,8 @@ begin
     so_far[1] += Plan.Y2Palette[chosen][1] * chosen_amount;
     so_far[2] += Plan.Y2Palette[chosen][2] * chosen_amount;
   end;
+
+  assert(Plan.Count < length(Plan.List));
 
   QuickSort(Plan.List[0], 0, Plan.Count - 1, SizeOf(TPalPixel), @PlanCompareLuma, @Plan.LumaPal[0]);
 end;
@@ -1467,7 +1469,7 @@ procedure TMainForm.RGBToYUV(r, g, b: Integer;  GammaCor: Integer; out y, u, v: 
 var
   fr, fg, fb: TFloat;
 begin
-  if GammaCor >=0 then
+  if GammaCor >= 0 then
   begin
     fr := GammaCorrect(GammaCor, r);
     fg := GammaCorrect(GammaCor, g);
@@ -1485,18 +1487,14 @@ begin
   v := 0.615*fr - 0.515*fg - 0.100*fb;
 end;
 
-procedure TMainForm.RGBToYUV(fr,fg,fb: TFloat; out y,u,v: TFloat); inline;
+procedure TMainForm.RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); inline;
 begin
-  fr := Min(1.0, fr);
-  fg := Min(1.0, fg);
-  fb := Min(1.0, fb);
-
   y := 0.299*fr + 0.587*fg + 0.114*fb;
   u := -0.147*fr - 0.289*fg + 0.436*fb;
   v := 0.615*fr - 0.515*fg - 0.100*fb;
 end;
 
-procedure TMainForm.RGBToLAB(ir,ig,ib: Integer; out ol,oa,ob: TFloat); inline;
+procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); inline;
 var
   r, g, b, x, y, z: TFloat;
 begin
@@ -1534,7 +1532,7 @@ begin
   ob := 200 * (y - z);
 end;
 
-procedure TMainForm.RGBToLAB(r,g,b: TFloat; out ol,oa,ob: TFloat); inline;
+procedure TMainForm.RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); inline;
 var
   x, y, z: TFloat;
 begin
