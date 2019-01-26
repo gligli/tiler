@@ -2,7 +2,7 @@
 
 unit kmodes;
 
-{$define GENERIC_DISSIM}
+//{$define GENERIC_DISSIM}
 
 {$mode objfpc}{$H+}
 
@@ -220,6 +220,10 @@ begin
   Result := Cnt;
 end;
 
+const
+  cMatchingIdxWidth = 32;
+  cDissimSubMatchingSize = 16;
+
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
@@ -229,8 +233,9 @@ begin
   Result := 0;
   for i := 0 to High(a) do
   begin
-    Result += abs(a[i] - b[i]);
-    Result += Ord(a[i] <> b[i]) shl 11;
+    if a[i] <> b[i] then
+      Result += 1 shl cDissimSubMatchingSize;
+    Result += abs(ShortInt(a[i]) - ShortInt(b[i]));
   end;
 end;
 
@@ -255,9 +260,6 @@ begin
 end;
 
 {$else}
-
-const
-  cMatchingIdxWidth = 48;
 
 function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64; register; assembler; nostackframe;
 label loop, worst;
@@ -289,7 +291,6 @@ asm
   movdqu xmm6, oword ptr [item_rcx + $20]
   movdqu xmm7, oword ptr [item_rcx + $30]
   movdqu xmm8, oword ptr [item_rcx + $40]
-  movdqu xmm9, oword ptr [item_rcx + $50]
 
   lea rbx, [list_rdx + 8 * count_r8 - 8]
 
@@ -306,14 +307,30 @@ asm
     movdqu xmm2, oword ptr [rcx + $20]
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm10, oword ptr [rcx + $40]
-    movdqu xmm11, oword ptr [rcx + $50]
 
+    movq xmm9, xmm0
+    psadbw xmm9, xmm4
     pcmpeqb xmm0, xmm4
+
+    movq xmm11, xmm1
+    psadbw xmm11, xmm5
+    paddw xmm9, xmm11
     pcmpeqb xmm1, xmm5
+
+    movq xmm11, xmm2
+    psadbw xmm11, xmm6
+    paddw xmm9, xmm11
     pcmpeqb xmm2, xmm6
+
+    movq xmm11, xmm3
+    psadbw xmm11, xmm7
+    paddw xmm9, xmm11
     pcmpeqb xmm3, xmm7
+
+    movq xmm11, xmm10
+    psadbw xmm11, xmm8
+    paddw xmm9, xmm11
     pcmpeqb xmm10, xmm8
-    pcmpeqb xmm11, xmm9
 
     pmovmskb edi, xmm0
     mov rsi, rdi
@@ -329,14 +346,16 @@ asm
     not rsi
     popcnt r10, rsi
 
-    pmovmskb edi, xmm10
-    mov rsi, rdi
-    pmovmskb edi, xmm11
-    shl rsi, 16
-    or rsi, rdi
-    not rsi
-    popcnt rsi, rsi
+    pmovmskb esi, xmm10
+    not si
+    popcnt si, si
 
+    add rsi, r10
+
+    shl rsi, cDissimSubMatchingSize
+    pextrw r10d, xmm9, 0
+    add rsi, r10
+    pextrw r10d, xmm9, 4
     add rsi, r10
 
     cmp rsi, rax
@@ -382,7 +401,7 @@ asm
 
 end;
 
-procedure UpdateMinDistance_Asm(item_rcx: PByte; list_rdx: PPByte; used_r8: PBoolean; mindist_r9: PByte; count: Integer); register; assembler;
+procedure UpdateMinDistance_Asm(item_rcx: PByte; list_rdx: PPByte; used_r8: PBoolean; mindist_r9: PCardinal; count: Integer); register; assembler;
 label loop, used, start;
 asm
   push rbx
@@ -413,7 +432,6 @@ asm
   movdqu xmm6, oword ptr [item_rcx + $20]
   movdqu xmm7, oword ptr [item_rcx + $30]
   movdqu xmm8, oword ptr [item_rcx + $40]
-  movdqu xmm9, oword ptr [item_rcx + $50]
 
   mov eax, count
   lea rbx, [list_rdx + 8 * rax - 8]
@@ -430,14 +448,30 @@ asm
     movdqu xmm2, oword ptr [rcx + $20]
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm10, oword ptr [rcx + $40]
-    movdqu xmm11, oword ptr [rcx + $50]
 
+    movq xmm9, xmm0
+    psadbw xmm9, xmm4
     pcmpeqb xmm0, xmm4
+
+    movq xmm11, xmm1
+    psadbw xmm11, xmm5
+    paddw xmm9, xmm11
     pcmpeqb xmm1, xmm5
+
+    movq xmm11, xmm2
+    psadbw xmm11, xmm6
+    paddw xmm9, xmm11
     pcmpeqb xmm2, xmm6
+
+    movq xmm11, xmm3
+    psadbw xmm11, xmm7
+    paddw xmm9, xmm11
     pcmpeqb xmm3, xmm7
+
+    movq xmm11, xmm10
+    psadbw xmm11, xmm8
+    paddw xmm9, xmm11
     pcmpeqb xmm10, xmm8
-    pcmpeqb xmm11, xmm9
 
     pmovmskb edi, xmm0
     mov rsi, rdi
@@ -453,27 +487,29 @@ asm
     not rsi
     popcnt r10, rsi
 
-    pmovmskb edi, xmm10
-    mov rsi, rdi
-    pmovmskb edi, xmm11
-    shl rsi, 16
-    or rsi, rdi
-    not rsi
-    popcnt rsi, rsi
+    pmovmskb esi, xmm10
+    not si
+    popcnt si, si
 
     add rsi, r10
 
-    mov al, byte ptr [mindist_r9]
+    shl rsi, cDissimSubMatchingSize
+    pextrw r10d, xmm9, 0
+    add rsi, r10
+    pextrw r10d, xmm9, 4
+    add rsi, r10
+
+    mov eax, dword ptr [mindist_r9]
     cmp esi, eax
     cmovb eax, esi
-    mov byte ptr [mindist_r9], al
+    mov dword ptr [mindist_r9], eax
 
     used:
 
     add rcx, cKModesFeatureCount
     add list_rdx, 8
     inc used_r8
-    inc mindist_r9
+    add mindist_r9, 4
 
     start:
 
@@ -508,7 +544,7 @@ asm
 
 end;
 
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: UInt64): Integer;
 var
   db: UInt64;
 begin
