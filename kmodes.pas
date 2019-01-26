@@ -2,7 +2,7 @@
 
 unit kmodes;
 
-//{$define GENERIC_DISSIM}
+{$define GENERIC_DISSIM}
 
 {$mode objfpc}{$H+}
 
@@ -12,7 +12,7 @@ uses
   Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows;
 
 const
-  cKModesFeatureCount = 96;
+  cKModesFeatureCount = 80;
 
 type
   PInteger = ^Integer;
@@ -26,7 +26,7 @@ type
   TKmodesRun = packed record
     Labels: TIntegerDynArray;
     Centroids: TByteDynArray2;
-    Cost: Integer;
+    Cost: UInt64;
     NIter: Integer;
     TotalMoves: Integer;
     StartingPoint: Integer;
@@ -45,13 +45,13 @@ type
 
     function CountClusterMembers(cluster: Integer): Integer;
     function GetMaxClusterMembers(out member_count: Integer): Integer;
-    function LabelsCost: Integer;
+    function LabelsCost: UInt64;
     function KModesIter(var Seed: Cardinal): Integer;
     function InitFarthestFirst(init_point: Integer): TByteDynArray2;  // negative init_point means randomly chosen
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
     constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0; aLog: Boolean = False);
-    function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
+    function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
     // negative n_init means use -n_init as starting point
     // FinalLabels cluster indexes start at 1
   end;
@@ -59,7 +59,7 @@ type
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: UInt64): Integer;
 
 implementation
 
@@ -228,13 +228,16 @@ var
 begin
   Result := 0;
   for i := 0 to High(a) do
-    if a[i] <> b[i] then
-      Inc(Result);
+  begin
+    Result += abs(a[i] - b[i]);
+    Result += Ord(a[i] <> b[i]) shl 11;
+  end;
 end;
 
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: Integer): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: UInt64): Integer;
 var
-  dis, best, i: Integer;
+  i: Integer;
+  dis, best: UInt64;
 begin
   Result := -1;
   best := MaxInt;
@@ -576,16 +579,16 @@ function TKModes.InitFarthestFirst(init_point: Integer): TByteDynArray2;  // neg
 var
   icentroid, ifarthest: Integer;
   used: TBooleanDynArray;
-  mindistance: TByteDynArray;
+  mindistance: TCardinalDynArray;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
   procedure UpdateMinDistance(icenter: Integer);
   var
     i: Integer;
-    dis: Byte;
+    dis: Cardinal;
   begin
-    for i := 0 to NumPoint - 1 do
+    for i := 0 to NumPoints - 1 do
       if not used[i] then
       begin
         dis := MatchingDissim(X[icenter], X[i]);
@@ -606,7 +609,7 @@ var
   function FarthestAway: Integer;
   var
     i: Integer;
-    max: Byte;
+    max: Cardinal;
   begin
     max := 0;
     Result := -1;
@@ -626,14 +629,15 @@ begin
   for icentroid := 0 to NumClusters - 1 do
     FillByte(Result[icentroid, 0], NumAttrs, High(Byte));
   FillChar(used[0], NumPoints, False);
-  FillByte(mindistance[0], NumPoints, High(Byte));
+  FillDWord(mindistance[0], NumPoints, High(Cardinal));
 
+  icentroid := 0;
   ifarthest := init_point;
   Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
   used[ifarthest] := True;
   UpdateMinDistance(ifarthest);
 
-  for icentroid := 0 to NumClusters - 1 do
+  for icentroid := 1 to NumClusters - 1 do
   begin
     ifarthest := FarthestAway;
 
@@ -643,9 +647,10 @@ begin
   end;
 end;
 
-function TKModes.LabelsCost: Integer;
+function TKModes.LabelsCost: UInt64;
 var
-  ipoint, clust, dis: Integer;
+  ipoint, clust: Integer;
+  dis: UInt64;
 begin
   Result := 0;
   SetLength(labels, NumPoints);
@@ -700,7 +705,8 @@ end;
 
 function TKModes.KModesIter(var Seed: Cardinal): Integer;
 var
-  ipoint, clust, old_clust, from_clust, rindx, cnt, dis, dummy, i: Integer;
+  ipoint, clust, old_clust, from_clust, rindx, cnt, dummy, i: Integer;
+  dis: UInt64;
   choices: TIntegerDynArray;
 begin
   Result := 0;
@@ -739,14 +745,15 @@ begin
 end;
 
 function TKModes.ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer;
-  var FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
+  out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
 var
   init: TByteDynArray2;
   all: array of TKmodesRun;
 var
-  best, i, j, init_no, iattr, ipoint, ik, summemb, itr, moves, totalmoves, clust, dis: Integer;
+  i, j, init_no, iattr, ipoint, ik, summemb, itr, moves, totalmoves, clust: Integer;
+  best, dis: UInt64;
   converged: Boolean;
-  cost, ncost: Integer;
+  cost, ncost: UInt64;
   InvGoldenRatio, GRAcc: Single;
   Seed: Cardinal;
 begin
@@ -837,7 +844,7 @@ begin
 
     itr := 0;
     converged := False;
-    cost := MaxInt;
+    cost := High(UInt64);
     totalmoves := 0;
 
     while (itr <= MaxIter) and not converged do
@@ -864,7 +871,7 @@ begin
   end;
 
   j := -1;
-  best := MaxInt;
+  best := High(UInt64);
   for i := 0 to High(all) do
     if all[i].Cost < best then
     begin
