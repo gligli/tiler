@@ -20,7 +20,7 @@ const
   cRandomKModesCount = 26;
   cKeyframeFixedColors = 4;
   cGamma: array[0..2{Yiluoma,YUV,LAB}] of TFloat = (1.2, 2.0, 1.42);
-  cInvertSpritePalette = True;
+  cInvertSpritePalette = False;
   cGammaCorrectSmoothing = False;
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
@@ -2024,7 +2024,8 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  PassTileCount, MaxTPF, ci, i, j, sy, sx, dissim: Integer;
+  PassTileCount, MaxTPF, ci, i, j, sy, sx: Integer;
+  dissim: UInt64;
   tmiO: PTileMapItem;
   Centroids: TByteDynArray2;
   CentroidsToTR: TIntegerDynArray;
@@ -2396,13 +2397,6 @@ begin
       Inc(Result);
     end;
 
-  for y := 0 to cTileWidth div 2 - 1 do
-    for x := 0 to cTileWidth div 2 - 1 do
-    begin
-      DataLine[Result] := GetTileZoneMedian(ATile, x shl 1, y shl 1, 2, 2);
-      Inc(Result);
-    end;
-
   DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 4, 4);
   Inc(Result);
   DataLine[Result] := GetTileZoneMedian(ATile, 4, 0, 4, 4);
@@ -2432,6 +2426,7 @@ var
   Dataset, Centroids: TByteDynArray2;
   Labels: TIntegerDynArray;
   i, j, k, x, y, di, acc, best, StartingPoint, ActualNbTiles: Integer;
+  dissim: UInt64;
   DsTileIdxs: TIntegerDynArray;
   Found: Boolean;
   ToMerge: array of Integer;
@@ -2488,7 +2483,7 @@ begin
 
   for j := 0 to ActualNbTiles - 1 do
   begin
-    DsTileIdxs[j] := GetMinMatchingDissim(Dataset, Centroids[j], acc);
+    DsTileIdxs[j] := GetMinMatchingDissim(Dataset, Centroids[j], dissim);
 
     Found := False;
     k := 0;
