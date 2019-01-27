@@ -17,18 +17,19 @@ const
   cInvPhi = 1 / cPhi;
 
   // Tweakable params
-  cRandomKModesCount = 26;
+  cRandomKModesCount = 7;
+  cY2MixedColors = 16;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..2{Yiluoma,YUV,LAB}] of TFloat = (1, 2.0, 1.42);
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.42);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
+  cKFFromPal = False;
+  cKFGamma = 0;
+  cKFQWeighting = True;
+
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
-  cKFFromPal = False;
-  cKFGamma = 1;
-  cKFQWeighting = True;
-
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
   // SMS consts
@@ -211,14 +212,13 @@ type
     IsYiluoma2: Boolean;
 
     Y1Palette: array of array[0..2{RGB}] of Integer;
-
     Colors: array[Boolean] of TPalPixel;
     Ratio: Integer; // 0 = always index1, 63 = always index2, 32 = 50% of both
 
     List: array[0..cTotalColors - 1] of TPalPixel;
     Count: Integer;
     LumaPal: array of Integer;
-    Y2Palette: array of array[0..2] of TFloat;
+    Y2Palette: array of array[0..2] of Integer;
   end;
 
   { TMainForm }
@@ -410,15 +410,19 @@ begin
 end;
 
 var
-  gGammaCorLut: array[0..2, 0..High(Byte)] of TFloat;
+  gGammaCorLut: array[0..High(cGamma), 0..High(Byte)] of TFloat;
+  gPhiLut: array[0..High(Word)] of Integer;
 
-procedure InitGammaLuts;
+procedure InitLuts;
 var
-  g, i: Integer;
+  p, g, i: Integer;
 begin
-  for g := 0 to 2 do
+  for g := 0 to High(cGamma) do
     for i := 0 to High(Byte) do
       gGammaCorLut[g, i] := power(i / 255.0, cGamma[g]);
+
+  for p := 0 to High(gPhiLut) do
+    gPhiLut[p] := ceil(p * cPhi);
 end;
 
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -1006,6 +1010,8 @@ procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArr
 var
   i, col, r, g, b: Integer;
 begin
+  FillChar(Plan, SizeOf(Plan), 0);
+
   Plan.Count := 0;
   Plan.IsYiluoma2 := IsYiluoma2;
   Plan.Ratio := 0;
@@ -1022,13 +1028,13 @@ begin
 
     Plan.LumaPal[i] := r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier;
 
-    Plan.Y2Palette[i][0] := GammaCorrect(0, r);
-    Plan.Y2Palette[i][1] := GammaCorrect(0, g);
-    Plan.Y2Palette[i][2] := GammaCorrect(0, b);
+    Plan.Y2Palette[i][0] := r;
+    Plan.Y2Palette[i][1] := g;
+    Plan.Y2Palette[i][2] := b;
 
-    Plan.Y1Palette[i][0] := round(Plan.Y2Palette[i][0] * 16383.0);
-    Plan.Y1Palette[i][1] := round(Plan.Y2Palette[i][1] * 16383.0);
-    Plan.Y1Palette[i][2] := round(Plan.Y2Palette[i][2] * 16383.0);
+    Plan.Y1Palette[i][0] := r * 64;
+    Plan.Y1Palette[i][1] := g * 64;
+    Plan.Y1Palette[i][2] := b * 64;
   end
 end;
 
@@ -1037,27 +1043,29 @@ begin
   Result := CompareValue(PInteger(UserParameter)[PPalPixel(Item1)^], PInteger(UserParameter)[PPalPixel(Item2)^]);
 end;
 
+function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64; inline;
+begin
+  Result := sqr(r1 - r2) + sqr(g1 - g2) + sqr(b1 - b2);
+end;
+
 procedure TMainForm.DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
 var
   p, t, index, max_test_count, chosen_amount, chosen: Integer;
-  least_penalty, penalty: TFloat;
-  cc0, cc1, cc2, t_inv: TFloat;
-  so_far: array[0..2] of TFloat;
-  sum: array[0..2] of TFloat;
-  add: array[0..2] of TFloat;
+  least_penalty, penalty: Int64;
+  so_far: array[0..2] of Integer;
+  sum: array[0..2] of Integer;
+  add: array[0..2] of Integer;
 begin
   Plan.Count := 0;
 
-  RGBToYUV(r, g, b, 0, cc0, cc1, cc2);
-
   so_far[0] := 0; so_far[1] := 0; so_far[2] := 0;
 
-  while (Plan.Count < cTilePaletteSize) do
+  while Plan.Count < cY2MixedColors do
   begin
     chosen_amount := 1;
     chosen := 0;
     max_test_count := IfThen(Plan.Count = 0, 1, Plan.Count);
-    least_penalty := MaxSingle;
+    least_penalty := High(Int64);
     for index := 0 to High(Plan.Y2Palette) do
     begin
       sum[0] := so_far[0]; sum[1] := so_far[1]; sum[2] := so_far[2];
@@ -1070,14 +1078,12 @@ begin
         sum[1] += add[1];
         sum[2] += add[2];
 
-        add[0] *= 2;
-        add[1] *= 2;
-        add[2] *= 2;
+        add[0] := gPhiLut[add[0]];
+        add[1] := gPhiLut[add[1]];
+        add[2] := gPhiLut[add[2]];
 
         t := Plan.Count + p;
-        t_inv := 1.0 / t;
-
-        penalty := ColorCompareRGBYUV(sum[0] * t_inv, sum[1] * t_inv, sum[2] * t_inv, cc0, cc1, cc2);
+        penalty := ColorCompare(r, g, b, sum[0] div t, sum[1] div t, sum[2] div t);
 
         if penalty < least_penalty then
         begin
@@ -1086,11 +1092,11 @@ begin
           chosen_amount := p;
         end;
 
-        p *= 2;
+        p := gPhiLut[p];
       end;
     end;
 
-    chosen_amount := Min(chosen_amount, Length(Plan.List) - Plan.Count - 1);
+    chosen_amount := Min(chosen_amount, Length(Plan.List) - Plan.Count);
 {$if cTotalColors <= 256}
     FillByte(Plan.List[Plan.Count], chosen_amount, chosen);
 {$else}
@@ -1103,8 +1109,6 @@ begin
     so_far[2] += Plan.Y2Palette[chosen][2] * chosen_amount;
   end;
 
-  assert(Plan.Count < length(Plan.List));
-
   QuickSort(Plan.List[0], 0, Plan.Count - 1, SizeOf(TPalPixel), @PlanCompareLuma, @Plan.LumaPal[0]);
 end;
 
@@ -1113,22 +1117,27 @@ var
   x, y: Integer;
   map_value: Integer;
 begin
-  for y := 0 to (cTileWidth - 1) do
-    for x := 0 to (cTileWidth - 1) do
-    begin
-      map_value := cDitheringMap[(y shl 3) + x];
-      if not Plan.IsYiluoma2 then
+  if not Plan.IsYiluoma2 then
+  begin
+    for y := 0 to (cTileWidth - 1) do
+      for x := 0 to (cTileWidth - 1) do
       begin
+        map_value := cDitheringMap[(y shl 3) + x];
         DeviseBestMixingPlan(Plan, ATile.RGBPixels[y,x,0], ATile.RGBPixels[y,x,1], ATile.RGBPixels[y,x,2]);
         ATile.PalPixels[y, x] := Plan.Colors[map_value < Plan.Ratio];
-      end
-      else
+      end;
+  end
+  else
+  begin
+    for y := 0 to (cTileWidth - 1) do
+      for x := 0 to (cTileWidth - 1) do
       begin
+        map_value := cDitheringMap[(y shl 3) + x];
         DeviseBestMixingPlan2(Plan, ATile.RGBPixels[y,x,0], ATile.RGBPixels[y,x,1], ATile.RGBPixels[y,x,2]);
-        map_value := map_value * Plan.Count div 64;
+        map_value := (map_value * Plan.Count) shr 6;
         ATile.PalPixels[y, x] := Plan.List[map_value];
       end;
-    end;
+  end;
 end;
 
 type
@@ -1468,6 +1477,7 @@ end;
 procedure TMainForm.RGBToYUV(r, g, b: Integer;  GammaCor: Integer; out y, u, v: TFloat); inline;
 var
   fr, fg, fb: TFloat;
+  yy, uu, vv: TFloat;
 begin
   if GammaCor >= 0 then
   begin
@@ -1482,16 +1492,22 @@ begin
     fb := b / 255.0;
   end;
 
-  y := 0.299*fr + 0.587*fg + 0.114*fb;
-  u := -0.16874*fr + -0.33126*fg +  0.50000*fb + 0.5;
-  v :=  0.50000*fr + -0.41869*fg + -0.08131*fb + 0.5;
+  yy := 0.299*fr + 0.587*fg + 0.114*fb;
+  uu := -0.16874*fr + -0.33126*fg +  0.50000*fb + 0.5;
+  vv :=  0.50000*fr + -0.41869*fg + -0.08131*fb + 0.5;
+
+  y := yy; u := uu; v := vv; // for safe "out" param
 end;
 
 procedure TMainForm.RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); inline;
+var
+  yy, uu, vv: TFloat;
 begin
-  y := 0.299*fr + 0.587*fg + 0.114*fb;
-  u := -0.16874*fr + -0.33126*fg +  0.50000*fb + 0.5;
-  v :=  0.50000*fr + -0.41869*fg + -0.08131*fb + 0.5;
+  yy := 0.299*fr + 0.587*fg + 0.114*fb;
+  uu := -0.16874*fr + -0.33126*fg +  0.50000*fb + 0.5;
+  vv :=  0.50000*fr + -0.41869*fg + -0.08131*fb + 0.5;
+
+  y := yy; u := uu; v := vv; // for safe "out" param
 end;
 
 procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); inline;
@@ -1502,9 +1518,9 @@ begin
   g := ig / 255.0;
   b := ib / 255.0;
 
-  if r > 0.04045 then r := power((r + 0.055) / 1.055, cGamma[2]) else r := r / 12.92;
-  if g > 0.04045 then g := power((g + 0.055) / 1.055, cGamma[2]) else g := g / 12.92;
-  if b > 0.04045 then b := power((b + 0.055) / 1.055, cGamma[2]) else b := b / 12.92;
+  if r > 0.04045 then r := power((r + 0.055) / 1.055, cGamma[1]) else r := r / 12.92;
+  if g > 0.04045 then g := power((g + 0.055) / 1.055, cGamma[1]) else g := g / 12.92;
+  if b > 0.04045 then b := power((b + 0.055) / 1.055, cGamma[1]) else b := b / 12.92;
 
   // CIE XYZ color space from the Wright–Guild data
   x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
@@ -1536,9 +1552,9 @@ procedure TMainForm.RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); inline;
 var
   x, y, z: TFloat;
 begin
-  if r > 0.04045 then r := power((r + 0.055) / 1.055, cGamma[2]) else r := r / 12.92;
-  if g > 0.04045 then g := power((g + 0.055) / 1.055, cGamma[2]) else g := g / 12.92;
-  if b > 0.04045 then b := power((b + 0.055) / 1.055, cGamma[2]) else b := b / 12.92;
+  if r > 0.04045 then r := power((r + 0.055) / 1.055, cGamma[1]) else r := r / 12.92;
+  if g > 0.04045 then g := power((g + 0.055) / 1.055, cGamma[1]) else g := g / 12.92;
+  if b > 0.04045 then b := power((b + 0.055) / 1.055, cGamma[1]) else b := b / 12.92;
 
   // CIE XYZ color space from the Wright–Guild data
   x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
@@ -2440,23 +2456,23 @@ begin
       Inc(Result);
     end;
 
-  DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 4, 4);
-  Inc(Result);
-  DataLine[Result] := GetTileZoneMedian(ATile, 4, 0, 4, 4);
-  Inc(Result);
-  DataLine[Result] := GetTileZoneMedian(ATile, 0, 4, 4, 4);
-  Inc(Result);
-  DataLine[Result] := GetTileZoneMedian(ATile, 4, 4, 4, 4);
-  Inc(Result);
-
-  DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 8, 8);
-  Inc(Result);
-
-  DataLine[Result] := GetTileGridMedian(ATile, True);
-  Inc(Result);
-
-  DataLine[Result] := GetTileGridMedian(ATile, False);
-  Inc(Result);
+  //DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 4, 4);
+  //Inc(Result);
+  //DataLine[Result] := GetTileZoneMedian(ATile, 4, 0, 4, 4);
+  //Inc(Result);
+  //DataLine[Result] := GetTileZoneMedian(ATile, 0, 4, 4, 4);
+  //Inc(Result);
+  //DataLine[Result] := GetTileZoneMedian(ATile, 4, 4, 4, 4);
+  //Inc(Result);
+  //
+  //DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 8, 8);
+  //Inc(Result);
+  //
+  //DataLine[Result] := GetTileGridMedian(ATile, True);
+  //Inc(Result);
+  //
+  //DataLine[Result] := GetTileGridMedian(ATile, False);
+  //Inc(Result);
 
   PxlAccum := acc;
 
@@ -3211,6 +3227,6 @@ begin
 end;
 
 initialization
-  InitGammaLuts;
+  InitLuts;
 end.
 

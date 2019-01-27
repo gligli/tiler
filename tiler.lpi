@@ -174,11 +174,6 @@
         <OptimizationLevel Value="0"/>
       </Optimizations>
     </CodeGeneration>
-    <Linking>
-      <Debugging>
-        <UseHeaptrc Value="True"/>
-      </Debugging>
-    </Linking>
     <Other>
       <CompilerMessages>
         <IgnoredMessages idx5044="True" idx5024="True"/>
