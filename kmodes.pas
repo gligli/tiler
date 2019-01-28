@@ -12,7 +12,7 @@ uses
   Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows;
 
 const
-  cKModesFeatureCount = 80;
+  cKModesFeatureCount = 64;
 
 type
   PInteger = ^Integer;
@@ -221,8 +221,7 @@ begin
 end;
 
 const
-  cMatchingIdxWidth = 32;
-  cDissimSubMatchingSize = 16;
+  cDissimSubMatchingSize = 32;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
@@ -235,7 +234,7 @@ begin
   begin
     if a[i] <> b[i] then
       Result += 1 shl cDissimSubMatchingSize;
-    Result += abs(ShortInt(a[i]) - ShortInt(b[i]));
+    Result += abs(a[i] - b[i]);
   end;
 end;
 
@@ -245,7 +244,7 @@ var
   dis, best: UInt64;
 begin
   Result := -1;
-  best := MaxInt;
+  best := High(UInt64);
   for i := 0 to High(a) do
   begin
     dis := MatchingDissim(a[i], b);
@@ -259,9 +258,18 @@ begin
   bestDissim := best;
 end;
 
+function GetMatchingDissimSum(const a: TByteDynArray2; const b: TByteDynArray; count: Integer): UInt64;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 0 to count - 1 do
+    Result += MatchingDissim(a[i], b);
+end;
+
 {$else}
 
-function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64; register; assembler; nostackframe;
+function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64; pbest_r9: PUInt64): Int64; register; assembler;
 label loop, worst;
 asm
   push rbx
@@ -272,7 +280,7 @@ asm
   push r10
   push rdx
 
-  sub rsp, 16 * 12
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -283,21 +291,18 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
-  movdqu oword ptr [rsp + $a0], xmm10
-  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm4, oword ptr [item_rcx]
-  movdqu xmm5, oword ptr [item_rcx + $10]
-  movdqu xmm6, oword ptr [item_rcx + $20]
-  movdqu xmm7, oword ptr [item_rcx + $30]
-  movdqu xmm8, oword ptr [item_rcx + $40]
+  movdqu xmm6, oword ptr [item_rcx]
+  movdqu xmm7, oword ptr [item_rcx + $10]
+  movdqu xmm8, oword ptr [item_rcx + $20]
+  movdqu xmm9, oword ptr [item_rcx + $30]
 
-  lea rbx, [list_rdx + 8 * count_r8 - 8]
+  lea rbx, [list_rdx + 8 * count_r8]
 
-  lea r8, [list_rdx - 8]
+  lea rax, [list_rdx - 8]
 
-  xor rax, rax
-  dec rax
+  xor r8, r8
+  dec r8
 
   loop:
     mov rcx, [list_rdx]
@@ -306,70 +311,59 @@ asm
     movdqu xmm1, oword ptr [rcx + $10]
     movdqu xmm2, oword ptr [rcx + $20]
     movdqu xmm3, oword ptr [rcx + $30]
-    movdqu xmm10, oword ptr [rcx + $40]
 
-    movq xmm9, xmm0
-    psadbw xmm9, xmm4
-    pcmpeqb xmm0, xmm4
+    movq xmm4, xmm0
+    psubb xmm4, xmm6
+    pabsb xmm4, xmm4
 
-    movq xmm11, xmm1
-    psadbw xmm11, xmm5
-    paddw xmm9, xmm11
-    pcmpeqb xmm1, xmm5
+    movq xmm5, xmm1
+    psadbw xmm5, xmm7
+    paddw xmm4, xmm5
 
-    movq xmm11, xmm2
-    psadbw xmm11, xmm6
-    paddw xmm9, xmm11
-    pcmpeqb xmm2, xmm6
+    movq xmm5, xmm2
+    psadbw xmm5, xmm8
+    paddw xmm4, xmm5
 
-    movq xmm11, xmm3
-    psadbw xmm11, xmm7
-    paddw xmm9, xmm11
-    pcmpeqb xmm3, xmm7
+    movq xmm5, xmm3
+    psadbw xmm5, xmm9
+    paddw xmm4, xmm5
 
-    movq xmm11, xmm10
-    psadbw xmm11, xmm8
-    paddw xmm9, xmm11
-    pcmpeqb xmm10, xmm8
+    pcmpeqb xmm0, xmm6
+    pcmpeqb xmm1, xmm7
+    pcmpeqb xmm2, xmm8
+    pcmpeqb xmm3, xmm9
 
     pmovmskb edi, xmm0
-    mov rsi, rdi
+    mov si, di
     pmovmskb edi, xmm1
     shl rsi, 16
-    or rsi, rdi
+    mov si, di
     pmovmskb edi, xmm2
     shl rsi, 16
-    or rsi, rdi
+    mov si, di
     pmovmskb edi, xmm3
     shl rsi, 16
-    or rsi, rdi
+    mov si, di
     not rsi
-    popcnt r10, rsi
-
-    pmovmskb esi, xmm10
-    not si
-    popcnt si, si
-
-    add rsi, r10
+    popcnt rsi, rsi
 
     shl rsi, cDissimSubMatchingSize
-    pextrw r10d, xmm9, 0
+    pextrw r10d, xmm4, 0
     add rsi, r10
-    pextrw r10d, xmm9, 4
+    pextrw r10d, xmm4, 4
     add rsi, r10
 
-    cmp rsi, rax
+    cmp rsi, r8
     ja worst
 
-      mov rax, rsi
-      mov r8, list_rdx
+      mov r8, rsi
+      mov rax, list_rdx
 
     worst:
 
-    add rcx, cKModesFeatureCount
     add list_rdx, 8
     cmp list_rdx, rbx
-    jle loop
+    jne loop
 
   movdqu xmm0, oword ptr [rsp]
   movdqu xmm1, oword ptr [rsp + $10]
@@ -381,16 +375,14 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  movdqu xmm10, oword ptr [rsp + $a0]
-  movdqu xmm11, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  add rsp, 16 * 10
+
+  mov qword ptr[pbest_r9], r8
 
   pop rdx
 
-  shl rax, cMatchingIdxWidth
-  sub r8, list_rdx
-  sar r8, 3
-  add rax, r8
+  sub rax, list_rdx
+  sar rax, 3
 
   pop r10
   pop r8
@@ -398,22 +390,19 @@ asm
   pop rsi
   pop rcx
   pop rbx
-
 end;
 
-procedure UpdateMinDistance_Asm(item_rcx: PByte; list_rdx: PPByte; used_r8: PBoolean; mindist_r9: PCardinal; count: Integer); register; assembler;
-label loop, used, start;
+function GetMatchingDissimSum_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64; register; assembler;
+label loop;
 asm
   push rbx
   push rcx
   push rsi
   push rdi
-  push rdx
-  push r8
-  push r9
   push r10
+  push rdx
 
-  sub rsp, 16 * 12
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -424,22 +413,16 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
-  movdqu oword ptr [rsp + $a0], xmm10
-  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm4, oword ptr [item_rcx]
-  movdqu xmm5, oword ptr [item_rcx + $10]
-  movdqu xmm6, oword ptr [item_rcx + $20]
-  movdqu xmm7, oword ptr [item_rcx + $30]
-  movdqu xmm8, oword ptr [item_rcx + $40]
+  movdqu xmm6, oword ptr [item_rcx]
+  movdqu xmm7, oword ptr [item_rcx + $10]
+  movdqu xmm8, oword ptr [item_rcx + $20]
+  movdqu xmm9, oword ptr [item_rcx + $30]
 
-  mov eax, count
-  lea rbx, [list_rdx + 8 * rax - 8]
+  lea rbx, [list_rdx + 8 * count_r8]
 
-  xor eax, eax
-
-  jmp start
-
+  xor rax, rax
+  
   loop:
     mov rcx, [list_rdx]
 
@@ -447,77 +430,53 @@ asm
     movdqu xmm1, oword ptr [rcx + $10]
     movdqu xmm2, oword ptr [rcx + $20]
     movdqu xmm3, oword ptr [rcx + $30]
-    movdqu xmm10, oword ptr [rcx + $40]
 
-    movq xmm9, xmm0
-    psadbw xmm9, xmm4
-    pcmpeqb xmm0, xmm4
+    movq xmm4, xmm0
+    psubb xmm4, xmm6
+    pabsb xmm4, xmm4
 
-    movq xmm11, xmm1
-    psadbw xmm11, xmm5
-    paddw xmm9, xmm11
-    pcmpeqb xmm1, xmm5
+    movq xmm5, xmm1
+    psadbw xmm5, xmm7
+    paddw xmm4, xmm5
 
-    movq xmm11, xmm2
-    psadbw xmm11, xmm6
-    paddw xmm9, xmm11
-    pcmpeqb xmm2, xmm6
+    movq xmm5, xmm2
+    psadbw xmm5, xmm8
+    paddw xmm4, xmm5
 
-    movq xmm11, xmm3
-    psadbw xmm11, xmm7
-    paddw xmm9, xmm11
-    pcmpeqb xmm3, xmm7
+    movq xmm5, xmm3
+    psadbw xmm5, xmm9
+    paddw xmm4, xmm5
 
-    movq xmm11, xmm10
-    psadbw xmm11, xmm8
-    paddw xmm9, xmm11
-    pcmpeqb xmm10, xmm8
+    pcmpeqb xmm0, xmm6
+    pcmpeqb xmm1, xmm7
+    pcmpeqb xmm2, xmm8
+    pcmpeqb xmm3, xmm9
 
     pmovmskb edi, xmm0
-    mov rsi, rdi
+    mov si, di
     pmovmskb edi, xmm1
     shl rsi, 16
-    or rsi, rdi
+    mov si, di
     pmovmskb edi, xmm2
     shl rsi, 16
-    or rsi, rdi
+    mov si, di
     pmovmskb edi, xmm3
     shl rsi, 16
-    or rsi, rdi
+    mov si, di
     not rsi
-    popcnt r10, rsi
-
-    pmovmskb esi, xmm10
-    not si
-    popcnt si, si
-
-    add rsi, r10
+    popcnt rsi, rsi
 
     shl rsi, cDissimSubMatchingSize
-    pextrw r10d, xmm9, 0
+    pextrw r10d, xmm4, 0
     add rsi, r10
-    pextrw r10d, xmm9, 4
+    pextrw r10d, xmm4, 4
     add rsi, r10
 
-    mov eax, dword ptr [mindist_r9]
-    cmp esi, eax
-    cmovb eax, esi
-    mov dword ptr [mindist_r9], eax
+    add rax, rsi
 
-    used:
-
-    add rcx, cKModesFeatureCount
     add list_rdx, 8
-    inc used_r8
-    add mindist_r9, 4
-
-    start:
-
-    test byte ptr [used_r8], 0
-    jne used
-
     cmp list_rdx, rbx
-    jle loop
+    jne loop
 
   movdqu xmm0, oword ptr [rsp]
   movdqu xmm1, oword ptr [rsp + $10]
@@ -529,14 +488,10 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  movdqu xmm10, oword ptr [rsp + $a0]
-  movdqu xmm11, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  add rsp, 16 * 10
 
-  pop r10
-  pop r9
-  pop r8
   pop rdx
+  pop r10
   pop rdi
   pop rsi
   pop rcx
@@ -546,11 +501,15 @@ end;
 
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: UInt64): Integer;
 var
-  db: UInt64;
+  bd: UInt64;
 begin
-  db := GetMinMatchingDissim_Asm(@b[0], @a[0], Length(a));
-  Result := Integer(db and ((1 shl cMatchingIdxWidth) - 1));
-  bestDissim := Integer(db shr cMatchingIdxWidth);
+  Result := GetMinMatchingDissim_Asm(@b[0], @a[0], Length(a), @bd);
+  bestDissim := bd;
+end;
+
+function GetMatchingDissimSum(const a: TByteDynArray2; const b: TByteDynArray; count: Integer): UInt64;
+begin
+  Result := GetMatchingDissimSum_Asm(@b[0], @a[0], count);
 end;
 
 {$endif}
@@ -615,37 +574,21 @@ function TKModes.InitFarthestFirst(init_point: Integer): TByteDynArray2;  // neg
 var
   icentroid, ifarthest: Integer;
   used: TBooleanDynArray;
-  mindistance: TCardinalDynArray;
+  mindistance: TUInt64DynArray;
 
-{$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
-
-  procedure UpdateMinDistance(icenter: Integer);
+  procedure UpdateMinDistance(centroid_count: Integer);
   var
     i: Integer;
-    dis: Cardinal;
   begin
     for i := 0 to NumPoints - 1 do
       if not used[i] then
-      begin
-        dis := MatchingDissim(X[icenter], X[i]);
-        if dis < mindistance[i] then
-          mindistance[i] := dis;
-      end;
+        mindistance[i] := GetMatchingDissimSum(Result, X[i], centroid_count);
   end;
-
-{$else}
-
-  procedure UpdateMinDistance(icenter: Integer);
-  begin
-    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
-  end;
-
-{$endif}
 
   function FarthestAway: Integer;
   var
     i: Integer;
-    max: Cardinal;
+    max: UInt64;
   begin
     max := 0;
     Result := -1;
@@ -665,13 +608,13 @@ begin
   for icentroid := 0 to NumClusters - 1 do
     FillByte(Result[icentroid, 0], NumAttrs, High(Byte));
   FillChar(used[0], NumPoints, False);
-  FillDWord(mindistance[0], NumPoints, High(Cardinal));
+  FillQWord(mindistance[0], NumPoints, High(UInt64));
 
   icentroid := 0;
   ifarthest := init_point;
   Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
   used[ifarthest] := True;
-  UpdateMinDistance(ifarthest);
+  UpdateMinDistance(1);
 
   for icentroid := 1 to NumClusters - 1 do
   begin
@@ -679,7 +622,7 @@ begin
 
     Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
     used[ifarthest] := True;
-    UpdateMinDistance(ifarthest);
+    UpdateMinDistance(icentroid + 1);
   end;
 end;
 
