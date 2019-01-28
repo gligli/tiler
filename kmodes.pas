@@ -13,6 +13,8 @@ uses
 
 const
   cKModesFeatureCount = 64;
+  cPhi = (1 + sqrt(5)) / 2;
+  cInvPhi = 1 / cPhi;
 
 type
   PInteger = ^Integer;
@@ -47,7 +49,7 @@ type
     function GetMaxClusterMembers(out member_count: Integer): Integer;
     function LabelsCost: UInt64;
     function KModesIter(var Seed: Cardinal): Integer;
-    function InitFarthestFirst(init_point: Integer): TByteDynArray2;  // negative init_point means randomly chosen
+    function InitFarthestFirst(InitPoint: Integer): TByteDynArray2;  // negative init_point means randomly chosen
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
     constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0; aLog: Boolean = False);
@@ -59,7 +61,7 @@ type
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: UInt64): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
 
 implementation
 
@@ -221,7 +223,7 @@ begin
 end;
 
 const
-  cDissimSubMatchingSize = 32;
+  cDissimSubMatchingSize = 34;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
@@ -238,14 +240,14 @@ begin
   end;
 end;
 
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: UInt64): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
 var
   i: Integer;
   dis, best: UInt64;
 begin
   Result := -1;
   best := High(UInt64);
-  for i := 0 to High(a) do
+  for i := 0 to count - 1 do
   begin
     dis := MatchingDissim(a[i], b);
     if dis <= best then
@@ -269,7 +271,7 @@ end;
 
 {$else}
 
-function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64; pbest_r9: PUInt64): Int64; register; assembler;
+function GetMinMatchingDissim_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64; pbest_r9: PUInt64): Int64; register; assembler; nostackframe;
 label loop, worst;
 asm
   push rbx
@@ -305,7 +307,7 @@ asm
   dec r8
 
   loop:
-    mov rcx, [list_rdx]
+    mov rcx, qword ptr [list_rdx]
 
     movdqu xmm0, oword ptr [rcx]
     movdqu xmm1, oword ptr [rcx + $10]
@@ -334,16 +336,16 @@ asm
     pcmpeqb xmm3, xmm9
 
     pmovmskb edi, xmm0
-    mov si, di
+    mov rsi, rdi
     pmovmskb edi, xmm1
-    shl rsi, 16
-    mov si, di
+    rol rsi, 16
+    or rsi, rdi
     pmovmskb edi, xmm2
-    shl rsi, 16
-    mov si, di
+    rol rsi, 16
+    or rsi, rdi
     pmovmskb edi, xmm3
-    shl rsi, 16
-    mov si, di
+    rol rsi, 16
+    or rsi, rdi
     not rsi
     popcnt rsi, rsi
 
@@ -377,7 +379,7 @@ asm
   movdqu xmm9, oword ptr [rsp + $90]
   add rsp, 16 * 10
 
-  mov qword ptr[pbest_r9], r8
+  mov qword ptr [pbest_r9], r8
 
   pop rdx
 
@@ -392,7 +394,7 @@ asm
   pop rbx
 end;
 
-function GetMatchingDissimSum_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64; register; assembler;
+function GetMatchingDissimSum_Asm(item_rcx: PByte; list_rdx: PPByte; count_r8: UInt64): UInt64; register; assembler; nostackframe;
 label loop;
 asm
   push rbx
@@ -424,7 +426,8 @@ asm
   xor rax, rax
   
   loop:
-    mov rcx, [list_rdx]
+    mov rcx, qword ptr [list_rdx]
+    add list_rdx, 8
 
     movdqu xmm0, oword ptr [rcx]
     movdqu xmm1, oword ptr [rcx + $10]
@@ -453,16 +456,16 @@ asm
     pcmpeqb xmm3, xmm9
 
     pmovmskb edi, xmm0
-    mov si, di
+    mov rsi, rdi
     pmovmskb edi, xmm1
-    shl rsi, 16
-    mov si, di
+    rol rsi, 16
+    or rsi, rdi
     pmovmskb edi, xmm2
-    shl rsi, 16
-    mov si, di
+    rol rsi, 16
+    or rsi, rdi
     pmovmskb edi, xmm3
-    shl rsi, 16
-    mov si, di
+    rol rsi, 16
+    or rsi, rdi
     not rsi
     popcnt rsi, rsi
 
@@ -474,7 +477,6 @@ asm
 
     add rax, rsi
 
-    add list_rdx, 8
     cmp list_rdx, rbx
     jne loop
 
@@ -499,11 +501,11 @@ asm
 
 end;
 
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; out bestDissim: UInt64): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
 var
   bd: UInt64;
 begin
-  Result := GetMinMatchingDissim_Asm(@b[0], @a[0], Length(a), @bd);
+  Result := GetMinMatchingDissim_Asm(@b[0], @a[0], count, @bd);
   bestDissim := bd;
 end;
 
@@ -570,19 +572,48 @@ begin
 end;
 
 
-function TKModes.InitFarthestFirst(init_point: Integer): TByteDynArray2;  // negative init_point means randomly chosen
+function TKModes.InitFarthestFirst(InitPoint: Integer): TByteDynArray2;  // negative init_point means randomly chosen
 var
-  icentroid, ifarthest: Integer;
-  used: TBooleanDynArray;
-  mindistance: TUInt64DynArray;
+  iCentroid, iFarthest: Integer;
+  Used: TBooleanDynArray;
+  MinDistance: TUInt64DynArray;
 
-  procedure UpdateMinDistance(centroid_count: Integer);
+  ApproxCentroids: TByteDynArray2;
+  ApproxCentroidCount: Integer;
+
+  procedure BuildApproximateCentroids(NewCentroid: TByteDynArray; CentroidCount: Integer);
+  var
+    IdealCount: Integer;
+    i: Integer;
+    dis: UInt64;
+    idx: Integer;
+  begin
+    ApproxCentroids[ApproxCentroidCount] := NewCentroid;
+    Inc(ApproxCentroidCount);
+
+    IdealCount := CentroidCount;
+    IdealCount := ceil(power(CentroidCount, cInvPhi));
+
+    if ApproxCentroidCount > IdealCount then
+    begin
+      Assert(ApproxCentroidCount - IdealCount = 1);
+
+      idx := GetMinMatchingDissim(ApproxCentroids, NewCentroid, ApproxCentroidCount, dis);
+
+      for i := ApproxCentroidCount - 1 downto idx + 1 do
+        ApproxCentroids[i - 1] := ApproxCentroids[i];
+
+      Dec(ApproxCentroidCount);
+    end;
+  end;
+
+  procedure UpdateMinDistance(CentroidCount: Integer);
   var
     i: Integer;
   begin
     for i := 0 to NumPoints - 1 do
-      if not used[i] then
-        mindistance[i] := GetMatchingDissimSum(Result, X[i], centroid_count);
+      if not Used[i] then
+        MinDistance[i] := GetMatchingDissimSum(ApproxCentroids, X[i], ApproxCentroidCount);
   end;
 
   function FarthestAway: Integer;
@@ -593,36 +624,41 @@ var
     max := 0;
     Result := -1;
     for i := 0 to NumPoints - 1 do
-      if not used[i] and (max <= mindistance[i]) then
+      if not Used[i] and (max <= MinDistance[i]) then
       begin
-        max := mindistance[i];
+        max := MinDistance[i];
         Result := i;
       end;
   end;
 
 begin
   SetLength(Result, NumClusters, NumAttrs);
-  SetLength(used, NumPoints);
-  SetLength(mindistance, NumPoints);
+  SetLength(ApproxCentroids, NumClusters);
+  SetLength(Used, NumPoints);
+  SetLength(MinDistance, NumPoints);
 
-  for icentroid := 0 to NumClusters - 1 do
-    FillByte(Result[icentroid, 0], NumAttrs, High(Byte));
-  FillChar(used[0], NumPoints, False);
-  FillQWord(mindistance[0], NumPoints, High(UInt64));
+  ApproxCentroidCount := 0;
 
-  icentroid := 0;
-  ifarthest := init_point;
-  Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
-  used[ifarthest] := True;
+  for iCentroid := 0 to NumClusters - 1 do
+    FillByte(Result[iCentroid, 0], NumAttrs, High(Byte));
+  FillChar(Used[0], NumPoints, False);
+  FillQWord(MinDistance[0], NumPoints, High(UInt64));
+
+  iCentroid := 0;
+
+  iFarthest := InitPoint;
+  Move(X[iFarthest, 0], Result[iCentroid, 0], NumAttrs);
+  Used[iFarthest] := True;
+  BuildApproximateCentroids(Result[iCentroid], 1);
   UpdateMinDistance(1);
 
-  for icentroid := 1 to NumClusters - 1 do
+  for iCentroid := 1 to NumClusters - 1 do
   begin
-    ifarthest := FarthestAway;
-
-    Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
-    used[ifarthest] := True;
-    UpdateMinDistance(icentroid + 1);
+    iFarthest := FarthestAway;
+    Move(X[iFarthest, 0], Result[iCentroid, 0], NumAttrs);
+    Used[iFarthest] := True;
+    BuildApproximateCentroids(Result[iCentroid], iCentroid + 1);
+    UpdateMinDistance(iCentroid + 1);
   end;
 end;
 
@@ -637,7 +673,7 @@ begin
 
   for ipoint := 0 to NumPoints - 1 do
   begin
-    clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
+    clust := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
     labels[ipoint] := clust;
     Result += dis;
   end;
@@ -694,7 +730,7 @@ begin
 
   for ipoint := 0 to NumPoints - 1 do
   begin
-    clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
+    clust := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids),dis);
 
     if membship[ipoint] <> clust then
     begin
@@ -798,7 +834,7 @@ begin
 
     for ipoint := 0 to NumPoints - 1 do
     begin
-      clust := GetMinMatchingDissim(centroids, X[ipoint], dis);
+      clust := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
 
       membship[ipoint] := clust;
 

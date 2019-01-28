@@ -1993,7 +1993,7 @@ begin
   SetLength(CentroidsToTR, PassTileCount);
 
   for i := 0 to PassTileCount - 1 do
-    CentroidsToTR[i] := GetMinMatchingDissim(DS^.Dataset, Centroids[i], dissim);
+    CentroidsToTR[i] := GetMinMatchingDissim(DS^.Dataset, Centroids[i], Length(DS^.Dataset), dissim);
 
   // map frame tilemap items to "centroid" tiles and mirrors and choose bestA corresponding palette
 
@@ -2418,7 +2418,7 @@ begin
 
   for j := 0 to ActualNbTiles - 1 do
   begin
-    DsTileIdxs[j] := GetMinMatchingDissim(Dataset, Centroids[j], dissim);
+    DsTileIdxs[j] := GetMinMatchingDissim(Dataset, Centroids[j], Length(Dataset), dissim);
 
     Found := False;
     k := 0;
