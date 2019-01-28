@@ -18,7 +18,6 @@ const
 
   // Tweakable params
   cRandomKModesCount = 7;
-  cY2MixedColors = 16;
   cKeyframeFixedColors = 4;
   cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.42);
   cInvertSpritePalette = False;
@@ -209,12 +208,6 @@ type
   end;
 
   TMixingPlan = record
-    IsYiluoma2: Boolean;
-
-    Y1Palette: array of array[0..2{RGB}] of Integer;
-    Colors: array[Boolean] of TPalPixel;
-    Ratio: Integer; // 0 = always index1, 63 = always index2, 32 = 50% of both
-
     List: array[0..cTotalColors - 1] of TPalPixel;
     Count: Integer;
     LumaPal: array of Integer;
@@ -226,12 +219,12 @@ type
   TMainForm = class(TForm)
     btnRunAll: TButton;
     btnDebug: TButton;
+    cbxYilMix: TComboBox;
     chkGamma: TCheckBox;
     chkLAB: TCheckBox;
     chkReduced: TCheckBox;
     chkSprite: TCheckBox;
     chkMirrored: TCheckBox;
-    chkUseOldDithering: TCheckBox;
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
     edInput: TEdit;
@@ -240,6 +233,7 @@ type
     imgPalette: TImage;
     Label1: TLabel;
     Label10: TLabel;
+    Label11: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
@@ -284,7 +278,7 @@ type
 
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
-    procedure chkUseOldDitheringChange(Sender: TObject);
+    procedure cbxYilMixChange(Sender: TObject);
     procedure chkLABChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -301,7 +295,8 @@ type
     FColorMapHue: array[0..cTotalColors - 1] of SmallInt;
     FColorMapImportance: array[0..cTotalColors - 1] of ShortInt;
     FTiles: array of PTile;
-    FUseOldDithering, FUseLAB: Boolean;
+    FUseLAB: Boolean;
+    FY2MixedColors: Integer;
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition: Integer;
 
@@ -329,11 +324,7 @@ type
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
-    function ColorCompareRGB(r1, g1, b1, r2, g2, b2: TFloat): TFloat;
-    function ColorCompareRGBYUV(r, g, b, y, u, v: TFloat): TFloat;
-    function EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: TFloat): TFloat;
-    procedure DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
-    procedure PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
+    procedure PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray);
     procedure DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
 
     procedure LoadTiles;
@@ -838,7 +829,7 @@ begin
     pal[i] := FColorMap[pali[i]];
   end;
 
-  PreparePlan(p, pal, True);
+  PreparePlan(p, pal);
   DitherTile(t^, p);
 
   SetLength(FTiles, 4);
@@ -924,9 +915,9 @@ begin
   tbFrameChange(nil);
 end;
 
-procedure TMainForm.chkUseOldDitheringChange(Sender: TObject);
+procedure TMainForm.cbxYilMixChange(Sender: TObject);
 begin
-  FUseOldDithering := chkUseOldDithering.Checked;
+  FY2MixedColors := StrToIntDef(cbxYilMix.Text, 16);
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -1006,17 +997,14 @@ begin
 end;
 
 
-procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray; IsYiluoma2: Boolean);
+procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: TIntegerDynArray);
 var
   i, col, r, g, b: Integer;
 begin
   FillChar(Plan, SizeOf(Plan), 0);
 
   Plan.Count := 0;
-  Plan.IsYiluoma2 := IsYiluoma2;
-  Plan.Ratio := 0;
   SetLength(Plan.LumaPal, Length(pal));
-  SetLength(Plan.Y1Palette, Length(pal));
   SetLength(Plan.Y2Palette, Length(pal));
 
   for i := 0 to High(pal) do
@@ -1031,10 +1019,6 @@ begin
     Plan.Y2Palette[i][0] := r;
     Plan.Y2Palette[i][1] := g;
     Plan.Y2Palette[i][2] := b;
-
-    Plan.Y1Palette[i][0] := r * 64;
-    Plan.Y1Palette[i][1] := g * 64;
-    Plan.Y1Palette[i][2] := b * 64;
   end
 end;
 
@@ -1060,7 +1044,7 @@ begin
 
   so_far[0] := 0; so_far[1] := 0; so_far[2] := 0;
 
-  while Plan.Count < cY2MixedColors do
+  while Plan.Count < FY2MixedColors do
   begin
     chosen_amount := 1;
     chosen := 0;
@@ -1117,27 +1101,14 @@ var
   x, y: Integer;
   map_value: Integer;
 begin
-  if not Plan.IsYiluoma2 then
-  begin
-    for y := 0 to (cTileWidth - 1) do
-      for x := 0 to (cTileWidth - 1) do
-      begin
-        map_value := cDitheringMap[(y shl 3) + x];
-        DeviseBestMixingPlan(Plan, ATile.RGBPixels[y,x,0], ATile.RGBPixels[y,x,1], ATile.RGBPixels[y,x,2]);
-        ATile.PalPixels[y, x] := Plan.Colors[map_value < Plan.Ratio];
-      end;
-  end
-  else
-  begin
-    for y := 0 to (cTileWidth - 1) do
-      for x := 0 to (cTileWidth - 1) do
-      begin
-        map_value := cDitheringMap[(y shl 3) + x];
-        DeviseBestMixingPlan2(Plan, ATile.RGBPixels[y,x,0], ATile.RGBPixels[y,x,1], ATile.RGBPixels[y,x,2]);
-        map_value := (map_value * Plan.Count) shr 6;
-        ATile.PalPixels[y, x] := Plan.List[map_value];
-      end;
-  end;
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+    begin
+      map_value := cDitheringMap[(y shl 3) + x];
+      DeviseBestMixingPlan2(Plan, ATile.RGBPixels[y,x,0], ATile.RGBPixels[y,x,1], ATile.RGBPixels[y,x,2]);
+      map_value := (map_value * Plan.Count) shr 6;
+      ATile.PalPixels[y, x] := Plan.List[map_value];
+    end;
 end;
 
 type
@@ -1179,7 +1150,7 @@ var
   FullPalTile: TTile;
   Plan, CMPlan: TMixingPlan;
 begin
-  PreparePlan(CMPlan, FColorMap, True);
+  PreparePlan(CMPlan, FColorMap);
 
   SetLength(CMUsage, cTotalColors);
 
@@ -1226,7 +1197,7 @@ begin
       end;
 
       // dither again using that 16 color palette
-      PreparePlan(Plan, Tile_^.PaletteRGB, True);
+      PreparePlan(Plan, Tile_^.PaletteRGB);
 
       DitherTile(Tile_^, Plan);
     end;
@@ -1344,7 +1315,7 @@ begin
 
       for SpritePal := False to True do
       begin
-        PreparePlan(Plan, KF^.PaletteRGB[SpritePal], not FUseOldDithering);
+        PreparePlan(Plan, KF^.PaletteRGB[SpritePal]);
         DitherTile(Tile_[SpritePal], Plan);
 
         ComputeTileDCT(Tile_[SpritePal], True, False, False, 0, KF^.PaletteRGB[SpritePal], TileDCT[SpritePal]);
@@ -1395,82 +1366,6 @@ begin
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
         Inc(FFrames[i].TileMap[y,x].GlobalTileIndex, tileCnt);
-  end;
-end;
-
-function TMainForm.EvaluateMixingError(r, g, b, r0, g0, b0, r1, g1, b1, r2, g2, b2: Integer; ratio: TFloat): TFloat;
-begin
-  Result := ColorCompareRGB(r,g,b, r0,g0,b0) + ColorCompareRGB(r1,g1,b1, r2,g2,b2) * 0.1 * (abs(ratio-0.5)+0.5);
-end;
-
-procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
-var
-  r0,r1,r2,g0,g1,g2,b0,b1,b2,index1,index2,ratio,t1,t2,t3,d1,d2,d3: Integer;
-  least_penalty, penalty: TFloat;
-begin
-  Plan.Colors[False] := 0;
-  Plan.Colors[True] := 0;
-  Plan.Ratio := 32;
-
-  r := round(GammaCorrect(0, r) * 16383.0);
-  g := round(GammaCorrect(0, g) * 16383.0);
-  b := round(GammaCorrect(0, b) * 16383.0);
-
-  least_penalty := MaxSingle;
-  // Loop through every unique combination of two colors from the palette,
-  // and through each possible way to mix those two colors. They can be
-  // mixed in exactly 64 ways, when the threshold matrix is 8x8.
-  for index1 := 0 to High(Plan.Y1Palette) do
-  begin
-    r1 := Plan.Y1Palette[index1][0];
-    g1 := Plan.Y1Palette[index1][1];
-    b1 := Plan.Y1Palette[index1][2];
-    for index2 := 0 to High(Plan.Y1Palette) do
-    begin
-      // Determine the two component colors
-      r2 := Plan.Y1Palette[index2][0];
-      g2 := Plan.Y1Palette[index2][1];
-      b2 := Plan.Y1Palette[index2][2];
-      ratio := 32;
-
-      // Determine the ratio of mixing for each channel.
-      //   solve(r1 + ratio*(r2-r1)/64 = r, ratio)
-      // Take a weighed average of these three ratios according to the
-      // perceived luminosity of each channel (according to CCIR 601).
-      t1 := 0; t2 := 0; t3 := 0; d1 := 0; d2 := 0; d3 := 0;
-      if r2 <> r1 then
-      begin
-        t1 := cRedMultiplier * 64 * (r - r1) div (r2-r1);
-        d1 := cRedMultiplier;
-      end;
-      if g2 <> g1 then
-      begin
-        t2 := cGreenMultiplier * 64 * (g - g1) div (g2-g1);
-        d2 := cGreenMultiplier;
-      end;
-      if b2 <> b1 then
-      begin
-        t3 := cBlueMultiplier * 64 * (b - b1) div (b2-b1);
-        d3 := cBlueMultiplier;
-      end;
-      ratio := iDiv0(t1+t2+t3, d1+d2+d3);
-      if(ratio < 0) then ratio := 0 else if(ratio > 63) then ratio := 63;
-
-      // Determine what mixing them in this proportion will produce
-      r0 := r1 + (ratio * (r2-r1)) shr 6;
-      g0 := g1 + (ratio * (g2-g1)) shr 6;
-      b0 := b1 + (ratio * (b2-b1)) shr 6;
-      // Determine how well that matches what we want to accomplish
-      penalty := EvaluateMixingError(r,g,b, r0,g0,b0, r1,g1,b1, r2,g2,b2, ratio/64.0);
-      if penalty < least_penalty then
-      begin
-        // Keep the result that has the smallest error
-        least_penalty := penalty;
-        Plan.colors[False] := index1;
-        Plan.colors[True] := index2;
-        Plan.ratio := ratio;
-      end;
-    end;
   end;
 end;
 
@@ -1684,25 +1579,6 @@ begin
       ATile.PalPixels[j, i] := ATile.PalPixels[j, cTileWidth - 1 - i];
       ATile.PalPixels[j, cTileWidth - 1 - i] := v;
     end;
-end;
-
-function TMainForm.ColorCompareRGB(r1, g1, b1, r2, g2, b2: TFloat): TFloat;
-var
-  y1, u1, v1, y2, u2, v2: TFloat;
-begin
-  RGBToYUV(r1, g1, b1, y1, u1, v1);
-  RGBToYUV(r2, g2, b2, y2, u2, v2);
-
-  Result := sqr(y1 - y2) + (sqr(u1 - u2) + sqr(v1 - v2)) * (1.0 / sqrt(2.0));
-end;
-
-function TMainForm.ColorCompareRGBYUV(r, g, b, y, u, v: TFloat): TFloat;
-var
-  y1, u1, v1: TFloat;
-begin
-  RGBToYUV(r, g, b, y1, u1, v1);
-
-  Result := sqr(y1 - y) + (sqr(u1 - u) + sqr(v1 - v)) * (1.0 / sqrt(2.0));
 end;
 
 procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
@@ -2477,7 +2353,7 @@ begin
   PxlAccum := acc;
 
   // clear remaining bytes
-  FillByte(DataLine[Result], cKModesFeatureCount - Result, 0);
+  //FillByte(DataLine[Result], cKModesFeatureCount - Result, 0);
 end;
 
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
@@ -3177,7 +3053,7 @@ begin
   imgPalette.Picture.Bitmap.Height := 32;
   imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  chkUseOldDitheringChange(nil);
+  cbxYilMixChange(nil);
   chkLABChange(nil);
 
   sr := (1 shl cBitsPerComp) - 1;
