@@ -1309,7 +1309,7 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile, False, False, False, 0, OrigTile.PaletteRGB, OrigTileDCT);
+      ComputeTileDCT(OrigTile, False, True, False, 0, OrigTile.PaletteRGB, OrigTileDCT);
 
       KF := AFrame^.KeyFrame;
 
@@ -1318,7 +1318,7 @@ begin
         PreparePlan(Plan, KF^.PaletteRGB[SpritePal]);
         DitherTile(Tile_[SpritePal], Plan);
 
-        ComputeTileDCT(Tile_[SpritePal], True, False, False, 0, KF^.PaletteRGB[SpritePal], TileDCT[SpritePal]);
+        ComputeTileDCT(Tile_[SpritePal], True, True, False, 0, KF^.PaletteRGB[SpritePal], TileDCT[SpritePal]);
         cmp[SpritePal] := CompareEuclidean192(@TileDCT[SpritePal, 0], @OrigTileDCT[0]);
       end;
 
