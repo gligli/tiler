@@ -1200,10 +1200,21 @@ begin
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
-var sx, sy, tx, ty, i, idx, idx2: Integer;
-    GTile: PTile;
-    CMUsage: array of TCountIndexArray;
-    sfr, efr: Integer;
+const
+  cPalettePattern : array[Boolean, 0 .. cTilePaletteSize - 1] of Integer = (
+{$if true}
+    (4, 5, 8, 9, 12,13,16,17,20,21,24,25,0, 1, 2, 3),
+    (6, 7, 10,11,14,15,18,19,22,23,26,27,0, 1, 2, 3)
+{$else}
+    (4, 6, 8, 10,12,14,16,18,20,22,24,26,0, 1, 2, 3),
+    (5, 7, 9, 11,13,15,17,19,21,23,25,27,0, 1, 2, 3)
+{$endif}
+  );
+var
+  sx, sy, tx, ty, i: Integer;
+  GTile: PTile;
+  CMUsage: array of TCountIndexArray;
+  sfr, efr: Integer;
 begin
   SetLength(CMUsage, cTotalColors);
 
@@ -1251,19 +1262,8 @@ begin
   QuickSort(CMUsage[0], cKeyframeFixedColors, cTilePaletteSize * 2 - 1, SizeOf(CMUsage[0]), @CompareCMUHueLuma);
   for i := 0 to cTilePaletteSize - 1 do
   begin
-    if i >= cTilePaletteSize - cKeyframeFixedColors then
-    begin
-      idx := i - (cTilePaletteSize - cKeyframeFixedColors);
-      idx2 := idx;
-    end
-    else
-    begin
-      idx := (i shl 1) + cKeyframeFixedColors;
-      idx2 := idx + 1;
-    end;
-
-    AKeyFrame^.PaletteIndexes[False, i] := CMUsage[idx][ciIndex];
-    AKeyFrame^.PaletteIndexes[True, i] := CMUsage[idx2][ciIndex];
+    AKeyFrame^.PaletteIndexes[False, i] := CMUsage[cPalettePattern[False, i]][ciIndex];
+    AKeyFrame^.PaletteIndexes[True, i] := CMUsage[cPalettePattern[True, i]][ciIndex];
   end;
 
 {$if cInvertSpritePalette}
