@@ -319,7 +319,7 @@ type
     procedure RGBToColSpc(r, g, b: TFloat; LAB: Boolean; out ol, oa, ob: TFloat); overload;
     procedure RGBToColSpc(ir, ig, ib: Integer; LAB: Boolean; GammaCor: Integer; out ol, oa, ob: TFloat); overload;
 
-    procedure ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, LAB: Boolean; GammaCor: Integer; const pal: TIntegerDynArray;
+    procedure ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, LAB, HMirror, VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray;
       var DCT: TFloatDynArray);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
@@ -1305,7 +1305,7 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile, False, True, False, 0, OrigTile.PaletteRGB, OrigTileDCT);
+      ComputeTileDCT(OrigTile, False, True, False, False, False, 0, OrigTile.PaletteRGB, OrigTileDCT);
 
       KF := AFrame^.KeyFrame;
 
@@ -1314,7 +1314,7 @@ begin
         PreparePlan(Plan, KF^.PaletteRGB[SpritePal]);
         DitherTile(Tile_[SpritePal], Plan);
 
-        ComputeTileDCT(Tile_[SpritePal], True, True, False, 0, KF^.PaletteRGB[SpritePal], TileDCT[SpritePal]);
+        ComputeTileDCT(Tile_[SpritePal], True, True, False, False, False, 0, KF^.PaletteRGB[SpritePal], TileDCT[SpritePal]);
         cmp[SpritePal] := CompareEuclidean192(@TileDCT[SpritePal, 0], @OrigTileDCT[0]);
       end;
 
@@ -1383,9 +1383,9 @@ begin
     fb := b / 255.0;
   end;
 
-  yy := 0.299*fr + 0.587*fg + 0.114*fb;
-  uu := -0.16874*fr + -0.33126*fg +  0.50000*fb + 0.5;
-  vv :=  0.50000*fr + -0.41869*fg + -0.08131*fb + 0.5;
+  yy := (cRedMultiplier * fr + cGreenMultiplier * fg + cBlueMultiplier * fb) / cLumaMultiplier;
+  uu := (fb - yy) * (0.5 / (1.0 - cBlueMultiplier / cLumaMultiplier));
+  vv := (fr - yy) * (0.5 / (1.0 - cRedMultiplier / cLumaMultiplier));
 
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
@@ -1394,9 +1394,9 @@ procedure TMainForm.RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); inline;
 var
   yy, uu, vv: TFloat;
 begin
-  yy := 0.299*fr + 0.587*fg + 0.114*fb;
-  uu := -0.16874*fr + -0.33126*fg +  0.50000*fb + 0.5;
-  vv :=  0.50000*fr + -0.41869*fg + -0.08131*fb + 0.5;
+  yy := (cRedMultiplier * fr + cGreenMultiplier * fg + cBlueMultiplier * fb) / cLumaMultiplier;
+  uu := (fb - yy) * (0.5 / (1.0 - cBlueMultiplier / cLumaMultiplier));
+  vv := (fr - yy) * (0.5 / (1.0 - cRedMultiplier / cLumaMultiplier));
 
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
@@ -1489,11 +1489,12 @@ begin
     RGBToYUV(ir, ig, ib, GammaCor, ol, oa, ob);
 end;
 
-procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, LAB: Boolean; GammaCor: Integer;  const pal: TIntegerDynArray; var DCT: TFloatDynArray);
+procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, LAB, HMirror, VMirror: Boolean;
+  GammaCor: Integer; const pal: TIntegerDynArray; var DCT: TFloatDynArray);
 const
   cUVRatio: array[0..cTileWidth-1] of TFloat = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
 var
-  col, u, v, x, y, di, cpn: Integer;
+  col, u, v, x, y, xx, yy, di, cpn: Integer;
   s, q, vRatio, z: TFloat;
   YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
 begin
@@ -1504,7 +1505,12 @@ begin
     for y := 0 to (cTileWidth - 1) do
       for x := 0 to (cTileWidth - 1) do
       begin
-        col := pal[ATile.PalPixels[y,x]];
+        xx := x;
+        yy := y;
+        if HMirror then xx := cTileWidth - 1 - x;
+        if VMirror then yy := cTileWidth - 1 - y;
+
+        col := pal[ATile.PalPixels[yy,xx]];
         RGBToColSpc(col and $ff, (col shr 8) and $ff, (col shr 16) and $ff, LAB, GammaCor, YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
       end;
   end
@@ -1512,7 +1518,14 @@ begin
   begin
     for y := 0 to (cTileWidth - 1) do
       for x := 0 to (cTileWidth - 1) do
-        RGBToColSpc(ATile.RGBPixels[y,x,0], ATile.RGBPixels[y,x,1], ATile.RGBPixels[y,x,2], LAB, GammaCor, YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
+      begin
+        xx := x;
+        yy := y;
+        if HMirror then xx := cTileWidth - 1 - x;
+        if VMirror then yy := cTileWidth - 1 - y;
+
+        RGBToColSpc(ATile.RGBPixels[yy,xx,0], ATile.RGBPixels[yy,xx,1], ATile.RGBPixels[yy,xx,2], LAB, GammaCor, YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
+      end;
   end;
 
   di := 0;
@@ -1538,7 +1551,7 @@ begin
         DCT[di] := cUVRatio[u] * vRatio * z;
 
         if QWeighting then
-           DCT[di] *= 256.0 / cDCTQuantization[cpn, v, u];
+           DCT[di] *= 16.0 / cDCTQuantization[cpn, v, u];
 
         Inc(di);
 	    end;
@@ -2073,7 +2086,7 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, FUseLAB, cKFGamma, frm^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DS^.FrameDataset[di]);
+        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, FUseLAB, False, False, cKFGamma, frm^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DS^.FrameDataset[di]);
         Inc(di);
 
         used[frm^.TileMap[sy, sx].GlobalTileIndex] := True;
@@ -2111,18 +2124,10 @@ begin
         DS^.StartingPoint := di;
       end;
 
-      ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, cKFGamma, AKF^.PaletteRGB[False], DS^.DCTs[False, False, False, di]);
-      ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, cKFGamma, AKF^.PaletteRGB[True], DS^.DCTs[True, False, False, di]);
-      HMirrorPalTile(T^);
-      ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, cKFGamma, AKF^.PaletteRGB[False], DS^.DCTs[False, False, True, di]);
-      ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, cKFGamma, AKF^.PaletteRGB[True], DS^.DCTs[True, False, True, di]);
-      VMirrorPalTile(T^);
-      ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, cKFGamma, AKF^.PaletteRGB[False], DS^.DCTs[False, True, True, di]);
-      ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, cKFGamma, AKF^.PaletteRGB[True], DS^.DCTs[True, True, True, di]);
-      HMirrorPalTile(T^);
-      ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, cKFGamma, AKF^.PaletteRGB[False], DS^.DCTs[False, True, False, di]);
-      ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, cKFGamma, AKF^.PaletteRGB[True], DS^.DCTs[True, True, False, di]);
-      VMirrorPalTile(T^);
+      for spal := False to True do
+        for vmir := False to True do
+          for hmir := False to True do
+            ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, hmir, vmir, cKFGamma, AKF^.PaletteRGB[spal], DS^.DCTs[spal, vmir, hmir, di]);
 
       Inc(di);
     end;
@@ -2198,8 +2203,8 @@ begin
     if TMI^.HMirror then HMirrorPalTile(Tile_);
     if TMI^.VMirror then VMirrorPalTile(Tile_);
 
-    ComputeTileDCT(PrevTile, True, True, FUseLAB, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
-    ComputeTileDCT(Tile_, True, True, FUseLAB, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
+    ComputeTileDCT(PrevTile, True, True, FUseLAB, False, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
+    ComputeTileDCT(Tile_, True, True, FUseLAB, False, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
 
     cmp := CompareEuclidean192(@TileDCT[0], @PrevTileDCT[0]);
     cmp := sqrt(cmp * cSqrtFactor);
