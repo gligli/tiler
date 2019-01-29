@@ -314,19 +314,19 @@ asm
     movdqu xmm2, oword ptr [rcx + $20]
     movdqu xmm3, oword ptr [rcx + $30]
 
-    movq xmm4, xmm0
+    movdqa xmm4, xmm0
     psubb xmm4, xmm6
     pabsb xmm4, xmm4
 
-    movq xmm5, xmm1
+    movdqa xmm5, xmm1
     psadbw xmm5, xmm7
     paddw xmm4, xmm5
 
-    movq xmm5, xmm2
+    movdqa xmm5, xmm2
     psadbw xmm5, xmm8
     paddw xmm4, xmm5
 
-    movq xmm5, xmm3
+    movdqa xmm5, xmm3
     psadbw xmm5, xmm9
     paddw xmm4, xmm5
 
@@ -434,19 +434,19 @@ asm
     movdqu xmm2, oword ptr [rcx + $20]
     movdqu xmm3, oword ptr [rcx + $30]
 
-    movq xmm4, xmm0
+    movdqa xmm4, xmm0
     psubb xmm4, xmm6
     pabsb xmm4, xmm4
 
-    movq xmm5, xmm1
+    movdqa xmm5, xmm1
     psadbw xmm5, xmm7
     paddw xmm4, xmm5
 
-    movq xmm5, xmm2
+    movdqa xmm5, xmm2
     psadbw xmm5, xmm8
     paddw xmm4, xmm5
 
-    movq xmm5, xmm3
+    movdqa xmm5, xmm3
     psadbw xmm5, xmm9
     paddw xmm4, xmm5
 
