@@ -1705,8 +1705,8 @@ begin
 
     // dest screen
 
-    SetLength(oriCorr, cScreenHeight * cScreenWidth);
-    SetLength(chgCorr, cScreenHeight * cScreenWidth);
+    SetLength(oriCorr, cScreenHeight * cScreenWidth * 2);
+    SetLength(chgCorr, cScreenHeight * cScreenWidth * 2);
 
     for j := 0 to cScreenHeight - 1 do
     begin
@@ -1732,7 +1732,10 @@ begin
           tilePtr :=  @Frame^.Tiles[(j shr 3) * cTileMapWidth + (i shr 3)];
           pal := tilePtr^.PaletteRGB;
           if Assigned(pal) then
+          begin
             oriCorr[j * cScreenWidth + i] := SwapRB(pal[tilePtr^.PalPixels[ty, tx]]);
+            oriCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := oriCorr[j * cScreenWidth + i];
+          end;
 
           if reduced then
           begin
@@ -1767,6 +1770,7 @@ begin
 
           pDest[i] := ToRGB(r, g, b);
           chgCorr[j * cScreenWidth + i] := ToRGB(r, g, b);
+          chgCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := chgCorr[j * cScreenWidth + i];
 
           // 25% scanlines
           r := r - r shr 2;
@@ -1778,7 +1782,7 @@ begin
       end;
     end;
 
-    lblCorrel.Caption := FormatFloat('0.0000', SpearmanRankCorrelation(oriCorr, chgCorr, cScreenHeight * cScreenWidth));
+    lblCorrel.Caption := FormatFloat('0.0000', SpearmanRankCorrelation(oriCorr, chgCorr, cScreenHeight * cScreenWidth * 2));
   finally
     imgTiles.Picture.Bitmap.EndUpdate;
     imgDest.Picture.Bitmap.EndUpdate;
@@ -2367,10 +2371,12 @@ var
   DsTileIdxs: TIntegerDynArray;
   Found: Boolean;
   ToMerge: array of Integer;
+  WasActive: TBooleanDynArray;
   KModes: TKModes;
   NewTile: TPalPixels;
 begin
   SetLength(Dataset, Length(FTiles), cKModesFeatureCount);
+  SetLength(WasActive, Length(FTiles));
 
   // prepare KModes dataset, one line per tile, 64 palette indexes per line
   // also choose KModes starting point
@@ -2380,6 +2386,8 @@ begin
   best := -1;
   for i := 0 to High(FTiles) do
   begin
+    WasActive[i] := FTiles[i]^.Active;
+
     if not FTiles[i]^.Active then
       Continue;
 
@@ -2423,7 +2431,7 @@ begin
     k := 0;
     for i := 0 to High(FTiles) do
     begin
-      if not FTiles[i]^.Active then
+      if not WasActive[i] then
         Continue;
 
       if k = DsTileIdxs[j] then
@@ -2449,7 +2457,7 @@ begin
     k := 0;
     for i := 0 to High(FTiles) do
     begin
-      if not FTiles[i]^.Active then
+      if not WasActive[i] then
         Continue;
 
       if Clusters[k] = j then
