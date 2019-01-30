@@ -19,10 +19,10 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.42);
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.0 / 2.4);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFFromPal = False;
+  cKFFromPal = True;
   cKFGamma = 0;
   cKFQWeighting = True;
 
@@ -1405,13 +1405,13 @@ procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); inlin
 var
   r, g, b, x, y, z: TFloat;
 begin
-  r := ir / 255.0;
-  g := ig / 255.0;
-  b := ib / 255.0;
+  r := GammaCorrect(1, ir);
+  g := GammaCorrect(1, ig);
+  b := GammaCorrect(1, ib);
 
-  if r > 0.04045 then r := power((r + 0.055) / 1.055, cGamma[1]) else r := r / 12.92;
-  if g > 0.04045 then g := power((g + 0.055) / 1.055, cGamma[1]) else g := g / 12.92;
-  if b > 0.04045 then b := power((b + 0.055) / 1.055, cGamma[1]) else b := b / 12.92;
+  if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
+  if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
+  if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
 
   // CIE XYZ color space from the Wright–Guild data
   x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
@@ -1441,36 +1441,12 @@ end;
 
 procedure TMainForm.RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); inline;
 var
-  x, y, z: TFloat;
+  ll, aa, bb: TFloat;
 begin
-  if r > 0.04045 then r := power((r + 0.055) / 1.055, cGamma[1]) else r := r / 12.92;
-  if g > 0.04045 then g := power((g + 0.055) / 1.055, cGamma[1]) else g := g / 12.92;
-  if b > 0.04045 then b := power((b + 0.055) / 1.055, cGamma[1]) else b := b / 12.92;
-
-  // CIE XYZ color space from the Wright–Guild data
-  x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
-  y := (r * 0.17697 + g * 0.81240 + b * 0.01063) / 0.17697;
-  z := (r * 0.00000 + g * 0.01000 + b * 0.99000) / 0.17697;
-
-{$if false}
-  // Illuminant D50
-  x /= 96.6797;
-  y /= 100.000;
-  z /= 82.5188;
-{$else}
-  // Illuminant D65
-  x /= 95.0470;
-  y /= 100.000;
-  z /= 108.883;
-{$endif}
-
-  if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
-  if y > 0.008856 then y := power(y, 1/3) else y := (7.787 * y) + 16/116;
-  if z > 0.008856 then z := power(z, 1/3) else z := (7.787 * z) + 16/116;
-
-  ol := (116 * y) - 16;
-  oa := 500 * (x - y);
-  ob := 200 * (y - z);
+  RGBToLAB(round(r * 255.0), round(g * 255.0), round(b * 255.0), ll, aa, bb);
+  ol := ll;
+  oa := aa;
+  ob := bb;
 end;
 
 procedure TMainForm.RGBToColSpc(r, g, b: TFloat; LAB: Boolean; out ol, oa, ob: TFloat);
@@ -1598,7 +1574,7 @@ begin
   for j := 0 to (cTileMapHeight - 1) do
     for i := 0 to (cTileMapWidth - 1) do
     begin
-      AFrame^.TileMap[j, i].GlobalTileIndex := 32 * j + i;
+      AFrame^.TileMap[j, i].GlobalTileIndex := cTileMapWidth * j + i;
       AFrame^.TileMap[j, i].HMirror := False;
       AFrame^.TileMap[j, i].VMirror := False;
       AFrame^.TileMap[j, i].SpritePal := False;
@@ -1932,6 +1908,8 @@ begin
   if TileCount <= 0 then
     Exit;
 
+  Move(NewTile[0, 0], FTiles[BestIdx]^.PalPixels[0, 0], sizeof(TPalPixels));
+
   for k := 0 to TileCount - 1 do
   begin
     j := TileIndexes[k];
@@ -1939,9 +1917,9 @@ begin
     if FTiles[j]^.TmpIndex = -2 then // -2 as TmpIndex means tile is a centroid
       Continue;
 
-    Inc(FTiles[BestIdx]^.AveragedCount, FTiles[j]^.AveragedCount);
+    assert(j <> BestIdx, 'Malformed MergeTiles() params!');
 
-    Move(NewTile[0, 0], FTiles[BestIdx]^.PalPixels[0, 0], sizeof(TPalPixels));
+    Inc(FTiles[BestIdx]^.AveragedCount, FTiles[j]^.AveragedCount);
 
     FTiles[j]^.Active := False;
     FTiles[j]^.TmpIndex := BestIdx;
@@ -1982,6 +1960,7 @@ var
   DCT: TFloatDynArray;
   spal, vmir, hmir: Boolean;
   TMI: TTileMapItem;
+  T: TTile;
 begin
   PassTileCount := round(PassX);
   FTD := PFrameTilingData(Data);
@@ -1993,6 +1972,7 @@ begin
   try
     PassTileCount := KModes.ComputeKModes(DS^.Dataset, PassTileCount, -DS^.StartingPoint, cTilePaletteSize, Clusters, Centroids);
     Assert(Length(Centroids) = PassTileCount);
+    Assert(MaxIntValue(Clusters) = PassTileCount - 1);
   finally
     KModes.Free;
   end;
@@ -2002,7 +1982,28 @@ begin
   SetLength(CentroidsToTR, PassTileCount);
 
   for i := 0 to PassTileCount - 1 do
-    CentroidsToTR[i] := GetMinMatchingDissim(DS^.Dataset, Centroids[i], Length(DS^.Dataset), dissim);
+  begin
+    ci := -1;
+    best := MaxSingle;
+
+    for sy := 0 to cTileWidth - 1 do
+      for sx := 0 to cTileWidth - 1 do
+        T.PalPixels[sy, sx] := Centroids[i, sy * cTileWidth + sx];
+
+    ComputeTileDCT(T, True, False, FUseLAB, False, False, cKFGamma, FTD^.Frame^.KeyFrame^.PaletteRGB[False], DCT);
+
+    for j := 0 to High(Clusters) do
+      if Clusters[j] = i then
+      begin
+        diff := CompareEuclidean192(@DS^.DCTs[False, False, False, j, 0], @DCT[0]);
+        if diff < best then
+        begin
+          best := diff;
+          ci := j;
+        end;
+      end;
+    CentroidsToTR[i] := ci
+  end;
 
   // map frame tilemap items to "centroid" tiles and mirrors and choose bestA corresponding palette
 
@@ -2074,7 +2075,7 @@ begin
   AKF^.TileDS := DS;
 
   // make a list of all used tiles
-  SetLength(DS^.FrameDataset, AKF^.FrameCount * cTileMapSize);
+  SetLength(DS^.FrameDataset, AKF^.FrameCount * cTileMapSize, 3 * sqr(cTileWidth));
 
   SetLength(used, Length(FTiles));
   FillByte(used[0], Length(FTiles), 0);
@@ -2137,7 +2138,7 @@ end;
 
 procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 const
-  cNBTilesEpsilon = 3;
+  cNBTilesEpsilon = 1;
 var
   sy, sx: Integer;
   FTD: PFrameTilingData;
@@ -2155,7 +2156,7 @@ begin
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
     if TestTMICount(Length(DS^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      GoldenRatioSearch(@TestTMICount, DesiredNbTiles, High(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+      GoldenRatioSearch(@TestTMICount, DesiredNbTiles, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
 
     // update tilemap
 
@@ -2360,18 +2361,16 @@ end;
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset, Centroids: TByteDynArray2;
-  Labels: TIntegerDynArray;
+  Clusters: TIntegerDynArray;
   i, j, k, x, y, di, acc, best, StartingPoint, ActualNbTiles: Integer;
   dissim: UInt64;
   DsTileIdxs: TIntegerDynArray;
   Found: Boolean;
   ToMerge: array of Integer;
-  WasActive: TBooleanDynArray;
   KModes: TKModes;
   NewTile: TPalPixels;
 begin
   SetLength(Dataset, Length(FTiles), cKModesFeatureCount);
-  SetLength(WasActive, Length(FTiles));
 
   // prepare KModes dataset, one line per tile, 64 palette indexes per line
   // also choose KModes starting point
@@ -2381,8 +2380,6 @@ begin
   best := -1;
   for i := 0 to High(FTiles) do
   begin
-    WasActive[i] := FTiles[i]^.Active;
-
     if not FTiles[i]^.Active then
       Continue;
 
@@ -2405,8 +2402,9 @@ begin
 
   KModes := TKModes.Create(0, 0, True);
   try
-    ActualNbTiles := KModes.ComputeKModes(Dataset, DesiredNbTiles, -StartingPoint, cTilePaletteSize, Labels, Centroids);
+    ActualNbTiles := KModes.ComputeKModes(Dataset, DesiredNbTiles, -StartingPoint, cTilePaletteSize, Clusters, Centroids);
     Assert(Length(Centroids) = ActualNbTiles);
+    Assert(MaxIntValue(Clusters) = ActualNbTiles - 1);
   finally
     KModes.Free;
   end;
@@ -2425,7 +2423,7 @@ begin
     k := 0;
     for i := 0 to High(FTiles) do
     begin
-      if not WasActive[i] then
+      if not FTiles[i]^.Active then
         Continue;
 
       if k = DsTileIdxs[j] then
@@ -2451,10 +2449,10 @@ begin
     k := 0;
     for i := 0 to High(FTiles) do
     begin
-      if not WasActive[i] then
+      if not FTiles[i]^.Active then
         Continue;
 
-      if Labels[k] = j then
+      if Clusters[k] = j then
       begin
         ToMerge[di] := i;
         Inc(di);
@@ -3032,7 +3030,7 @@ begin
   FormatSettings.DecimalSeparator := '.';
 
 {$ifdef DEBUG}
-  ProcThreadPool.MaxThreadCount := 1;
+  //ProcThreadPool.MaxThreadCount := 1;
   btnDebug.Visible := True;
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
