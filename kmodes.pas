@@ -4,7 +4,7 @@ unit kmodes;
 
 //{$define GENERIC_DISSIM}
 
-{$mode objfpc}{$H+}
+{$mode delphi}
 
 interface
 
@@ -550,15 +550,15 @@ begin
 
     for i := 0 to quantum - 1 do
     begin
-      Inc(mc_loc, Ord(pm0^ = cluster)); Inc(pm0);
-      Inc(mc_loc, Ord(pm1^ = cluster)); Inc(pm1);
-      Inc(mc_loc, Ord(pm2^ = cluster)); Inc(pm2);
-      Inc(mc_loc, Ord(pm3^ = cluster)); Inc(pm3);
+      Inc(mc_loc, Ord(pm0^ = cluster)); Inc(pm0, quantum);
+      Inc(mc_loc, Ord(pm1^ = cluster)); Inc(pm1, quantum);
+      Inc(mc_loc, Ord(pm2^ = cluster)); Inc(pm2, quantum);
+      Inc(mc_loc, Ord(pm3^ = cluster)); Inc(pm3, quantum);
     end;
 
     for i := (quantum shl 2) to Length(membship) - 1 do
     begin
-      Inc(mc_loc, Ord(pm3^ = cluster)); Inc(pm3);
+      Inc(mc_loc, Ord(pm0^ = cluster)); Inc(pm0);
     end;
 
     if mc_loc >= mc then
@@ -742,6 +742,7 @@ begin
       if CountClusterMembers(old_clust) = 0 then
       begin
         from_clust := GetMaxClusterMembers(dummy);
+        writeln('zero', #9, from_clust, #9, dummy);
 
         cnt := 0;
         for i := 0 to High(membship) do
@@ -789,14 +790,14 @@ begin
   if MaxIter <= 0 then
     MaxIter := MaxInt;
 
-  init := nil;
-  if CountUniqueRows(X) <= NumClusters then
-  begin
-    MaxIter := 0;
-    ANumInit := 1;
-    init := GetUniqueRows(X);
-    NumClusters := Length(init);
-  end;
+  //init := nil;
+  //if CountUniqueRows(X) <= NumClusters then
+  //begin
+  //  MaxIter := 0;
+  //  ANumInit := 1;
+  //  init := GetUniqueRows(X);
+  //  NumClusters := Length(init);
+  //end;
 
   if ANumInit <= 0 then
   begin
