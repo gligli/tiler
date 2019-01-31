@@ -698,7 +698,7 @@ begin
     current_attribute_value_freq := to_attr_counts[curattr];
     current_centroid_value := centroids[to_clust, iattr];
     current_centroid_freq := to_attr_counts[current_centroid_value];
-    if current_centroid_freq < current_attribute_value_freq then
+    if current_centroid_freq <= current_attribute_value_freq then
       centroids[to_clust, iattr] := curattr;
 
     Dec(from_attr_counts[curattr]);
@@ -790,7 +790,7 @@ begin
   if MaxIter <= 0 then
     MaxIter := MaxInt;
 
-  //init := nil;
+  init := nil;
   //if CountUniqueRows(X) <= NumClusters then
   //begin
   //  MaxIter := 0;
