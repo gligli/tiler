@@ -8,16 +8,15 @@ uses
   LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
-  TSingleDynArray2 = array of TSingleDynArray;
+  TDoubleDynArray2 = array of TDoubleDynArray;
 
-procedure DoExternalSKLearn(Dataset: TSingleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(TrainDS, TestDS: TSingleDynArray2; ClusterCount: Integer; RestartCount: Integer;
+procedure DoExternalSKLearn(Dataset: TDoubleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(TrainDS, TestDS: TDoubleDynArray2; ClusterCount: Integer; RestartCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
-function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Single;
 
-procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList; Header: Boolean);
-function GenerateSVMLightFile(Dataset: TSingleDynArray2; Header: Boolean): String;
-function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
+procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList; Header: Boolean);
+function GenerateSVMLightFile(Dataset: TDoubleDynArray2; Header: Boolean): String;
+function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
 
 implementation
@@ -136,7 +135,7 @@ begin
   end;
 end;
 
-procedure DoExternalSKLearn(Dataset: TSingleDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
+procedure DoExternalSKLearn(Dataset: TDoubleDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
   var Clusters: TIntegerDynArray);
 var
   i, j, st: Integer;
@@ -204,7 +203,7 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(TrainDS, TestDS: TSingleDynArray2; ClusterCount: Integer; RestartCount: Integer;
+procedure DoExternalYakmo(TrainDS, TestDS: TDoubleDynArray2; ClusterCount: Integer; RestartCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
   i, PrevLen, Clu, Inp, RetCode: Integer;
@@ -236,7 +235,7 @@ begin
     Process.Executable := 'yakmo.exe';
 
     CmdLine := IfThen(OutputClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
-    CmdLine += ' --num-result=' + IntToStr(RestartCount) + ' --iteration=1000 ';//--init-centroid=2 ';
+    CmdLine += ' --num-result=' + IntToStr(RestartCount);
 
     if Assigned(TestDS) then
       CmdLine := '"' + TrainFN + '" "' + CrFN + '" "' + TestFN + '" ' + CmdLine
@@ -291,74 +290,13 @@ begin
   end;
 end;
 
-function DoExternalEAQUAL(AFNRef, AFNTest: String; PrintStats, UseDIX: Boolean; BlockLength: Integer): Single;
-var
-  i: Integer;
-  Line, Output, ErrOut, SilFN: String;
-  OutSL: TStringList;
-  Process: TProcess;
-  OutputStream: TMemoryStream;
-begin
-  SilFN := GetTempFileName('', 'silent-'+IntToStr(GetCurrentThreadId)+'.txt');
-
-  Process := TProcess.Create(nil);
-  OutSL := TStringList.Create;
-  OutputStream := TMemoryStream.Create;
-  try
-    Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-    Process.Executable := 'eaqual.exe';
-    Process.Parameters.Add('-fref "' + AFNRef + '" -ftest "' + AFNTest + '"' + ifthen(BlockLength > 0, ' -blklen ' + IntToStr(BlockLength)));
-    if not PrintStats then
-      Process.Parameters.Add('-silent "' + SilFN + '"');
-    Process.ShowWindow := swoHIDE;
-    Process.Priority := ppIdle;
-
-    i := 0;
-    internalRuncommand(Process, Output, ErrOut, i, False); // destroys Process
-
-    Result := -10.0;
-    if PrintStats or not FileExists(SilFN) then
-    begin
-      OutSL.LineBreak := #13#10;
-      OutSL.Text := Output;
-      WriteLn(Output);
-      WriteLn(ErrOut);
-
-      for i := 0 to OutSL.Count - 1 do
-      begin
-        Line := OutSL[i];
-        if (Pos('Resulting ODG:', Line) = 1) and not UseDIX or (Pos('Resulting DIX:', Line) = 1) and UseDIX then
-        begin
-          TryStrToFloat(RightStr(Line, Pos(#9, ReverseString(Line)) - 1), Result);
-          Break;
-        end;
-      end;
-    end
-    else
-    begin
-      OutSL.LineBreak := #10;
-      OutSL.LoadFromFile(SilFN);
-      Line := OutSL[2];
-      OutSL.Delimiter := #9;
-      OutSL.DelimitedText := Line;
-      TryStrToFloat(OutSL[Ord(UseDIX)], Result);
-    end;
-
-    DeleteFile(SilFN);
-
-  finally
-    OutputStream.Free;
-    OutSL.Free;
-  end;
-end;
-
-procedure GenerateSVMLightData(Dataset: TSingleDynArray2; Output: TStringList; Header: Boolean);
+procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList; Header: Boolean);
 var
   i, j: Integer;
   Line: String;
 begin
   Output.Clear;
-  Output.LineBreak := #10;
+  Output.LineBreak := sLineBreak;
 
   if Header then
   begin
@@ -378,7 +316,7 @@ begin
   end;
 end;
 
-function GenerateSVMLightFile(Dataset: TSingleDynArray2; Header: Boolean): String;
+function GenerateSVMLightFile(Dataset: TDoubleDynArray2; Header: Boolean): String;
 var
   SL: TStringList;
 begin
@@ -399,7 +337,7 @@ begin
   Result := StrToInt(copy(line, 1, Pos(' ', line) - 1));
 end;
 
-function GetSVMLightLine(index: Integer; lines: TStringList): TSingleDynArray;
+function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
 var
   i, p, np, clusterCount, restartCount: Integer;
   line, val, sc: String;
