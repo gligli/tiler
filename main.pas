@@ -19,7 +19,7 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.2);
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.0 / 2.4);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
   cKFFromPal = False;
@@ -1355,29 +1355,42 @@ begin
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
 
-procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: Double);
+procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); inline;
 var
-  r,g,b,x,y,z: Double;
+  r, g, b, x, y, z: TFloat;
 begin
   r := GammaCorrect(1, ir);
   g := GammaCorrect(1, ig);
   b := GammaCorrect(1, ib);
 
-  // Observer. = 2°, Illuminant = D65
-  X := R * 0.57667 + G * 0.18555 + B * 0.18819;
-  Y := R * 0.29738 + G * 0.62735 + B * 0.07527;
-  Z := R * 0.02703 + G * 0.07069 + B * 0.99110;
+  if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
+  if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
+  if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
 
-  if ( X > 0.008856 ) then X := power(X, 1/3)
-  else                X := ( 7.787 * X ) + ( 16 / 116 );
-  if ( Y > 0.008856 ) then Y := power(Y, 1/3)
-  else                Y := ( 7.787 * Y ) + ( 16 / 116 );
-  if ( Z > 0.008856 ) then Z := power(Z, 1/3)
-  else                Z := ( 7.787 * Z ) + ( 16 / 116 );
+  // CIE XYZ color space from the Wright–Guild data
+  x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
+  y := (r * 0.17697 + g * 0.81240 + b * 0.01063) / 0.17697;
+  z := (r * 0.00000 + g * 0.01000 + b * 0.99000) / 0.17697;
 
-  ol := ( 116 * Y ) - 16;
-  oa := 500 * ( X - Y );
-  ob := 200 * ( Y - Z );
+{$if false}
+  // Illuminant D50
+  x /= 96.6797;
+  y /= 100.000;
+  z /= 82.5188;
+{$else}
+  // Illuminant D65
+  x /= 95.0470;
+  y /= 100.000;
+  z /= 108.883;
+{$endif}
+
+  if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
+  if y > 0.008856 then y := power(y, 1/3) else y := (7.787 * y) + 16/116;
+  if z > 0.008856 then z := power(z, 1/3) else z := (7.787 * z) + 16/116;
+
+  ol := (116 * y) - 16;
+  oa := 500 * (x - y);
+  ob := 200 * (y - z);
 end;
 
 procedure TMainForm.RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); inline;
@@ -1468,7 +1481,7 @@ begin
         DCT[di] := cUVRatio[u] * vRatio * z;
 
         if QWeighting then
-           DCT[di] *= 16.0 / cDCTQuantization[cpn, v, u];
+           DCT[di] *= 16.0 / sqrt(cDCTQuantization[cpn, v, u]);
 
         Inc(di);
 	    end;
@@ -2104,7 +2117,7 @@ begin
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
     if TestTMICount(Length(DS^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      GoldenRatioSearch(TestTMICount, DesiredNbTiles, cTileMapSize, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+      GoldenRatioSearch(TestTMICount, DesiredNbTiles, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
 
     // update tilemap
 
