@@ -349,9 +349,7 @@ object MainForm: TMainForm
     Top = 228
     Width = 211
     Caption = 'CIE L*a*b* color space instead of YUV'
-    Checked = True
     OnChange = chkLABChange
-    State = cbChecked
     TabOrder = 9
   end
   object cbxYilMix: TComboBox

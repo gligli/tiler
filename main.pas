@@ -9,7 +9,6 @@ uses
   StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, extern;
 
 type
-  TFloat = Double;
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
 
 const
@@ -133,10 +132,6 @@ const
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 3, 2, 3, 1, 2);
 
 type
-  TFloatDynArray = array of TFloat;
-  TFloatDynArray2 = array of TFloatDynArray;
-  PFloat = ^TFloat;
-
   TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
 
   PTile = ^TTile;
@@ -1397,7 +1392,7 @@ procedure TMainForm.RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); inline;
 var
   ll, aa, bb: TFloat;
 begin
-  RGBToLAB(round(r * 255.0), round(g * 255.0), round(b * 255.0), ll, aa, bb);
+  RGBToLAB(Integer(round(r * 255.0)), round(g * 255.0), round(b * 255.0), ll, aa, bb);
   ol := ll;
   oa := aa;
   ob := bb;

@@ -8,15 +8,18 @@ uses
   LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
-  TDoubleDynArray2 = array of TDoubleDynArray;
+  TFloat = Double;
+  TFloatDynArray = array of TFloat;
+  TFloatDynArray2 = array of TFloatDynArray;
+  PFloat = ^TFloat;
 
-procedure DoExternalSKLearn(Dataset: TDoubleDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(TrainDS, TestDS: TDoubleDynArray2; ClusterCount: Integer; RestartCount: Integer;
+procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount: Integer; RestartCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 
-procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList; Header: Boolean);
-function GenerateSVMLightFile(Dataset: TDoubleDynArray2; Header: Boolean): String;
-function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
+procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
+function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
+function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
 
 implementation
@@ -135,7 +138,7 @@ begin
   end;
 end;
 
-procedure DoExternalSKLearn(Dataset: TDoubleDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
+procedure DoExternalSKLearn(Dataset: TFloatDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
   var Clusters: TIntegerDynArray);
 var
   i, j, st: Integer;
@@ -203,7 +206,7 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(TrainDS, TestDS: TDoubleDynArray2; ClusterCount: Integer; RestartCount: Integer;
+procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount: Integer; RestartCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
   i, PrevLen, Clu, Inp, RetCode: Integer;
@@ -232,7 +235,7 @@ begin
       CrFN := GetTempFileName('', 'centroids-'+IntToStr(GetCurrentThreadId)+'.txt');
 
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-    Process.Executable := 'yakmo.exe';
+    Process.Executable := IfThen(SizeOf(TFloat) = SizeOf(Double), 'yakmo.exe', 'yakmo_single.exe');
 
     CmdLine := IfThen(OutputClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
     CmdLine += ' --num-result=' + IntToStr(RestartCount);
@@ -290,7 +293,7 @@ begin
   end;
 end;
 
-procedure GenerateSVMLightData(Dataset: TDoubleDynArray2; Output: TStringList; Header: Boolean);
+procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
 var
   i, j: Integer;
   Line: String;
@@ -316,7 +319,7 @@ begin
   end;
 end;
 
-function GenerateSVMLightFile(Dataset: TDoubleDynArray2; Header: Boolean): String;
+function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
 var
   SL: TStringList;
 begin
@@ -337,7 +340,7 @@ begin
   Result := StrToInt(copy(line, 1, Pos(' ', line) - 1));
 end;
 
-function GetSVMLightLine(index: Integer; lines: TStringList): TDoubleDynArray;
+function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
 var
   i, p, np, clusterCount, restartCount: Integer;
   line, val, sc: String;
