@@ -6,7 +6,7 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
-  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation;
+  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, extern;
 
 type
   TFloat = Double;
@@ -19,10 +19,10 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.0 / 2.4);
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.2);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFFromPal = True;
+  cKFFromPal = False;
   cKFGamma = 0;
   cKFQWeighting = True;
 
@@ -183,11 +183,9 @@ type
   PFrame = ^TFrame;
 
   TTileDataset = record
-    Dataset: TByteDynArray2;
-    DCTs: array[Boolean{SpritePal?}, Boolean{VMirror?}, Boolean{HMirror?}] of TFloatDynArray2;
+    Dataset: TFloatDynArray2;
     FrameDataset: array of TFloatDynArray;
     TRToTileIdx: TIntegerDynArray;
-    StartingPoint: Integer;
   end;
 
   PTileDataset = ^TTileDataset;
@@ -914,7 +912,7 @@ function TMainForm.GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFlo
 var
   x, y: TFloat;
 begin
-  if SameValue(Mini, Maxi) then
+  if SameValue(Mini, Maxi, Epsilon) then
   begin
     DebugLn('GoldenRatioSearch failed!');
     Result := NaN;
@@ -1339,9 +1337,9 @@ begin
     fb := b / 255.0;
   end;
 
-  yy := (cRedMultiplier * fr + cGreenMultiplier * fg + cBlueMultiplier * fb) / cLumaMultiplier;
-  uu := (fb - yy) * (0.5 / (1.0 - cBlueMultiplier / cLumaMultiplier));
-  vv := (fr - yy) * (0.5 / (1.0 - cRedMultiplier / cLumaMultiplier));
+  yy := 0.299*fr + 0.587*fg + 0.114*fb;
+  uu := -0.147*fr - 0.289*fg + 0.436*fb;
+  vv := 0.615*fr - 0.515*fg - 0.100*fb;
 
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
@@ -1350,49 +1348,36 @@ procedure TMainForm.RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); inline;
 var
   yy, uu, vv: TFloat;
 begin
-  yy := (cRedMultiplier * fr + cGreenMultiplier * fg + cBlueMultiplier * fb) / cLumaMultiplier;
-  uu := (fb - yy) * (0.5 / (1.0 - cBlueMultiplier / cLumaMultiplier));
-  vv := (fr - yy) * (0.5 / (1.0 - cRedMultiplier / cLumaMultiplier));
+  yy := 0.299*fr + 0.587*fg + 0.114*fb;
+  uu := -0.147*fr - 0.289*fg + 0.436*fb;
+  vv := 0.615*fr - 0.515*fg - 0.100*fb;
 
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
 
-procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); inline;
+procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: Double);
 var
-  r, g, b, x, y, z: TFloat;
+  r,g,b,x,y,z: Double;
 begin
   r := GammaCorrect(1, ir);
   g := GammaCorrect(1, ig);
   b := GammaCorrect(1, ib);
 
-  if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
-  if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
-  if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
+  // Observer. = 2°, Illuminant = D65
+  X := R * 0.57667 + G * 0.18555 + B * 0.18819;
+  Y := R * 0.29738 + G * 0.62735 + B * 0.07527;
+  Z := R * 0.02703 + G * 0.07069 + B * 0.99110;
 
-  // CIE XYZ color space from the Wright–Guild data
-  x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
-  y := (r * 0.17697 + g * 0.81240 + b * 0.01063) / 0.17697;
-  z := (r * 0.00000 + g * 0.01000 + b * 0.99000) / 0.17697;
+  if ( X > 0.008856 ) then X := power(X, 1/3)
+  else                X := ( 7.787 * X ) + ( 16 / 116 );
+  if ( Y > 0.008856 ) then Y := power(Y, 1/3)
+  else                Y := ( 7.787 * Y ) + ( 16 / 116 );
+  if ( Z > 0.008856 ) then Z := power(Z, 1/3)
+  else                Z := ( 7.787 * Z ) + ( 16 / 116 );
 
-{$if false}
-  // Illuminant D50
-  x /= 96.6797;
-  y /= 100.000;
-  z /= 82.5188;
-{$else}
-  // Illuminant D65
-  x /= 95.0470;
-  y /= 100.000;
-  z /= 108.883;
-{$endif}
-
-  if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
-  if y > 0.008856 then y := power(y, 1/3) else y := (7.787 * y) + 16/116;
-  if z > 0.008856 then z := power(z, 1/3) else z := (7.787 * z) + 16/116;
-
-  ol := (116 * y) - 16;
-  oa := 500 * (x - y);
-  ob := 200 * (y - z);
+  ol := ( 116 * Y ) - 16;
+  oa := 500 * ( X - Y );
+  ob := 200 * ( Y - Z );
 end;
 
 procedure TMainForm.RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); inline;
@@ -1424,7 +1409,7 @@ end;
 procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, LAB, HMirror, VMirror: Boolean;
   GammaCor: Integer; const pal: array of Integer; var DCT: TFloatDynArray);
 const
-  cUVRatio: array[0..cTileWidth-1] of TFloat = (sqrt(0.5)*0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5);
+  cUVRatio: array[0..cTileWidth-1] of TFloat = (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1);
 var
   col, u, v, x, y, xx, yy, di, cpn: Integer;
   s, q, vRatio, z: TFloat;
@@ -1475,7 +1460,7 @@ begin
 		      begin
 			      s := YUVPixels[cpn,y,x];
 
-			      q := s * cos(TFloat((2*x+1) * u) * PI/16.0) * cos(TFloat((2*y+1) * v) * PI/16.0);
+			      q := s * cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
 
 			      z += q;
           end;
@@ -1734,9 +1719,9 @@ begin
           chgCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := chgCorr[j * cScreenWidth + i];
 
           // 25% scanlines
-          r := r - r shr 2;
-          g := g - g shr 2;
-          b := b - b shr 2;
+          //r := r - r shr 2;
+          //g := g - g shr 2;
+          //b := b - b shr 2;
 
           p := pDest2;
           Inc(p, i);
@@ -1920,125 +1905,128 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  PassTileCount, MaxTPF, ci, i, j, sy, sx: Integer;
-  tmiO: PTileMapItem;
-  Centroids: TByteDynArray2;
+  DctDsLen, PassTileCount, ClusterCount, MaxTPF, fdi, ci, i, j, sy, sx, tri: Integer;
+  tmiO: TTileMapItem;
+  Centroids: TStringList;
   CentroidsToTR: TIntegerDynArray;
   Clusters: TIntegerDynArray;
   Used: TBooleanDynArray;
   FTD: PFrameTilingData;
   DS: PTileDataset;
-  KModes: TKModes;
   best, diff: TFloat;
   DCT: TFloatDynArray;
-  spal, vmir, hmir: Boolean;
-  TMI: TTileMapItem;
-  T: TTile;
+  CentroidDCTs: TFloatDynArray2;
 begin
   PassTileCount := round(PassX);
   FTD := PFrameTilingData(Data);
   DS := FTD^.Frame^.KeyFrame^.TileDS;
+  DctDsLen := Length(DS^.Dataset);
 
-  // cluster all tiles
-
-  KModes := TKModes.Create(1);
+  Centroids := TStringList.Create;
   try
-    PassTileCount := KModes.ComputeKModes(DS^.Dataset, PassTileCount, -DS^.StartingPoint, cTilePaletteSize, Clusters, Centroids);
-    Assert(Length(Centroids) = PassTileCount);
-    Assert(MaxIntValue(Clusters) = PassTileCount - 1);
-  finally
-    KModes.Free;
-  end;
+    // cluster all tiles
 
-  // compute colorful DCT of centroid -- search for bestA corresponding tile in dataset, accounting for mirrors
-
-  SetLength(CentroidsToTR, PassTileCount);
-
-  for i := 0 to PassTileCount - 1 do
-  begin
-    ci := -1;
-    best := MaxSingle;
-
-    for sy := 0 to cTileWidth - 1 do
-      for sx := 0 to cTileWidth - 1 do
-        T.PalPixels[sy, sx] := Centroids[i, sy * cTileWidth + sx];
-
-    ComputeTileDCT(T, True, False, FUseLAB, False, False, cKFGamma, FTD^.Frame^.KeyFrame^.PaletteRGB[False], DCT);
-
-    for j := 0 to High(Clusters) do
-      if Clusters[j] = i then
-      begin
-        diff := CompareEuclidean192(DS^.DCTs[False, False, False, j], DCT);
-        if diff < best then
-        begin
-          best := diff;
-          ci := j;
-        end;
-      end;
-
-    CentroidsToTR[i] := ci
-  end;
-
-  // map frame tilemap items to "centroid" tiles and mirrors and choose bestA corresponding palette
-
-  SetLength(Used, Length(FTiles));
-
-  MaxTPF := 0;
-  ci := 0;
-  FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
-
-  for sy := 0 to cTileMapHeight - 1 do
-    for sx := 0 to cTileMapWidth - 1 do
+    ClusterCount := PassTileCount;
+    if PassTileCount >= Length(DS^.Dataset) then
     begin
-      DCT := DS^.FrameDataset[(FTD^.Frame^.Index - FTD^.Frame^.KeyFrame^.StartFrame) * cTileMapSize + ci];
+      CentroidDCTs := DS^.Dataset;
+      SetLength(Clusters, ClusterCount);
+      for i := 0 to ClusterCount - 1 do
+        Clusters[i] := i;
+    end
+    else
+    begin
+      DoExternalYakmo(DS^.Dataset, nil, PassTileCount, 1, True, False, Centroids, Clusters);
+      ClusterCount := GetSVMLightClusterCount(Centroids);
 
-      TMI := FTD^.Frame^.TileMap[sy, sx];
-      best := MaxSingle;
-
-      for spal := False to True do
-        for vmir := False to True do
-          for hmir := False to True do
-            for j := 0 to High(Clusters) do
-            begin
-              diff := CompareEuclidean192(DS^.DCTs[spal, vmir, hmir, j], DCT);
-              if diff < best then
-              begin
-                best := diff;
-                TMI.GlobalTileIndex := j;
-                TMI.VMirror := vmir;
-                TMI.HMirror := hmir;
-                TMI.SpritePal := spal;
-              end;
-            end;
-
-      tmiO := @FTD^.OutputTMIs[sy, sx];
-      tmiO^.GlobalTileIndex := DS^.TRToTileIdx[CentroidsToTR[Clusters[TMI.GlobalTileIndex]]];
-      tmiO^.VMirror := TMI.VMirror;
-      tmiO^.HMirror := TMI.HMirror;
-      tmiO^.SpritePal := TMI.SpritePal;
-
-      Used[tmiO^.GlobalTileIndex] := True;
-
-      Inc(ci);
+      SetLength(CentroidDCTs, ClusterCount);
+      for i := 0 to ClusterCount - 1 do
+        CentroidDCTs[i] := GetSVMLightLine(i, Centroids);
     end;
 
-  j := 0;
-  for i := 0 to High(Used) do
-    Inc(j, Ord(Used[i]));
-  MaxTPF := max(MaxTPF, j);
+    //writeln(i, #9, ClusterCount, #9, MinIntValue(Clusters), #9, MaxIntValue(Clusters));
 
-  EnterCriticalSection(FCS);
-  WriteLn('FrmIdx: ', FTD^.Frame^.Index, #9'Iter: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount);
-  LeaveCriticalSection(FCS);
+    // compute colorful DCT of centroid -- search for bestA corresponding tile in dataset, accounting for mirrors
 
-  Inc(FTD^.Iteration);
+    SetLength(CentroidsToTR, ClusterCount);
 
-  Result := MaxTPF;
+    for i := 0 to ClusterCount - 1 do
+    begin
+      ci := -1;
+      best := MaxSingle;
+
+      for j := 0 to DctDsLen - 1 do
+        if Clusters[j] = i then
+        begin
+          diff := CompareEuclidean192(DS^.Dataset[j], CentroidDCTs[i]);
+          if not IsNan(diff) and (diff < best) then
+          begin
+            best := diff;
+            ci := j;
+          end;
+        end;
+
+      CentroidsToTR[i] := ci;
+    end;
+
+    // map frame tilemap items to "centroid" tiles and mirrors and choose bestA corresponding palette
+
+    SetLength(Used, Length(FTiles));
+
+    fdi := 0;
+    FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
+      begin
+        DCT := DS^.FrameDataset[(FTD^.Frame^.Index - FTD^.Frame^.KeyFrame^.StartFrame) * cTileMapSize + fdi];
+
+        ci := -1;
+        best := MaxSingle;
+        for j := 0 to ClusterCount - 1 do
+        begin
+          diff := CompareEuclidean192(CentroidDCTs[j], DCT);
+          if not IsNan(diff) and (diff < best) then
+          begin
+            best := diff;
+            ci := j;
+          end;
+        end;
+
+        tri := CentroidsToTR[ci];
+
+        tmiO.GlobalTileIndex := DS^.TRToTileIdx[tri shr 3];
+        tmiO.HMirror := (tri and 1) <> 0;
+        tmiO.VMirror := (tri and 2) <> 0;
+        tmiO.SpritePal := (tri and 4) <> 0;
+
+        Used[tmiO.GlobalTileIndex] := True;
+
+        FTD^.OutputTMIs[sy, sx] := tmiO;
+
+        Inc(fdi);
+      end;
+
+    MaxTPF := 0;
+    for i := 0 to High(Used) do
+      Inc(MaxTPF, Ord(Used[i]));
+
+    EnterCriticalSection(FCS);
+    WriteLn('FrmIdx: ', FTD^.Frame^.Index, #9'Iter: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount, #9, ClusterCount);
+    LeaveCriticalSection(FCS);
+
+    Inc(FTD^.Iteration);
+
+    Result := MaxTPF;
+
+  finally
+    Centroids.Free;
+  end;
 end;
 
 procedure TMainForm.DoKeyFrameTiling(AKF: PKeyFrame);
 var
-  TRSize, di, i, acc, frame, sy, sx, best: Integer;
+  TRSize, di, i, frame, sy, sx: Integer;
   frm: PFrame;
   T: PTile;
   DS: PTileDataset;
@@ -2049,7 +2037,7 @@ begin
   AKF^.TileDS := DS;
 
   // make a list of all used tiles
-  SetLength(DS^.FrameDataset, AKF^.FrameCount * cTileMapSize, 3 * sqr(cTileWidth));
+  SetLength(DS^.FrameDataset, AKF^.FrameCount * cTileMapSize);
 
   SetLength(used, Length(FTiles));
   FillByte(used[0], Length(FTiles), 0);
@@ -2075,44 +2063,30 @@ begin
     TRSize += Ord(used[i]);
 
   SetLength(DS^.TRToTileIdx, TRSize);
-  SetLength(DS^.Dataset, TRSize, cKModesFeatureCount);
-
-  for spal := False to True do
-    for vmir := False to True do
-      for hmir := False to True do
-         SetLength(DS^.DCTs[spal, vmir, hmir], TRSize, 3 * sqr(cTileWidth));
+  SetLength(DS^.Dataset, TRSize * 8);
 
   di := 0;
-  best := -1;
-  DS^.StartingPoint := -1; // by default, random starting point
   for i := 0 to High(FTiles) do
     if used[i] then
     begin
-      DS^.TRToTileIdx[di] := i;
+      DS^.TRToTileIdx[di shr 3] := i;
       T := FTiles[i];
-
-      WriteTileDatasetLine(T^, DS^.Dataset[di], acc);
-
-      if acc >= best then
-      begin
-        best := acc;
-        DS^.StartingPoint := di;
-      end;
 
       for spal := False to True do
         for vmir := False to True do
           for hmir := False to True do
-            ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, hmir, vmir, cKFGamma, AKF^.PaletteRGB[spal], DS^.DCTs[spal, vmir, hmir, di]);
-
-      Inc(di);
+          begin
+            ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, hmir, vmir, cKFGamma, AKF^.PaletteRGB[spal], DS^.Dataset[di]);
+            Inc(di);
+          end;
     end;
 
-  Assert(di = TRSize);
+  Assert(di = TRSize * 8);
 end;
 
 procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 const
-  cNBTilesEpsilon = 0;
+  cNBTilesEpsilon = 1;
 var
   sy, sx: Integer;
   FTD: PFrameTilingData;
@@ -2130,7 +2104,7 @@ begin
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
     if TestTMICount(Length(DS^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      GoldenRatioSearch(TestTMICount, DesiredNbTiles, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+      GoldenRatioSearch(TestTMICount, DesiredNbTiles, cTileMapSize, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
 
     // update tilemap
 
