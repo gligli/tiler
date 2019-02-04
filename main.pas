@@ -21,7 +21,7 @@ const
   cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.0 / 2.4);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFFromPal = False;
+  cKFFromPal = True;
   cKFGamma = 0;
   cKFQWeighting = True;
 
@@ -82,39 +82,37 @@ const
   cLineJitterCompensation = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
+  cUV = 11;
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of TFloat = (
     (
-      // optimized
-      (16, 11, 12, 15,  21,  32,  50,  66),
-      (11, 12, 13, 18,  24,  46,  62,  73),
-      (12, 13, 16, 23,  38,  56,  73,  75),
-      (15, 18, 23, 29,  53,  75,  83,  80),
-      (21, 24, 38, 53,  68,  95, 103,  94),
-      (32, 46, 56, 75,  95, 104, 117,  96),
-      (50, 62, 73, 83, 103, 117, 120, 128),
-      (66, 73, 75, 80,  94,  96, 128, 144)
+      (16, 16, 16, 16, 16, 16, 16, 16),
+      (16, 16, 16, 16, 16, 16, 16, 16),
+      (16, 16, 16, 16, 16, 16, 16, 16),
+      (16, 16, 16, 16, 16, 16, 16, 16),
+      (16, 16, 16, 16, 16, 16, 16, 16),
+      (16, 16, 16, 16, 16, 16, 16, 16),
+      (16, 16, 16, 16, 16, 16, 16, 16),
+      (16, 16, 16, 16, 16, 16, 16, 16)
     ),
     (
-      // Improved (reduced high frequency chroma importance)
-      (17,  18,  24,  47,  99,  99,  99,  99),
-      (18,  21,  26,  66,  99,  99,  99, 112),
-      (24,  26,  56,  99,  99,  99, 112, 128),
-      (47,  66,  99,  99,  99, 112, 128, 144),
-      (99,  99,  99,  99, 112, 128, 144, 160),
-      (99,  99,  99, 112, 128, 144, 160, 176),
-      (99,  99, 112, 128, 144, 160, 176, 192),
-      (99, 112, 128, 144, 160, 176, 192, 208)
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV)
     ),
     (
-      // Improved (reduced high frequency chroma importance)
-      (17,  18,  24,  47,  99,  99,  99,  99),
-      (18,  21,  26,  66,  99,  99,  99, 112),
-      (24,  26,  56,  99,  99,  99, 112, 128),
-      (47,  66,  99,  99,  99, 112, 128, 144),
-      (99,  99,  99,  99, 112, 128, 144, 160),
-      (99,  99,  99, 112, 128, 144, 160, 176),
-      (99,  99, 112, 128, 144, 160, 176, 192),
-      (99, 112, 128, 144, 160, 176, 192, 208)
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
+      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV)
     )
   );
 
@@ -195,7 +193,7 @@ type
   PFrameTilingData = ^TFrameTilingData;
 
   TFrameTilingData = record
-    OutputTMIs: array[0..(cTileMapHeight - 1), 0..(cTileMapWidth - 1)] of TTileMapItem;
+    OutputTMIs: array of TTileMapItem;
     Frame: PFrame;
     Iteration, DesiredNbTiles: Integer;
   end;
@@ -295,6 +293,7 @@ type
 
     FCS: TRTLCriticalSection;
 
+    function ComputeYUVCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
     procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -395,7 +394,6 @@ end;
 
 var
   gGammaCorLut: array[0..High(cGamma), 0..High(Byte)] of TFloat;
-  gPhiLut: array[0..High(Word)] of Integer;
 
 procedure InitLuts;
 var
@@ -404,9 +402,6 @@ begin
   for g := 0 to High(cGamma) do
     for i := 0 to High(Byte) do
       gGammaCorLut[g, i] := power(i / 255.0, cGamma[g]);
-
-  for p := 0 to High(gPhiLut) do
-    gPhiLut[p] := ceil(p * cPhi);
 end;
 
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -536,9 +531,49 @@ begin
   end;
 end;
 
+function CompareManhattan192Ptr(pa, pb: PFloat): TFloat;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 192 div 8 - 1 downto 0 do
+  begin
+    Result += abs(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += abs(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += abs(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += abs(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += abs(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += abs(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += abs(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += abs(pa^ - pb^); Inc(pa); Inc(pb);
+  end;
+end;
+
 function CompareEuclidean192(const a, b: TFloatDynArray): TFloat; inline;
 begin
   Result := CompareEuclidean192Ptr(@a[0], @b[0]);
+end;
+
+function CompareManhattan192(const a, b: TFloatDynArray): TFloat; inline;
+begin
+  Result := CompareManhattan192Ptr(@a[0], @b[0]);
+end;
+
+function TMainForm.ComputeYUVCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+var
+  i: Integer;
+  ya, yb: TDoubleDynArray;
+begin
+  SetLength(ya, Length(a) * 3);
+  SetLength(yb, Length(a) * 3);
+
+  for i := 0 to High(a) do
+  begin
+    RGBToYUV((a[i] shr 16) and $ff, (a[i] shr 8) and $ff, a[i] and $ff, ya[i], ya[i + Length(a)], ya[i + Length(a) * 2]);
+    RGBToYUV((b[i] shr 16) and $ff, (b[i] shr 8) and $ff, b[i] and $ff, yb[i], yb[i + Length(b)], yb[i + Length(b) * 2]);
+  end;
+
+  Result := PearsonCorrelation(ya, yb, Length(a) * 3);
 end;
 
 { TMainForm }
@@ -598,6 +633,8 @@ end;
 
 procedure TMainForm.DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 begin
+  if FFrames[AIndex].KeyFrame^.StartFrame <> AIndex then
+    Exit;
   DoFrameTiling(@FFrames[AIndex], seMaxTPF.Value);
 end;
 
@@ -1005,9 +1042,9 @@ begin
         sum[1] += add[1];
         sum[2] += add[2];
 
-        add[0] := gPhiLut[add[0]];
-        add[1] := gPhiLut[add[1]];
-        add[2] := gPhiLut[add[2]];
+        Inc(add[0]);
+        Inc(add[1]);
+        Inc(add[2]);
 
         t := Plan.Count + p;
         penalty := ColorCompare(r, g, b, sum[0] div t, sum[1] div t, sum[2] div t);
@@ -1019,7 +1056,7 @@ begin
           chosen_amount := p;
         end;
 
-        p := gPhiLut[p];
+        Inc(p);
       end;
     end;
 
@@ -1581,7 +1618,7 @@ var
   Frame: PFrame;
   fn: String;
   pal: TIntegerDynArray;
-  oriCorr, chgCorr: TDoubleDynArray;
+  oriCorr, chgCorr: TIntegerDynArray;
 begin
   if Length(FFrames) <= 0 then
     Exit;
@@ -1738,7 +1775,7 @@ begin
       end;
     end;
 
-    lblCorrel.Caption := FormatFloat('0.0000', SpearmanRankCorrelation(oriCorr, chgCorr, cScreenHeight * cScreenWidth * 2));
+    lblCorrel.Caption := FormatFloat('0.0000', ComputeYUVCorrelation(oriCorr, chgCorr));
   finally
     imgTiles.Picture.Bitmap.EndUpdate;
     imgDest.Picture.Bitmap.EndUpdate;
@@ -1913,7 +1950,7 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  DctDsLen, PassTileCount, ClusterCount, MaxTPF, fdi, ci, i, j, sy, sx, tri: Integer;
+  DctDsLen, PassTileCount, ClusterCount, TPF, MaxTPF, fi, ci, i, j, tmi, tri: Integer;
   tmiO: TTileMapItem;
   Centroids: TStringList;
   CentroidsToTR: TIntegerDynArray;
@@ -1966,7 +2003,7 @@ begin
       for j := 0 to DctDsLen - 1 do
         if Clusters[j] = i then
         begin
-          diff := CompareEuclidean192(DS^.Dataset[j], CentroidDCTs[i]);
+          diff := CompareManhattan192(DS^.Dataset[j], CentroidDCTs[i]);
           if not IsNan(diff) and (diff < best) then
           begin
             best := diff;
@@ -1981,19 +2018,21 @@ begin
 
     SetLength(Used, Length(FTiles));
 
-    fdi := 0;
-    FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+    MaxTPF := 0;
+    fi := 0;
+    for fi := 0 to FTD^.Frame^.KeyFrame^.FrameCount - 1 do
+    begin
+      FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
 
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
+      for tmi := 0 to cTileMapSize - 1 do
       begin
-        DCT := DS^.FrameDataset[(FTD^.Frame^.Index - FTD^.Frame^.KeyFrame^.StartFrame) * cTileMapSize + fdi];
+        DCT := DS^.FrameDataset[fi * cTileMapSize + tmi];
 
         ci := -1;
         best := MaxSingle;
         for j := 0 to ClusterCount - 1 do
         begin
-          diff := CompareEuclidean192(CentroidDCTs[j], DCT);
+          diff := CompareManhattan192(CentroidDCTs[j], DCT);
           if not IsNan(diff) and (diff < best) then
           begin
             best := diff;
@@ -2010,14 +2049,15 @@ begin
 
         Used[tmiO.GlobalTileIndex] := True;
 
-        FTD^.OutputTMIs[sy, sx] := tmiO;
-
-        Inc(fdi);
+        FTD^.OutputTMIs[fi * cTileMapSize + tmi] := tmiO;
       end;
 
-    MaxTPF := 0;
-    for i := 0 to High(Used) do
-      Inc(MaxTPF, Ord(Used[i]));
+      TPF := 0;
+      for i := 0 to High(Used) do
+        Inc(TPF, Ord(Used[i]));
+
+      MaxTPF := max(MaxTPF, TPF);
+    end;
 
     EnterCriticalSection(FCS);
     WriteLn('FrmIdx: ', FTD^.Frame^.Index, #9'Iter: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount, #9, ClusterCount);
@@ -2096,7 +2136,7 @@ procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 const
   cNBTilesEpsilon = 1;
 var
-  sy, sx: Integer;
+  frame, sy, sx: Integer;
   FTD: PFrameTilingData;
   DS: PTileDataset;
   tmiO, tmiI: PTileMapItem;
@@ -2106,6 +2146,7 @@ begin
     FTD^.Frame := AFrame;
     FTD^.DesiredNbTiles := DesiredNbTiles;
     FTD^.Iteration := 0;
+    SetLength(FTD^.OutputTMIs, AFrame^.KeyFrame^.FrameCount * cTileMapSize);
 
     DS := AFrame^.KeyFrame^.TileDS;
 
@@ -2116,17 +2157,18 @@ begin
 
     // update tilemap
 
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
-      begin
-        tmiO := @AFrame^.TileMap[sy, sx];
-        tmiI := @FTD^.OutputTMIs[sy, sx];
+    for frame := 0 to AFrame^.KeyFrame^.FrameCount - 1 do
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
+        begin
+          tmiO := @FFrames[AFrame^.Index + frame].TileMap[sy, sx];
+          tmiI := @FTD^.OutputTMIs[frame * cTileMapSize + sy * cTileMapWidth + sx];
 
-        tmiO^.GlobalTileIndex := tmiI^.GlobalTileIndex;
-        tmiO^.SpritePal := tmiI^.SpritePal;
-        tmiO^.VMirror := tmiI^.VMirror;
-        tmiO^.HMirror := tmiI^.HMirror;
-      end;
+          tmiO^.GlobalTileIndex := tmiI^.GlobalTileIndex;
+          tmiO^.SpritePal := tmiI^.SpritePal;
+          tmiO^.VMirror := tmiI^.VMirror;
+          tmiO^.HMirror := tmiI^.HMirror;
+        end;
   finally
     Dispose(FTD);
   end;
