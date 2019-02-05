@@ -758,7 +758,7 @@ var
     max := 0;
     Result := -1;
     for i := 0 to NumPoints - 1 do
-      if not Used[i] and (max <= MinDistance[i]) then
+      if not Used[i] and ((MinDistance[i] > max) or (Result = -1)) then
       begin
         max := MinDistance[i];
         Result := i;
