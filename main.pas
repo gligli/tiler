@@ -18,7 +18,7 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.0 / 2.4);
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (1.8, 1.8 / 2.4);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
   cKFFromPal = True;
@@ -563,14 +563,18 @@ function TMainForm.ComputeYUVCorrelation(a: TIntegerDynArray; b: TIntegerDynArra
 var
   i: Integer;
   ya, yb: TDoubleDynArray;
+  y, u, v: TFloat;
 begin
   SetLength(ya, Length(a) * 3);
   SetLength(yb, Length(a) * 3);
 
   for i := 0 to High(a) do
   begin
-    RGBToYUV((a[i] shr 16) and $ff, (a[i] shr 8) and $ff, a[i] and $ff, ya[i], ya[i + Length(a)], ya[i + Length(a) * 2]);
-    RGBToYUV((b[i] shr 16) and $ff, (b[i] shr 8) and $ff, b[i] and $ff, yb[i], yb[i + Length(b)], yb[i + Length(b) * 2]);
+    RGBToYUV((a[i] shr 16) and $ff, (a[i] shr 8) and $ff, a[i] and $ff, y, u, v);
+    ya[i] := y; ya[i + Length(a)] := u; ya[i + Length(a) * 2] := v;
+
+    RGBToYUV((b[i] shr 16) and $ff, (b[i] shr 8) and $ff, b[i] and $ff, y, u, v);
+    yb[i] := y; yb[i + Length(a)] := u; yb[i + Length(a) * 2] := v;
   end;
 
   Result := PearsonCorrelation(ya, yb, Length(a) * 3);
@@ -1719,11 +1723,8 @@ begin
         begin
           tilePtr :=  @Frame^.Tiles[(j shr 3) * cTileMapWidth + (i shr 3)];
           pal := tilePtr^.PaletteRGB;
-          if Assigned(pal) then
-          begin
-            oriCorr[j * cScreenWidth + i] := SwapRB(pal[tilePtr^.PalPixels[ty, tx]]);
-            oriCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := oriCorr[j * cScreenWidth + i];
-          end;
+          oriCorr[j * cScreenWidth + i] := ToRGB(tilePtr^.RGBPixels[ty, tx, 0], tilePtr^.RGBPixels[ty, tx, 1], tilePtr^.RGBPixels[ty, tx, 2]);
+          oriCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := oriCorr[j * cScreenWidth + i];
 
           if reduced then
           begin
@@ -2003,7 +2004,7 @@ begin
       for j := 0 to DctDsLen - 1 do
         if Clusters[j] = i then
         begin
-          diff := CompareManhattan192(DS^.Dataset[j], CentroidDCTs[i]);
+          diff := CompareEuclidean192(DS^.Dataset[j], CentroidDCTs[i]);
           if not IsNan(diff) and (diff < best) then
           begin
             best := diff;
@@ -2032,7 +2033,7 @@ begin
         best := MaxSingle;
         for j := 0 to ClusterCount - 1 do
         begin
-          diff := CompareManhattan192(CentroidDCTs[j], DCT);
+          diff := CompareEuclidean192(CentroidDCTs[j], DCT);
           if not IsNan(diff) and (diff < best) then
           begin
             best := diff;
@@ -2153,7 +2154,8 @@ begin
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
     if TestTMICount(Length(DS^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      GoldenRatioSearch(TestTMICount, DesiredNbTiles, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+      if IsNan(GoldenRatioSearch(TestTMICount, DesiredNbTiles, Max(3 * cTileMapSize, Length(DS^.Dataset) div 10), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD)) then
+        GoldenRatioSearch(TestTMICount, DesiredNbTiles, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
 
     // update tilemap
 
