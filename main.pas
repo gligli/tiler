@@ -17,9 +17,9 @@ const
 
   // Tweakable params
   cRandomKModesCount = 7;
+  cPreDitherMixedColors = 2;
   cKeyframeFixedColors = 4;
   cGamma: array[0..1{YUV,LAB}] of TFloat = (1.0, 1.0);
-  cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
   cKFFromPal = True;
   cKFGamma = 0;
@@ -31,12 +31,12 @@ const
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
   // SMS consts
-  cBitsPerComp = 2;
+  cBitsPerComp = 4;
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
   cTilePaletteSize = 16;
-  cTileMapWidth = 32;
-  cTileMapHeight = 24;
+  cTileMapWidth = 80;
+  cTileMapHeight = 45;
   cTileMapSize = cTileMapWidth * cTileMapHeight;
   cScreenWidth = cTileMapWidth * cTileWidth;
   cScreenHeight = cTileMapHeight * cTileWidth;
@@ -203,6 +203,7 @@ type
     Count: Integer;
     LumaPal: array of Integer;
     Y2Palette: array of array[0..2] of Integer;
+    Y2MixedColors: Integer;
   end;
 
   { TMainForm }
@@ -316,7 +317,7 @@ type
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
-    procedure PreparePlan(var Plan: TMixingPlan; const pal: array of Integer);
+    procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
 
     procedure LoadTiles;
@@ -690,6 +691,7 @@ var
     bmp := TPicture.Create;
     try
       EnterCriticalSection(FCS);
+      bmp.Bitmap.PixelFormat:=pf32bit;
       bmp.LoadFromFile(Format(inPath, [AIndex]));
       LeaveCriticalSection(FCS);
 
@@ -973,12 +975,13 @@ begin
 end;
 
 
-procedure TMainForm.PreparePlan(var Plan: TMixingPlan; const pal: array of Integer);
+procedure TMainForm.PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
 var
   i, col, r, g, b: Integer;
 begin
   FillChar(Plan, SizeOf(Plan), 0);
 
+  Plan.Y2MixedColors := MixedColors;
   Plan.Count := 0;
   SetLength(Plan.LumaPal, Length(pal));
   SetLength(Plan.Y2Palette, Length(pal));
@@ -1028,7 +1031,7 @@ begin
 
   so_far[0] := 0; so_far[1] := 0; so_far[2] := 0;
 
-  while Plan.Count < FY2MixedColors do
+  while Plan.Count < Plan.Y2MixedColors do
   begin
     chosen_amount := 1;
     chosen := 0;
@@ -1130,7 +1133,7 @@ var
   FullPalTile: TTile;
   Plan, CMPlan: TMixingPlan;
 begin
-  PreparePlan(CMPlan, FColorMap);
+  PreparePlan(CMPlan, cPreDitherMixedColors, FColorMap);
 
   SetLength(CMUsage, cTotalColors);
 
@@ -1177,7 +1180,7 @@ begin
       end;
 
       // dither again using that 16 color palette
-      PreparePlan(Plan, Tile_^.PaletteRGB);
+      PreparePlan(Plan, FY2MixedColors, Tile_^.PaletteRGB);
 
       DitherTile(Tile_^, Plan);
     end;
@@ -1256,14 +1259,6 @@ begin
     AKeyFrame^.PaletteIndexes[True, i] := CMUsage[cPalettePattern[True, i]][ciIndex];
   end;
 
-{$if cInvertSpritePalette}
-  for i := 0 to (cTilePaletteSize - cKeyframeFixedColors) div 2 - 1 do
-    Exchange(AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - cKeyframeFixedColors - 1 - i], AKeyFrame^.PaletteIndexes[False, i]);
-
-  for i := 0 to cKeyframeFixedColors div 2 - 1 do
-    Exchange(AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - 1 - i], AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - cKeyframeFixedColors + i]);
-{$endif}
-
   for i := 0 to cTilePaletteSize - 1 do
   begin
     AKeyFrame^.PaletteRGB[False, i] := FColorMap[AKeyFrame^.PaletteIndexes[False, i]];
@@ -1301,7 +1296,7 @@ begin
 
       for SpritePal := False to True do
       begin
-        PreparePlan(Plan, KF^.PaletteRGB[SpritePal]);
+        PreparePlan(Plan, FY2MixedColors, KF^.PaletteRGB[SpritePal]);
         DitherTile(Tile_[SpritePal], Plan);
 
         ComputeTileDCT(Tile_[SpritePal], True, True, False, False, False, 0, KF^.PaletteRGB[SpritePal], TileDCT[SpritePal]);
@@ -1572,6 +1567,9 @@ begin
       AFrame^.TileMap[j, i].TmpIndex := -1;
     end;
 
+  Assert(ABitmap.Width = cScreenWidth, 'Wrong video width!');
+  Assert(ABitmap.Height = cScreenHeight, 'Wrong video height!');
+
   ABitmap.BeginUpdate;
   try
     for j := 0 to (cScreenHeight - 1) do
@@ -1616,7 +1614,7 @@ procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced, ga
   ATilePage: Integer);
 var
   i, j, r, g, b, ti, tx, ty, col: Integer;
-  pTiles, pDest, pDest2, p: PInteger;
+  pTiles, pDest, p: PInteger;
   tilePtr: PTile;
   TMItem: TTileMapItem;
   Frame: PFrame;
@@ -1642,13 +1640,13 @@ begin
   try
     // tile pages
 
-    for j := 0 to cScreenHeight * 2 - 1 do
+    for j := 0 to cScreenHeight - 1 do
     begin
       pTiles := imgTiles.Picture.Bitmap.ScanLine[j];
 
-      for i := 0 to cScreenWidth - 1 do
+      for i := 0 to cScreenWidth div 2 - 1 do
       begin
-        ti := 32 * (j shr 3) + (i shr 3) + cTileMapSize * ATilePage;
+        ti := cTileMapWidth div 2 * (j shr 3) + (i shr 3) + cTileMapSize div 2 * ATilePage;
 
         tx := i and (cTileWidth - 1);
         ty := j and (cTileWidth - 1);
@@ -1702,8 +1700,7 @@ begin
 
     for j := 0 to cScreenHeight - 1 do
     begin
-      pDest := imgDest.Picture.Bitmap.ScanLine[j shl 1];
-      pDest2 := imgDest.Picture.Bitmap.ScanLine[(j shl 1) + 1];
+      pDest := imgDest.Picture.Bitmap.ScanLine[j];
 
       for i := 0 to cScreenWidth - 1 do
       begin
@@ -1763,15 +1760,6 @@ begin
 
           chgCorr[j * cScreenWidth + i] := ToRGB(r, g, b);
           chgCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := chgCorr[j * cScreenWidth + i];
-
-          // 25% scanlines
-          //r := r - r shr 2;
-          //g := g - g shr 2;
-          //b := b - b shr 2;
-
-          p := pDest2;
-          Inc(p, i);
-          p^ := ToRGB(r, g, b);
         end;
       end;
     end;
@@ -3045,11 +3033,11 @@ begin
   imgSource.Picture.Bitmap.PixelFormat:=pf32bit;
 
   imgDest.Picture.Bitmap.Width:=cScreenWidth;
-  imgDest.Picture.Bitmap.Height:=cScreenHeight * 2;
+  imgDest.Picture.Bitmap.Height:=cScreenHeight;
   imgDest.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgTiles.Picture.Bitmap.Width:=cScreenWidth;
-  imgTiles.Picture.Bitmap.Height:=cScreenHeight * 2;
+  imgTiles.Picture.Bitmap.Width:=cScreenWidth div 2;
+  imgTiles.Picture.Bitmap.Height:=cScreenHeight;
   imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
 
   imgPalette.Picture.Bitmap.Width := cScreenWidth;
