@@ -18,7 +18,7 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (1.8, 1.8 / 2.4);
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (1.0, 1.0);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
   cKFFromPal = True;
@@ -82,7 +82,7 @@ const
   cLineJitterCompensation = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
-  cUV = 11;
+  cUV = 7;
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of TFloat = (
     (
       (16, 16, 16, 16, 16, 16, 16, 16),
@@ -2033,7 +2033,7 @@ begin
         best := MaxSingle;
         for j := 0 to ClusterCount - 1 do
         begin
-          diff := CompareEuclidean192(CentroidDCTs[j], DCT);
+          diff := CompareEuclidean192(DS^.Dataset[CentroidsToTR[j]], DCT);
           if not IsNan(diff) and (diff < best) then
           begin
             best := diff;
@@ -2379,7 +2379,7 @@ begin
 
   StartingPoint := -RestartCount; // by default, random starting point
   di := 0;
-  best := -1;
+  best := MaxInt;
   for i := 0 to High(FTiles) do
   begin
     WasActive[i] := FTiles[i]^.Active;
@@ -2389,7 +2389,7 @@ begin
 
     WriteTileDatasetLine(FTiles[i]^, Dataset[di], acc);
 
-    if acc >= best then
+    if acc <= best then
     begin
       best := acc;
       StartingPoint := di;
