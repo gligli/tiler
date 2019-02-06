@@ -1,16 +1,16 @@
 object MainForm: TMainForm
   Left = 277
-  Height = 805
+  Height = 817
   Top = 85
   Width = 985
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 796
+  VertScrollBar.Page = 808
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
-  ClientHeight = 805
+  ClientHeight = 817
   ClientWidth = 985
   KeyPreview = True
   OnCreate = FormCreate
@@ -50,10 +50,10 @@ object MainForm: TMainForm
     PopupMenu = pmProcesses
   end
   object tbFrame: TTrackBar
-    Left = 336
+    Left = 328
     Height = 25
-    Top = 764
-    Width = 640
+    Top = 776
+    Width = 656
     Frequency = 25
     Max = 0
     OnChange = tbFrameChange
@@ -66,7 +66,7 @@ object MainForm: TMainForm
   object chkPlay: TCheckBox
     Left = 336
     Height = 17
-    Top = 746
+    Top = 749
     Width = 40
     Caption = 'Play'
     TabOrder = 14
@@ -74,7 +74,7 @@ object MainForm: TMainForm
   object lblTileCount: TLabel
     Left = 8
     Height = 15
-    Top = 744
+    Top = 351
     Width = 157
     AutoSize = False
     ParentColor = False
@@ -82,7 +82,7 @@ object MainForm: TMainForm
   object chkDithered: TCheckBox
     Left = 384
     Height = 17
-    Top = 746
+    Top = 749
     Width = 65
     Caption = 'Dithered'
     Checked = True
@@ -151,7 +151,7 @@ object MainForm: TMainForm
     TabOrder = 13
   end
   object Label6: TLabel
-    Left = 8
+    Left = 187
     Height = 13
     Top = 352
     Width = 77
@@ -234,8 +234,8 @@ object MainForm: TMainForm
   end
   object imgPalette: TImage
     Left = 8
-    Height = 32
-    Top = 764
+    Height = 64
+    Top = 744
     Width = 256
     PopupMenu = pmProcesses
   end
@@ -252,7 +252,7 @@ object MainForm: TMainForm
   object chkMirrored: TCheckBox
     Left = 528
     Height = 17
-    Top = 746
+    Top = 749
     Width = 65
     Caption = 'Mirrored'
     Checked = True
@@ -270,21 +270,10 @@ object MainForm: TMainForm
     Caption = '0%'
     ParentColor = False
   end
-  object chkSprite: TCheckBox
-    Left = 600
-    Height = 17
-    Top = 746
-    Width = 89
-    AllowGrayed = True
-    Caption = 'Sprite palette'
-    OnChange = tbFrameChange
-    State = cbGrayed
-    TabOrder = 18
-  end
   object chkGamma: TCheckBox
-    Left = 696
+    Left = 768
     Height = 19
-    Top = 744
+    Top = 747
     Width = 62
     AutoSize = False
     Caption = 'Gamma'
@@ -303,7 +292,7 @@ object MainForm: TMainForm
   object chkReduced: TCheckBox
     Left = 456
     Height = 19
-    Top = 744
+    Top = 747
     Width = 64
     AutoSize = False
     Caption = 'Reduced'
@@ -313,9 +302,9 @@ object MainForm: TMainForm
     TabOrder = 16
   end
   object lblCorrel: TLabel
-    Left = 936
+    Left = 941
     Height = 15
-    Top = 747
+    Top = 751
     Width = 35
     Alignment = taRightJustify
     AutoSize = False
@@ -323,9 +312,9 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label5: TLabel
-    Left = 848
+    Left = 853
     Height = 13
-    Top = 746
+    Top = 750
     Width = 79
     Caption = 'Correlation (Q):'
     ParentColor = False
@@ -363,6 +352,24 @@ object MainForm: TMainForm
     Top = 121
     Width = 149
     Caption = 'Yiluoma 2 mixed colors count'
+    ParentColor = False
+  end
+  object sedPalIdx: TSpinEdit
+    Left = 648
+    Height = 21
+    Top = 746
+    Width = 42
+    MinValue = -1
+    OnChange = tbFrameChange
+    TabOrder = 18
+    Value = -1
+  end
+  object Label8: TLabel
+    Left = 600
+    Height = 13
+    Top = 750
+    Width = 35
+    Caption = 'Palette'
     ParentColor = False
   end
   object IdleTimer: TIdleTimer
