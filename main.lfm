@@ -2,7 +2,7 @@ object MainForm: TMainForm
   Left = 277
   Height = 817
   Top = 85
-  Width = 985
+  Width = 1001
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
@@ -11,7 +11,7 @@ object MainForm: TMainForm
   AutoScroll = True
   Caption = 'SMS video tiler'
   ClientHeight = 817
-  ClientWidth = 985
+  ClientWidth = 1001
   KeyPreview = True
   OnCreate = FormCreate
   OnDestroy = FormDestroy

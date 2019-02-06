@@ -1191,20 +1191,26 @@ end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
 const
-  cPalettePattern : array[0 .. cPaletteCount - 1, 0 .. cTilePaletteSize - 1] of Integer = (
-    ( 4, 8,12,16,20,24,28,32,36,40,44,48, 0, 1, 2, 3),
-    ( 5, 9,13,17,21,25,29,33,37,41,45,49, 0, 1, 2, 3),
-    ( 6,10,14,18,22,26,30,34,38,42,46,50, 0, 1, 2, 3),
-    ( 7,11,15,19,23,27,31,35,39,43,47,51, 0, 1, 2, 3)
+  cPalettePattern : array[0 .. 8 - 1, 0 .. cTilePaletteSize - 1] of Integer = (
+    ( 4,12,20,28,36,44,52,60,68,76,84,92, 0, 1, 2, 3),
+    ( 8,16,24,32,40,48,56,64,72,80,88,96, 0, 1, 2, 3),
+    ( 6,14,22,30,38,46,54,62,70,78,86,94, 0, 1, 2, 3),
+    (10,18,26,34,42,50,58,66,74,82,90,98, 0, 1, 2, 3),
+    ( 5,13,21,29,37,45,53,61,69,77,85,93, 0, 1, 2, 3),
+    ( 7,15,23,31,39,47,55,63,71,79,87,95, 0, 1, 2, 3),
+    ( 9,17,25,33,41,49,57,65,73,81,89,97, 0, 1, 2, 3),
+    (11,19,27,35,43,51,59,67,75,83,91,99, 0, 1, 2, 3)
   );
   cPaletteInvSpread = 8;
-  cPaletteSpread = cTotalColors div (cPaletteCount * cTilePaletteSize) div cPaletteInvSpread;
+  cPaletteSpread = cTotalColors div (Length(cPalettePattern) * cTilePaletteSize) div cPaletteInvSpread;
 var
   sx, sy, tx, ty, i, PalIdx: Integer;
   GTile: PTile;
   CMUsage: array of TCountIndexArray;
   sfr, efr: Integer;
 begin
+  Assert(cPaletteCount <= Length(cPalettePattern));
+
   SetLength(CMUsage, cTotalColors);
 
   for i := 0 to High(CMUsage) do
@@ -3048,6 +3054,7 @@ begin
 
   imgPalette.Picture.Bitmap.Width := cScreenWidth;
   imgPalette.Picture.Bitmap.Height := 16 * cPaletteCount;
+  imgPalette.Height := 16 * cPaletteCount;
   imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
 
   sedPalIdx.MaxValue := cPaletteCount - 1;
