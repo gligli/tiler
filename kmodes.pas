@@ -684,15 +684,15 @@ begin
 
     for i := 0 to quantum - 1 do
     begin
-      Inc(mc_loc, Ord(pm0^ = cluster)); Inc(pm0, quantum);
-      Inc(mc_loc, Ord(pm1^ = cluster)); Inc(pm1, quantum);
-      Inc(mc_loc, Ord(pm2^ = cluster)); Inc(pm2, quantum);
-      Inc(mc_loc, Ord(pm3^ = cluster)); Inc(pm3, quantum);
+      Inc(mc_loc, Ord(pm0^ = cluster)); Inc(pm0);
+      Inc(mc_loc, Ord(pm1^ = cluster)); Inc(pm1);
+      Inc(mc_loc, Ord(pm2^ = cluster)); Inc(pm2);
+      Inc(mc_loc, Ord(pm3^ = cluster)); Inc(pm3);
     end;
 
     for i := (quantum shl 2) to Length(membship) - 1 do
     begin
-      Inc(mc_loc, Ord(pm0^ = cluster)); Inc(pm0);
+      Inc(mc_loc, Ord(pm3^ = cluster)); Inc(pm3);
     end;
 
     if mc_loc >= mc then
