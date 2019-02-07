@@ -18,7 +18,7 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (1.4, 1.0);
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.0);
   cGammaCorrectSmoothing = -1;
   cKFFromPal = True;
   cKFGamma = 0;
@@ -313,7 +313,7 @@ type
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
-    procedure DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
+    procedure DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
 
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
@@ -321,6 +321,7 @@ type
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
+    procedure DitherTileFloydSteinberg(var ATile: TTile);
     procedure PreDitherTiles(AFrame: PFrame);
     procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame);
     procedure FinalDitherTiles(AFrame: PFrame);
@@ -1019,10 +1020,10 @@ end;
 
 function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64; inline;
 begin
-  Result := sqr(r1 - r2) + sqr(g1 - g2) + sqr(b1 - b2);
+  Result := cRedMultiplier * sqr(r1 - r2) + cGreenMultiplier * sqr(g1 - g2) + cBlueMultiplier * sqr(b1 - b2);
 end;
 
-procedure TMainForm.DeviseBestMixingPlan2(var Plan: TMixingPlan; r, g, b: Integer);
+procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
 var
   p, t, index, max_test_count, chosen_amount, chosen: Integer;
   least_penalty, penalty: Int64;
@@ -1095,9 +1096,51 @@ begin
     for x := 0 to (cTileWidth - 1) do
     begin
       map_value := cDitheringMap[(y shl 3) + x];
-      DeviseBestMixingPlan2(Plan, ATile.RGBPixels[y,x,0], ATile.RGBPixels[y,x,1], ATile.RGBPixels[y,x,2]);
+      DeviseBestMixingPlan(Plan, ATile.RGBPixels[y,x,0], ATile.RGBPixels[y,x,1], ATile.RGBPixels[y,x,2]);
       map_value := (map_value * Plan.Count) shr 6;
       ATile.PalPixels[y, x] := Plan.List[map_value];
+    end;
+end;
+
+procedure TMainForm.DitherTileFloydSteinberg(var ATile: TTile);
+var
+  r, g, b, x, y, c, yp, xm, xp: Integer;
+  OldPixel, NewPixel, QuantError: Integer;
+  Pixels: array[0..(cTileWidth - 1), 0..(cTileWidth - 1), 0..2{RGB}] of Integer;
+begin
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+      for c := 0 to 2 do
+        Pixels[y, x, c] := ATile.RGBPixels[y, x, c];
+
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+      for c := 0 to 2 do
+      begin
+        OldPixel := Pixels[y, x, c];
+        NewPixel := ((OldPixel * ((1 shl cBitsPerComp) - 1)) div 255) shl (8 - cBitsPerComp);
+        QuantError := OldPixel - NewPixel;
+
+        yp := (y + 1) and (cTileWidth - 1);
+        xp := (x + 1) and (cTileWidth - 1);
+        xm := (x - 1) and (cTileWidth - 1);
+
+        Pixels[y,  x,  c] := NewPixel;
+
+        Pixels[yp, xp, c] += (QuantError * 1) shr 4;
+        Pixels[yp, xm, c] += (QuantError * 3) shr 4;
+        Pixels[yp, x,  c] += (QuantError * 5) shr 4;
+        Pixels[y,  xp, c] += (QuantError * 7) shr 4;
+      end;
+
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+    begin
+      r := EnsureRange(Pixels[y, x, 0] shr cBitsPerComp, 0, (1 shl cBitsPerComp) - 1);
+      g := EnsureRange(Pixels[y, x, 1] shr cBitsPerComp, 0, (1 shl cBitsPerComp) - 1);
+      b := EnsureRange(Pixels[y, x, 2] shr cBitsPerComp, 0, (1 shl cBitsPerComp) - 1);
+
+      ATile.PalPixels[y, x] := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
     end;
 end;
 
@@ -1166,23 +1209,15 @@ begin
         CMUsage[i][ciHue] := FColorMapHue[i];
       end;
 
-{$if cBitsPerComp > 4}
-      // use plain color decimation
-      for ty := 0 to (cTileWidth - 1) do
-        for tx := 0 to (cTileWidth - 1) do
-        begin
-          r := FullPalTile.RGBPixels[ty, tx, 0] shr (8 - cBitsPerComp);
-          g := FullPalTile.RGBPixels[ty, tx, 1] shr (8 - cBitsPerComp);
-          b := FullPalTile.RGBPixels[ty, tx, 2] shr (8 - cBitsPerComp);
-          Inc(CMUsage[(b shl (cBitsPerComp * 2)) or (g shl cBitsPerComp) or r][ciCount], FullPalTile.AveragedCount);
-        end;
-{$else}
       // dither using full RGB palette
+{$if cBitsPerComp <= 4}
       DitherTile(FullPalTile, CMPlan);
+{$else}
+      DitherTileFloydSteinberg(FullPalTile);
+{$endif}
       for ty := 0 to (cTileWidth - 1) do
         for tx := 0 to (cTileWidth - 1) do
           Inc(CMUsage[FullPalTile.PalPixels[ty, tx]][ciCount], FullPalTile.AveragedCount);
-{$endif}
 
       // keep the 16 most used colors
 
