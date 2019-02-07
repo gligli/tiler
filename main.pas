@@ -7,7 +7,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, extern,
-  ap, correlation, nearestneighbor;
+  xalglib;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -179,11 +179,11 @@ type
   PFrame = ^TFrame;
 
   TTileDataset = record
-    Tags: TIntegerDynArray;
+    Tags: TIVector;
     Dataset: TFloatDynArray2;
     FrameDataset: array of TFloatDynArray;
     TRToTileIdx: TIntegerDynArray;
-    KDT: array of KDTree;
+    KDT: Tkdtree;
   end;
 
   PTileDataset = ^TTileDataset;
@@ -658,8 +658,8 @@ begin
 
   for i := 0 to High(FKeyFrames) do
   begin
-    Dispose(FKeyFrames[i].TileDS);
-    FKeyFrames[i].TileDS := nil;
+    FreeAndNil(FKeyFrames[i].TileDS^.KDT);
+    FreeMemAndNil(FKeyFrames[i].TileDS);
   end;
 
   tbFrameChange(nil);
@@ -1152,11 +1152,13 @@ type
   PCountIndexArray = ^TCountIndexArray;
 
 
-function CompareCMUCntImp(Item1,Item2,UserParameter:Pointer):Integer;
+function CompareCMUCntHueLuma(Item1,Item2,UserParameter:Pointer):Integer;
 begin
   Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]);
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item2)^[ciImportance], PCountIndexArray(Item1)^[ciImportance]);
+    Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]);
+  if Result = 0 then
+    Result := CompareValue(PCountIndexArray(Item1)^[ciLuma], PCountIndexArray(Item2)^[ciLuma]);
 end;
 
 function CompareCMUHueLuma(Item1,Item2,UserParameter:Pointer):Integer;
@@ -1223,7 +1225,7 @@ begin
 
       // keep the 16 most used colors
 
-      QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
+      QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntHueLuma);
 
       // sort those by importance and luma
       QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
@@ -1245,18 +1247,12 @@ end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
 const
-  cPalettePattern : array[0 .. 8 - 1, 0 .. cTilePaletteSize - 1] of Integer = (
-    ( 4,12,20,28,36,44,52,60,68,76,84,92, 0, 1, 2, 3),
-    ( 8,16,24,32,40,48,56,64,72,80,88,96, 0, 1, 2, 3),
-    ( 6,14,22,30,38,46,54,62,70,78,86,94, 0, 1, 2, 3),
-    (10,18,26,34,42,50,58,66,74,82,90,98, 0, 1, 2, 3),
-    ( 5,13,21,29,37,45,53,61,69,77,85,93, 0, 1, 2, 3),
-    ( 7,15,23,31,39,47,55,63,71,79,87,95, 0, 1, 2, 3),
-    ( 9,17,25,33,41,49,57,65,73,81,89,97, 0, 1, 2, 3),
-    (11,19,27,35,43,51,59,67,75,83,91,99, 0, 1, 2, 3)
+  cPalettePattern : array[0 .. 4 - 1, 0 .. cTilePaletteSize - 1] of Integer = (
+    (0, 1, 2, 3, 6, 9, 14, 21, 32, 48, 72, 109, 164, 247, 373, 561),
+    (0, 1, 2, 4, 6, 10, 15, 23, 35, 53, 81, 122, 184, 277, 417, 628),
+    (0, 1, 2, 4, 7, 11, 17, 26, 39, 59, 89, 135, 203, 306, 461, 695),
+    (0, 1, 2, 5, 8, 12, 19, 28, 43, 65, 98, 148, 223, 336, 506, 761)
   );
-  cPaletteInvSpread = 8;
-  cPaletteSpread = cTotalColors div (Length(cPalettePattern) * cTilePaletteSize) div cPaletteInvSpread;
 var
   sx, sy, tx, ty, i, PalIdx: Integer;
   GTile: PTile;
@@ -1303,12 +1299,9 @@ begin
 
   // sort colors by use count
 
-  QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
+  QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntHueLuma);
 
   // split most used colors into 16 color palettes, with the best few repeated everywhere
-
-  QuickSort(CMUsage[0], 0, cKeyframeFixedColors * cPaletteSpread - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
-  QuickSort(CMUsage[0], cKeyframeFixedColors * cPaletteSpread, cTilePaletteSize * cPaletteSpread * cPaletteCount - 1, SizeOf(CMUsage[0]), @CompareCMUHueLuma);
 
   for PalIdx := 0 to cPaletteCount - 1 do
   begin
@@ -1318,7 +1311,7 @@ begin
 
   for i := 0 to cTilePaletteSize - 1 do
     for PalIdx := 0 to cPaletteCount - 1 do
-      AKeyFrame^.PaletteIndexes[PalIdx, i] := CMUsage[cPalettePattern[PalIdx, i] * cPaletteSpread][ciIndex];
+      AKeyFrame^.PaletteIndexes[PalIdx, i] := CMUsage[cPalettePattern[PalIdx, i]][ciIndex];
 
   for i := 0 to cTilePaletteSize - 1 do
     for PalIdx := 0 to cPaletteCount - 1 do
@@ -2019,7 +2012,6 @@ var
   used: TBooleanDynArray;
   vmir, hmir: Boolean;
   palIdx: Integer;
-  KDT: KDTree;
 begin
   DS := New(PTileDataset);
   AKF^.TileDS := DS;
@@ -2075,13 +2067,7 @@ begin
   for i := 0 to High(DS^.Dataset) do
     DS^.Tags[i] := i;
 
-  SetLength(DS^.KDT, AKF^.FrameCount);
-  for i := 0 to High(DS^.KDT) do
-  begin
-    KDTreeBuildTagged(DS^.Dataset, DS^.Tags, Length(DS^.Dataset), Length(DS^.Dataset[0]), 0, 2, DS^.KDT[i]);
-    if i > 0 then
-      DS^.KDT[i].XY := DS^.KDT[0].XY;
-  end;
+  KDTreeBuildTagged(DS^.Dataset, DS^.Tags, Length(DS^.Dataset[0]), 0, 2, DS^.KDT);
 end;
 
 procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
@@ -2093,12 +2079,10 @@ var
   TPF, MaxTPF, i, tri: Integer;
   Used: TBooleanDynArray;
   DCT: TFloatDynArray;
-  Tags: TIntegerDynArray;
-  KDT: KDTree;
+  Tags: TIVector;
+  KDBuf: Tkdtreerequestbuffer;
 begin
   DS := AFrame^.KeyFrame^.TileDS;
-
-  KDT := DS^.KDT[AFrame.Index - AFrame^.KeyFrame^.StartFrame];
 
   // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
@@ -2108,14 +2092,16 @@ begin
   MaxTPF := 0;
   FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
 
+  kdtreecreaterequestbuffer(DS^.KDT, KDBuf);
+
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
       DCT := DS^.FrameDataset[AFrame^.Index * cTileMapSize + sy * cTileMapWidth + sx];
 
-      i := KDTreeQueryKNN(KDT, DCT, 1, True);
+      i := kdtreetsqueryknn(DS^.KDT, KDBuf, DCT, 1, True);
       Assert(i = 1);
-      KDTreeQueryResultsTags(KDT, Tags, i);
+      kdtreetsqueryresultstags(DS^.KDT, KDBuf, Tags, i);
       Assert(i = 1);
       tri := Tags[0];
 
@@ -2128,6 +2114,8 @@ begin
 
       Used[tmiO^.GlobalTileIndex] := True;
     end;
+
+  FreeAndNil(KDBuf);
 
   TPF := 0;
   for i := 0 to High(Used) do
