@@ -18,13 +18,22 @@ object MainForm: TMainForm
   OnKeyDown = FormKeyDown
   Position = poScreenCenter
   LCLVersion = '2.0.0.3'
+  object cbxStep: TComboBox
+    Left = 208
+    Height = 21
+    Top = 256
+    Width = 119
+    ItemHeight = 13
+    Style = csDropDownList
+    TabOrder = 20
+  end
   object pbProgress: TProgressBar
     Left = 8
     Height = 16
     Top = 288
     Width = 279
     Smooth = True
-    TabOrder = 12
+    TabOrder = 11
   end
   object imgSource: TImage
     Left = 336
@@ -61,7 +70,7 @@ object MainForm: TMainForm
     ShowSelRange = False
     TickMarks = tmBoth
     TickStyle = tsNone
-    TabOrder = 20
+    TabOrder = 19
   end
   object chkPlay: TCheckBox
     Left = 336
@@ -69,7 +78,7 @@ object MainForm: TMainForm
     Top = 749
     Width = 40
     Caption = 'Play'
-    TabOrder = 14
+    TabOrder = 13
   end
   object lblTileCount: TLabel
     Left = 8
@@ -88,7 +97,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 15
+    TabOrder = 14
   end
   object Label2: TLabel
     Left = 8
@@ -136,7 +145,7 @@ object MainForm: TMainForm
     Height = 25
     Top = 256
     Width = 69
-    Caption = 'Run all (F9)'
+    Caption = 'Run (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
     TabOrder = 10
@@ -148,7 +157,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 13
+    TabOrder = 12
   end
   object Label6: TLabel
     Left = 187
@@ -239,16 +248,6 @@ object MainForm: TMainForm
     Width = 256
     PopupMenu = pmProcesses
   end
-  object btnDebug: TButton
-    Left = 80
-    Height = 25
-    Top = 256
-    Width = 69
-    Caption = 'Test debug'
-    OnClick = btnDebugClick
-    TabOrder = 11
-    Visible = False
-  end
   object chkMirrored: TCheckBox
     Left = 528
     Height = 17
@@ -258,7 +257,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 17
+    TabOrder = 16
   end
   object lblPct: TLabel
     Left = 287
@@ -278,7 +277,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 19
+    TabOrder = 18
   end
   object seMaxTiles: TSpinEdit
     Left = 208
@@ -299,7 +298,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 16
+    TabOrder = 15
   end
   object lblCorrel: TLabel
     Left = 941
@@ -361,7 +360,7 @@ object MainForm: TMainForm
     Width = 42
     MinValue = -1
     OnChange = tbFrameChange
-    TabOrder = 18
+    TabOrder = 17
     Value = -1
   end
   object Label8: TLabel
@@ -370,6 +369,14 @@ object MainForm: TMainForm
     Top = 750
     Width = 35
     Caption = 'Palette'
+    ParentColor = False
+  end
+  object Label12: TLabel
+    Left = 120
+    Height = 13
+    Top = 260
+    Width = 80
+    Caption = 'Last step to run'
     ParentColor = False
   end
   object IdleTimer: TIdleTimer
