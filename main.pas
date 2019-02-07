@@ -6,7 +6,8 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
-  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, extern, correlation, nearestneighbor;
+  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, extern,
+  ap, correlation, nearestneighbor;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -182,6 +183,7 @@ type
     Dataset: TFloatDynArray2;
     FrameDataset: array of TFloatDynArray;
     TRToTileIdx: TIntegerDynArray;
+    KDT: array of KDTree;
   end;
 
   PTileDataset = ^TTileDataset;
@@ -1136,9 +1138,9 @@ begin
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
     begin
-      r := EnsureRange(Pixels[y, x, 0] shr cBitsPerComp, 0, (1 shl cBitsPerComp) - 1);
-      g := EnsureRange(Pixels[y, x, 1] shr cBitsPerComp, 0, (1 shl cBitsPerComp) - 1);
-      b := EnsureRange(Pixels[y, x, 2] shr cBitsPerComp, 0, (1 shl cBitsPerComp) - 1);
+      r := EnsureRange(Pixels[y, x, 0] shr (8 - cBitsPerComp), 0, (1 shl cBitsPerComp) - 1);
+      g := EnsureRange(Pixels[y, x, 1] shr (8 - cBitsPerComp), 0, (1 shl cBitsPerComp) - 1);
+      b := EnsureRange(Pixels[y, x, 2] shr (8 - cBitsPerComp), 0, (1 shl cBitsPerComp) - 1);
 
       ATile.PalPixels[y, x] := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
     end;
@@ -2017,6 +2019,7 @@ var
   used: TBooleanDynArray;
   vmir, hmir: Boolean;
   palIdx: Integer;
+  KDT: KDTree;
 begin
   DS := New(PTileDataset);
   AKF^.TileDS := DS;
@@ -2071,6 +2074,14 @@ begin
   SetLength(DS^.Tags, Length(DS^.Dataset));
   for i := 0 to High(DS^.Dataset) do
     DS^.Tags[i] := i;
+
+  SetLength(DS^.KDT, AKF^.FrameCount);
+  for i := 0 to High(DS^.KDT) do
+  begin
+    KDTreeBuildTagged(DS^.Dataset, DS^.Tags, Length(DS^.Dataset), Length(DS^.Dataset[0]), 0, 2, DS^.KDT[i]);
+    if i > 0 then
+      DS^.KDT[i].XY := DS^.KDT[0].XY;
+  end;
 end;
 
 procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
@@ -2087,6 +2098,8 @@ var
 begin
   DS := AFrame^.KeyFrame^.TileDS;
 
+  KDT := DS^.KDT[AFrame.Index - AFrame^.KeyFrame^.StartFrame];
+
   // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
   SetLength(Used, Length(FTiles));
@@ -2094,8 +2107,6 @@ begin
 
   MaxTPF := 0;
   FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
-
-  KDTreeBuildTagged(DS^.Dataset, DS^.Tags, Length(DS^.Dataset), Length(DS^.Dataset[0]), 0, 0,  KDT);
 
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
