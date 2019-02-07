@@ -1051,7 +1051,7 @@ begin
       moves := KModesIter(Seed);
       ncost := LabelsCost;
 
-      converged := (moves = 0) and (ncost >= cost);
+      converged := ncost >= cost;
       cost := ncost;
 
       totalmoves += moves;
