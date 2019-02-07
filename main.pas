@@ -31,7 +31,7 @@ const
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
   // SMS consts
-  cPaletteCount = 4;
+  cPaletteCount = 8;
   cBitsPerComp = 4;
   cPreDitherMixedColors = 2;
   cTotalColors = 1 shl (cBitsPerComp * 3);
@@ -1020,10 +1020,26 @@ begin
   Result := CompareValue(pi1^, pi2^);
 end;
 
-function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64; inline;
+function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
+var
+  luma1, luma2, lumadiff, diffR, diffG, diffB: Int64;
 begin
-  Result := cRedMultiplier * sqr(r1 - r2) + cGreenMultiplier * sqr(g1 - g2) + cBlueMultiplier * sqr(b1 - b2);
+  luma1 := r1 * cRedMultiplier + g1 * cGreenMultiplier + b1 * cBlueMultiplier;
+  luma2 := r2 * cRedMultiplier + g2 * cGreenMultiplier + b2 * cBlueMultiplier;
+  lumadiff := luma1 - luma2;
+  diffR := r1 - r2;
+  diffG := g1 - g2;
+  diffB := b1 - b2;
+  Result := diffR * diffR * (cRedMultiplier * cTotalColors * 3 div 4); // 1000 to match luma scale, 3 div 4 for 0.75 chroma improtance reduction
+  Result += diffG * diffG * (cGreenMultiplier * cTotalColors * 3 div 4);
+  Result += diffB * diffB * (cBlueMultiplier * cTotalColors * 3 div 4);
+  Result += lumadiff * lumadiff;
 end;
+
+//function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64; inline;
+//begin
+//  Result := cRedMultiplier * sqr(r1 - r2) + cGreenMultiplier * sqr(g1 - g2) + cBlueMultiplier * sqr(b1 - b2);
+//end;
 
 procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
 var
@@ -1247,12 +1263,29 @@ end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
 const
-  cPalettePattern : array[0 .. 4 - 1, 0 .. cTilePaletteSize - 1] of Integer = (
+  cPalettePattern : array[0 .. 8 - 1, 0 .. cTilePaletteSize - 1] of Integer = (
+{$if cBitsPerComp <= 4}
+    // 4bpc
+    (0, 1, 2, 3, 5, 8, 13, 20, 30, 45, 68, 102, 154, 233, 350, 528),
+    (0, 1, 2, 4, 7, 11, 16, 25, 37, 56, 85, 128, 193, 291, 439, 661),
+    (0, 1, 2, 3, 6, 9, 14, 22, 33, 51, 76, 115, 174, 262, 395, 594),
+    (0, 1, 2, 5, 8, 12, 18, 27, 41, 62, 94, 141, 213, 321, 483, 728),
     (0, 1, 2, 3, 6, 9, 14, 21, 32, 48, 72, 109, 164, 247, 373, 561),
-    (0, 1, 2, 4, 6, 10, 15, 23, 35, 53, 81, 122, 184, 277, 417, 628),
     (0, 1, 2, 4, 7, 11, 17, 26, 39, 59, 89, 135, 203, 306, 461, 695),
+    (0, 1, 2, 4, 6, 10, 15, 23, 35, 53, 81, 122, 184, 277, 417, 628),
     (0, 1, 2, 5, 8, 12, 19, 28, 43, 65, 98, 148, 223, 336, 506, 761)
-  );
+{$else}
+    // 5+bpc
+    (0, 1, 2, 3, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597),
+    (0, 1, 2, 5, 10, 17, 27, 44, 72, 116, 188, 305, 493, 798, 1292, 2090),
+    (0, 1, 2, 4, 9, 15, 24, 39, 63, 102, 166, 269, 435, 704, 1139, 1843),
+    (0, 1, 2, 6, 11, 19, 30, 49, 80, 130, 210, 341, 551, 892, 1444, 2337),
+    (0, 1, 2, 3, 8, 14, 22, 36, 59, 95, 155, 251, 406, 657, 1063, 1720),
+    (0, 1, 2, 6, 11, 18, 29, 47, 76, 123, 199, 323, 522, 845, 1368, 2213),
+    (0, 1, 2, 4, 9, 16, 25, 41, 67, 109, 177, 287, 464, 751, 1215, 1967),
+    (0, 1, 2, 7, 12, 20, 32, 52, 84, 137, 221, 359, 580, 939, 1520, 2460)
+{$endif}
+    );
 var
   sx, sy, tx, ty, i, PalIdx: Integer;
   GTile: PTile;
