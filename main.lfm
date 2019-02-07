@@ -375,12 +375,12 @@ object MainForm: TMainForm
     Left = 120
     Height = 13
     Top = 260
-    Width = 80
-    Caption = 'Last step to run'
+    Width = 77
+    Caption = 'Run up to step'
     ParentColor = False
   end
   object IdleTimer: TIdleTimer
-    Interval = 80
+    Interval = 40
     OnTimer = IdleTimerTimer
     left = 936
     top = 688

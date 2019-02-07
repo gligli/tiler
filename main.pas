@@ -9,7 +9,7 @@ uses
   StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, extern, correlation, nearestneighbor;
 
 type
-  TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
+  TEncoderStep = (esNone = -1, esLoad = 0, esDither, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
 
 const
   cPhi = (1 + sqrt(5)) / 2;
@@ -18,7 +18,7 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.0);
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (1.4, 1.0);
   cGammaCorrectSmoothing = -1;
   cKFFromPal = True;
   cKFGamma = 0;
@@ -128,7 +128,7 @@ const
     42, 26, 38, 22, 41, 25, 37, 21
   );
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 3, 2, 3, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 3, 2, 3, 1, 2);
 
 type
   TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
