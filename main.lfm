@@ -2,24 +2,26 @@ object MainForm: TMainForm
   Left = 277
   Height = 817
   Top = 85
-  Width = 1001
-  HorzScrollBar.Page = 1
-  HorzScrollBar.Visible = False
+  Width = 984
+  HorzScrollBar.Increment = 128
+  HorzScrollBar.Page = 960
+  HorzScrollBar.Tracking = True
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 808
+  VertScrollBar.Page = 720
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
   ClientHeight = 817
-  ClientWidth = 1001
+  ClientWidth = 984
   KeyPreview = True
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   OnKeyDown = FormKeyDown
   Position = poScreenCenter
   LCLVersion = '2.0.0.4'
+  WindowState = wsMaximized
   object cbxStep: TComboBox
-    Left = 208
+    Left = 200
     Height = 21
     Top = 256
     Width = 119
@@ -31,38 +33,38 @@ object MainForm: TMainForm
     Left = 8
     Height = 16
     Top = 288
-    Width = 279
+    Width = 273
     Smooth = True
     TabOrder = 11
   end
   object imgSource: TImage
-    Left = 336
+    Left = 320
     Height = 360
-    Top = 8
+    Top = 0
     Width = 640
     AntialiasingMode = amOff
     PopupMenu = pmProcesses
   end
   object imgDest: TImage
-    Left = 336
+    Left = 320
     Height = 360
-    Top = 376
+    Top = 360
     Width = 640
     AntialiasingMode = amOff
     PopupMenu = pmProcesses
   end
   object imgTiles: TImage
-    Left = 8
+    Left = 0
     Height = 360
-    Top = 376
+    Top = 360
     Width = 320
     PopupMenu = pmProcesses
   end
   object tbFrame: TTrackBar
-    Left = 328
+    Left = 280
     Height = 25
     Top = 776
-    Width = 656
+    Width = 687
     Frequency = 25
     Max = 0
     OnChange = tbFrameChange
@@ -70,29 +72,32 @@ object MainForm: TMainForm
     ShowSelRange = False
     TickMarks = tmBoth
     TickStyle = tsNone
+    Anchors = [akLeft, akRight, akBottom]
     TabOrder = 19
   end
   object chkPlay: TCheckBox
-    Left = 336
+    Left = 287
     Height = 17
-    Top = 749
+    Top = 753
     Width = 40
+    Anchors = [akLeft, akBottom]
     Caption = 'Play'
     TabOrder = 13
   end
   object lblTileCount: TLabel
     Left = 8
     Height = 15
-    Top = 351
+    Top = 340
     Width = 157
     AutoSize = False
     ParentColor = False
   end
   object chkDithered: TCheckBox
-    Left = 384
+    Left = 335
     Height = 17
-    Top = 749
+    Top = 753
     Width = 65
+    Anchors = [akLeft, akBottom]
     Caption = 'Dithered'
     Checked = True
     OnChange = tbFrameChange
@@ -108,7 +113,7 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object seFrameCount: TSpinEdit
-    Left = 271
+    Left = 263
     Height = 21
     Top = 92
     Width = 56
@@ -128,9 +133,9 @@ object MainForm: TMainForm
     Left = 88
     Height = 21
     Top = 8
-    Width = 239
+    Width = 232
     TabOrder = 0
-    Text = '.\sample_taxi\hq\%.4d.png'
+    Text = 'C:\tiler_misc\av\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -151,18 +156,18 @@ object MainForm: TMainForm
     TabOrder = 10
   end
   object sePage: TSpinEdit
-    Left = 271
+    Left = 264
     Height = 21
-    Top = 347
+    Top = 336
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
     TabOrder = 12
   end
   object Label6: TLabel
-    Left = 187
+    Left = 180
     Height = 13
-    Top = 352
+    Top = 341
     Width = 77
     Caption = 'Show tile page'
     ParentColor = False
@@ -176,7 +181,7 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object seMaxTPF: TSpinEdit
-    Left = 271
+    Left = 263
     Height = 21
     Top = 175
     Width = 56
@@ -185,7 +190,7 @@ object MainForm: TMainForm
     Value = 3600
   end
   object seAvgTPF: TSpinEdit
-    Left = 271
+    Left = 263
     Height = 21
     Top = 147
     Width = 56
@@ -206,7 +211,7 @@ object MainForm: TMainForm
     Left = 88
     Height = 21
     Top = 64
-    Width = 239
+    Width = 232
     TabOrder = 2
   end
   object Label1: TLabel
@@ -221,7 +226,7 @@ object MainForm: TMainForm
     Left = 88
     Height = 21
     Top = 36
-    Width = 239
+    Width = 232
     TabOrder = 1
     Text = '.\sms\tiled'
   end
@@ -234,7 +239,7 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object seTempoSmoo: TSpinEdit
-    Left = 271
+    Left = 263
     Height = 21
     Top = 202
     Width = 56
@@ -246,13 +251,15 @@ object MainForm: TMainForm
     Height = 64
     Top = 744
     Width = 256
+    Anchors = [akLeft, akBottom]
     PopupMenu = pmProcesses
   end
   object chkMirrored: TCheckBox
-    Left = 528
+    Left = 479
     Height = 17
-    Top = 749
+    Top = 753
     Width = 65
+    Anchors = [akLeft, akBottom]
     Caption = 'Mirrored'
     Checked = True
     OnChange = tbFrameChange
@@ -260,39 +267,41 @@ object MainForm: TMainForm
     TabOrder = 16
   end
   object lblPct: TLabel
-    Left = 287
+    Left = 281
     Height = 15
     Top = 289
-    Width = 40
+    Width = 39
     Alignment = taRightJustify
     AutoSize = False
     Caption = '0%'
     ParentColor = False
   end
   object chkGamma: TCheckBox
-    Left = 768
+    Left = 719
     Height = 19
-    Top = 747
+    Top = 751
     Width = 62
+    Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
     TabOrder = 18
   end
   object seMaxTiles: TSpinEdit
-    Left = 208
+    Left = 200
     Height = 21
     Top = 147
     Width = 56
-    MaxValue = 65536
+    MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
     TabOrder = 5
   end
   object chkReduced: TCheckBox
-    Left = 456
+    Left = 407
     Height = 19
-    Top = 747
+    Top = 751
     Width = 64
+    Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = 'Reduced'
     Checked = True
@@ -301,20 +310,22 @@ object MainForm: TMainForm
     TabOrder = 15
   end
   object lblCorrel: TLabel
-    Left = 941
+    Left = 924
     Height = 15
     Top = 751
     Width = 35
     Alignment = taRightJustify
+    Anchors = [akRight, akBottom]
     AutoSize = False
     Caption = '0.0000'
     ParentColor = False
   end
   object Label5: TLabel
-    Left = 853
+    Left = 836
     Height = 13
     Top = 750
     Width = 79
+    Anchors = [akRight, akBottom]
     Caption = 'Correlation (Q):'
     ParentColor = False
   end
@@ -328,7 +339,7 @@ object MainForm: TMainForm
     TabOrder = 9
   end
   object cbxYilMix: TComboBox
-    Left = 271
+    Left = 263
     Height = 21
     Top = 119
     Width = 56
@@ -354,25 +365,27 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object sedPalIdx: TSpinEdit
-    Left = 648
+    Left = 599
     Height = 21
-    Top = 746
+    Top = 750
     Width = 42
+    Anchors = [akLeft, akBottom]
     MinValue = -1
     OnChange = tbFrameChange
     TabOrder = 17
     Value = -1
   end
   object Label8: TLabel
-    Left = 600
+    Left = 551
     Height = 13
-    Top = 750
+    Top = 754
     Width = 35
+    Anchors = [akLeft, akBottom]
     Caption = 'Palette'
     ParentColor = False
   end
   object Label12: TLabel
-    Left = 120
+    Left = 112
     Height = 13
     Top = 260
     Width = 77

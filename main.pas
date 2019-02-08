@@ -37,8 +37,8 @@ const
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
   cTilePaletteSize = 16;
-  cTileMapWidth = 80;
-  cTileMapHeight = 45;
+  cTileMapWidth = 160;
+  cTileMapHeight = 66;
   cTileMapSize = cTileMapWidth * cTileMapHeight;
   cScreenWidth = cTileMapWidth * cTileWidth;
   cScreenHeight = cTileMapHeight * cTileWidth;
@@ -1030,16 +1030,11 @@ begin
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * (cRedMultiplier * cTotalColors * 3 div 4); // 1000 to match luma scale, 3 div 4 for 0.75 chroma improtance reduction
-  Result += diffG * diffG * (cGreenMultiplier * cTotalColors * 3 div 4);
-  Result += diffB * diffB * (cBlueMultiplier * cTotalColors * 3 div 4);
+  Result := diffR * diffR * (cRedMultiplier * cTotalColors * 2 div 4); // 2 div 4 for 0.5 chroma importance reduction
+  Result += diffG * diffG * (cGreenMultiplier * cTotalColors * 2 div 4);
+  Result += diffB * diffB * (cBlueMultiplier * cTotalColors * 2 div 4);
   Result += lumadiff * lumadiff;
 end;
-
-//function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64; inline;
-//begin
-//  Result := cRedMultiplier * sqr(r1 - r2) + cGreenMultiplier * sqr(g1 - g2) + cBlueMultiplier * sqr(b1 - b2);
-//end;
 
 procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
 var
@@ -3039,8 +3034,21 @@ begin
 
   imgPalette.Picture.Bitmap.Width := cScreenWidth;
   imgPalette.Picture.Bitmap.Height := 16 * cPaletteCount;
-  imgPalette.Height := 16 * cPaletteCount;
   imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  imgTiles.Width := cScreenWidth div 2;
+  imgTiles.Height := cScreenHeight;
+  imgSource.Width := cScreenWidth;
+  imgSource.Height := cScreenHeight;
+  imgDest.Width := cScreenWidth;
+  imgDest.Height := cScreenHeight;
+
+  imgSource.Left := imgTiles.Left + imgTiles.Width;
+  imgDest.Top := imgSource.Top + imgSource.Height;
+  imgDest.Left := imgTiles.Left + imgTiles.Width;
+  imgPalette.Top := imgTiles.Top + imgTiles.Height + imgPalette.Height - 16 * cPaletteCount;
+
+  imgPalette.Height := 16 * cPaletteCount;
 
   sedPalIdx.MaxValue := cPaletteCount - 1;
 
