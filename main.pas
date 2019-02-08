@@ -32,7 +32,7 @@ const
 
   // SMS consts
   cPaletteCount = 8;
-  cBitsPerComp = 4;
+  cBitsPerComp = 6;
   cPreDitherMixedColors = 2;
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
@@ -314,6 +314,7 @@ type
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
+    function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
 
@@ -907,13 +908,13 @@ end;
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
 begin
   case Key of
-    VK_F1: btnLoadClick(nil);
-    VK_F2: btnDitherClick(nil);
-    VK_F3: btnDoGlobalTilingClick(nil);
-    VK_F4: btnDoKeyFrameTilingClick(nil);
-    VK_F5: btnReindexClick(nil);
-    VK_F6: btnSmoothClick(nil);
-    VK_F7: btnSaveClick(nil);
+    VK_F2: btnLoadClick(nil);
+    VK_F3: btnDitherClick(nil);
+    VK_F4: btnDoGlobalTilingClick(nil);
+    VK_F5: btnDoKeyFrameTilingClick(nil);
+    VK_F6: btnReindexClick(nil);
+    VK_F7: btnSmoothClick(nil);
+    VK_F8: btnSaveClick(nil);
     VK_F9: btnRunAllClick(nil);
   end;
 end;
@@ -1020,7 +1021,7 @@ begin
   Result := CompareValue(pi1^, pi2^);
 end;
 
-function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
+function TMainForm.ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
 var
   luma1, luma2, lumadiff, diffR, diffG, diffB: Int64;
 begin
@@ -1030,9 +1031,9 @@ begin
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * (cRedMultiplier * cTotalColors * 2 div 4); // 2 div 4 for 0.5 chroma importance reduction
-  Result += diffG * diffG * (cGreenMultiplier * cTotalColors * 2 div 4);
-  Result += diffB * diffB * (cBlueMultiplier * cTotalColors * 2 div 4);
+  Result := diffR * diffR * cRedMultiplier * 3 div 4; // 3 div 4 for 0.75 chroma importance reduction
+  Result += diffG * diffG * cGreenMultiplier * 3 div 4;
+  Result += diffB * diffB * cBlueMultiplier * 3 div 4;
   Result += lumadiff * lumadiff;
 end;
 
@@ -3042,13 +3043,12 @@ begin
   imgSource.Height := cScreenHeight;
   imgDest.Width := cScreenWidth;
   imgDest.Height := cScreenHeight;
+  imgPalette.Height := 16 * cPaletteCount;
 
   imgSource.Left := imgTiles.Left + imgTiles.Width;
   imgDest.Top := imgSource.Top + imgSource.Height;
   imgDest.Left := imgTiles.Left + imgTiles.Width;
-  imgPalette.Top := imgTiles.Top + imgTiles.Height + imgPalette.Height - 16 * cPaletteCount;
-
-  imgPalette.Height := 16 * cPaletteCount;
+  imgPalette.Top := imgTiles.Top + imgTiles.Height;
 
   sedPalIdx.MaxValue := cPaletteCount - 1;
 

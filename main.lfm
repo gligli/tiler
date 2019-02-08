@@ -119,7 +119,6 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 12
   end
   object Label3: TLabel
     Left = 8
@@ -135,7 +134,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 232
     TabOrder = 0
-    Text = 'C:\tiler_misc\av\%.4d.png'
+    Text = 'C:\tiler_misc\avs\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -247,9 +246,9 @@ object MainForm: TMainForm
     Value = 3
   end
   object imgPalette: TImage
-    Left = 8
+    Left = 0
     Height = 64
-    Top = 744
+    Top = 720
     Width = 256
     Anchors = [akLeft, akBottom]
     PopupMenu = pmProcesses
@@ -393,7 +392,7 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object IdleTimer: TIdleTimer
-    Interval = 40
+    Interval = 42
     OnTimer = IdleTimerTimer
     left = 936
     top = 688
@@ -403,37 +402,37 @@ object MainForm: TMainForm
     top = 640
     object miLoad: TMenuItem
       Caption = 'Load'
-      ShortCut = 112
+      ShortCut = 113
       OnClick = btnLoadClick
     end
     object MenuItem1: TMenuItem
       Caption = 'Dither'
-      ShortCut = 113
+      ShortCut = 114
       OnClick = btnDitherClick
     end
     object MenuItem2: TMenuItem
       Caption = 'Tile (global)'
-      ShortCut = 114
+      ShortCut = 115
       OnClick = btnDoGlobalTilingClick
     end
     object MenuItem3: TMenuItem
       Caption = 'Tile (key frame)'
-      ShortCut = 115
+      ShortCut = 116
       OnClick = btnDoKeyFrameTilingClick
     end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'
-      ShortCut = 116
+      ShortCut = 117
       OnClick = btnReindexClick
     end
     object MenuItem5: TMenuItem
       Caption = 'Smooth'
-      ShortCut = 117
+      ShortCut = 118
       OnClick = btnSmoothClick
     end
     object MenuItem6: TMenuItem
       Caption = 'Save'
-      ShortCut = 118
+      ShortCut = 119
       OnClick = btnSaveClick
     end
   end
