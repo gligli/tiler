@@ -56,7 +56,7 @@ const
 
   // Video player consts
   cMaxTilesPerFrame = 207;
-  cSmoothingPrevFrame = 2;
+  cSmoothingPrevFrame = 1;
   cTileIndexesTileOffset = cTilesPerBank + 1;
   cTileIndexesMaxDiff = 223;
   cTileIndexesRepeatStart = 224;
@@ -2134,7 +2134,7 @@ begin
 
       i := kdtreetsqueryknn(DS^.KDT, KDBuf, DCT, 1, True);
       Assert(i = 1);
-      kdtreetsqueryresultstags(DS^.KDT, KDBuf, Tags, i);
+      kdtreetsqueryresultstags(DS^.KDT, KDBuf, Tags);
       Assert(i = 1);
       tri := Tags[0];
 
