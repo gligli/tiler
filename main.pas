@@ -33,15 +33,24 @@ const
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
   // SMS consts
+
+{$if true}
+  cTileMapWidth = 160;
+  cTileMapHeight = 66;
   cPaletteCount = 8;
   cBitsPerComp = 6;
+{$else}
+  cTileMapWidth = 32;
+  cTileMapHeight = 24;
+  cPaletteCount = 8;
+  cBitsPerComp = 4;
+{$endif}
+
   cPreDitherMixedColors = 2;
   cVecInvWidth = 16;
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
   cTilePaletteSize = 16;
-  cTileMapWidth = 160;
-  cTileMapHeight = 66;
   cTileMapSize = cTileMapWidth * cTileMapHeight;
   cScreenWidth = cTileMapWidth * cTileWidth;
   cScreenHeight = cTileMapHeight * cTileWidth;
@@ -285,7 +294,6 @@ type
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FColorMapLuma: array[0..cTotalColors - 1] of Integer;
     FColorMapHue: array[0..cTotalColors - 1] of Integer;
-    FColorMapImportance: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
     FUseLAB: Boolean;
     FY2MixedColors: Integer;
@@ -1339,12 +1347,12 @@ begin
 end;
 
 type
-  TCountIndex = (ciCount, ciIndex, ciImportance, ciLuma, ciHue);
+  TCountIndex = (ciCount, ciIndex, ciLuma, ciHue);
   TCountIndexArray = array[Low(TCountIndex)..High(TCountIndex)] of Integer;
   PCountIndexArray = ^TCountIndexArray;
 
 
-function CompareCMUCntHueLuma(Item1,Item2,UserParameter:Pointer):Integer;
+function CompareCMUCntHueLuma(Item1,Item2,UserParameter:Pointer):Integer; overload;
 begin
   Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]);
   if Result = 0 then
@@ -1353,117 +1361,94 @@ begin
     Result := CompareValue(PCountIndexArray(Item1)^[ciLuma], PCountIndexArray(Item2)^[ciLuma]);
 end;
 
-function CompareCMUHueLuma(Item1,Item2,UserParameter:Pointer):Integer;
+function CompareCMUCntHueLuma(Item1,Item2:Pointer):Integer; overload;
 begin
-  Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^[ciLuma], PCountIndexArray(Item2)^[ciLuma]);
-end;
-
-function CompareCMULumaHueInv(Item1,Item2,UserParameter:Pointer):Integer;
-begin
-  Result := CompareValue(PCountIndexArray(Item2)^[ciLuma], PCountIndexArray(Item1)^[ciLuma]);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item2)^[ciHue], PCountIndexArray(Item1)^[ciHue]);
+  Result := CompareCMUCntHueLuma(Item1, Item2, nil);
 end;
 
 procedure TMainForm.PreDitherTiles(AFrame: PFrame);
 var
   sx, sy, i, tx, ty: Integer;
-
-{$if cBitsPerComp > 4}
-  r, g, b: Integer;
-{$endif}
-
-  CMUsage: array of TCountIndexArray;
+  CMUsage, CMBase: TList;
   Tile_: PTile;
   FullPalTile: TTile;
   Plan, CMPlan: TMixingPlan;
+  CMItem: PCountIndexArray;
 begin
-{$if cBitsPerComp <= 4}
   PreparePlan(CMPlan, cPreDitherMixedColors, FColorMap);
-{$endif}
 
-  SetLength(CMUsage, cTotalColors);
-
-  for sy := 0 to cTileMapHeight - 1 do
-    for sx := 0 to cTileMapWidth - 1 do
+  CMUsage := TList.Create;
+  CMBase := TList.Create;
+  try
+    CMBase.Count := cTotalColors;
+    for i := 0 to cTotalColors - 1 do
     begin
-      Tile_ := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
-
-      if not Tile_^.Active then
-        Exit;
-
-      CopyTile(Tile_^, FullPalTile);
-
-      for i := 0 to High(CMUsage) do
-      begin
-        CMUsage[i][ciCount] := 0;
-        CMUsage[i][ciIndex] := i;
-        CMUsage[i][ciImportance] := FColorMapImportance[i];
-        CMUsage[i][ciLuma] := FColorMapLuma[i];
-        CMUsage[i][ciHue] := FColorMapHue[i];
-      end;
-
-      // dither using full RGB palette
-{$if cBitsPerComp <= 4}
-      DitherTile(FullPalTile, CMPlan);
-{$else}
-      DitherTileFloydSteinberg(FullPalTile);
-{$endif}
-      for ty := 0 to (cTileWidth - 1) do
-        for tx := 0 to (cTileWidth - 1) do
-          Inc(CMUsage[FullPalTile.PalPixels[ty, tx]][ciCount], FullPalTile.AveragedCount);
-
-      // keep the 16 most used colors
-
-      QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntHueLuma);
-
-      // sort those by importance and luma
-      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
-
-      SetLength(Tile_^.PaletteIndexes, cTilePaletteSize);
-      SetLength(Tile_^.PaletteRGB, cTilePaletteSize);
-      for i := 0 to cTilePaletteSize - 1 do
-      begin
-        Tile_^.PaletteIndexes[i] := CMUsage[cTilePaletteSize - 1 - i][ciIndex];
-        Tile_^.PaletteRGB[i] := FColorMap[Tile_^.PaletteIndexes[i]];
-      end;
-
-      // dither again using that 16 color palette
-      PreparePlan(Plan, FY2MixedColors, Tile_^.PaletteRGB);
-
-      DitherTile(Tile_^, Plan);
+      New(CMItem);
+      CMItem[ciCount] := 0;
+      CMItem[ciIndex] := i;
+      CMItem[ciLuma] := FColorMapLuma[i];
+      CMItem[ciHue] := FColorMapHue[i];
+      CMBase[i] := CMItem;
     end;
+
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
+      begin
+        Tile_ := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
+
+        if not Tile_^.Active then
+          Exit;
+
+        CopyTile(Tile_^, FullPalTile);
+
+        CMUsage.Assign(CMBase);
+        for i := 0 to cTotalColors - 1 do
+          PCountIndexArray(CMUsage[i])[ciCount] := 0;
+
+        // dither using full RGB palette
+        DitherTile(FullPalTile, CMPlan);
+        for ty := 0 to (cTileWidth - 1) do
+          for tx := 0 to (cTileWidth - 1) do
+            Inc(PCountIndexArray(CMUsage[FullPalTile.PalPixels[ty, tx]])[ciCount]);
+
+        // keep the 16 most used colors
+
+        CMUsage.Sort(CompareCMUCntHueLuma);
+
+        SetLength(Tile_^.PaletteIndexes, cTilePaletteSize);
+        SetLength(Tile_^.PaletteRGB, cTilePaletteSize);
+        for i := 0 to cTilePaletteSize - 1 do
+        begin
+          Tile_^.PaletteIndexes[i] := PCountIndexArray(CMUsage[cTilePaletteSize - 1 - i])[ciIndex];
+          Tile_^.PaletteRGB[i] := FColorMap[Tile_^.PaletteIndexes[i]];
+        end;
+
+        // dither again using that 16 color palette
+        PreparePlan(Plan, FY2MixedColors, Tile_^.PaletteRGB);
+
+        DitherTile(Tile_^, Plan);
+      end;
+
+  finally
+    CMBase.Free;
+    CMUsage.Free;
+  end;
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
 const
-  cPalettePattern : array[0 .. 8 - 1, 0 .. cTilePaletteSize - 1] of Integer = (
-{$if cBitsPerComp <= 4}
-    // 4bpc
-    (0, 1, 2, 3, 5, 8, 13, 20, 30, 45, 68, 102, 154, 233, 350, 528),
-    (0, 1, 2, 4, 7, 11, 16, 25, 37, 56, 85, 128, 193, 291, 439, 661),
-    (0, 1, 2, 3, 6, 9, 14, 22, 33, 51, 76, 115, 174, 262, 395, 594),
-    (0, 1, 2, 5, 8, 12, 18, 27, 41, 62, 94, 141, 213, 321, 483, 728),
-    (0, 1, 2, 3, 6, 9, 14, 21, 32, 48, 72, 109, 164, 247, 373, 561),
-    (0, 1, 2, 4, 7, 11, 17, 26, 39, 59, 89, 135, 203, 306, 461, 695),
-    (0, 1, 2, 4, 6, 10, 15, 23, 35, 53, 81, 122, 184, 277, 417, 628),
-    (0, 1, 2, 5, 8, 12, 19, 28, 43, 65, 98, 148, 223, 336, 506, 761)
-{$else}
-    // 5+bpc
-    (0, 1, 2, 3, 8, 13, 21, 34, 55, 89, 144, 233, 377, 610, 987, 1597),
-    (0, 1, 2, 5, 10, 17, 27, 44, 72, 116, 188, 305, 493, 798, 1292, 2090),
-    (0, 1, 2, 4, 9, 15, 24, 39, 63, 102, 166, 269, 435, 704, 1139, 1843),
-    (0, 1, 2, 6, 11, 19, 30, 49, 80, 130, 210, 341, 551, 892, 1444, 2337),
-    (0, 1, 2, 3, 8, 14, 22, 36, 59, 95, 155, 251, 406, 657, 1063, 1720),
-    (0, 1, 2, 6, 11, 18, 29, 47, 76, 123, 199, 323, 522, 845, 1368, 2213),
-    (0, 1, 2, 4, 9, 16, 25, 41, 67, 109, 177, 287, 464, 751, 1215, 1967),
-    (0, 1, 2, 7, 12, 20, 32, 52, 84, 137, 221, 359, 580, 939, 1520, 2460)
-{$endif}
-    );
+  cPalettePattern : array[0 .. 8 - 1, 0 .. cTilePaletteSize - 1] of TFloat = (
+    (0.0000000, 0.0085450, 0.0151019, 0.0254995, 0.0377196, 0.0537513, 0.0739068, 0.0996602, 0.1323631, 0.1739889, 0.2269247, 0.2942664, 0.3799232, 0.4888819, 0.6274788, 0.8037771),
+    (0.0042725, 0.0118234, 0.0203007, 0.0316095, 0.0457354, 0.0638290, 0.0867835, 0.1160116, 0.1531760, 0.2004568, 0.2605955, 0.3370948, 0.4344026, 0.5581804, 0.7156279, 0.9159045),
+    (0.0021363, 0.0101842, 0.0177013, 0.0285545, 0.0417275, 0.0587901, 0.0803451, 0.1078359, 0.1427695, 0.1872229, 0.2437601, 0.3156806, 0.4071629, 0.5235311, 0.6715534, 0.8598408),
+    (0.0064088, 0.0134626, 0.0229001, 0.0346645, 0.0497433, 0.0688679, 0.0932218, 0.1241873, 0.1635825, 0.2136907, 0.2774309, 0.3585090, 0.4616422, 0.5928296, 0.7597025, 0.9719682),
+    (0.0010681, 0.0093646, 0.0164016, 0.0270270, 0.0397235, 0.0562707, 0.0771260, 0.1037481, 0.1375663, 0.1806059, 0.2353424, 0.3049735, 0.3935430, 0.5062065, 0.6495161, 0.8318089),
+    (0.0032044, 0.0110038, 0.0190010, 0.0300820, 0.0437314, 0.0613096, 0.0835643, 0.1119238, 0.1479728, 0.1938398, 0.2521778, 0.3263877, 0.4207827, 0.5408557, 0.6935907, 0.8878726),
+    (0.0057679, 0.0129709, 0.0221203, 0.0337480, 0.0485410, 0.0673562, 0.0912903, 0.1217346, 0.1604605, 0.2097206, 0.2723803, 0.3520847, 0.4534703, 0.5824348, 0.7464801, 0.9551491),
+    (0.0074769, 0.0142822, 0.0241998, 0.0361921, 0.0517473, 0.0713874, 0.0964410, 0.1282752, 0.1687857, 0.2203077, 0.2858486, 0.3692161, 0.4752621, 0.6101542, 0.7817398, 1.0000000)
+  );
 var
-  sx, sy, tx, ty, i, PalIdx: Integer;
+  sx, sy, tx, ty, i, PalIdx, LastUsed: Integer;
   GTile: PTile;
   CMUsage: array of TCountIndexArray;
   sfr, efr: Integer;
@@ -1476,7 +1461,6 @@ begin
   begin
     CMUsage[i][ciCount] := 0;
     CMUsage[i][ciIndex] := i;
-    CMUsage[i][ciImportance] := FColorMapImportance[i];
     CMUsage[i][ciLuma] := FColorMapLuma[i];
     CMUsage[i][ciHue] := FColorMapHue[i];
   end;
@@ -1510,6 +1494,18 @@ begin
 
   QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntHueLuma);
 
+  LastUsed := -1;
+  for i := cTotalColors - 1 downto 0 do
+    if CMUsage[i][ciCount] <> 0 then
+    begin
+      LastUsed := i;
+      Break;
+    end;
+
+  EnterCriticalSection(FCS);
+  WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed);
+  LeaveCriticalSection(FCS);
+
   // split most used colors into 16 color palettes, with the best few repeated everywhere
 
   for PalIdx := 0 to cPaletteCount - 1 do
@@ -1520,7 +1516,7 @@ begin
 
   for i := 0 to cTilePaletteSize - 1 do
     for PalIdx := 0 to cPaletteCount - 1 do
-      AKeyFrame^.PaletteIndexes[PalIdx, i] := CMUsage[cPalettePattern[PalIdx, i]][ciIndex];
+      AKeyFrame^.PaletteIndexes[PalIdx, i] := CMUsage[Round(cPalettePattern[PalIdx, i] * LastUsed)][ciIndex];
 
   for i := 0 to cTilePaletteSize - 1 do
     for PalIdx := 0 to cPaletteCount - 1 do
@@ -1529,66 +1525,58 @@ end;
 
 procedure TMainForm.FinalDitherTiles(AFrame: PFrame);
 var
-  sx, sy: Integer;
-  KF: PKeyFrame;
-  OrigTile: TTile;
-  OrigTileDCT: TFloatDynArray;
-  Plan: TMixingPlan;
-
   i, PalIdx: Integer;
-  best: TFloat;
-
-  cmp: array[0 .. cPaletteCount - 1] of TFloat;
-  Tile_: array[0 .. cPaletteCount - 1] of TTile;
-  TileDCT: array[0 .. cPaletteCount - 1] of TFloatDynArray;
+  sx, sy: Integer;
+  best, cmp: TFloat;
+  KF: PKeyFrame;
+  BestTile: TTile;
+  OrigTile: PTile;
+  TileDCT, OrigTileDCT: TFloatDynArray;
+  Plan: array[0 .. cPaletteCount - 1] of TMixingPlan;
 begin
+  KF := AFrame^.KeyFrame;
+  for PalIdx := 0 to cPaletteCount - 1 do
+    PreparePlan(Plan[PalIdx], FY2MixedColors, KF^.PaletteRGB[PalIdx]);
+
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
-      if not FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^.Active then
-        Exit;
+      OrigTile := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
 
-      for PalIdx := 0 to cPaletteCount - 1 do
-        CopyTile(FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^, Tile_[PalIdx]);
-      CopyTile(FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^, OrigTile);
+      if not OrigTile^.Active then
+        Exit;
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile, False, True, False, False, False, 0, OrigTile.PaletteRGB, OrigTileDCT);
-
-      KF := AFrame^.KeyFrame;
-
-      for PalIdx := 0 to cPaletteCount - 1 do
-      begin
-        PreparePlan(Plan, FY2MixedColors, KF^.PaletteRGB[PalIdx]);
-        DitherTile(Tile_[PalIdx], Plan);
-
-        ComputeTileDCT(Tile_[PalIdx], True, True, False, False, False, 0, KF^.PaletteRGB[PalIdx], TileDCT[PalIdx]);
-        cmp[PalIdx] := CompareEuclidean192(TileDCT[PalIdx], OrigTileDCT);
-      end;
+      ComputeTileDCT(OrigTile^, False, True, False, False, False, 0, OrigTile^.PaletteRGB, OrigTileDCT);
 
       PalIdx := -1;
       best := MaxDouble;
       for i := 0 to cPaletteCount - 1 do
-        if cmp[i] < best then
+      begin
+        DitherTile(OrigTile^, Plan[i]);
+        ComputeTileDCT(OrigTile^, True, True, False, False, False, 0, KF^.PaletteRGB[i], TileDCT);
+        cmp := CompareEuclidean192(TileDCT, OrigTileDCT);
+        if cmp < best then
         begin
           PalIdx := i;
-          best := cmp[i];
+          best := cmp;
+          CopyTile(OrigTile^, BestTile);
         end;
+      end;
 
       // now that the palette is chosen, keep only one version of the tile
 
       AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
 
-      Move(KF^.PaletteIndexes[PalIdx][0], Tile_[PalIdx].PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
-      Move(KF^.PaletteRGB[PalIdx][0], Tile_[PalIdx].PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
+      Move(KF^.PaletteIndexes[PalIdx][0], BestTile.PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
+      Move(KF^.PaletteRGB[PalIdx][0], BestTile.PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
 
-      CopyTile(Tile_[PalIdx], AFrame^.Tiles[sx + sy * cTileMapWidth]);
+      CopyTile(BestTile, AFrame^.Tiles[sx + sy * cTileMapWidth]);
 
-      SetLength(Tile_[PalIdx].PaletteIndexes, 0);
-      SetLength(Tile_[PalIdx].PaletteRGB, 0);
-      CopyTile(Tile_[PalIdx], FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^);
-
+      SetLength(BestTile.PaletteIndexes, 0);
+      SetLength(BestTile.PaletteRGB, 0);
+      OrigTile^ := BestTile;
     end;
 end;
 
@@ -2106,9 +2094,13 @@ begin
   lblPct.Invalidate;
   Application.ProcessMessages;
 
-  t := GetTickCount;
-  WriteLn('Step: ', GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), ' / ', FProgressPosition, #9'Time: ', FormatFloat('0.000', (t - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (t - FProgressStartTime) / 1000));
-  FProgressPrevTime := t;
+  if (CurFrameIdx >= 0) or (ProgressStep <> esNone) then
+  begin
+    t := GetTickCount;
+    WriteLn('Step: ', GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), ' / ', FProgressPosition,
+      #9'Time: ', FormatFloat('0.000', (t - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (t - FProgressStartTime) / 1000));
+    FProgressPrevTime := t;
+  end;
 
   FOldProgressPosition := FProgressPosition;
 end;
@@ -3188,7 +3180,7 @@ end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
 var
-  r,g,b,i,mx,mn,col,prim_col,sr: Integer;
+  r,g,b,i,mx,mn,col,sr: Integer;
   es: TEncoderStep;
 begin
   InitializeCriticalSection(FCS);
@@ -3225,9 +3217,15 @@ begin
   imgDest.Height := cScreenHeight;
   imgPalette.Height := 16 * cPaletteCount;
 
-  imgSource.Left := imgTiles.Left + imgTiles.Width;
+  imgTiles.Left := imgSource.Left - imgTiles.Width;
+  if imgTiles.Left < 0 then
+  begin
+    imgDest.Left := imgDest.Left - imgTiles.Left;
+    imgSource.Left := imgSource.Left - imgTiles.Left;
+    imgTiles.Left := 0;
+  end;
+
   imgDest.Top := imgSource.Top + imgSource.Height;
-  imgDest.Left := imgTiles.Left + imgTiles.Width;
   imgPalette.Top := imgTiles.Top + imgTiles.Height;
 
   sedPalIdx.MaxValue := cPaletteCount - 1;
@@ -3248,13 +3246,7 @@ begin
       (((((i shr (cBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
       (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
 
-    prim_col :=
-      ((i and 1) * 255) or //R
-      ((((i shr 2) and 1) * 255) shl 8) or //G
-      ((((i shr 4) and 1) * 255) shl 16);  //B
-
     FColorMap[i] := col;
-    FColorMapImportance[i] := Ord(col = prim_col);
   end;
 
   for i := 0 to cTotalColors - 1 do
