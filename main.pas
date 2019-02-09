@@ -270,7 +270,6 @@ type
 
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
-    procedure Button1Click(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
     procedure chkLABChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
@@ -856,10 +855,6 @@ begin
 end;
 
 procedure TMainForm.btnDebugClick(Sender: TObject);
-begin
-end;
-
-procedure TMainForm.Button1Click(Sender: TObject);
 var
   i: Integer;
   seed: Cardinal;
@@ -941,6 +936,7 @@ begin
     VK_F7: btnSmoothClick(nil);
     VK_F8: btnSaveClick(nil);
     VK_F9: btnRunAllClick(nil);
+    VK_F12: btnDebugClick(nil);
   end;
 end;
 
@@ -1065,12 +1061,13 @@ end;
 
 procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
 label
-  loop, worst;
+  pal_loop, inner_loop, worst;
 var
-  t, index, max_test_count, chosen_amount, chosen, plan_count: Integer;
-  least_penalty, penalty: Int64;
+  t, index, max_test_count, plan_count, y2pal_len: Integer;
+  chosen_amount, chosen, least_penalty, penalty: Int64;
   so_far, sum, add: array[0..3] of Integer;
   VecInv: PCardinal;
+  y2pal: PInteger;
 begin
 {$if defined(ASM_DBMP) and defined(CPUX86_64)}
   asm
@@ -1126,42 +1123,52 @@ begin
 
   while plan_count < Plan.Y2MixedColors do
   begin
-    chosen_amount := 1;
-    chosen := 0;
     max_test_count := IfThen(plan_count = 0, 1, plan_count);
-    least_penalty := High(Int64);
-    for index := 0 to High(Plan.Y2Palette) do
-    begin
-      sum[0] := so_far[0]; sum[1] := so_far[1]; sum[2] := so_far[2]; sum[3] := so_far[3];
-      add[0] := Plan.Y2Palette[index][0]; add[1] := Plan.Y2Palette[index][1]; add[2] := Plan.Y2Palette[index][2]; add[3] := Plan.Y2Palette[index][3];
 
 {$if defined(ASM_DBMP) and defined(CPUX86_64)}
-      asm
-        push rax
-        push rbx
-        push rcx
-        push rdx
-        push rsi
-        push rdi
+    y2pal_len := Length(Plan.Y2Palette);
+    y2pal := @Plan.Y2Palette[0][0];
 
-        movdqu xmm1, oword ptr [sum]
-        movdqu xmm2, oword ptr [add]
-        mov rbx, least_penalty
+    asm
+      push rax
+      push rbx
+      push rcx
+      push rdx
+      push rsi
+      push rdi
+      push r8
+      push r9
+      push r10
+
+      xor r9, r9
+      xor r10, r10
+      inc r10
+
+      mov rbx, (1 shl 63) - 1
+
+      mov rdi, y2pal
+      mov r8d, dword ptr [y2pal_len]
+      shl r8d, 4
+      add r8, rdi
+
+      pal_loop:
+
+        movdqu xmm1, oword ptr [so_far]
+        movdqu xmm2, oword ptr [rdi]
 
         mov ecx, plan_count
+        inc rcx
         mov edx, max_test_count
-        inc ecx
-        add edx, ecx
+        shl rcx, 4
+        shl rdx, 4
+        add rcx, VecInv
+        add rdx, rcx
 
-        mov rdi, VecInv
-
-        loop:
+        inner_loop:
           paddd xmm1, xmm2
           paddd xmm2, xmm5
 
-          shl ecx, 1
-          movdqu xmm3, oword ptr [rdi + rcx * 8]
-          shr ecx, 1
+          movdqu xmm3, oword ptr [rcx]
 
           pmulld xmm3, xmm1
           psrld xmm3, cVecInvWidth
@@ -1178,30 +1185,49 @@ begin
           jae worst
 
             mov rbx, rax
-
-            mov eax, index
-            mov chosen, eax
-
-            mov eax, ecx
-            sub eax, plan_count
-            mov chosen_amount, eax
+            mov r9, rdi
+            mov r10, rcx
 
           worst:
 
-        inc ecx
-        cmp ecx, edx
-        jne loop
+        add rcx, 16
+        cmp rcx, rdx
+        jne inner_loop
 
-        mov least_penalty, rbx
+      add rdi, 16
+      cmp rdi, r8
+      jne pal_loop
 
-        pop rdi
-        pop rsi
-        pop rdx
-        pop rcx
-        pop rbx
-        pop rax
-      end ['rax', 'rbx', 'rcx', 'rdx', 'rsi', 'rdi'];
+      sub r9, y2pal
+      shr r9, 4
+      mov chosen, r9
+
+      sub r10, VecInv
+      shr r10, 4
+      sub r10d, plan_count
+      mov chosen_amount, r10
+
+      pop r10
+      pop r9
+      pop r8
+      pop rdi
+      pop rsi
+      pop rdx
+      pop rcx
+      pop rbx
+      pop rax
+    end ['rax', 'rbx', 'rcx', 'rdx', 'rsi', 'rdi', 'r8', 'r9', 'r10'];
 {$else}
+    chosen_amount := 1;
+    chosen := 0;
+
+    least_penalty := High(Int64);
+
+    for index := 0 to High(Plan.Y2Palette) do
+    begin
+      sum[0] := so_far[0]; sum[1] := so_far[1]; sum[2] := so_far[2]; sum[3] := so_far[3];
+      add[0] := Plan.Y2Palette[index][0]; add[1] := Plan.Y2Palette[index][1]; add[2] := Plan.Y2Palette[index][2]; add[3] := Plan.Y2Palette[index][3];
+
       for t := plan_count + 1 to plan_count + max_test_count do
       begin
         sum[0] += add[0];
@@ -1221,8 +1247,8 @@ begin
           chosen_amount := t - plan_count;
         end;
       end;
-{$endif}
     end;
+{$endif}
 
     chosen_amount := Min(chosen_amount, Length(Plan.List) - plan_count);
 {$if cTotalColors <= 256}
