@@ -1,13 +1,13 @@
 object MainForm: TMainForm
   Left = 277
   Height = 817
-  Top = 85
+  Top = 94
   Width = 984
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 960
   HorzScrollBar.Tracking = True
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 720
+  VertScrollBar.Page = 784
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
@@ -63,7 +63,7 @@ object MainForm: TMainForm
   object tbFrame: TTrackBar
     Left = 280
     Height = 25
-    Top = 776
+    Top = 792
     Width = 687
     Frequency = 25
     Max = 0
@@ -76,9 +76,9 @@ object MainForm: TMainForm
     TabOrder = 19
   end
   object chkPlay: TCheckBox
-    Left = 287
+    Left = 288
     Height = 17
-    Top = 753
+    Top = 771
     Width = 40
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
@@ -95,7 +95,7 @@ object MainForm: TMainForm
   object chkDithered: TCheckBox
     Left = 335
     Height = 17
-    Top = 753
+    Top = 771
     Width = 65
     Anchors = [akLeft, akBottom]
     Caption = 'Dithered'
@@ -148,7 +148,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 25
     Top = 256
-    Width = 69
+    Width = 72
     Caption = 'Run (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
@@ -250,13 +250,12 @@ object MainForm: TMainForm
     Height = 64
     Top = 720
     Width = 256
-    Anchors = [akLeft, akBottom]
     PopupMenu = pmProcesses
   end
   object chkMirrored: TCheckBox
     Left = 479
     Height = 17
-    Top = 753
+    Top = 771
     Width = 65
     Anchors = [akLeft, akBottom]
     Caption = 'Mirrored'
@@ -278,7 +277,7 @@ object MainForm: TMainForm
   object chkGamma: TCheckBox
     Left = 719
     Height = 19
-    Top = 751
+    Top = 769
     Width = 62
     Anchors = [akLeft, akBottom]
     AutoSize = False
@@ -298,7 +297,7 @@ object MainForm: TMainForm
   object chkReduced: TCheckBox
     Left = 407
     Height = 19
-    Top = 751
+    Top = 769
     Width = 64
     Anchors = [akLeft, akBottom]
     AutoSize = False
@@ -311,7 +310,7 @@ object MainForm: TMainForm
   object lblCorrel: TLabel
     Left = 924
     Height = 15
-    Top = 751
+    Top = 772
     Width = 35
     Alignment = taRightJustify
     Anchors = [akRight, akBottom]
@@ -322,7 +321,7 @@ object MainForm: TMainForm
   object Label5: TLabel
     Left = 836
     Height = 13
-    Top = 750
+    Top = 772
     Width = 79
     Anchors = [akRight, akBottom]
     Caption = 'Correlation (Q):'
@@ -366,7 +365,7 @@ object MainForm: TMainForm
   object sedPalIdx: TSpinEdit
     Left = 599
     Height = 21
-    Top = 750
+    Top = 768
     Width = 42
     Anchors = [akLeft, akBottom]
     MinValue = -1
@@ -377,7 +376,7 @@ object MainForm: TMainForm
   object Label8: TLabel
     Left = 551
     Height = 13
-    Top = 754
+    Top = 772
     Width = 35
     Anchors = [akLeft, akBottom]
     Caption = 'Palette'
@@ -427,12 +426,12 @@ object MainForm: TMainForm
     end
     object MenuItem5: TMenuItem
       Caption = 'Smooth'
-      ShortCut = 118
+      ShortCut = 117
       OnClick = btnSmoothClick
     end
     object MenuItem6: TMenuItem
       Caption = 'Save'
-      ShortCut = 119
+      ShortCut = 118
       OnClick = btnSaveClick
     end
   end

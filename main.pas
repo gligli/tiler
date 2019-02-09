@@ -2,6 +2,8 @@ unit main;
 
 {$mode delphi}
 
+{$define ASM_DBMP}
+
 interface
 
 uses
@@ -34,6 +36,7 @@ const
   cPaletteCount = 8;
   cBitsPerComp = 6;
   cPreDitherMixedColors = 2;
+  cVecInvWidth = 16;
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
   cTilePaletteSize = 16;
@@ -199,7 +202,7 @@ type
     List: array[0..cTotalColors - 1] of TPalPixel;
     Count: Integer;
     LumaPal: array of Integer;
-    Y2Palette: array of array[0..2] of Integer;
+    Y2Palette: array of array[0..3] of Integer;
     Y2MixedColors: Integer;
   end;
 
@@ -267,6 +270,7 @@ type
 
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
+    procedure Button1Click(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
     procedure chkLABChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
@@ -393,6 +397,7 @@ end;
 
 var
   gGammaCorLut: array[0..High(cGamma), 0..High(Byte)] of TFloat;
+  gVecInv: array[0..256 * 4 - 1] of Cardinal;
 
 procedure InitLuts;
 var
@@ -401,6 +406,9 @@ begin
   for g := 0 to High(cGamma) do
     for i := 0 to High(Byte) do
       gGammaCorLut[g, i] := power(i / 255.0, cGamma[g]);
+
+  for i := 0 to High(gVecInv) do
+    gVecInv[i] := iDiv0(1 shl cVecInvWidth, i shr 2);
 end;
 
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -851,6 +859,23 @@ procedure TMainForm.btnDebugClick(Sender: TObject);
 begin
 end;
 
+procedure TMainForm.Button1Click(Sender: TObject);
+var
+  i: Integer;
+  seed: Cardinal;
+  pal: array[0 .. 15] of Integer;
+  plan: TMixingPlan;
+begin
+  seed := 42;
+  for i := 0 to 15 do
+    pal[i] := RandInt(1 shl 24, seed);
+  PreparePlan(plan, 4, pal);
+  DeviseBestMixingPlan(plan, 255, 255, 255);
+  DeviseBestMixingPlan(plan, 0, 128, 255);
+  DeviseBestMixingPlan(plan, 128, 128, 128);
+  DeviseBestMixingPlan(plan, 0, 0, 0);
+end;
+
 procedure TMainForm.btnSaveClick(Sender: TObject);
 var
   dataFS, soundFS: TFileStream;
@@ -1005,6 +1030,7 @@ begin
     Plan.Y2Palette[i][0] := r;
     Plan.Y2Palette[i][1] := g;
     Plan.Y2Palette[i][2] := b;
+    Plan.Y2Palette[i][3] := Plan.LumaPal[i] div cLumaMultiplier;
   end
 end;
 
@@ -1038,30 +1064,145 @@ begin
 end;
 
 procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; r, g, b: Integer);
+label
+  loop, worst;
 var
-  p, t, index, max_test_count, chosen_amount, chosen: Integer;
+  t, index, max_test_count, chosen_amount, chosen, plan_count: Integer;
   least_penalty, penalty: Int64;
-  so_far: array[0..2] of Integer;
-  sum: array[0..2] of Integer;
-  add: array[0..2] of Integer;
+  so_far, sum, add: array[0..3] of Integer;
+  VecInv: PCardinal;
 begin
-  Plan.Count := 0;
+{$if defined(ASM_DBMP) and defined(CPUX86_64)}
+  asm
+    sub rsp, 16 * 6
+    movdqu oword ptr [rsp + $00], xmm1
+    movdqu oword ptr [rsp + $10], xmm2
+    movdqu oword ptr [rsp + $20], xmm3
+    movdqu oword ptr [rsp + $30], xmm4
+    movdqu oword ptr [rsp + $40], xmm5
+    movdqu oword ptr [rsp + $50], xmm6
 
-  so_far[0] := 0; so_far[1] := 0; so_far[2] := 0;
+    push rax
+    push rbx
+    push rcx
 
-  while Plan.Count < Plan.Y2MixedColors do
+    mov eax, r
+    mov ebx, g
+    mov ecx, b
+
+    pinsrd xmm4, eax, 0
+    pinsrd xmm4, ebx, 1
+    pinsrd xmm4, ecx, 2
+
+    imul eax, cRedMultiplier
+    imul ebx, cGreenMultiplier
+    imul ecx, cBlueMultiplier
+
+    add eax, ebx
+    add eax, ecx
+    imul eax, (1 shl 22) / cLumaMultiplier
+    shr eax, 22
+
+    pinsrd xmm4, eax, 3
+
+    mov rax, 1 or (1 shl 32)
+    pinsrq xmm5, rax, 0
+    pinsrq xmm5, rax, 1
+
+    mov rax, (cRedMultiplier * 3 / 16) or ((cGreenMultiplier * 3 / 16) shl 32)
+    pinsrq xmm6, rax, 0
+    mov rax, (cBlueMultiplier * 3 / 16) or ((cLumaMultiplier * 4 / 16) shl 32)
+    pinsrq xmm6, rax, 1
+
+    pop rcx
+    pop rbx
+    pop rax
+  end;
+{$endif}
+
+  VecInv := @gVecInv[0];
+  plan_count := 0;
+  so_far[0] := 0; so_far[1] := 0; so_far[2] := 0; so_far[3] := 0;
+
+  while plan_count < Plan.Y2MixedColors do
   begin
     chosen_amount := 1;
     chosen := 0;
-    max_test_count := IfThen(Plan.Count = 0, 1, Plan.Count);
+    max_test_count := IfThen(plan_count = 0, 1, plan_count);
     least_penalty := High(Int64);
     for index := 0 to High(Plan.Y2Palette) do
     begin
-      sum[0] := so_far[0]; sum[1] := so_far[1]; sum[2] := so_far[2];
-      add[0] := Plan.Y2Palette[index][0]; add[1] := Plan.Y2Palette[index][1]; add[2] := Plan.Y2Palette[index][2];
+      sum[0] := so_far[0]; sum[1] := so_far[1]; sum[2] := so_far[2]; sum[3] := so_far[3];
+      add[0] := Plan.Y2Palette[index][0]; add[1] := Plan.Y2Palette[index][1]; add[2] := Plan.Y2Palette[index][2]; add[3] := Plan.Y2Palette[index][3];
 
-      p := 1;
-      while p <= max_test_count do
+{$if defined(ASM_DBMP) and defined(CPUX86_64)}
+      asm
+        push rax
+        push rbx
+        push rcx
+        push rdx
+        push rsi
+        push rdi
+
+        movdqu xmm1, oword ptr [sum]
+        movdqu xmm2, oword ptr [add]
+        mov rbx, least_penalty
+
+        mov ecx, plan_count
+        mov edx, max_test_count
+        inc ecx
+        add edx, ecx
+
+        mov rdi, VecInv
+
+        loop:
+          paddd xmm1, xmm2
+          paddd xmm2, xmm5
+
+          shl ecx, 1
+          movdqu xmm3, oword ptr [rdi + rcx * 8]
+          shr ecx, 1
+
+          pmulld xmm3, xmm1
+          psrld xmm3, cVecInvWidth
+
+          psubd xmm3, xmm4
+          pmulld xmm3, xmm3
+          pmulld xmm3, xmm6
+
+          phaddd xmm3, xmm3
+          phaddd xmm3, xmm3
+          pextrd eax, xmm3, 0
+
+          cmp rax, rbx
+          jae worst
+
+            mov rbx, rax
+
+            mov eax, index
+            mov chosen, eax
+
+            mov eax, ecx
+            sub eax, plan_count
+            mov chosen_amount, eax
+
+          worst:
+
+        inc ecx
+        cmp ecx, edx
+        jne loop
+
+        mov least_penalty, rbx
+
+        pop rdi
+        pop rsi
+        pop rdx
+        pop rcx
+        pop rbx
+        pop rax
+      end ['rax', 'rbx', 'rcx', 'rdx', 'rsi', 'rdi'];
+{$else}
+      for t := plan_count + 1 to plan_count + max_test_count do
       begin
         sum[0] += add[0];
         sum[1] += add[1];
@@ -1071,34 +1212,47 @@ begin
         Inc(add[1]);
         Inc(add[2]);
 
-        t := Plan.Count + p;
         penalty := ColorCompare(r, g, b, sum[0] div t, sum[1] div t, sum[2] div t);
 
         if penalty < least_penalty then
         begin
           least_penalty := penalty;
           chosen := index;
-          chosen_amount := p;
+          chosen_amount := t - plan_count;
         end;
-
-        Inc(p);
       end;
+{$endif}
     end;
 
-    chosen_amount := Min(chosen_amount, Length(Plan.List) - Plan.Count);
+    chosen_amount := Min(chosen_amount, Length(Plan.List) - plan_count);
 {$if cTotalColors <= 256}
-    FillByte(Plan.List[Plan.Count], chosen_amount, chosen);
+    FillByte(Plan.List[plan_count], chosen_amount, chosen);
 {$else}
-    FillDWord(Plan.List[Plan.Count], chosen_amount, chosen);
+    FillDWord(Plan.List[plan_count], chosen_amount, chosen);
 {$endif}
-    Inc(Plan.Count, chosen_amount);
+    Inc(plan_count, chosen_amount);
 
     so_far[0] += Plan.Y2Palette[chosen][0] * chosen_amount;
     so_far[1] += Plan.Y2Palette[chosen][1] * chosen_amount;
     so_far[2] += Plan.Y2Palette[chosen][2] * chosen_amount;
+    so_far[3] += Plan.Y2Palette[chosen][3] * chosen_amount;
   end;
 
-  QuickSort(Plan.List[0], 0, Plan.Count - 1, SizeOf(TPalPixel), @PlanCompareLuma, @Plan.LumaPal[0]);
+  QuickSort(Plan.List[0], 0, plan_count - 1, SizeOf(TPalPixel), @PlanCompareLuma, @Plan.LumaPal[0]);
+
+  Plan.Count := plan_count;
+
+{$if defined(ASM_DBMP) and defined(CPUX86_64)}
+  asm
+    movdqu xmm1, oword ptr [rsp + $00]
+    movdqu xmm2, oword ptr [rsp + $10]
+    movdqu xmm3, oword ptr [rsp + $20]
+    movdqu xmm4, oword ptr [rsp + $30]
+    movdqu xmm5, oword ptr [rsp + $40]
+    movdqu xmm6, oword ptr [rsp + $50]
+    add rsp, 16 * 6
+  end;
+{$endif}
 end;
 
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
