@@ -141,7 +141,18 @@ const
     42, 26, 38, 22, 41, 25, 37, 21
   );
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 3, 2, 3, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 3, 2, 2, 1, 2);
+
+  cPalettePattern : array[0 .. 8 - 1, 0 .. cTilePaletteSize - 1] of TFloat = (
+    (0.0000000, 0.0085450, 0.0151019, 0.0254995, 0.0377196, 0.0537513, 0.0739068, 0.0996602, 0.1323631, 0.1739889, 0.2269247, 0.2942664, 0.3799232, 0.4888819, 0.6274788, 0.8037771),
+    (0.0042725, 0.0118234, 0.0203007, 0.0316095, 0.0457354, 0.0638290, 0.0867835, 0.1160116, 0.1531760, 0.2004568, 0.2605955, 0.3370948, 0.4344026, 0.5581804, 0.7156279, 0.9159045),
+    (0.0021363, 0.0101842, 0.0177013, 0.0285545, 0.0417275, 0.0587901, 0.0803451, 0.1078359, 0.1427695, 0.1872229, 0.2437601, 0.3156806, 0.4071629, 0.5235311, 0.6715534, 0.8598408),
+    (0.0064088, 0.0134626, 0.0229001, 0.0346645, 0.0497433, 0.0688679, 0.0932218, 0.1241873, 0.1635825, 0.2136907, 0.2774309, 0.3585090, 0.4616422, 0.5928296, 0.7597025, 0.9719682),
+    (0.0010681, 0.0093646, 0.0164016, 0.0270270, 0.0397235, 0.0562707, 0.0771260, 0.1037481, 0.1375663, 0.1806059, 0.2353424, 0.3049735, 0.3935430, 0.5062065, 0.6495161, 0.8318089),
+    (0.0032044, 0.0110038, 0.0190010, 0.0300820, 0.0437314, 0.0613096, 0.0835643, 0.1119238, 0.1479728, 0.1938398, 0.2521778, 0.3263877, 0.4207827, 0.5408557, 0.6935907, 0.8878726),
+    (0.0057679, 0.0129709, 0.0221203, 0.0337480, 0.0485410, 0.0673562, 0.0912903, 0.1217346, 0.1604605, 0.2097206, 0.2723803, 0.3520847, 0.4534703, 0.5824348, 0.7464801, 0.9551491),
+    (0.0074769, 0.0142822, 0.0241998, 0.0361921, 0.0517473, 0.0713874, 0.0964410, 0.1282752, 0.1687857, 0.2203077, 0.2858486, 0.3692161, 0.4752621, 0.6101542, 0.7817398, 1.0000000)
+  );
 
 type
   TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
@@ -171,7 +182,7 @@ type
   PTileMapItem = ^TTileMapItem;
 
   TTileMapItem = record
-    GlobalTileIndex, FrameTileIndex, TmpIndex: Integer;
+    GlobalTileIndex, TmpIndex: Integer;
     HMirror,VMirror,Smoothed: Boolean;
     PalIdx: Integer;
   end;
@@ -183,7 +194,6 @@ type
   TFrame = record
     Index: Integer;
     Tiles: array[0..(cTileMapSize - 1)] of TTile;
-    TilesIndexes: array of Integer;
     TileMap: array[0..(cTileMapHeight - 1),0..(cTileMapWidth - 1)] of TTileMapItem;
     KeyFrame: PKeyFrame;
   end;
@@ -302,7 +312,7 @@ type
 
     FCS: TRTLCriticalSection;
 
-    function ComputeYUVCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+    function ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
     procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -311,7 +321,8 @@ type
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
-    procedure Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer; ATilePage: Integer);
+    procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
+      ATilePage: Integer);
 
     procedure RGBToYUV(r, g, b: Integer; GammaCor: Integer; out y, u, v: TFloat); overload;
     procedure RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); overload;
@@ -355,7 +366,6 @@ type
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
-    procedure IndexFrameTiles(AFrame: PFrame);
     procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
 
     function DoExternalPCMEnc(AFN: String; Volume: Integer): String;
@@ -573,22 +583,22 @@ begin
   Result := CompareManhattan192Ptr(@a[0], @b[0]);
 end;
 
-function TMainForm.ComputeYUVCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+function TMainForm.ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
 var
   i: Integer;
   ya, yb: TDoubleDynArray;
-  y, u, v: TFloat;
+  fr, fg, fb: TFloat;
 begin
   SetLength(ya, Length(a) * 3);
   SetLength(yb, Length(a) * 3);
 
   for i := 0 to High(a) do
   begin
-    RGBToYUV((a[i] shr 16) and $ff, (a[i] shr 8) and $ff, a[i] and $ff, y, u, v);
-    ya[i] := y; ya[i + Length(a)] := u; ya[i + Length(a) * 2] := v;
+    fr := (a[i] shr 16) and $ff; fg := (a[i] shr 8) and $ff; fb := a[i] and $ff;
+    ya[i] := fr; ya[i + Length(a)] := fg; ya[i + Length(a) * 2] := fb;
 
-    RGBToYUV((b[i] shr 16) and $ff, (b[i] shr 8) and $ff, b[i] and $ff, y, u, v);
-    yb[i] := y; yb[i + Length(a)] := u; yb[i + Length(a) * 2] := v;
+    fr := (b[i] shr 16) and $ff; fg := (b[i] shr 8) and $ff; fb := b[i] and $ff;
+    yb[i] := fr; yb[i + Length(a)] := fg; yb[i + Length(a) * 2] := fb;
   end;
 
   Result := PearsonCorrelation(ya, yb, Length(a) * 3);
@@ -810,11 +820,6 @@ procedure TMainForm.btnReindexClick(Sender: TObject);
     end;
   end;
 
-  procedure DoIndexFrameTiles(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    IndexFrameTiles(@FFrames[AIndex]);
-  end;
-
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -825,8 +830,6 @@ begin
   ProgressRedraw(1);
   ReindexTiles;
   ProgressRedraw(2);
-  ProcThreadPool.DoParallelLocalProc(@DoIndexFrameTiles, 0, High(FFrames));
-  ProgressRedraw(3);
 
   tbFrameChange(nil);
 end;
@@ -978,7 +981,7 @@ procedure TMainForm.tbFrameChange(Sender: TObject);
 begin
   Screen.Cursor := crDefault;
   seAvgTPFEditingDone(nil);
-  Render(tbFrame.Position, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, sedPalIdx.Value, sePage.Value);
+  Render(tbFrame.Position, chkPlay.Checked, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, sedPalIdx.Value, sePage.Value);
 end;
 
 function TMainForm.GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
@@ -1436,17 +1439,6 @@ begin
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
-const
-  cPalettePattern : array[0 .. 8 - 1, 0 .. cTilePaletteSize - 1] of TFloat = (
-    (0.0000000, 0.0085450, 0.0151019, 0.0254995, 0.0377196, 0.0537513, 0.0739068, 0.0996602, 0.1323631, 0.1739889, 0.2269247, 0.2942664, 0.3799232, 0.4888819, 0.6274788, 0.8037771),
-    (0.0042725, 0.0118234, 0.0203007, 0.0316095, 0.0457354, 0.0638290, 0.0867835, 0.1160116, 0.1531760, 0.2004568, 0.2605955, 0.3370948, 0.4344026, 0.5581804, 0.7156279, 0.9159045),
-    (0.0021363, 0.0101842, 0.0177013, 0.0285545, 0.0417275, 0.0587901, 0.0803451, 0.1078359, 0.1427695, 0.1872229, 0.2437601, 0.3156806, 0.4071629, 0.5235311, 0.6715534, 0.8598408),
-    (0.0064088, 0.0134626, 0.0229001, 0.0346645, 0.0497433, 0.0688679, 0.0932218, 0.1241873, 0.1635825, 0.2136907, 0.2774309, 0.3585090, 0.4616422, 0.5928296, 0.7597025, 0.9719682),
-    (0.0010681, 0.0093646, 0.0164016, 0.0270270, 0.0397235, 0.0562707, 0.0771260, 0.1037481, 0.1375663, 0.1806059, 0.2353424, 0.3049735, 0.3935430, 0.5062065, 0.6495161, 0.8318089),
-    (0.0032044, 0.0110038, 0.0190010, 0.0300820, 0.0437314, 0.0613096, 0.0835643, 0.1119238, 0.1479728, 0.1938398, 0.2521778, 0.3263877, 0.4207827, 0.5408557, 0.6935907, 0.8878726),
-    (0.0057679, 0.0129709, 0.0221203, 0.0337480, 0.0485410, 0.0673562, 0.0912903, 0.1217346, 0.1604605, 0.2097206, 0.2723803, 0.3520847, 0.4534703, 0.5824348, 0.7464801, 0.9551491),
-    (0.0074769, 0.0142822, 0.0241998, 0.0361921, 0.0517473, 0.0713874, 0.0964410, 0.1282752, 0.1687857, 0.2203077, 0.2858486, 0.3692161, 0.4752621, 0.6101542, 0.7817398, 1.0000000)
-  );
 var
   sx, sy, tx, ty, i, PalIdx, LastUsed: Integer;
   GTile: PTile;
@@ -1546,6 +1538,8 @@ begin
       if not OrigTile^.Active then
         Exit;
 
+      CopyTile(OrigTile^, AFrame^.Tiles[sx + sy * cTileMapWidth]);
+
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
       ComputeTileDCT(OrigTile^, False, True, False, False, False, 0, OrigTile^.PaletteRGB, OrigTileDCT);
@@ -1568,12 +1562,6 @@ begin
       // now that the palette is chosen, keep only one version of the tile
 
       AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
-
-      Move(KF^.PaletteIndexes[PalIdx][0], BestTile.PaletteIndexes[0], cTilePaletteSize * SizeOf(Integer));
-      Move(KF^.PaletteRGB[PalIdx][0], BestTile.PaletteRGB[0], cTilePaletteSize * SizeOf(Integer));
-
-      CopyTile(BestTile, AFrame^.Tiles[sx + sy * cTileMapWidth]);
-
       SetLength(BestTile.PaletteIndexes, 0);
       SetLength(BestTile.PaletteRGB, 0);
       OrigTile^ := BestTile;
@@ -1869,15 +1857,65 @@ begin
   end;
 end;
 
-procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer;
+procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
   ATilePage: Integer);
+
+  procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean);
+  var
+    col, r, g, b, tx, ty, txm, tym: Integer;
+    psl: PInteger;
+  begin
+    for ty := 0 to cTileWidth - 1 do
+    begin
+      psl := bitmap.ScanLine[ty + sy * cTileWidth];
+      Inc(psl, sx * cTileWidth);
+
+      tym := ty;
+      if vmir and mirrored then tym := cTileWidth - 1 - tym;
+
+      for tx := 0 to cTileWidth - 1 do
+      begin
+        txm := tx;
+        if hmir and mirrored then txm := cTileWidth - 1 - txm;
+
+        if dithered and Assigned(pal) then
+        begin
+          col := pal[tilePtr^.PalPixels[tym, txm]];
+          b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
+        end
+        else
+        begin
+          r := tilePtr^.RGBPixels[tym, txm, 0];
+          g := tilePtr^.RGBPixels[tym, txm, 1];
+          b := tilePtr^.RGBPixels[tym, txm, 2];
+        end;
+
+        if gamma then
+        begin
+          r := round(GammaCorrect(0, r) * 255.0);
+          g := round(GammaCorrect(0, g) * 255.0);
+          b := round(GammaCorrect(0, b) * 255.0);
+        end;
+
+        if not tilePtr^.Active then
+        begin
+          r := 255;
+          g := 0;
+          b := 255;
+        end;
+
+        psl^ := ToRGB(r, g, b);
+        Inc(psl);
+      end;
+    end;
+  end;
+
 var
-  i, j, r, g, b, ti, tx, ty, col: Integer;
-  pTiles, pDest, p: PInteger;
+  i, j, sx, sy, ti: Integer;
+  p: PInteger;
   tilePtr: PTile;
   TMItem: TTileMapItem;
   Frame: PFrame;
-  fn: String;
   pal: TIntegerDynArray;
   oriCorr, chgCorr: TIntegerDynArray;
 begin
@@ -1885,143 +1923,81 @@ begin
     Exit;
 
   AFrameIndex := EnsureRange(AFrameIndex, 0, high(FFrames));
-  ATilePage := EnsureRange(ATilePage, 0, high(FFrames));
 
   Frame := @FFrames[AFrameIndex];
 
   if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
     Exit;
 
-  lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame: ' + IntToStr(GetFrameTileCount(Frame));
+  if not playing then
+  begin
+    lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame: ' + IntToStr(GetFrameTileCount(Frame));
 
-  imgTiles.Picture.Bitmap.BeginUpdate;
+    imgTiles.Picture.Bitmap.BeginUpdate;
+    try
+      imgTiles.Picture.Bitmap.Canvas.Brush.Color := clAqua;
+      imgTiles.Picture.Bitmap.Canvas.Brush.Style := bsSolid;
+      imgTiles.Picture.Bitmap.Canvas.Clear;
+
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth div 2 - 1 do
+        begin
+          ti := cTileMapWidth div 2 * sy + sx + cTileMapSize div 2 * ATilePage;
+
+          if ti < Length(FTiles) then
+          begin
+            tilePtr := FTiles[ti];
+            pal := Frame^.KeyFrame^.PaletteRGB[Max(0, palIdx)];
+
+            DrawTile(imgTiles.Picture.Bitmap, sx, sy, tilePtr, pal, False, False);
+          end;
+        end;
+    finally
+      imgTiles.Picture.Bitmap.EndUpdate;
+    end;
+  end;
+
+  imgSource.Picture.Bitmap.BeginUpdate;
+  try
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
+      begin
+        tilePtr :=  @Frame^.Tiles[sy * cTileMapWidth + sx];
+        DrawTile(imgSource.Picture.Bitmap, sx, sy, tilePtr, nil, False, False);
+      end;
+  finally
+    imgSource.Picture.Bitmap.EndUpdate;
+  end;
+
   imgDest.Picture.Bitmap.BeginUpdate;
   try
-    // tile pages
-
-    for j := 0 to cScreenHeight - 1 do
-    begin
-      pTiles := imgTiles.Picture.Bitmap.ScanLine[j];
-
-      for i := 0 to cScreenWidth div 2 - 1 do
-      begin
-        ti := cTileMapWidth div 2 * (j shr 3) + (i shr 3) + cTileMapSize div 2 * ATilePage;
-
-        tx := i and (cTileWidth - 1);
-        ty := j and (cTileWidth - 1);
-
-        if ti >= Length(FTiles) then
-        begin
-          r := 0;
-          g := 255;
-          b := 255;
-        end
-        else
-        begin
-          tilePtr := FTiles[ti];
-
-          pal := Frame^.KeyFrame^.PaletteRGB[Max(0, spritePal)];
-
-          if dithered and Assigned(pal) then
-          begin
-            col := pal[tilePtr^.PalPixels[ty, tx]];
-
-            b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
-          end
-          else
-          begin
-            r := tilePtr^.RGBPixels[ty, tx, 0];
-            g := tilePtr^.RGBPixels[ty, tx, 1];
-            b := tilePtr^.RGBPixels[ty, tx, 2];
-          end;
-
-          if not tilePtr^.Active then
-          begin
-            r := 255;
-            g := 0;
-            b := 255;
-		     end;
-        end;
-
-        p := pTiles;
-        Inc(p, i);
-        p^ := ToRGB(r, g, b);
-      end;
-    end;
-
-    // dest screen
-
     SetLength(oriCorr, cScreenHeight * cScreenWidth * 2);
     SetLength(chgCorr, cScreenHeight * cScreenWidth * 2);
 
-    for j := 0 to cScreenHeight - 1 do
-    begin
-      pDest := imgDest.Picture.Bitmap.ScanLine[j];
-
-      for i := 0 to cScreenWidth - 1 do
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
       begin
-        tx := i and (cTileWidth - 1);
-        ty := j and (cTileWidth - 1);
-
-        TMItem := Frame^.TileMap[j shr 3, i shr 3];
-        if TMItem.Smoothed then
-        begin
-          // emulate smoothing (use previous frame tilemap item)
-          TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 3, i shr 3];
-          TMItem.GlobalTileIndex := Frame^.TilesIndexes[TMItem.FrameTileIndex];
-        end;
+        TMItem := Frame^.TileMap[sy, sx];
         ti := TMItem.GlobalTileIndex;
 
         if ti < Length(FTiles) then
         begin
-          tilePtr :=  @Frame^.Tiles[(j shr 3) * cTileMapWidth + (i shr 3)];
+          tilePtr :=  @Frame^.Tiles[sy * cTileMapWidth + sx];
           pal := tilePtr^.PaletteRGB;
-          oriCorr[j * cScreenWidth + i] := ToRGB(tilePtr^.RGBPixels[ty, tx, 0], tilePtr^.RGBPixels[ty, tx, 1], tilePtr^.RGBPixels[ty, tx, 2]);
-          oriCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := oriCorr[j * cScreenWidth + i];
 
           if reduced then
           begin
             tilePtr := FTiles[ti];
-            if mirrored and TMItem.HMirror then tx := cTileWidth - 1 - tx;
-            if mirrored and TMItem.VMirror then ty := cTileWidth - 1 - ty;
-            if spritePal < 0 then
+            if palIdx < 0 then
               pal := Frame^.KeyFrame^.PaletteRGB[TMItem.PalIdx]
             else
-              pal := Frame^.KeyFrame^.PaletteRGB[spritePal];
+              pal := Frame^.KeyFrame^.PaletteRGB[palIdx];
           end;
 
-          if dithered and Assigned(pal) then
-          begin
-            col := pal[tilePtr^.PalPixels[ty, tx]];
-            b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
-          end
-          else
-          begin
-            r := tilePtr^.RGBPixels[ty, tx, 0];
-            g := tilePtr^.RGBPixels[ty, tx, 1];
-            b := tilePtr^.RGBPixels[ty, tx, 2];
-          end;
-
-          if gamma then
-          begin
-            r := round(GammaCorrect(0, r) * 255.0);
-            g := round(GammaCorrect(0, g) * 255.0);
-            b := round(GammaCorrect(0, b) * 255.0);
-          end;
-
-          p := pDest;
-          Inc(p, i);
-          p^ := ToRGB(r, g, b);
-
-          chgCorr[j * cScreenWidth + i] := ToRGB(r, g, b);
-          chgCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := chgCorr[j * cScreenWidth + i];
+          DrawTile(imgDest.Picture.Bitmap, sx, sy, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
         end;
       end;
-    end;
-
-    lblCorrel.Caption := FormatFloat('0.0000', ComputeYUVCorrelation(oriCorr, chgCorr));
   finally
-    imgTiles.Picture.Bitmap.EndUpdate;
     imgDest.Picture.Bitmap.EndUpdate;
   end;
 
@@ -2044,14 +2020,16 @@ begin
     imgPalette.Picture.Bitmap.EndUpdate;
   end;
 
-  fn := Format(edInput.Text, [AFrameIndex]);
-  if FileExists(fn) then
-    imgSource.Picture.LoadFromFile(fn);
+  if not playing then
+  begin
+    for i := 0 to cScreenHeight - 1 do
+    begin
+      Move(PInteger(imgSource.Picture.Bitmap.ScanLine[i])^, oriCorr[i * cScreenWidth], cScreenWidth * SizeOf(Integer));
+      Move(PInteger(imgDest.Picture.Bitmap.ScanLine[i])^, chgCorr[i * cScreenWidth], cScreenWidth * SizeOf(Integer));
+    end;
 
-  imgSource.Invalidate;
-  imgDest.Invalidate;
-  imgTiles.Invalidate;
-  imgPalette.Invalidate;
+    lblCorrel.Caption := FormatFloat('0.0000', ComputeCorrelation(oriCorr, chgCorr));
+  end;
 end;
 
 procedure TMainForm.ProgressRedraw(CurFrameIdx: Integer; ProgressStep: TEncoderStep);
@@ -2076,6 +2054,8 @@ begin
     FProgressStep := ProgressStep;
     pbProgress.Position := Ord(FProgressStep) * cProgressMul;
     Screen.Cursor := crHourGlass;
+    FProgressPrevTime := GetTickCount;
+    FProgressStartTime := FProgressPrevTime;
   end;
 
   if (CurFrameIdx < 0) and (ProgressStep = esNone) then
@@ -2085,7 +2065,7 @@ begin
     FProgressStep := esNone;
     FProgressPosition := 0;
     FProgressPrevTime := GetTickCount;
-    FProgressStartTime := GetTickCount;
+    FProgressStartTime := FProgressPrevTime;
   end;
 
   pbProgress.Position := pbProgress.Position + (FProgressPosition - FOldProgressPosition);
@@ -2094,13 +2074,13 @@ begin
   lblPct.Invalidate;
   Application.ProcessMessages;
 
-  if (CurFrameIdx >= 0) or (ProgressStep <> esNone) then
+  t := GetTickCount;
+  if CurFrameIdx >= 0 then
   begin
-    t := GetTickCount;
     WriteLn('Step: ', GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), ' / ', FProgressPosition,
       #9'Time: ', FormatFloat('0.000', (t - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (t - FProgressStartTime) / 1000));
-    FProgressPrevTime := t;
   end;
+  FProgressPrevTime := t;
 
   FOldProgressPosition := FProgressPosition;
 end;
@@ -2116,7 +2096,7 @@ end;
 
 function TMainForm.GetFrameTileCount(AFrame: PFrame): Integer;
 var
-  Used: array of Boolean;
+  Used: TIntegerDynArray;
   i, j: Integer;
 begin
   Result := 0;
@@ -2125,14 +2105,14 @@ begin
     Exit;
 
   SetLength(Used, Length(FTiles));
-  FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+  FillDWord(Used[0], Length(FTiles), 0);
 
   for j := 0 to cTileMapHeight - 1 do
     for i := 0 to cTileMapWidth - 1 do
-      Used[AFrame^.TileMap[j, i].GlobalTileIndex] := True;
+      Used[AFrame^.TileMap[j, i].GlobalTileIndex] := 1;
 
   for i := 0 to High(Used) do
-    Inc(Result, ifthen(Used[i], 1));
+    Inc(Result, Used[i]);
 end;
 
 procedure TMainForm.CopyTile(const Src: TTile; var Dest: TTile);
@@ -2344,21 +2324,13 @@ begin
     PrevTMI := @APrevFrame^.TileMap[Y, sx];
     TMI := @AFrame^.TileMap[Y, sx];
 
-    if PrevTMI^.FrameTileIndex >= Length(AFrame^.TilesIndexes) then
-      Continue;
-
     // compare DCT of current tile with tile from prev frame tilemap
 
-    PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]]^;
-    Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]]^;
+    PrevTile := FTiles[PrevTMI^.GlobalTileIndex]^;
+    Tile_ := FTiles[TMI^.GlobalTileIndex]^;
 
-    if PrevTMI^.HMirror then HMirrorPalTile(PrevTile);
-    if PrevTMI^.VMirror then VMirrorPalTile(PrevTile);
-    if TMI^.HMirror then HMirrorPalTile(Tile_);
-    if TMI^.VMirror then VMirrorPalTile(Tile_);
-
-    ComputeTileDCT(PrevTile, True, True, FUseLAB, False, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
-    ComputeTileDCT(Tile_, True, True, FUseLAB, False, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
+    ComputeTileDCT(PrevTile, True, True, FUseLAB, PrevTMI^.HMirror, PrevTMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
+    ComputeTileDCT(Tile_, True, True, FUseLAB, TMI^.HMirror, TMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
 
     cmp := CompareEuclidean192(TileDCT, PrevTileDCT);
     cmp := sqrt(cmp * cSqrtFactor);
@@ -2367,8 +2339,7 @@ begin
 
     if Abs(cmp) <= Strength then
     begin
-      TMI^.GlobalTileIndex := AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex];
-      TMI^.FrameTileIndex := PrevTMI^.FrameTileIndex;
+      TMI^.GlobalTileIndex := PrevTMI^.GlobalTileIndex;
       TMI^.HMirror := PrevTMI^.HMirror;
       TMI^.VMirror := PrevTMI^.VMirror;
       TMI^.PalIdx := PrevTMI^.PalIdx;
@@ -2686,51 +2657,6 @@ begin
         FFrames[i].TileMap[y,x].GlobalTileIndex := IdxMap[FFrames[i].TileMap[y,x].GlobalTileIndex];
 end;
 
-function CompareTilesIndexes(Item1, Item2, UserParameter:Pointer):Integer;
-begin
-  Result := CompareValue(PInteger(Item1)^, PInteger(Item2)^);
-end;
-
-procedure TMainForm.IndexFrameTiles(AFrame: PFrame);
-var
-  x, y, i, cnt, UseCount: Integer;
-begin
-  // build a list of tiles indexes used by the frame
-
-  SetLength(AFrame^.TilesIndexes, cTileMapSize);
-
-  cnt := 0;
-  for i := 0 to High(FTiles) do
-    if FTiles[i]^.Active then
-    begin
-      UseCount := 0;
-      for y := 0 to (cTileMapHeight - 1) do
-        for x := 0 to (cTileMapWidth - 1) do
-          if AFrame^.TileMap[y, x].GlobalTileIndex = i then
-          begin
-            AFrame^.TilesIndexes[cnt] := i;
-            Inc(UseCount);
-          end;
-
-      if UseCount <> 0 then
-        Inc(cnt);
-    end;
-
-  SetLength(AFrame^.TilesIndexes, cnt);
-
-  // sort it
-
-  QuickSort(AFrame^.TilesIndexes[0], 0, High(AFrame^.TilesIndexes), SizeOf(AFrame^.TilesIndexes[0]), @CompareTilesIndexes);
-
-  // point tilemap on those indexes
-
-  for i := 0 to High(AFrame^.TilesIndexes) do
-    for y := 0 to (cTileMapHeight - 1) do
-      for x := 0 to (cTileMapWidth - 1) do
-        if AFrame^.TileMap[y, x].GlobalTileIndex = AFrame^.TilesIndexes[i] then
-          AFrame^.TileMap[y, x].FrameTileIndex := i;
-end;
-
 function TMainForm.DoExternalPCMEnc(AFN: String; Volume: Integer): String;
 var
   i: Integer;
@@ -2844,69 +2770,69 @@ var
 begin
   tileIdxStream := TMemoryStream.Create;
   try
-    tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
-    tiVBlank := True;
-
-    prevTileIndex := -1;
-    prevDTI := -1;
-    sameCount := 0;
-    for j := 0 to High(AFrame^.TilesIndexes) do
-    begin
-      diffTileIndex := AFrame^.TilesIndexes[j] - prevTileIndex;
-
-      if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
-          (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
-          ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
-      begin
-        DoTileIndex;
-        sameCount := 1;
-      end
-      else
-      begin
-        Inc(sameCount);
-      end;
-
-      if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
-          ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) div cTilesPerBank <>
-           (prevTileIndex + cTileIndexesTileOffset) div cTilesPerBank) then // any bank change must be a direct value
-      begin
-        vbl := tiVBlank;
-        if vbl then
-          CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
-
-        tileIdxStream.WriteByte(cTileIndexesDirectValue);
-        tileIdxStream.WriteWord(AFrame^.TilesIndexes[j] + cTileIndexesTileOffset);
-
-        if not vbl then
-          CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
-
-        diffTileIndex := -1;
-        sameCount := 0;
-      end;
-
-      prevTileIndex := AFrame^.TilesIndexes[j];
-      prevDTI := diffTileIndex;
-    end;
-
-    DoTileIndex;
-    tileIdxStream.WriteByte(cTileIndexesTerminator);
-    tileIdxStream.WriteByte(cMaxTilesPerFrame - Length(AFrame^.TilesIndexes));
-
-    // the whole tiles indices should stay in the same bank
-    if ADataStream.Size div cBankSize <> (ADataStream.Size + tileIdxStream.Size) div cBankSize then
-    begin
-      ADataStream.WriteByte(1);
-      while ADataStream.Size mod cBankSize <> 0 do
-        ADataStream.WriteByte(0);
-      DebugLn('Crossed bank limit!');
-    end
-    else
-    begin
-      ADataStream.WriteByte(0);
-    end;
-
-    tileIdxStream.Position := 0;
-    ADataStream.CopyFrom(tileIdxStream, tileIdxStream.Size);
+    //tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
+    //tiVBlank := True;
+    //
+    //prevTileIndex := -1;
+    //prevDTI := -1;
+    //sameCount := 0;
+    //for j := 0 to High(AFrame^.TilesIndexes) do
+    //begin
+    //  diffTileIndex := AFrame^.TilesIndexes[j] - prevTileIndex;
+    //
+    //  if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
+    //      (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
+    //      ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
+    //  begin
+    //    DoTileIndex;
+    //    sameCount := 1;
+    //  end
+    //  else
+    //  begin
+    //    Inc(sameCount);
+    //  end;
+    //
+    //  if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
+    //      ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) div cTilesPerBank <>
+    //       (prevTileIndex + cTileIndexesTileOffset) div cTilesPerBank) then // any bank change must be a direct value
+    //  begin
+    //    vbl := tiVBlank;
+    //    if vbl then
+    //      CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
+    //
+    //    tileIdxStream.WriteByte(cTileIndexesDirectValue);
+    //    tileIdxStream.WriteWord(AFrame^.TilesIndexes[j] + cTileIndexesTileOffset);
+    //
+    //    if not vbl then
+    //      CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
+    //
+    //    diffTileIndex := -1;
+    //    sameCount := 0;
+    //  end;
+    //
+    //  prevTileIndex := AFrame^.TilesIndexes[j];
+    //  prevDTI := diffTileIndex;
+    //end;
+    //
+    //DoTileIndex;
+    //tileIdxStream.WriteByte(cTileIndexesTerminator);
+    //tileIdxStream.WriteByte(cMaxTilesPerFrame - Length(AFrame^.TilesIndexes));
+    //
+    //// the whole tiles indices should stay in the same bank
+    //if ADataStream.Size div cBankSize <> (ADataStream.Size + tileIdxStream.Size) div cBankSize then
+    //begin
+    //  ADataStream.WriteByte(1);
+    //  while ADataStream.Size mod cBankSize <> 0 do
+    //    ADataStream.WriteByte(0);
+    //  DebugLn('Crossed bank limit!');
+    //end
+    //else
+    //begin
+    //  ADataStream.WriteByte(0);
+    //end;
+    //
+    //tileIdxStream.Position := 0;
+    //ADataStream.CopyFrom(tileIdxStream, tileIdxStream.Size);
 
   finally
     tileIdxStream.Free;
@@ -2961,7 +2887,7 @@ begin
     for x := 0 to cTileMapWidth - 1 do
     begin
       tmi := @AFrame^.TileMap[y, x];
-      rawTMI := (tmi^.FrameTileIndex + cTileMapIndicesOffset[AFrameIdx and 1]) and $1ff;
+      //rawTMI := (tmi^.FrameTileIndex + cTileMapIndicesOffset[AFrameIdx and 1]) and $1ff;
       if tmi^.HMirror then rawTMI := rawTMI or $200;
       if tmi^.VMirror then rawTMI := rawTMI or $400;
       //if tmi^.SpritePal then rawTMI := rawTMI or $800; //TODO: binary stream

@@ -425,12 +425,12 @@ object MainForm: TMainForm
     end
     object MenuItem5: TMenuItem
       Caption = 'Smooth'
-      ShortCut = 117
+      ShortCut = 118
       OnClick = btnSmoothClick
     end
     object MenuItem6: TMenuItem
       Caption = 'Save'
-      ShortCut = 118
+      ShortCut = 119
       OnClick = btnSaveClick
     end
   end
