@@ -186,7 +186,6 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     TabOrder = 7
-    Value = 3600
   end
   object seAvgTPF: TSpinEdit
     Left = 263
@@ -196,7 +195,7 @@ object MainForm: TMainForm
     MaxValue = 0
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 6
-    Value = 720
+    Value = 1520
   end
   object Label10: TLabel
     Left = 8

@@ -38,7 +38,7 @@ const
   cTileMapWidth = 160;
   cTileMapHeight = 66;
   cPaletteCount = 8;
-  cBitsPerComp = 6;
+  cBitsPerComp = 5;
 {$else}
   cTileMapWidth = 32;
   cTileMapHeight = 24;
@@ -46,7 +46,7 @@ const
   cBitsPerComp = 4;
 {$endif}
 
-  cPreDitherMixedColors = 2;
+  cPreDitherMixedColors = 4;
   cVecInvWidth = 16;
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
