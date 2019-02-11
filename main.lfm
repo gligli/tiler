@@ -21,10 +21,10 @@ object MainForm: TMainForm
   LCLVersion = '2.0.0.4'
   WindowState = wsMaximized
   object cbxStep: TComboBox
-    Left = 200
+    Left = 206
     Height = 21
-    Top = 256
-    Width = 119
+    Top = 240
+    Width = 113
     ItemHeight = 13
     Style = csDropDownList
     TabOrder = 20
@@ -32,7 +32,7 @@ object MainForm: TMainForm
   object pbProgress: TProgressBar
     Left = 8
     Height = 16
-    Top = 288
+    Top = 272
     Width = 273
     Smooth = True
     TabOrder = 11
@@ -107,7 +107,7 @@ object MainForm: TMainForm
   object Label2: TLabel
     Left = 8
     Height = 13
-    Top = 149
+    Top = 160
     Width = 118
     Caption = 'Tile limit (all; per frame)'
     ParentColor = False
@@ -139,7 +139,7 @@ object MainForm: TMainForm
   object Label4: TLabel
     Left = 8
     Height = 13
-    Top = 10
+    Top = 12
     Width = 28
     Caption = 'Input'
     ParentColor = False
@@ -147,7 +147,7 @@ object MainForm: TMainForm
   object btnRunAll: TButton
     Left = 8
     Height = 25
-    Top = 256
+    Top = 240
     Width = 72
     Caption = 'Run (F9)'
     OnClick = btnRunAllClick
@@ -174,33 +174,25 @@ object MainForm: TMainForm
   object Label7: TLabel
     Left = 8
     Height = 13
-    Top = 177
-    Width = 97
-    Caption = 'Max tiles per frame'
+    Top = 116
+    Width = 196
+    Caption = 'Palette color reach (colors ''weirdness'')'
     ParentColor = False
-  end
-  object seMaxTPF: TSpinEdit
-    Left = 263
-    Height = 21
-    Top = 175
-    Width = 56
-    MaxValue = 0
-    TabOrder = 7
   end
   object seAvgTPF: TSpinEdit
     Left = 263
     Height = 21
-    Top = 147
+    Top = 158
     Width = 56
     MaxValue = 0
     OnEditingDone = seAvgTPFEditingDone
-    TabOrder = 6
+    TabOrder = 7
     Value = 1520
   end
   object Label10: TLabel
     Left = 8
     Height = 13
-    Top = 66
+    Top = 56
     Width = 64
     Caption = 'WAV (mono)'
     ParentColor = False
@@ -208,14 +200,14 @@ object MainForm: TMainForm
   object edWAV: TEdit
     Left = 88
     Height = 21
-    Top = 64
+    Top = 52
     Width = 232
     TabOrder = 2
   end
   object Label1: TLabel
     Left = 8
     Height = 13
-    Top = 38
+    Top = 34
     Width = 55
     Caption = 'Output dir'
     ParentColor = False
@@ -223,7 +215,7 @@ object MainForm: TMainForm
   object edOutputDir: TEdit
     Left = 88
     Height = 21
-    Top = 36
+    Top = 30
     Width = 232
     TabOrder = 1
     Text = '.\sms\tiled'
@@ -231,7 +223,7 @@ object MainForm: TMainForm
   object Label9: TLabel
     Left = 8
     Height = 13
-    Top = 204
+    Top = 182
     Width = 153
     Caption = 'Temporal smoothing strength'
     ParentColor = False
@@ -239,7 +231,7 @@ object MainForm: TMainForm
   object seTempoSmoo: TSpinEdit
     Left = 263
     Height = 21
-    Top = 202
+    Top = 180
     Width = 56
     TabOrder = 8
     Value = 3
@@ -266,7 +258,7 @@ object MainForm: TMainForm
   object lblPct: TLabel
     Left = 281
     Height = 15
-    Top = 289
+    Top = 273
     Width = 39
     Alignment = taRightJustify
     AutoSize = False
@@ -285,13 +277,13 @@ object MainForm: TMainForm
     TabOrder = 18
   end
   object seMaxTiles: TSpinEdit
-    Left = 200
+    Left = 206
     Height = 21
-    Top = 147
+    Top = 158
     Width = 56
     MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
-    TabOrder = 5
+    TabOrder = 6
   end
   object chkReduced: TCheckBox
     Left = 407
@@ -329,7 +321,7 @@ object MainForm: TMainForm
   object chkLAB: TCheckBox
     Left = 8
     Height = 17
-    Top = 228
+    Top = 204
     Width = 211
     Caption = 'CIE L*a*b* color space instead of YUV'
     OnChange = chkLABChange
@@ -338,7 +330,7 @@ object MainForm: TMainForm
   object cbxYilMix: TComboBox
     Left = 263
     Height = 21
-    Top = 119
+    Top = 136
     Width = 56
     ItemHeight = 13
     ItemIndex = 4
@@ -350,13 +342,13 @@ object MainForm: TMainForm
       '16'
     )
     OnChange = cbxYilMixChange
-    TabOrder = 4
+    TabOrder = 5
     Text = '16'
   end
   object Label11: TLabel
-    Left = 8
+    Left = 9
     Height = 13
-    Top = 121
+    Top = 138
     Width = 149
     Caption = 'Yiluoma 2 mixed colors count'
     ParentColor = False
@@ -382,12 +374,23 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label12: TLabel
-    Left = 112
+    Left = 120
     Height = 13
-    Top = 260
+    Top = 244
     Width = 77
     Caption = 'Run up to step'
     ParentColor = False
+  end
+  object seColReach: TFloatSpinEdit
+    Left = 263
+    Height = 21
+    Top = 114
+    Width = 56
+    Increment = 25
+    MaxValue = 0
+    MinValue = 0
+    TabOrder = 4
+    Value = 100
   end
   object IdleTimer: TIdleTimer
     Interval = 42

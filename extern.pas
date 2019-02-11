@@ -1,6 +1,6 @@
 unit extern;
 
-{$mode delphi}
+{$mode objfpc}{$H+}
 
 interface
 

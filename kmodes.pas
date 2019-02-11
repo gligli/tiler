@@ -5,7 +5,7 @@ unit kmodes;
 //{$define GENERIC_DISSIM}
 //{$define NEW_FARTHEST_FIRST}
 
-{$mode delphi}
+{$mode objfpc}{$H+}
 
 interface
 
