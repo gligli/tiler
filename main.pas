@@ -423,10 +423,11 @@ end;
 var
   gGammaCorLut: array[0..High(cGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
+  gDCTLut:array[0..cTileWidth - 1, 0..cTileWidth - 1,0..cTileWidth - 1,0..cTileWidth - 1] of TFloat;
 
 procedure InitLuts;
 var
-  g, i: Integer;
+  g, i, v, u, y, x: Integer;
 begin
   for g := 0 to High(cGamma) do
     for i := 0 to High(Byte) do
@@ -434,6 +435,12 @@ begin
 
   for i := 0 to High(gVecInv) do
     gVecInv[i] := iDiv0(1 shl cVecInvWidth, i shr 2);
+
+  for v := 0 to (cTileWidth - 1) do
+    for u := 0 to (cTileWidth - 1) do
+      for y := 0 to (cTileWidth - 1) do
+        for x := 0 to (cTileWidth - 1) do
+		      gDCTLut[v, u, y, x] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
 end;
 
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -1693,8 +1700,9 @@ const
   cUVRatio: array[0..cTileWidth-1] of TFloat = (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1);
 var
   u, v, x, y, xx, yy, di, cpn: Integer;
-  s, q, vRatio, z: TFloat;
+  vRatio, z: TFloat;
   YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
+  pYuv, pLut: PFloat;
 begin
   SetLength(DCT, 3 * sqr(cTileWidth));
 
@@ -1736,14 +1744,20 @@ begin
 		    z := 0.0;
 
         for y := 0 to (cTileWidth - 1) do
-          for x := 0 to (cTileWidth - 1) do
-		      begin
-			      s := YUVPixels[cpn,y,x];
+        begin
+          pYuv := @YUVPixels[cpn, y, 0];
+          pLut := @gDCTLut[v, u, y, 0];
 
-			      q := s * cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
-
-			      z += q;
-          end;
+          // unroll x by cTileWidth
+          z += pYuv^ * pLut^; Inc(pYuv); Inc(pLut);
+          z += pYuv^ * pLut^; Inc(pYuv); Inc(pLut);
+          z += pYuv^ * pLut^; Inc(pYuv); Inc(pLut);
+          z += pYuv^ * pLut^; Inc(pYuv); Inc(pLut);
+          z += pYuv^ * pLut^; Inc(pYuv); Inc(pLut);
+          z += pYuv^ * pLut^; Inc(pYuv); Inc(pLut);
+          z += pYuv^ * pLut^; Inc(pYuv); Inc(pLut);
+          z += pYuv^ * pLut^;
+        end;
 
         DCT[di] := cUVRatio[u] * vRatio * z;
 
