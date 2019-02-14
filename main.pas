@@ -740,6 +740,7 @@ var
   fn: String;
   kfCnt, frc: Integer;
   isKf: Boolean;
+  kfSL: TStringList;
   sfr, efr: Integer;
 begin
   ProgressRedraw;
@@ -793,24 +794,36 @@ begin
 
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames));
 
-  kfCnt := 0;
-  for i := 0 to High(FFrames) do
-  begin
-    fn := Format(inPath, [i]);
-    isKf := FileExists(ChangeFileExt(fn, '.kf')) or (i = 0);
-    if isKf then
-      Inc(kfCnt);
-  end;
+  kfSL := TStringList.Create;
+  try
+    fn := ChangeFileExt(Format(inPath, [0]), '.kf');
+    if FileExists(fn) then
+      kfSL.LoadFromFile(fn);
 
-  SetLength(FKeyFrames, kfCnt);
-  kfCnt := -1;
-  for i := 0 to High(FFrames) do
-  begin
-    fn := Format(inPath, [i]);
-    isKf := FileExists(ChangeFileExt(fn, '.kf')) or (i = 0);
-    if isKf then
-      Inc(kfCnt);
-    FFrames[i].KeyFrame := @FKeyFrames[kfCnt];
+    kfCnt := 0;
+    for i := 0 to High(FFrames) do
+    begin
+      fn := ChangeFileExt(Format(inPath, [i]), '.kf');
+      isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
+      if isKf then
+      begin
+        WriteLn('KF: ', kfCnt, #9'Frame: ', i);
+        Inc(kfCnt);
+      end;
+    end;
+
+    SetLength(FKeyFrames, kfCnt);
+    kfCnt := -1;
+    for i := 0 to High(FFrames) do
+    begin
+      fn := ChangeFileExt(Format(inPath, [i]), '.kf');
+      isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
+      if isKf then
+        Inc(kfCnt);
+      FFrames[i].KeyFrame := @FKeyFrames[kfCnt];
+    end;
+  finally
+    kfSL.Free;
   end;
 
   for j := 0 to High(FKeyFrames) do
@@ -1133,11 +1146,17 @@ var
   VecInv: PCardinal;
   y2pal: PInteger;
 begin
+  EnterCriticalSection(Plan.CacheCS);
   if Plan.CountCache[col] < $80 then
   begin
     Result := Plan.CountCache[col];
     Move(Plan.ListCache[col, 0], List[0], Result);
+    LeaveCriticalSection(Plan.CacheCS);
     Exit;
+  end
+  else
+  begin
+    LeaveCriticalSection(Plan.CacheCS);
   end;
 
   FromRGB(col, r, g, b);
@@ -1349,10 +1368,10 @@ begin
   end;
 {$endif}
 
-  EnterCriticalSection(FCS);
-  Plan.ListCache[col] := Copy(List, 0, plan_count);
+  EnterCriticalSection(Plan.CacheCS);
+  Plan.ListCache[col] := Copy(List, 0, Result);
   Plan.CountCache[col] := Result;
-  LeaveCriticalSection(FCS);
+  LeaveCriticalSection(Plan.CacheCS);
 end;
 
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
@@ -1398,11 +1417,12 @@ const
   cGMask = ((1 shl cBitsPerComp) - 1) shl 8;
   cBMask = ((1 shl cBitsPerComp) - 1) shl 16;
 var
-  col, cnt, sx, sy, tx, ty, i, PalIdx, LastUsed, CmlMiddle, acc: Integer;
+  col, cnt, sx, sy, tx, ty, i, PalIdx, LastUsed, CmlPct, acc: Integer;
   GTile: PTile;
   CMUsage: TList;
   CMItem: PCountIndexArray;
   TrueColorUsage: TCardinalDynArray;
+  CmlReach: TFloat;
 begin
   Assert(cPaletteCount <= Length(cPalettePattern));
 
@@ -1459,20 +1479,21 @@ begin
         Break;
       end;
 
-    CmlMiddle := 0;
-    acc := (AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth)) shr 1;
+    CmlPct := 0;
+    acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
+    acc := acc shr 1; // 50% point
     for i := 0 to cTotalColors - 1 do
     begin
       acc -= PCountIndexArray(CMUsage[i])^[ciCount];
       if acc <= 0 then
       begin
-        CmlMiddle := i;
+        CmlPct := i;
         Break;
       end;
     end;
 
     EnterCriticalSection(FCS);
-    WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlMiddle: ', CmlMiddle);
+    WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct);
     LeaveCriticalSection(FCS);
 
     // after LastUsed put 'weird' colors (ie. colors not in frames, but relevant for Y2)
@@ -1496,9 +1517,10 @@ begin
       SetLength(AKeyFrame^.PaletteRGB[PalIdx], cTilePaletteSize);
     end;
 
+    CmlReach := EnsureRange((CmlPct + 1) * ColorReach, 0, cTotalColors);
     for i := 0 to cTilePaletteSize - 1 do
       for PalIdx := 0 to cPaletteCount - 1 do
-        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMUsage[Round(cPalettePattern[PalIdx, i] * EnsureRange(CmlMiddle * ColorReach, 0, cTotalColors))])^[ciIndex];
+        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMUsage[Round(cPalettePattern[PalIdx, i] * CmlReach)])^[ciIndex];
 
     for i := 0 to cTilePaletteSize - 1 do
       for PalIdx := 0 to cPaletteCount - 1 do

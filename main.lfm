@@ -119,6 +119,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
+    Value = 240
   end
   object Label3: TLabel
     Left = 8
@@ -134,7 +135,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 232
     TabOrder = 0
-    Text = 'C:\tiler_misc\avs\%.4d.png'
+    Text = 'C:\tiler_misc\av\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
