@@ -130,6 +130,7 @@ const
     )
   );
 
+  cDitheringListLen = 64;
   cDitheringMap : array[0..8*8 - 1] of Byte = (
      0, 48, 12, 60,  3, 51, 15, 63,
     32, 16, 44, 28, 35, 19, 47, 31,
@@ -168,13 +169,7 @@ type
   PTile = ^TTile;
   PPTile = ^PTile;
 
-{$if cTotalColors <= 256}
-  TPalPixel = Byte;
-{$else}
-  TPalPixel = Integer;
-{$endif}
-  PPalPixel = ^TPalPixel;
-  TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of TPalPixel;
+  TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
 
   TTile = record
     RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
@@ -218,21 +213,23 @@ type
 
   PTileDataset = ^TTileDataset;
 
-  TKeyFrame = record
-    PaletteIndexes: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
-    PaletteRGB: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
-    StartFrame, EndFrame, FrameCount: Integer;
-    TileDS: PTileDataset;
-  end;
-
   TMixingPlan = record
     // static
     LumaPal: array of Integer;
     Y2Palette: array of array[0..3] of Integer;
     Y2MixedColors: Integer;
     // dynamic
-    List: array[0..63] of TPalPixel;
-    Count: Integer;
+    CacheCS: TRTLCriticalSection;
+    ListCache: TByteDynArray2;
+    CountCache: TByteDynArray;
+  end;
+
+  TKeyFrame = record
+    PaletteIndexes: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
+    PaletteRGB: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
+    MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
+    StartFrame, EndFrame, FrameCount: Integer;
+    TileDS: PTileDataset;
   end;
 
   { TMainForm }
@@ -343,7 +340,8 @@ type
 
     function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
-    procedure DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer);
+    procedure TerminatePlan(var Plan: TMixingPlan);
+    function DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
 
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
@@ -645,6 +643,8 @@ procedure TMainForm.btnDitherClick(Sender: TObject);
     FinalDitherTiles(@FFrames[AIndex]);
   end;
 
+var
+  i, j: Integer;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -654,6 +654,10 @@ begin
   ProgressRedraw(1);
   ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
   ProgressRedraw(2);
+
+  for i := 0 to High(FKeyFrames) do
+    for j := 0 to cPaletteCount - 1 do
+      TerminatePlan(FKeyFrames[i].MixingPlans[j]);
 
   tbFrameChange(nil);
 end;
@@ -892,17 +896,20 @@ procedure TMainForm.btnDebugClick(Sender: TObject);
 var
   i: Integer;
   seed: Cardinal;
-  pal: array[0 .. 15] of Integer;
+  pal: array[0.. 5] of Integer;
+  list: TByteDynArray;
   plan: TMixingPlan;
 begin
   seed := 42;
   for i := 0 to 15 do
     pal[i] := RandInt(1 shl 24, seed);
   PreparePlan(plan, 4, pal);
-  DeviseBestMixingPlan(plan, $ffffff);
-  DeviseBestMixingPlan(plan, $ff8000);
-  DeviseBestMixingPlan(plan, $808080);
-  DeviseBestMixingPlan(plan, $000000);
+
+  SetLength(list, cDitheringListLen);
+  DeviseBestMixingPlan(plan, $ffffff, list);
+  DeviseBestMixingPlan(plan, $ff8000, list);
+  DeviseBestMixingPlan(plan, $808080, list);
+  DeviseBestMixingPlan(plan, $000000, list);
 end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
@@ -1044,9 +1051,14 @@ begin
   FillChar(Plan, SizeOf(Plan), 0);
 
   Plan.Y2MixedColors := MixedColors;
-  Plan.Count := 0;
   SetLength(Plan.LumaPal, Length(pal));
   SetLength(Plan.Y2Palette, Length(pal));
+
+  SetLength(Plan.CountCache, cTotalColors);
+  SetLength(Plan.ListCache, cTotalColors);
+  FillByte(Plan.CountCache[0], cTotalColors, $ff);
+
+  InitializeCriticalSection(Plan.CacheCS);
 
   for i := 0 to High(pal) do
   begin
@@ -1064,6 +1076,16 @@ begin
   end
 end;
 
+procedure TMainForm.TerminatePlan(var Plan: TMixingPlan);
+begin
+  DeleteCriticalSection(Plan.CacheCS);
+
+  SetLength(Plan.LumaPal, 0);
+  SetLength(Plan.Y2Palette, 0);
+  SetLength(Plan.CountCache, 0);
+  SetLength(Plan.ListCache, 0);
+end;
+
 function PlanCompareLuma(Item1,Item2,UserParameter:Pointer):Integer;
 var
   pi1, pi2: PInteger;
@@ -1071,8 +1093,8 @@ begin
   pi1 := PInteger(UserParameter);
   pi2 := PInteger(UserParameter);
 
-  Inc(pi1, PPalPixel(Item1)^);
-  Inc(pi2, PPalPixel(Item2)^);
+  Inc(pi1, PByte(Item1)^);
+  Inc(pi2, PByte(Item2)^);
 
   Result := CompareValue(pi1^, pi2^);
 end;
@@ -1093,7 +1115,7 @@ begin
   Result += lumadiff * lumadiff;
 end;
 
-procedure TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer);
+function TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
 label
   pal_loop, inner_loop, worst;
 var
@@ -1104,6 +1126,13 @@ var
   VecInv: PCardinal;
   y2pal: PInteger;
 begin
+  if Plan.CountCache[col] < $80 then
+  begin
+    Result := Plan.CountCache[col];
+    Move(Plan.ListCache[col, 0], List[0], Result);
+    Exit;
+  end;
+
   FromRGB(col, r, g, b);
 
 {$if defined(ASM_DBMP) and defined(CPUX86_64)}
@@ -1287,12 +1316,8 @@ begin
     end;
 {$endif}
 
-    chosen_amount := Min(chosen_amount, Length(Plan.List) - plan_count);
-{$if cTotalColors <= 256}
-    FillByte(Plan.List[plan_count], chosen_amount, chosen);
-{$else}
-    FillDWord(Plan.List[plan_count], chosen_amount, chosen);
-{$endif}
+    chosen_amount := Min(chosen_amount, Length(List) - plan_count);
+    FillByte(List[plan_count], chosen_amount, chosen);
     Inc(plan_count, chosen_amount);
 
     so_far[0] += Plan.Y2Palette[chosen][0] * chosen_amount;
@@ -1301,9 +1326,9 @@ begin
     so_far[3] += Plan.Y2Palette[chosen][3] * chosen_amount;
   end;
 
-  QuickSort(Plan.List[0], 0, plan_count - 1, SizeOf(TPalPixel), @PlanCompareLuma, @Plan.LumaPal[0]);
+  QuickSort(List[0], 0, plan_count - 1, SizeOf(Byte), @PlanCompareLuma, @Plan.LumaPal[0]);
 
-  Plan.Count := plan_count;
+  Result := plan_count;
 
 {$if defined(ASM_DBMP) and defined(CPUX86_64)}
   asm
@@ -1316,20 +1341,28 @@ begin
     add rsp, 16 * 6
   end;
 {$endif}
+
+  EnterCriticalSection(FCS);
+  Plan.ListCache[col] := Copy(List, 0, plan_count);
+  Plan.CountCache[col] := Result;
+  LeaveCriticalSection(FCS);
 end;
 
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 var
   x, y: Integer;
-  map_value: Integer;
+  count, map_value: Integer;
+  list: TByteDynArray;
 begin
+  SetLength(list, cDitheringListLen);
+
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
     begin
       map_value := cDitheringMap[(y shl 3) + x];
-      DeviseBestMixingPlan(Plan, ATile.RGBPixels[y,x]);
-      map_value := (map_value * Plan.Count) shr 6;
-      ATile.PalPixels[y, x] := Plan.List[map_value];
+      count := DeviseBestMixingPlan(Plan, ATile.RGBPixels[y,x], list);
+      map_value := (map_value * count) shr 6;
+      ATile.PalPixels[y, x] := List[map_value];
     end;
 end;
 
@@ -1470,6 +1503,9 @@ begin
   finally
     CMUsage.Free;
   end;
+
+  for PalIdx := 0 to cPaletteCount - 1 do
+    PreparePlan(AKeyFrame^.MixingPlans[PalIdx], FY2MixedColors, AKeyFrame^.PaletteRGB[PalIdx]);
 end;
 
 procedure TMainForm.FinalDitherTiles(AFrame: PFrame);
@@ -1477,16 +1513,10 @@ var
   i, PalIdx: Integer;
   sx, sy: Integer;
   best, cmp: TFloat;
-  KF: PKeyFrame;
   BestTile: TTile;
   OrigTile: PTile;
   TileDCT, OrigTileDCT: TFloatDynArray;
-  Plan: array[0 .. cPaletteCount - 1] of TMixingPlan;
 begin
-  KF := AFrame^.KeyFrame;
-  for PalIdx := 0 to cPaletteCount - 1 do
-    PreparePlan(Plan[PalIdx], FY2MixedColors, KF^.PaletteRGB[PalIdx]);
-
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
@@ -1503,8 +1533,8 @@ begin
       best := MaxDouble;
       for i := 0 to cPaletteCount - 1 do
       begin
-        DitherTile(OrigTile^, Plan[i]);
-        ComputeTileDCT(OrigTile^, True, True, False, False, False, 0, KF^.PaletteRGB[i], TileDCT);
+        DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
+        ComputeTileDCT(OrigTile^, True, True, False, False, False, 0, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
         cmp := CompareEuclidean192(TileDCT, OrigTileDCT);
         if cmp < best then
         begin
@@ -1662,7 +1692,7 @@ procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, LAB,
 const
   cUVRatio: array[0..cTileWidth-1] of TFloat = (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1);
 var
-  col, u, v, x, y, xx, yy, di, cpn: Integer;
+  u, v, x, y, xx, yy, di, cpn: Integer;
   s, q, vRatio, z: TFloat;
   YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
 begin
@@ -1819,7 +1849,7 @@ procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, re
 
   procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean);
   var
-    col, r, g, b, tx, ty, txm, tym: Integer;
+    r, g, b, tx, ty, txm, tym: Integer;
     psl: PInteger;
   begin
     for ty := 0 to cTileWidth - 1 do
@@ -2396,7 +2426,7 @@ end;
 
 function TMainForm.GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer): Integer;
 var i, j: Integer;
-    px: TPalPixel;
+    px: Byte;
     cntL, cntH: array [0..cTilePaletteSize - 1] of Integer;
     highest: Integer;
 begin
@@ -2435,7 +2465,7 @@ end;
 
 function TMainForm.GetTileGridMedian(const ATile: TTile; other: Boolean): Integer;
 var i, j: Integer;
-    px: TPalPixel;
+    px: Byte;
     cntL, cntH: array [0..cTilePaletteSize - 1] of Integer;
     highest: Integer;
 begin
