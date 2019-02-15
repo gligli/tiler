@@ -227,9 +227,10 @@ type
   TKeyFrame = record
     PaletteIndexes: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
     PaletteRGB: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
-    MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
     StartFrame, EndFrame, FrameCount: Integer;
     TileDS: PTileDataset;
+    MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
+    FrameDitheringLeft: Integer;
   end;
 
   { TMainForm }
@@ -650,8 +651,6 @@ procedure TMainForm.btnDitherClick(Sender: TObject);
     FinalDitherTiles(@FFrames[AIndex]);
   end;
 
-var
-  i, j: Integer;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -661,10 +660,6 @@ begin
   ProgressRedraw(1);
   ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
   ProgressRedraw(2);
-
-  for i := 0 to High(FKeyFrames) do
-    for j := 0 to cPaletteCount - 1 do
-      TerminatePlan(FKeyFrames[i].MixingPlans[j]);
 
   tbFrameChange(nil);
 end;
@@ -841,6 +836,7 @@ begin
     FKeyFrames[j].StartFrame := sfr;
     FKeyFrames[j].EndFrame := efr;
     FKeyFrames[j].FrameCount := efr - sfr + 1;
+    FKeyFrames[j].FrameDitheringLeft := -1;
   end;
 
   ProgressRedraw(1);
@@ -1532,9 +1528,6 @@ begin
   finally
     CMUsage.Free;
   end;
-
-  for PalIdx := 0 to cPaletteCount - 1 do
-    PreparePlan(AKeyFrame^.MixingPlans[PalIdx], FY2MixedColors, AKeyFrame^.PaletteRGB[PalIdx]);
 end;
 
 procedure TMainForm.FinalDitherTiles(AFrame: PFrame);
@@ -1546,6 +1539,15 @@ var
   OrigTile: PTile;
   TileDCT, OrigTileDCT: TFloatDynArray;
 begin
+  EnterCriticalSection(FCS);
+  if AFrame^.KeyFrame^.FrameDitheringLeft < 0 then
+  begin
+    for i := 0 to cPaletteCount - 1 do
+      PreparePlan(AFrame^.KeyFrame^.MixingPlans[i], FY2MixedColors, AFrame^.KeyFrame^.PaletteRGB[i]);
+    AFrame^.KeyFrame^.FrameDitheringLeft := AFrame^.KeyFrame^.FrameCount;
+  end;
+  LeaveCriticalSection(FCS);
+
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
@@ -1582,6 +1584,13 @@ begin
       SetLength(BestTile.PaletteRGB, 0);
       OrigTile^ := BestTile;
     end;
+
+  EnterCriticalSection(FCS);
+  Dec(AFrame^.KeyFrame^.FrameDitheringLeft);
+  if AFrame^.KeyFrame^.FrameDitheringLeft <= 0 then
+    for i := 0 to cPaletteCount - 1 do
+      TerminatePlan(AFrame^.KeyFrame^.MixingPlans[i]);
+  LeaveCriticalSection(FCS);
 end;
 
 procedure TMainForm.LoadTiles;
