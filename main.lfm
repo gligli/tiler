@@ -219,7 +219,7 @@ object MainForm: TMainForm
     Top = 30
     Width = 232
     TabOrder = 1
-    Text = '.\sms\tiled'
+    Text = 'C:\tiler_misc\av_tiled\%.4d.png'
   end
   object Label9: TLabel
     Left = 8

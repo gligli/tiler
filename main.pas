@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, extern,
-  xalglib;
+  xalglib, IntfGraphics, FPimage, FPWritePNG, zstream;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -142,7 +142,7 @@ const
     42, 26, 38, 22, 41, 25, 37, 21
   );
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 3, 2, 2, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 3, 2, 2, 1, 1);
 
   cPalettePattern : array[0 .. 15, 0 .. cTilePaletteSize - 1] of TFloat = (
     (0.0000000, 0.0084269, 0.0148931, 0.0251470, 0.0371982, 0.0530083, 0.0728852, 0.0982827, 0.1305335, 0.1715840, 0.2237881, 0.2901990, 0.3746718, 0.4821245, 0.6188057, 0.7926671),
@@ -231,6 +231,12 @@ type
     TileDS: PTileDataset;
     MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
     FrameDitheringLeft: Integer;
+  end;
+
+  { T8BitPortableNetworkGraphic }
+
+  T8BitPortableNetworkGraphic = class(TPortableNetworkGraphic)
+    procedure InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter); override;
   end;
 
   { TMainForm }
@@ -369,14 +375,6 @@ type
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
     procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
-
-    function DoExternalPCMEnc(AFN: String; Volume: Integer): String;
-
-    procedure SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
-    procedure SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
-
-    procedure Save(ADataStream, ASoundStream: TStream);
-
   public
     { public declarations }
   end;
@@ -449,105 +447,6 @@ begin
   Result := gGammaCorLut[lut, x];
 end;
 
-Const
-  READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
-
-// helperfunction that does the bulk of the work.
-// We need to also collect stderr output in order to avoid
-// lock out if the stderr pipe is full.
-function internalRuncommand(p:TProcess;var outputstring:string;
-                            var stderrstring:string; var exitstatus:integer):integer;
-var
-    numbytes,bytesread,available : integer;
-    outputlength, stderrlength : integer;
-    stderrnumbytes,stderrbytesread : integer;
-begin
-  result:=-1;
-  try
-    try
-    p.Options :=  [poUsePipes];
-    bytesread:=0;
-    outputlength:=0;
-    stderrbytesread:=0;
-    stderrlength:=0;
-    p.Execute;
-    while p.Running do
-      begin
-        // Only call ReadFromStream if Data from corresponding stream
-        // is already available, otherwise, on  linux, the read call
-        // is blocking, and thus it is not possible to be sure to handle
-        // big data amounts bboth on output and stderr pipes. PM.
-        available:=P.Output.NumBytesAvailable;
-        if  available > 0 then
-          begin
-            if (BytesRead + available > outputlength) then
-              begin
-                outputlength:=BytesRead + READ_BYTES;
-                Setlength(outputstring,outputlength);
-              end;
-            NumBytes := p.Output.Read(outputstring[1+bytesread], available);
-            if NumBytes > 0 then
-              Inc(BytesRead, NumBytes);
-          end
-        // The check for assigned(P.stderr) is mainly here so that
-        // if we use poStderrToOutput in p.Options, we do not access invalid memory.
-        else if assigned(P.stderr) and (P.StdErr.NumBytesAvailable > 0) then
-          begin
-            available:=P.StdErr.NumBytesAvailable;
-            if (StderrBytesRead + available > stderrlength) then
-              begin
-                stderrlength:=StderrBytesRead + READ_BYTES;
-                Setlength(stderrstring,stderrlength);
-              end;
-            StderrNumBytes := p.StdErr.Read(stderrstring[1+StderrBytesRead], available);
-            if StderrNumBytes > 0 then
-              Inc(StderrBytesRead, StderrNumBytes);
-          end
-        else
-          Sleep(100);
-      end;
-    // Get left output after end of execution
-    available:=P.Output.NumBytesAvailable;
-    while available > 0 do
-      begin
-        if (BytesRead + available > outputlength) then
-          begin
-            outputlength:=BytesRead + READ_BYTES;
-            Setlength(outputstring,outputlength);
-          end;
-        NumBytes := p.Output.Read(outputstring[1+bytesread], available);
-        if NumBytes > 0 then
-          Inc(BytesRead, NumBytes);
-        available:=P.Output.NumBytesAvailable;
-      end;
-    setlength(outputstring,BytesRead);
-    while assigned(P.stderr) and (P.Stderr.NumBytesAvailable > 0) do
-      begin
-        available:=P.Stderr.NumBytesAvailable;
-        if (StderrBytesRead + available > stderrlength) then
-          begin
-            stderrlength:=StderrBytesRead + READ_BYTES;
-            Setlength(stderrstring,stderrlength);
-          end;
-        StderrNumBytes := p.StdErr.Read(stderrstring[1+StderrBytesRead], available);
-        if StderrNumBytes > 0 then
-          Inc(StderrBytesRead, StderrNumBytes);
-      end;
-    setlength(stderrstring,StderrBytesRead);
-    exitstatus:=p.exitstatus;
-    result:=0; // we came to here, document that.
-    except
-      on e : Exception do
-         begin
-           result:=1;
-           setlength(outputstring,BytesRead);
-         end;
-     end;
-  finally
-    p.free;
-  end;
-end;
-
 function lerp(x, y, alpha: TFloat): TFloat; inline;
 begin
   Result := x + (y - x) * alpha;
@@ -597,6 +496,18 @@ end;
 function CompareManhattan192(const a, b: TFloatDynArray): TFloat; inline;
 begin
   Result := CompareManhattan192Ptr(@a[0], @b[0]);
+end;
+
+{ T8BitPortableNetworkGraphic }
+
+procedure T8BitPortableNetworkGraphic.InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter);
+var
+  W: TFPWriterPNG absolute AWriter;
+begin
+  inherited InitializeWriter(AImage, AWriter);
+  W.Indexed := True;
+  W.UseAlpha := False;
+  W.CompressionLevel := clfastest;
 end;
 
 function TMainForm.ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
@@ -930,29 +841,37 @@ end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
 var
-  dataFS, soundFS: TFileStream;
+  i: Integer;
+  palPict: TPortableNetworkGraphic;
 begin
   if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(-1, esSave);
 
-  dataFS := TFileStream.Create(IncludeTrailingPathDelimiter(edOutputDir.Text) + 'data.bin', fmCreate);
-  soundFS := nil;
-  if Trim(edWAV.Text) <> '' then
-    soundFS := TFileStream.Create(DoExternalPCMEnc(edWAV.Text, 100), fmOpenRead or fmShareDenyWrite);
+  if chkDithered.Checked and Assigned(FKeyFrames[0].PaletteRGB[0]) then
+    palPict := T8BitPortableNetworkGraphic.Create
+  else
+    palPict := TPortableNetworkGraphic.Create;
 
-  ProgressRedraw(1);
+  palPict.Width := cScreenWidth;
+  palPict.Height := cScreenHeight;
+  palPict.PixelFormat := pf24bit;
 
   try
-    Save(dataFS, soundFS);
+    for i := 0 to High(FFrames) do
+    begin
+      Render(i, chkPlay.Checked, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, sedPalIdx.Value, sePage.Value);
+      imgDest.Repaint;
+
+      palPict.Canvas.Draw(0, 0, imgDest.Picture.Bitmap);
+      palPict.SaveToFile(Format(edOutputDir.Text, [i]));
+    end;
   finally
-    dataFS.Free;
-    if Assigned(soundFS) then
-      soundFS.Free;
+    palPict.Free;
   end;
 
-  ProgressRedraw(2);
+  ProgressRedraw(1);
 
   tbFrameChange(nil);
 end;
@@ -2763,453 +2682,6 @@ begin
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
         FFrames[i].TileMap[y,x].GlobalTileIndex := IdxMap[FFrames[i].TileMap[y,x].GlobalTileIndex];
-end;
-
-function TMainForm.DoExternalPCMEnc(AFN: String; Volume: Integer): String;
-var
-  i: Integer;
-  Output, ErrOut: String;
-  Process: TProcess;
-begin
-  Process := TProcess.Create(nil);
-
-  Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-  Process.Executable := 'pcmenc.exe';
-  Process.Parameters.Add('-p 4 -dt1 ' + IntToStr(cClocksPerSample) + ' -dt2 ' + IntToStr(cClocksPerSample) + ' -dt3 ' +
-    IntToStr(cClocksPerSample) + ' -cpuf ' + IntToStr(cZ80Clock) + ' -rto 3 -a ' + IntToStr(Volume) + ' -r 4096 -precision 8 "' + AFN + '"');
-  Process.ShowWindow := swoHIDE;
-  Process.Priority := ppIdle;
-
-  i := 0;
-  internalRuncommand(Process, Output, ErrOut, i); // destroys Process
-
-  Result := AFN + '.pcmenc';
-end;
-
-procedure TMainForm.SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
-//var
-//  j, prevTileIndex, diffTileIndex, prevDTI, sameCount, tiZ80Cycles: Integer;
-//  tiVBlank, vbl: Boolean;
-//  tileIdxStream: TMemoryStream;
-//
-//  function CurrentLineJitter: Integer;
-//  begin
-//    Result := round(IfThen(tiVBlank, -cLineJitterCompensation * cCyclesPerLine, cLineJitterCompensation * cCyclesPerLine));
-//  end;
-//
-//  procedure CountZ80Cycles(ACycleAdd: Integer);
-//  var
-//    cyPh: Integer;
-//  begin
-//    cyPh := cCyclesPerDisplayPhase[tiVBlank];
-//    tiZ80Cycles += ACycleAdd;
-//    if tiZ80Cycles > cyPh + CurrentLineJitter then
-//    begin
-//      tiZ80Cycles -= cyPh;
-//      tiVBlank := not tiVBlank;
-//      tileIdxStream.WriteByte(cTileIndexesVBlankSwitch);
-//      tiZ80Cycles += cTileIndexesTimings[tiVBlank, 4];
-//    end;
-//  end;
-//
-//  procedure DoTileIndex;
-//  var
-//    priorCount, cyAdd: Integer;
-//    vbl: Boolean;
-//  begin
-//    vbl := tiVBlank;
-//    if sameCount = 1 then
-//    begin
-//      if vbl then
-//        CountZ80Cycles(cTileIndexesTimings[tiVBlank, 1]);
-//      tileIdxStream.WriteByte(prevDTI - 1);
-//      if not vbl then
-//        CountZ80Cycles(cTileIndexesTimings[tiVBlank, 1]);
-//    end
-//    else if sameCount <> 0 then
-//    begin
-//      // split upload in case we need to switch VBlank in the midlde of it
-//      priorCount := sameCount;
-//      cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3];
-//
-//      while (tiZ80Cycles + cyAdd > cCyclesPerDisplayPhase[tiVBlank] + CurrentLineJitter) and (priorCount > 0) do
-//      begin
-//        Dec(priorCount);
-//        cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3];
-//      end;
-//
-//      // compute cycles
-//      cyAdd := cTileIndexesTimings[tiVBlank, 2] + priorCount * cTileIndexesTimings[tiVBlank, 3] +
-//               cTileIndexesTimings[not tiVBlank, 2] + (sameCount - priorCount) * cTileIndexesTimings[not tiVBlank, 3];
-//
-//      // in case we need to switch VBlank in the middle of the upload, add one more tile in "slow" not VBlank state
-//      if tiZ80Cycles + cyAdd > cCyclesPerDisplayPhase[tiVBlank] + CurrentLineJitter then
-//      begin
-//        if (priorCount > 0) and tiVBlank then
-//        begin
-//          Dec(priorCount);
-//          cyAdd -= cTileIndexesTimings[tiVBlank, 3];
-//          cyAdd += cTileIndexesTimings[not tiVBlank, 3];
-//        end
-//        else if (priorCount < sameCount) and not tiVBlank then
-//        begin
-//          Inc(priorCount);
-//          cyAdd += cTileIndexesTimings[tiVBlank, 3];
-//          cyAdd -= cTileIndexesTimings[not tiVBlank, 3];
-//        end;
-//      end;
-//
-//      // if we output only one command, only one fixed cost should have been added
-//      if priorCount = 0 then
-//        cyAdd -= cTileIndexesTimings[tiVBlank, 2]
-//      else if priorCount = sameCount then
-//        cyAdd -= cTileIndexesTimings[not tiVBlank, 2];
-//
-//      if priorCount > 0 then
-//        tileIdxStream.WriteByte(cTileIndexesRepeatStart + priorCount - 1);
-//
-//      CountZ80Cycles(cyAdd);
-//
-//      if sameCount - priorCount > 0 then
-//        tileIdxStream.WriteByte(cTileIndexesRepeatStart + sameCount - priorCount - 1);
-//    end;
-//  end;
-
-begin
-  //tileIdxStream := TMemoryStream.Create;
-  //try
-  //  tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
-  //  tiVBlank := True;
-  //
-  //  prevTileIndex := -1;
-  //  prevDTI := -1;
-  //  sameCount := 0;
-  //  for j := 0 to High(AFrame^.TilesIndexes) do
-  //  begin
-  //    diffTileIndex := AFrame^.TilesIndexes[j] - prevTileIndex;
-  //
-  //    if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
-  //        (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
-  //        ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
-  //    begin
-  //      DoTileIndex;
-  //      sameCount := 1;
-  //    end
-  //    else
-  //    begin
-  //      Inc(sameCount);
-  //    end;
-  //
-  //    if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
-  //        ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) div cTilesPerBank <>
-  //         (prevTileIndex + cTileIndexesTileOffset) div cTilesPerBank) then // any bank change must be a direct value
-  //    begin
-  //      vbl := tiVBlank;
-  //      if vbl then
-  //        CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
-  //
-  //      tileIdxStream.WriteByte(cTileIndexesDirectValue);
-  //      tileIdxStream.WriteWord(AFrame^.TilesIndexes[j] + cTileIndexesTileOffset);
-  //
-  //      if not vbl then
-  //        CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
-  //
-  //      diffTileIndex := -1;
-  //      sameCount := 0;
-  //    end;
-  //
-  //    prevTileIndex := AFrame^.TilesIndexes[j];
-  //    prevDTI := diffTileIndex;
-  //  end;
-  //
-  //  DoTileIndex;
-  //  tileIdxStream.WriteByte(cTileIndexesTerminator);
-  //  tileIdxStream.WriteByte(cMaxTilesPerFrame - Length(AFrame^.TilesIndexes));
-  //
-  //  // the whole tiles indices should stay in the same bank
-  //  if ADataStream.Size div cBankSize <> (ADataStream.Size + tileIdxStream.Size) div cBankSize then
-  //  begin
-  //    ADataStream.WriteByte(1);
-  //    while ADataStream.Size mod cBankSize <> 0 do
-  //      ADataStream.WriteByte(0);
-  //    DebugLn('Crossed bank limit!');
-  //  end
-  //  else
-  //  begin
-  //    ADataStream.WriteByte(0);
-  //  end;
-  //
-  //  tileIdxStream.Position := 0;
-  //  ADataStream.CopyFrom(tileIdxStream, tileIdxStream.Size);
-  //
-  //finally
-  //  tileIdxStream.Free;
-  //end;
-end;
-
-function CompareTMICache(Item1,Item2,UserParameter:Pointer):Integer;
-begin
-  Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
-end;
-
-procedure TMainForm.SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
-var
-  j, k, x, y, skipCount: Integer;
-  rawTMI, tmiCacheIdx, awaitingCacheIdx, awaitingCount: Integer;
-  smoothed: Boolean;
-  tmi: PTileMapItem;
-  rawTMIs: array[0..cTileMapSize] of Integer;
-  tmiCache: array[0..4095] of packed record
-    UsedCount: Integer;
-    RawTMI: Integer;
-  end;
-
-  procedure DoTilemapTileCommand(DoCache, DoSkip: Boolean);
-  begin
-    if DoSkip and (skipCount > 0) then
-    begin
-      ADataStream.WriteByte(cTileMapCommandSkip or (skipCount shl 1));
-      skipCount := 0;
-    end;
-
-    if DoCache and (awaitingCacheIdx <> cTileMapCacheSize) then
-      if awaitingCacheIdx < 0 then
-      begin
-        ADataStream.WriteByte(cTileMapCommandRaw[awaitingCount] or ((-awaitingCacheIdx) shr 8));
-        ADataStream.WriteByte((-awaitingCacheIdx) and $ff);
-      end
-      else
-      begin
-        ADataStream.WriteByte(cTileMapCommandCache[awaitingCount] or (awaitingCacheIdx shl 1));
-      end;
-  end;
-
-begin
-  for j := 0 to High(tmiCache) do
-  begin
-    tmiCache[j].UsedCount := 0;
-    tmiCache[j].RawTMI := j;
-  end;
-
-  for y := 0 to cTileMapHeight - 1 do
-    for x := 0 to cTileMapWidth - 1 do
-    begin
-      tmi := @AFrame^.TileMap[y, x];
-      rawTMI := 0; //rawTMI := (tmi^.FrameTileIndex + cTileMapIndicesOffset[AFrameIdx and 1]) and $1ff;
-      if tmi^.HMirror then rawTMI := rawTMI or $200;
-      if tmi^.VMirror then rawTMI := rawTMI or $400;
-      //if tmi^.SpritePal then rawTMI := rawTMI or $800; //TODO: binary stream
-      rawTMIs[x + y * cTileMapWidth] := rawTMI;
-      Inc(tmiCache[rawTMI].UsedCount);
-    end;
-
-  QuickSort(tmiCache[0], 0, High(tmiCache), SizeOf(tmiCache[0]), @CompareTMICache);
-
-  for j := 0 to cTileMapCacheSize div 2 - 1 do
-  begin
-    k := j * 2;
-
-    // 2:3 compression: high nibble b / high nibble a / low byte a / low byte b
-    ADataStream.WriteByte(((tmiCache[k + 1].RawTMI shr 8) shl 4) or (tmiCache[k].RawTMI shr 8));
-    ADataStream.WriteByte(tmiCache[k].RawTMI and $ff);
-    ADataStream.WriteByte(tmiCache[k + 1].RawTMI and $ff);
-  end;
-
-  awaitingCacheIdx := cTileMapCacheSize;
-  awaitingCount := 0;
-  skipCount := 0;
-  for j := 0 to cTileMapSize - 1 do
-  begin
-    smoothed := AFrame^.TileMap[j div cTileMapWidth, j mod cTileMapWidth].Smoothed;
-    rawTMI := rawTMIs[j];
-
-    tmiCacheIdx := -1;
-    for k := 0 to cTileMapCacheSize -1 do
-      if tmiCache[k].RawTMI = rawTMI then
-      begin
-        tmiCacheIdx := k;
-        Break;
-      end;
-    if tmiCacheIdx = -1  then
-      tmiCacheIdx := -rawTMI;
-
-    if ASkipFirst then
-    begin
-      if smoothed and (skipCount < cTileMapMaxSkip) then
-      begin
-        DoTilemapTileCommand(True, False);
-
-        Inc(skipCount);
-
-        awaitingCacheIdx := cTileMapCacheSize;
-        awaitingCount := 0;
-      end
-      else
-      begin
-        DoTilemapTileCommand(False, True);
-
-        if tmiCacheIdx = awaitingCacheIdx then
-        begin
-          Inc(awaitingCount);
-
-          if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
-          begin
-            DoTilemapTileCommand(True, False);
-
-            awaitingCacheIdx := cTileMapCacheSize;
-            awaitingCount := 0;
-          end;
-        end
-        else
-        begin
-          DoTilemapTileCommand(True, False);
-
-          awaitingCacheIdx := tmiCacheIdx;
-          awaitingCount := 1;
-        end;
-      end;
-    end
-    else
-    begin
-      if tmiCacheIdx = awaitingCacheIdx then
-      begin
-        Inc(awaitingCount);
-
-        if awaitingCount >= cTileMapMaxRepeat[awaitingCacheIdx < 0] then
-        begin
-          DoTilemapTileCommand(True, False);
-
-          awaitingCacheIdx := cTileMapCacheSize;
-          awaitingCount := 0;
-        end;
-      end
-      else
-      begin
-        DoTilemapTileCommand(True, False);
-
-        if smoothed and (skipCount < cTileMapMaxSkip) then
-        begin
-          Inc(skipCount);
-
-          awaitingCacheIdx := cTileMapCacheSize;
-          awaitingCount := 0;
-        end
-        else
-        begin
-          DoTilemapTileCommand(False, True);
-
-          awaitingCacheIdx := tmiCacheIdx;
-          awaitingCount := 1;
-        end;
-      end;
-    end;
-  end;
-
-  DoTilemapTileCommand(True, True);
-
-  ADataStream.WriteByte(cTileMapTerminator);
-end;
-
-procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
-var pp, pp2, i, j, x, y, frameStart, palIdx: Integer;
-    palpx: Byte;
-    prevKF: PKeyFrame;
-    SkipFirst: Boolean;
-    tilesPlanes: array[0..cTileWidth - 1, 0..3] of Byte;
-    TMStream: array[Boolean] of TMemoryStream;
-begin
-  // leave the size of one tile for index
-
-  for x := 0 to cTileWidth - 1 do
-    ADataStream.WriteDWord(0);
-
-  // tiles
-
-  for i := 0 to High(FTiles) do
-  begin
-    FillByte(tilesPlanes[0, 0], Sizeof(tilesPlanes), 0);
-    for y := 0 to cTileWidth - 1 do
-    begin
-      for x := 0 to cTileWidth - 1 do
-      begin
-        palpx := FTiles[i]^.PalPixels[y, x];
-        tilesPlanes[y, 0] := tilesPlanes[y, 0] or (((palpx and 1) shl 7) shr x);
-        tilesPlanes[y, 1] := tilesPlanes[y, 1] or (((palpx and 2) shl 6) shr x);
-        tilesPlanes[y, 2] := tilesPlanes[y, 2] or (((palpx and 4) shl 5) shr x);
-        tilesPlanes[y, 3] := tilesPlanes[y, 3] or (((palpx and 8) shl 4) shr x);
-      end;
-      for x := 0 to 3 do
-        ADataStream.WriteByte(tilesPlanes[y, x]);
-    end;
-  end;
-
-  DebugLn(['Total tiles size: ', ADataStream.Position]);
-  pp2 := ADataStream.Position;
-
-  // index
-
-  frameStart := ADataStream.Position + cBankSize;
-  i := ADataStream.Position;
-  ADataStream.Position := 0;
-  ADataStream.WriteWord(Length(FFrames));
-  ADataStream.WriteWord(frameStart div cBankSize);
-  ADataStream.WriteWord(frameStart mod cBankSize);
-  ADataStream.Position := i;
-
-  prevKF := nil;
-  for i := 0 to High(FFrames) do
-  begin
-    // palette
-
-    if FFrames[i].KeyFrame <> prevKF then
-    begin
-      ADataStream.WriteByte(cTilePaletteSize * 2);
-      for palIdx := 0 to cPaletteCount - 1 do
-        for j := 0 to cTilePaletteSize - 1 do
-          ADataStream.WriteByte(FFrames[i].KeyFrame^.PaletteIndexes[palIdx, j]);
-    end
-    else
-    begin
-      ADataStream.WriteByte(0);
-    end;
-
-    // tiles indexes
-
-    pp := ADataStream.Position;
-    SaveTileIndexes(ADataStream, @FFrames[i]);
-    DebugLn(['TileIndexes size: ', ADataStream.Position - pp]);
-
-    // tilemap
-
-    for SkipFirst := False to True do
-    begin
-      TMStream[SkipFirst] := TMemoryStream.Create;
-      SaveTileMap(TMStream[SkipFirst], @FFrames[i], i, SkipFirst);
-      DebugLn(['TM size: ', TMStream[SkipFirst].Size, ' ', SkipFirst]);
-    end;
-
-    SkipFirst := True;
-    if TMStream[SkipFirst].Size > TMStream[not SkipFirst].Size then
-      SkipFirst := not SkipFirst;
-
-    TMStream[SkipFirst].Position := 0;
-    ADataStream.CopyFrom(TMStream[SkipFirst], TMStream[SkipFirst].Size);
-
-    for SkipFirst := False to True do
-      TMStream[SkipFirst].Free;
-
-    // sound
-
-    if Assigned(ASoundStream) then
-    begin
-      ASoundStream.Position := 2 + Floor(cFrameSoundSize * i);
-      ADataStream.CopyFrom(ASoundStream, Ceil(cFrameSoundSize));
-    end;
-
-    prevKF := FFrames[i].KeyFrame;
-  end;
-
-  DebugLn(['Total frames size: ', ADataStream.Position - pp2]);
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
