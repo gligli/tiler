@@ -39,7 +39,7 @@ type
 
   TKModes = class
   private
-    membship, labels: TIntegerDynArray;
+    membship: TIntegerDynArray;
     X: TByteDynArray2;
     centroids: TByteDynArray2;
     cl_attr_freq: TIntegerDynArray3;
@@ -48,8 +48,7 @@ type
 
     function CountClusterMembers(cluster: Integer): Integer;
     function GetMaxClusterMembers(out member_count: Integer): Integer;
-    function LabelsCost: UInt64;
-    function KModesIter(var Seed: Cardinal): Integer;
+    function KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
     function InitFarthestFirst(InitPoint: Integer): TByteDynArray2;  // negative init_point means randomly chosen
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
@@ -843,23 +842,6 @@ begin
 {$endif}
 end;
 
-function TKModes.LabelsCost: UInt64;
-var
-  ipoint, clust: Integer;
-  dis: UInt64;
-begin
-  Result := 0;
-  SetLength(labels, NumPoints);
-  FillDWord(labels[0], NumPoints, 0);
-
-  for ipoint := 0 to NumPoints - 1 do
-  begin
-    clust := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
-    labels[ipoint] := clust;
-    Result += dis;
-  end;
-end;
-
 procedure TKModes.MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
 var
   iattr, curattr, current_attribute_value_freq, current_centroid_value, current_centroid_freq, old_centroid_value: Integer;
@@ -899,19 +881,21 @@ begin
   Self.Log := aLog;
 end;
 
-function TKModes.KModesIter(var Seed: Cardinal): Integer;
+function TKModes.KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
 var
   ipoint, clust, old_clust, from_clust, rindx, cnt, dummy, i: Integer;
-  dis: UInt64;
+  dis, cost_acc: UInt64;
   choices: TIntegerDynArray;
 begin
   Result := 0;
+  cost_acc := 0;
 
   SetLength(choices, NumPoints);
 
   for ipoint := 0 to NumPoints - 1 do
   begin
-    clust := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids),dis);
+    clust := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
+    Inc(cost_acc, dis);
 
     if membship[ipoint] <> clust then
     begin
@@ -939,6 +923,8 @@ begin
       end;
     end;
   end;
+
+  Cost := cost_acc;
 end;
 
 function TKModes.ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer;
@@ -1048,10 +1034,9 @@ begin
     begin
       Inc(itr);
 
-      moves := KModesIter(Seed);
-      ncost := LabelsCost;
+      moves := KModesIter(Seed, ncost);
 
-      converged := ncost >= cost;
+      converged := (ncost >= cost) or (moves = 0);
       cost := ncost;
 
       totalmoves += moves;
@@ -1060,7 +1045,7 @@ begin
         DebugLn(['Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost]);
     end;
 
-    all[init_no].Labels := Copy(labels);
+    all[init_no].Labels := Copy(membship);
     all[init_no].Centroids := Copy(centroids);
     all[init_no].Cost := cost;
     all[init_no].NIter := itr;
