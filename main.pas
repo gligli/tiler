@@ -1481,7 +1481,7 @@ begin
 
     CmlPct := 0;
     acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
-    acc := acc shr 1; // 50% point
+    acc := acc - (acc div 20); // 95% point
     for i := 0 to cTotalColors - 1 do
     begin
       acc -= PCountIndexArray(CMUsage[i])^[ciCount];
@@ -1503,7 +1503,7 @@ begin
       CMItem := PCountIndexArray(CMUsage[i]);
       CMItem^ := PCountIndexArray(CMUsage[i - LastUsed])^;
       CMItem^[ciCount] := 0;
-      col := HSLToRGB(CMItem^[ciHue], 255 - CMItem^[ciSat], CMItem^[ciLit]);
+      col := HSLToRGB(CMItem^[ciHue], IfThen(odd(i), 255 - CMItem^[ciSat], CMItem^[ciSat]), IfThen(not odd(i), 255 - CMItem^[ciLit], CMItem^[ciLit]));
       col := col shr cRGShift;
       col := (col and cRMask) or ((col and cGMask) shr cRGShift) or ((col and cBMask) shr cBShift);
       CMItem^[ciIndex] := col;

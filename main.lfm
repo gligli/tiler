@@ -387,11 +387,10 @@ object MainForm: TMainForm
     Height = 21
     Top = 114
     Width = 56
-    Increment = 25
-    MaxValue = 0
+    Increment = 0.5
     MinValue = 0
     TabOrder = 4
-    Value = 100
+    Value = 2
   end
   object IdleTimer: TIdleTimer
     Interval = 42
