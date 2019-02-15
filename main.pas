@@ -1558,14 +1558,14 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile^, False, True, False, False, False, 0, OrigTile^.PaletteRGB, OrigTileDCT);
+      ComputeTileDCT(OrigTile^, False, False, False, False, False, 0, OrigTile^.PaletteRGB, OrigTileDCT);
 
       PalIdx := -1;
       best := MaxDouble;
       for i := 0 to cPaletteCount - 1 do
       begin
         DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
-        ComputeTileDCT(OrigTile^, True, True, False, False, False, 0, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
+        ComputeTileDCT(OrigTile^, True, False, False, False, False, 0, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
         cmp := CompareEuclidean192(TileDCT, OrigTileDCT);
         if cmp < best then
         begin
@@ -1580,6 +1580,8 @@ begin
       CopyTile(BestTile, AFrame^.Tiles[sx + sy * cTileMapWidth]);
 
       AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
+      AFrame^.Tiles[sx + sy * cTileMapWidth].PaletteRGB := Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
+      AFrame^.Tiles[sx + sy * cTileMapWidth].PaletteIndexes := Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
       SetLength(BestTile.PaletteIndexes, 0);
       SetLength(BestTile.PaletteRGB, 0);
       OrigTile^ := BestTile;
