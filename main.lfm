@@ -119,7 +119,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 240
+    Value = 6
   end
   object Label3: TLabel
     Left = 8
@@ -135,7 +135,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 232
     TabOrder = 0
-    Text = 'C:\tiler_misc\av\%.4d.png'
+    Text = 'C:\tiler_misc\avs\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -150,7 +150,7 @@ object MainForm: TMainForm
     Height = 25
     Top = 240
     Width = 72
-    Caption = 'Run (F9)'
+    Caption = 'Run (F10)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
     TabOrder = 10
@@ -411,29 +411,34 @@ object MainForm: TMainForm
       ShortCut = 114
       OnClick = btnDitherClick
     end
+    object MenuItem7: TMenuItem
+      Caption = 'Tile (make unique)'
+      ShortCut = 115
+      OnClick = btnDoMakeUniqueClick
+    end
     object MenuItem2: TMenuItem
       Caption = 'Tile (global)'
-      ShortCut = 115
+      ShortCut = 116
       OnClick = btnDoGlobalTilingClick
     end
     object MenuItem3: TMenuItem
       Caption = 'Tile (key frame)'
-      ShortCut = 116
+      ShortCut = 117
       OnClick = btnDoKeyFrameTilingClick
     end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'
-      ShortCut = 117
+      ShortCut = 118
       OnClick = btnReindexClick
     end
     object MenuItem5: TMenuItem
       Caption = 'Smooth'
-      ShortCut = 118
+      ShortCut = 119
       OnClick = btnSmoothClick
     end
     object MenuItem6: TMenuItem
       Caption = 'Save'
-      ShortCut = 119
+      ShortCut = 120
       OnClick = btnSaveClick
     end
   end

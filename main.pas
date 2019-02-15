@@ -12,7 +12,7 @@ uses
   xalglib, IntfGraphics, FPimage, FPWritePNG, zstream;
 
 type
-  TEncoderStep = (esNone = -1, esLoad = 0, esDither, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
+  TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
 
 const
   cPhi = (1 + sqrt(5)) / 2;
@@ -142,7 +142,7 @@ const
     42, 26, 38, 22, 41, 25, 37, 21
   );
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 3, 2, 2, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 3, 2, 2, 1, 1);
 
   cPalettePattern : array[0 .. 15, 0 .. cTilePaletteSize - 1] of TFloat = (
     (0.0000000, 0.0084269, 0.0148931, 0.0251470, 0.0371982, 0.0530083, 0.0728852, 0.0982827, 0.1305335, 0.1715840, 0.2237881, 0.2901990, 0.3746718, 0.4821245, 0.6188057, 0.7926671),
@@ -170,6 +170,7 @@ type
   PPTile = ^PTile;
 
   TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
+  PPalPixels = ^TPalPixels;
 
   TTile = record
     RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
@@ -275,6 +276,7 @@ type
     MenuItem4: TMenuItem;
     MenuItem5: TMenuItem;
     MenuItem6: TMenuItem;
+    MenuItem7: TMenuItem;
     miLoad: TMenuItem;
     MenuItem1: TMenuItem;
     pmProcesses: TPopupMenu;
@@ -295,6 +297,7 @@ type
 
     procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
+    procedure btnDoMakeUniqueClick(Sender: TObject);
     procedure btnDoGlobalTilingClick(Sender: TObject);
     procedure btnDoKeyFrameTilingClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
@@ -361,7 +364,8 @@ type
 
     function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer): Integer;
     function GetTileGridMedian(const ATile: TTile; other: Boolean): Integer;
-    procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: TPalPixels);
+    procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
+    procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
     function WriteTileDatasetLine(const ATile: TTile; var DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
@@ -571,6 +575,28 @@ begin
   ProgressRedraw(1);
   ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
   ProgressRedraw(2);
+
+  tbFrameChange(nil);
+end;
+
+procedure TMainForm.btnDoMakeUniqueClick(Sender: TObject);
+const
+  cTilesAtATime = 100 * cTileMapSize;
+
+  procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    MakeTilesUnique(AIndex * cTilesAtATime, Min(Length(FTiles) - AIndex * cTilesAtATime, cTilesAtATime));
+  end;
+
+begin
+  if Length(FFrames) = 0 then
+    Exit;
+
+  ProgressRedraw(-1, esMakeUnique);
+
+  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div cTilesAtATime);
+
+  ProgressRedraw(1);
 
   tbFrameChange(nil);
 end;
@@ -800,6 +826,9 @@ begin
   if lastStep >= esDither then
     btnDitherClick(nil);
 
+  if lastStep >= esMakeUnique then
+    btnDoMakeUniqueClick(nil);
+
   if lastStep >= esGlobalTiling then
     btnDoGlobalTilingClick(nil);
 
@@ -906,12 +935,13 @@ begin
   case Key of
     VK_F2: btnLoadClick(nil);
     VK_F3: btnDitherClick(nil);
-    VK_F4: btnDoGlobalTilingClick(nil);
-    VK_F5: btnDoKeyFrameTilingClick(nil);
-    VK_F6: btnReindexClick(nil);
-    VK_F7: btnSmoothClick(nil);
-    VK_F8: btnSaveClick(nil);
-    VK_F9: btnRunAllClick(nil);
+    VK_F4: btnDoMakeUniqueClick(nil);
+    VK_F5: btnDoGlobalTilingClick(nil);
+    VK_F6: btnDoKeyFrameTilingClick(nil);
+    VK_F7: btnReindexClick(nil);
+    VK_F8: btnSmoothClick(nil);
+    VK_F9: btnSaveClick(nil);
+    VK_F10: btnRunAllClick(nil);
     VK_F12: btnDebugClick(nil);
   end;
 end;
@@ -1512,6 +1542,56 @@ begin
     for i := 0 to cPaletteCount - 1 do
       TerminatePlan(AFrame^.KeyFrame^.MixingPlans[i]);
   LeaveCriticalSection(FCS);
+end;
+
+function CompareTilePalPixels(Item1, Item2, UserParameter:Pointer):Integer;
+var
+  t1, t2: PTile;
+begin
+  t1 := PPTile(Item1)^;
+  t2 := PPTile(Item2)^;
+  Result := CompareByte(t1^.PalPixels[0, 0], t2^.PalPixels[0, 0], sqr(cTileWidth));
+end;
+
+procedure TMainForm.MakeTilesUnique(FirstTileIndex, TileCount: Integer);
+var
+  i, firstSameIdx: Integer;
+  sortArr: array of PTile;
+  sameIdx: array of Integer;
+
+  procedure DoOneMerge;
+  var
+    j: Integer;
+  begin
+    if i - firstSameIdx >= 2 then
+    begin
+      for j := firstSameIdx to i - 1 do
+        sameIdx[j - firstSameIdx] := sortArr[j]^.TmpIndex;
+      MergeTiles(sameIdx, i - firstSameIdx, sameIdx[0], nil);
+    end;
+    firstSameIdx := i;
+  end;
+
+begin
+  // sort global tiles by palette indexes (L to R, T to B)
+
+  SetLength(sameIdx, TileCount);
+  sortArr := Copy(FTiles, FirstTileIndex, TileCount);
+
+  for i := 0 to High(sortArr) do
+    sortArr[i]^.TmpIndex := i + FirstTileIndex;
+
+  QuickSort(sortArr[0], 0, High(sortArr), SizeOf(PTile), @CompareTilePalPixels);
+
+  // merge exactly similar tiles (so, consecutive after prev code)
+
+  firstSameIdx := 0;
+  for i := 1 to High(sortArr) do
+    if CompareByte(sortArr[i - 1]^.PalPixels[0, 0], sortArr[i]^.PalPixels[0, 0], sqr(cTileWidth)) <> 0 then
+      DoOneMerge;
+
+  i := High(sortArr);
+  DoOneMerge;
 end;
 
 procedure TMainForm.LoadTiles;
@@ -2168,23 +2248,23 @@ begin
     end;
 end;
 
-procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: TPalPixels);
+procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer;
+  NewTile: PPalPixels);
 var
   i, j, k: Integer;
 begin
   if TileCount <= 0 then
     Exit;
 
-  Move(NewTile[0, 0], FTiles[BestIdx]^.PalPixels[0, 0], sizeof(TPalPixels));
+  if Assigned(NewTile) then
+    Move(NewTile^[0, 0], FTiles[BestIdx]^.PalPixels[0, 0], sizeof(TPalPixels));
 
   for k := 0 to TileCount - 1 do
   begin
     j := TileIndexes[k];
 
-    if FTiles[j]^.TmpIndex = -2 then // -2 as TmpIndex means tile is a centroid
+    if j = BestIdx then
       Continue;
-
-    assert(j <> BestIdx, 'Malformed MergeTiles() params!');
 
     Inc(FTiles[BestIdx]^.AveragedCount, FTiles[j]^.AveragedCount);
 
@@ -2514,9 +2594,6 @@ var
   Dataset, Centroids: TByteDynArray2;
   Clusters: TIntegerDynArray;
   i, j, k, x, y, di, acc, best, StartingPoint, ActualNbTiles: Integer;
-  dissim: UInt64;
-  DsTileIdxs: TIntegerDynArray;
-  Found: Boolean;
   ToMerge: array of Integer;
   WasActive: TBooleanDynArray;
   KModes: TKModes;
@@ -2566,34 +2643,6 @@ begin
 
   ProgressRedraw(2);
 
-  // match centroid to an existing tile in the dataset
-
-  SetLength(DsTileIdxs, ActualNbTiles);
-
-  for j := 0 to ActualNbTiles - 1 do
-  begin
-    DsTileIdxs[j] := GetMinMatchingDissim(Dataset, Centroids[j], Length(Dataset), dissim);
-
-    Found := False;
-    k := 0;
-    for i := 0 to High(FTiles) do
-    begin
-      if not WasActive[i] then
-        Continue;
-
-      if k = DsTileIdxs[j] then
-      begin
-        DsTileIdxs[j] := i;
-        FTiles[i]^.TmpIndex := -2;
-        Found := True;
-      end;
-
-      Inc(k);
-    end;
-
-    Assert(Found, 'DsTileIdx not found!');
-  end;
-
   // for each group, merge the tiles
 
   SetLength(ToMerge, Length(FTiles));
@@ -2626,7 +2675,8 @@ begin
         Inc(i);
       end;
 
-    MergeTiles(ToMerge, di, DsTileIdxs[j], NewTile)
+    if di >= 2 then
+      MergeTiles(ToMerge, di, ToMerge[0], @NewTile)
   end;
 
   ProgressRedraw(3);
