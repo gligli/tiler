@@ -334,7 +334,7 @@ object MainForm: TMainForm
     Top = 136
     Width = 56
     ItemHeight = 13
-    ItemIndex = 4
+    ItemIndex = 3
     Items.Strings = (
       '1'
       '2'
@@ -344,7 +344,7 @@ object MainForm: TMainForm
     )
     OnChange = cbxYilMixChange
     TabOrder = 5
-    Text = '16'
+    Text = '8'
   end
   object Label11: TLabel
     Left = 9
@@ -390,7 +390,7 @@ object MainForm: TMainForm
     Increment = 0.5
     MinValue = 0
     TabOrder = 4
-    Value = 2
+    Value = 5
   end
   object IdleTimer: TIdleTimer
     Interval = 42
