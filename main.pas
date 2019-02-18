@@ -1461,12 +1461,12 @@ begin
 
     // after LastUsed put 'weird' colors (ie. colors not in frames, but relevant for Y2)
 
-    for i := LastUsed + 1 to cTotalColors - 1 do
+    for i := LastUsed + 1 to LastUsed + (LastUsed shr 1) do
     begin
       CMItem := PCountIndexArray(CMUsage[i]);
-      CMItem^ := PCountIndexArray(CMUsage[i - LastUsed])^;
+      CMItem^ := PCountIndexArray(CMUsage[(i - LastUsed) shl 1])^;
       CMItem^[ciCount] := 0;
-      col := HSLToRGB(CMItem^[ciHue], IfThen(odd(i), 255 - CMItem^[ciSat], CMItem^[ciSat]), IfThen(not odd(i), 255 - CMItem^[ciLit], CMItem^[ciLit]));
+      col := HSLToRGB(CMItem^[ciHue], 255 - CMItem^[ciSat], CMItem^[ciLit]);
       col := col shr cRGShift;
       col := (col and cRMask) or ((col and cGMask) shr cRGShift) or ((col and cBMask) shr cBShift);
       CMItem^[ciIndex] := col;

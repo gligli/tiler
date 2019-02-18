@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 277
+  Left = 265
   Height = 817
-  Top = 94
+  Top = 102
   Width = 984
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 960
@@ -390,7 +390,7 @@ object MainForm: TMainForm
     Increment = 0.5
     MinValue = 0
     TabOrder = 4
-    Value = 5
+    Value = 6
   end
   object IdleTimer: TIdleTimer
     Interval = 42
