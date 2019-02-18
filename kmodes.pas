@@ -705,48 +705,15 @@ begin
 end;
 
 
-function TKModes.InitFarthestFirst(InitPoint: Integer): TByteDynArray2;  // negative init_point means randomly chosen
+function TKModes.InitFarthestFirst(InitPoint: Integer): TByteDynArray2;
 var
-  iCentroid, iFarthest: Integer;
-  Used: TBooleanDynArray;
-  MinDistance: TUInt64DynArray;
+  nattrs, npoints, icentroid, ifarthest: Integer;
+  used: TBooleanDynArray;
+  mindistance: TUInt64DynArray;
 
-  ApproxCentroids: TByteDynArray2;
-  ApproxCentroidCount: Integer;
-
-  procedure BuildApproximateCentroids(NewCentroid: TByteDynArray; CentroidCount: Integer);
-  var
-    IdealCount: Integer;
-    i: Integer;
-    dis: UInt64;
-    idx: Integer;
+  procedure UpdateMinDistance(icenter: Integer);
   begin
-    ApproxCentroids[ApproxCentroidCount] := NewCentroid;
-    Inc(ApproxCentroidCount);
-
-    IdealCount := CentroidCount;
-    IdealCount := ceil(power(CentroidCount, cInvPhi));
-
-    if ApproxCentroidCount > IdealCount then
-    begin
-      Assert(ApproxCentroidCount - IdealCount = 1);
-
-      idx := GetMinMatchingDissim(ApproxCentroids, NewCentroid, ApproxCentroidCount, dis);
-
-      for i := ApproxCentroidCount - 1 downto idx + 1 do
-        ApproxCentroids[i - 1] := ApproxCentroids[i];
-
-      Dec(ApproxCentroidCount);
-    end;
-  end;
-
-  procedure UpdateMinDistance(CentroidCount: Integer);
-  var
-    i: Integer;
-  begin
-    for i := 0 to NumPoints - 1 do
-      if not Used[i] then
-        MinDistance[i] := GetMatchingDissimSum(ApproxCentroids, X[i], ApproxCentroidCount);
+    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], npoints);
   end;
 
   function FarthestAway: Integer;
@@ -764,82 +731,31 @@ var
       end;
   end;
 
-{$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
-
-  procedure UpdateMinDistance_Old(icenter: Integer);
-  var
-    i: Integer;
-    dis: UInt64;
-  begin
-    for i := 0 to NumPoints - 1 do
-      if not used[i] then
-      begin
-        dis := MatchingDissim(X[icenter], X[i]);
-        if dis < mindistance[i] then
-          mindistance[i] := dis;
-      end;
-  end;
-
-{$else}
-
-  procedure UpdateMinDistance_Old(icenter: Integer);
-  begin
-    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
-  end;
-
-{$endif}
-
 begin
-  SetLength(Result, NumClusters, NumAttrs);
-  SetLength(ApproxCentroids, NumClusters);
-  SetLength(Used, NumPoints);
-  SetLength(MinDistance, NumPoints);
+  nattrs := Length(X[0]);
+  npoints := Length(X);
+  SetLength(Result, NumClusters, nattrs);
+  SetLength(used, npoints);
+  SetLength(mindistance, npoints);
 
-{$ifdef NEW_FARTHEST_FIRST}
-  ApproxCentroidCount := 0;
-
-  for iCentroid := 0 to NumClusters - 1 do
-    FillByte(Result[iCentroid, 0], NumAttrs, High(Byte));
-  FillChar(Used[0], NumPoints, False);
-  FillQWord(MinDistance[0], NumPoints, High(UInt64));
-
-  iCentroid := 0;
-
-  iFarthest := InitPoint;
-  Move(X[iFarthest, 0], Result[iCentroid, 0], NumAttrs);
-  Used[iFarthest] := True;
-  BuildApproximateCentroids(Result[iCentroid], 1);
-  UpdateMinDistance(1);
-
-  for iCentroid := 1 to NumClusters - 1 do
-  begin
-    iFarthest := FarthestAway;
-    Move(X[iFarthest, 0], Result[iCentroid, 0], NumAttrs);
-    Used[iFarthest] := True;
-    BuildApproximateCentroids(Result[iCentroid], iCentroid + 1);
-    UpdateMinDistance(iCentroid + 1);
-  end;
-{$else}
   for icentroid := 0 to NumClusters - 1 do
-    FillByte(Result[icentroid, 0], NumAttrs, High(Byte));
-  FillChar(used[0], NumPoints, False);
-  FillDWord(mindistance[0], NumPoints, High(Cardinal));
+    FillByte(Result[icentroid, 0], nattrs, High(Byte));
+  FillChar(used[0], npoints, False);
+  FillQWord(mindistance[0], npoints, High(UInt64));
 
   icentroid := 0;
   ifarthest := InitPoint;
-  Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
+  Move(X[ifarthest, 0], Result[icentroid, 0], nattrs);
   used[ifarthest] := True;
-  UpdateMinDistance_old(ifarthest);
+  UpdateMinDistance(ifarthest);
 
   for icentroid := 1 to NumClusters - 1 do
   begin
     ifarthest := FarthestAway;
-
-    Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
+    Move(X[ifarthest, 0], Result[icentroid, 0], nattrs);
     used[ifarthest] := True;
-    UpdateMinDistance_old(ifarthest);
+    UpdateMinDistance(ifarthest);
   end;
-{$endif}
 end;
 
 procedure TKModes.MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
@@ -1034,6 +950,9 @@ begin
     begin
       Inc(itr);
 
+      if Log then
+        DbgOut(['Itr: ', itr]);
+
       moves := KModesIter(Seed, ncost);
 
       converged := (ncost >= cost) or (moves = 0);
@@ -1042,7 +961,7 @@ begin
       totalmoves += moves;
 
       if Log then
-        DebugLn(['Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost]);
+        DebugLn([#9'Moves: ', moves, #9'Cost: ', cost]);
     end;
 
     all[init_no].Labels := Copy(membship);
