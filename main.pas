@@ -144,25 +144,6 @@ const
 
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 3, 2, 2, 1, 1);
 
-  cPalettePattern : array[0 .. 15, 0 .. cTilePaletteSize - 1] of TFloat = (
-    (0.000000, 0.000176, 0.000311, 0.000525, 0.000776, 0.001106, 0.001521, 0.002051, 0.002724, 0.003581, 0.004671, 0.006057, 0.007820, 0.010062, 0.012915, 0.016543, 0.021159, 0.027030, 0.034499, 0.043998, 0.056082, 0.071453, 0.091006, 0.115876, 0.147513, 0.187754, 0.238943, 0.304056, 0.386880, 0.492235, 0.626248, 0.796715),
-    (0.000088, 0.000243, 0.000418, 0.000651, 0.000941, 0.001314, 0.001786, 0.002388, 0.003153, 0.004126, 0.005364, 0.006938, 0.008941, 0.011489, 0.014729, 0.018851, 0.024095, 0.030765, 0.039249, 0.050040, 0.063768, 0.081230, 0.103441, 0.131695, 0.167634, 0.213349, 0.271499, 0.345468, 0.439557, 0.559241, 0.711481, 0.905134),
-    (0.000044, 0.000210, 0.000364, 0.000588, 0.000859, 0.001210, 0.001654, 0.002219, 0.002939, 0.003853, 0.005017, 0.006497, 0.008380, 0.010775, 0.013822, 0.017697, 0.022627, 0.028897, 0.036874, 0.047019, 0.059925, 0.076341, 0.097223, 0.123786, 0.157573, 0.200552, 0.255221, 0.324762, 0.413219, 0.525738, 0.668864, 0.850924),
-    (0.000132, 0.000277, 0.000471, 0.000713, 0.001024, 0.001417, 0.001919, 0.002556, 0.003367, 0.004398, 0.005710, 0.007379, 0.009502, 0.012202, 0.015636, 0.020005, 0.025563, 0.032632, 0.041624, 0.053061, 0.067611, 0.086118, 0.109659, 0.139604, 0.177694, 0.226146, 0.287777, 0.366174, 0.465896, 0.592744, 0.754098, 0.959343),
-    (0.000022, 0.000193, 0.000338, 0.000556, 0.000818, 0.001158, 0.001587, 0.002135, 0.002831, 0.003717, 0.004844, 0.006277, 0.008100, 0.010419, 0.013368, 0.017120, 0.021893, 0.027964, 0.035686, 0.045509, 0.058004, 0.073897, 0.094114, 0.119831, 0.152543, 0.194153, 0.247082, 0.314409, 0.400049, 0.508986, 0.647556, 0.823819),
-    (0.000066, 0.000226, 0.000391, 0.000619, 0.000900, 0.001262, 0.001720, 0.002304, 0.003046, 0.003990, 0.005190, 0.006718, 0.008661, 0.011132, 0.014276, 0.018274, 0.023361, 0.029831, 0.038061, 0.048530, 0.061847, 0.078785, 0.100332, 0.127740, 0.162603, 0.206950, 0.263360, 0.335115, 0.426388, 0.542489, 0.690173, 0.878029),
-    (0.000119, 0.000267, 0.000455, 0.000695, 0.000999, 0.001386, 0.001879, 0.002506, 0.003303, 0.004317, 0.005606, 0.007247, 0.009333, 0.011988, 0.015364, 0.019659, 0.025122, 0.032071, 0.040911, 0.052155, 0.066458, 0.084651, 0.107793, 0.137231, 0.174676, 0.222307, 0.282894, 0.359962, 0.457994, 0.582693, 0.741313, 0.943080),
-    (0.000154, 0.000294, 0.000498, 0.000745, 0.001065, 0.001469, 0.001985, 0.002640, 0.003474, 0.004534, 0.005883, 0.007599, 0.009782, 0.012558, 0.016090, 0.020582, 0.026296, 0.033565, 0.042811, 0.054572, 0.069532, 0.088562, 0.112768, 0.143558, 0.182724, 0.232544, 0.295916, 0.376527, 0.479065, 0.609496, 0.775406, 0.986448),
-    (0.000011, 0.000184, 0.000324, 0.000541, 0.000797, 0.001132, 0.001554, 0.002093, 0.002778, 0.003649, 0.004757, 0.006167, 0.007960, 0.010241, 0.013142, 0.016832, 0.021526, 0.027497, 0.035092, 0.044754, 0.057043, 0.072675, 0.092560, 0.117854, 0.150028, 0.190954, 0.243012, 0.309232, 0.393465, 0.500610, 0.636902, 0.810267),
-    (0.000033, 0.000201, 0.000351, 0.000572, 0.000838, 0.001184, 0.001621, 0.002177, 0.002885, 0.003785, 0.004930, 0.006387, 0.008240, 0.010597, 0.013595, 0.017409, 0.022260, 0.028431, 0.036280, 0.046264, 0.058964, 0.075119, 0.095669, 0.121808, 0.155058, 0.197352, 0.251152, 0.319585, 0.406634, 0.517362, 0.658210, 0.837372),
-    (0.000055, 0.000218, 0.000378, 0.000603, 0.000879, 0.001236, 0.001687, 0.002262, 0.002992, 0.003922, 0.005104, 0.006608, 0.008520, 0.010954, 0.014049, 0.017986, 0.022994, 0.029364, 0.037467, 0.047775, 0.060886, 0.077563, 0.098778, 0.125763, 0.160088, 0.203751, 0.259291, 0.329938, 0.419803, 0.534114, 0.679519, 0.864477),
-    (0.000077, 0.000235, 0.000404, 0.000635, 0.000921, 0.001288, 0.001753, 0.002346, 0.003099, 0.004058, 0.005277, 0.006828, 0.008801, 0.011310, 0.014502, 0.018563, 0.023728, 0.030298, 0.038655, 0.049285, 0.062807, 0.080008, 0.101887, 0.129717, 0.165118, 0.210149, 0.267430, 0.340291, 0.432973, 0.550865, 0.700827, 0.891581),
-    (0.000099, 0.000252, 0.000431, 0.000666, 0.000962, 0.001340, 0.001819, 0.002430, 0.003206, 0.004194, 0.005450, 0.007048, 0.009081, 0.011667, 0.014956, 0.019140, 0.024462, 0.031231, 0.039842, 0.050796, 0.064729, 0.082452, 0.104995, 0.133672, 0.170149, 0.216548, 0.275569, 0.350644, 0.446142, 0.567617, 0.722135, 0.918686),
-    (0.000112, 0.000262, 0.000447, 0.000685, 0.000987, 0.001371, 0.001859, 0.002480, 0.003271, 0.004276, 0.005554, 0.007181, 0.009249, 0.011881, 0.015228, 0.019486, 0.024902, 0.031791, 0.040555, 0.051702, 0.065881, 0.083918, 0.106861, 0.136045, 0.173167, 0.220387, 0.280452, 0.356856, 0.454044, 0.577668, 0.734920, 0.934949),
-    (0.000143, 0.000286, 0.000485, 0.000729, 0.001044, 0.001443, 0.001952, 0.002598, 0.003420, 0.004466, 0.005797, 0.007489, 0.009642, 0.012380, 0.015863, 0.020294, 0.025930, 0.033098, 0.042217, 0.053817, 0.068571, 0.087340, 0.111213, 0.141581, 0.180209, 0.229345, 0.291847, 0.371351, 0.472481, 0.601120, 0.764752, 0.972895),
-    (0.000165, 0.000302, 0.000511, 0.000761, 0.001086, 0.001495, 0.002018, 0.002682, 0.003528, 0.004603, 0.005970, 0.007709, 0.009922, 0.012737, 0.016317, 0.020871, 0.026663, 0.034032, 0.043405, 0.055327, 0.070493, 0.089784, 0.114322, 0.145535, 0.185239, 0.235744, 0.299986, 0.381704, 0.485650, 0.617872, 0.786061, 1.000000)
-  );
-
 type
   TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
 
@@ -433,10 +414,12 @@ var
   gGammaCorLut: array[0..High(cGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
   gDCTLut:array[0..cTileWidth - 1, 0..cTileWidth - 1,0..cTileWidth - 1,0..cTileWidth - 1] of TFloat;
+  gPalettePattern : array[0 .. cPaletteCount - 1, 0 .. cTilePaletteSize - 1] of TFloat;
 
 procedure InitLuts;
 var
-  g, i, v, u, y, x: Integer;
+  g, i, j, v, u, y, x: Int64;
+  f, fp: TFloat;
 begin
   for g := 0 to High(cGamma) do
     for i := 0 to High(Byte) do
@@ -450,6 +433,30 @@ begin
       for y := 0 to (cTileWidth - 1) do
         for x := 0 to (cTileWidth - 1) do
 		      gDCTLut[v, u, y, x] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
+
+  for j := 0 to cPaletteCount - 1 do
+  begin
+    x := 1;
+    v := 1;
+    u := 0;
+    f := 0;
+    for i := 0 to cTilePaletteSize do
+    begin
+      x := u + v;
+      u := v;
+      v := x;
+
+      fp := f;
+      f := sqrt(x) - 1.0;
+
+      if i > 0 then
+        gPalettePattern[j, i - 1] := ((j + 1) / cPaletteCount) * (f - fp) + fp;
+    end;
+  end;
+
+  for j := 0 to cPaletteCount - 1 do
+    for i := 0 to cTilePaletteSize - 1 do
+      gPalettePattern[j, i] /= gPalettePattern[cPaletteCount - 1, cTilePaletteSize - 1];
 end;
 
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -960,6 +967,7 @@ begin
     VK_F8: btnSmoothClick(nil);
     VK_F9: btnSaveClick(nil);
     VK_F10: btnRunAllClick(nil);
+    VK_F11: chkPlay.Checked := not chkPlay.Checked;
     VK_F12: btnDebugClick(nil);
   end;
 end;
@@ -1372,6 +1380,15 @@ begin
     Result := CompareValue(PCountIndexArray(Item1)^[ciSat], PCountIndexArray(Item2)^[ciSat]);
 end;
 
+function CompareCMUHSL(Item1,Item2:Pointer):Integer;
+begin
+  Result := CompareValue(PCountIndexArray(Item1)^[ciLit], PCountIndexArray(Item2)^[ciLit]);
+  if Result = 0 then
+    Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]);
+  if Result = 0 then
+    Result := CompareValue(PCountIndexArray(Item1)^[ciSat], PCountIndexArray(Item2)^[ciSat]);
+end;
+
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; ColorReach: TFloat);
 const
   cRGShift = (8 - cBitsPerComp);
@@ -1382,17 +1399,18 @@ const
 var
   col, cnt, sx, sy, tx, ty, i, PalIdx, LastUsed, CmlPct, acc: Integer;
   GTile: PTile;
-  CMUsage: TList;
+  CMUsage, CMPal: TList;
   CMItem: PCountIndexArray;
   TrueColorUsage: TCardinalDynArray;
   CmlReach: TFloat;
 begin
-  Assert(cPaletteCount <= Length(cPalettePattern));
+  Assert(cPaletteCount <= Length(gPalettePattern));
 
   SetLength(TrueColorUsage, 1 shl (24 - cRGShift));
   FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
 
   CMUsage := TList.Create;
+  CMPal := TList.Create;
   try
     CMUsage.Count := cTotalColors;
     for i := 0 to cTotalColors - 1 do
@@ -1481,18 +1499,26 @@ begin
     end;
 
     CmlReach := EnsureRange((CmlPct + 1) * ColorReach, 0, cTotalColors);
-    for i := 0 to cTilePaletteSize - 1 do
-      for PalIdx := 0 to cPaletteCount - 1 do
-        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMUsage[Round(cPalettePattern[PalIdx, i] * CmlReach)])^[ciIndex];
+    for PalIdx := 0 to cPaletteCount - 1 do
+    begin
+      CMPal.Clear;
+      for i := 0 to cTilePaletteSize - 1 do
+        CMPal.Add(CMUsage[Round(gPalettePattern[PalIdx, i] * CmlReach)]);
+      CMPal.Sort(@CompareCMUHSL);
 
-    for i := 0 to cTilePaletteSize - 1 do
-      for PalIdx := 0 to cPaletteCount - 1 do
+      for i := 0 to cTilePaletteSize - 1 do
+        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^[ciIndex];
+    end;
+
+    for PalIdx := 0 to cPaletteCount - 1 do
+      for i := 0 to cTilePaletteSize - 1 do
         AKeyFrame^.PaletteRGB[PalIdx, i] := FColorMap[AKeyFrame^.PaletteIndexes[PalIdx, i]];
 
     for i := 0 to CMUsage.Count - 1 do
       Dispose(PCountIndexArray(CMUsage[i]));
 
   finally
+    CMPal.Free;
     CMUsage.Free;
   end;
 end;
