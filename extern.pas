@@ -41,6 +41,7 @@ function GetSVMLightClusterCount(lines: TStringList): Integer;
 function ann_kdtree_create(pa: PPFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; cdecl; external 'ANN.dll';
 procedure ann_kdtree_destroy(akd: PANNkdtree); cdecl; external 'ANN.dll';
 function ann_kdtree_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_pri_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
 
 implementation
 
