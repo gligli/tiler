@@ -12,6 +12,22 @@ type
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
   PFloat = ^TFloat;
+  PPFloat = ^PFloat;
+  PFloatDynArray = ^TFloatDynArray;
+
+  TANNsplitRule = (
+  		ANN_KD_STD = 0,      // the optimized kd-splitting rule
+  		ANN_KD_MIDPT = 1,    // midpoint split
+  		ANN_KD_FAIR	= 2,     // fair split
+  		ANN_KD_SL_MIDPT = 3, // sliding midpoint splitting method
+  		ANN_KD_SL_FAIR = 4,  // sliding fair split method
+  		ANN_KD_SUGGEST = 5 // the authors' suggestion for best
+  );
+
+  TANNkdtree = record
+  end;
+
+  PANNkdtree = ^TANNkdtree;
 
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount: Integer; RestartCount: Integer;
@@ -21,6 +37,10 @@ procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; He
 function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
 function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
+
+function ann_kdtree_create(pa: PPFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; cdecl; external 'ANN.dll';
+procedure ann_kdtree_destroy(akd: PANNkdtree); cdecl; external 'ANN.dll';
+function ann_kdtree_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
 
 implementation
 

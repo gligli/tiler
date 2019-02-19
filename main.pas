@@ -8,93 +8,42 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
-  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, extern,
-  xalglib, IntfGraphics, FPimage, FPWritePNG, zstream;
+  StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
+  ap, correlation, IntfGraphics, FPimage, FPWritePNG, zstream;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
 
 const
-  cPhi = (1 + sqrt(5)) / 2;
-  cInvPhi = 1 / cPhi;
-
-  // Tweakable params
+  cTileMapWidth = 160;
+  cTileMapHeight = 66;
+  cPaletteCount = 16;
+  cBitsPerComp = 8;
+  cTilePaletteSize = 32;
   cRandomKModesCount = 7;
-  cKeyframeFixedColors = 4;
   cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.0);
-  cGammaCorrectSmoothing = -1;
-  cKFFromPal = True;
+  cSmoothingGamma = -1;
   cKFGamma = 0;
+  cKFFromPal = True;
   cKFQWeighting = True;
+  cKFSearchEpsilon = 1e-7;
 
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
   cBlueMultiplier = 114;
   cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
 
-  // SMS consts
-
-{$if true}
-  cTileMapWidth = 160;
-  cTileMapHeight = 66;
-  cPaletteCount = 16;
-  cBitsPerComp = 8;
-{$else}
-  cTileMapWidth = 32;
-  cTileMapHeight = 24;
-  cPaletteCount = 8;
-  cBitsPerComp = 4;
-{$endif}
-
-  cPreDitherMixedColors = 4;
+  cSmoothingPrevFrame = 1;
   cVecInvWidth = 16;
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
-  cTilePaletteSize = 32;
   cTileMapSize = cTileMapWidth * cTileMapHeight;
   cScreenWidth = cTileMapWidth * cTileWidth;
   cScreenHeight = cTileMapHeight * cTileWidth;
-  cBankSize = 16384;
-  cTileSize = cTileWidth * cTileWidth div 2;
-  cTilesPerBank = cBankSize div cTileSize;
-  cZ80Clock = 3546893;
-  cLineCount = 313;
-  cRefreshRate = 50;
-  cCyclesPerLine = cZ80Clock / (cLineCount * cRefreshRate);
-  cCyclesPerDisplayPhase : array[Boolean{VBlank?}] of Integer = (
-    Round(cScreenHeight * cCyclesPerLine),
-    Round((cLineCount - cScreenHeight) * cCyclesPerLine)
-  );
+  cTileDCTSize = 3 * sqr(cTileWidth);
 
-  // Video player consts
-  cMaxTilesPerFrame = 207;
-  cSmoothingPrevFrame = 1;
-  cTileIndexesTileOffset = cTilesPerBank + 1;
-  cTileIndexesMaxDiff = 223;
-  cTileIndexesRepeatStart = 224;
-  cTileIndexesMaxRepeat = 30;
-  cTileIndexesDirectValue = 223;
-  cTileIndexesTerminator = 254;
-  cTileIndexesVBlankSwitch = 255;
-  cTileMapIndicesOffset : array[0..1] of Integer = (49, 256 + 49);
-  cTileMapCacheBits = 5;
-  cTileMapCacheSize = 1 shl cTileMapCacheBits;
-  cTileMapMaxRepeat : array[Boolean{Raw?}] of Integer = (6, 4);
-  cTileMapMaxSkip = 31;
-  cTileMapCommandCache : array[1..6{Rpt}] of Byte = ($01, $40, $41, $80, $81, $c0);
-  cTileMapCommandSkip = $00;
-  cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c1, $d1, $e1, $f1);
-  cTileMapTerminator = $00; // skip 0
-  cClocksPerSample = 344;
-  cFrameSoundSize = cZ80Clock / cClocksPerSample / 2 / (cRefreshRate / 4);
-
-  // number of Z80 cycles to execute a function
-  cTileIndexesTimings : array[Boolean{VBlank?}, 0..4 {Direct/Std/RptFix/RptVar/VBlankSwitch}] of Integer = (
-    (343 + 688, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
-    (347 + 344, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
-  );
-  cLineJitterCompensation = 4;
-  cTileIndexesInitialLine = 201; // algo starts in VBlank
+  cPhi = (1 + sqrt(5)) / 2;
+  cInvPhi = 1 / cPhi;
 
   cUV = 7;
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of TFloat = (
@@ -186,11 +135,10 @@ type
   PFrame = ^TFrame;
 
   TTileDataset = record
-    Tags: TIVector;
+    Tags: TInteger1DArray;
     Dataset: TFloatDynArray2;
-    FrameDataset: array of TFloatDynArray;
     TRToTileIdx: TIntegerDynArray;
-    KDT: Tkdtree;
+    KDT: PANNkdtree;
   end;
 
   PTileDataset = ^TTileDataset;
@@ -212,7 +160,7 @@ type
     StartFrame, EndFrame, FrameCount: Integer;
     TileDS: PTileDataset;
     MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
-    FrameDitheringLeft: Integer;
+    FramesLeft: Integer;
   end;
 
   { T8BitPortableNetworkGraphic }
@@ -469,6 +417,11 @@ begin
   Result := x + (y - x) * alpha;
 end;
 
+function revlerp(x, y, alpha: TFloat): TFloat; inline;
+begin
+  Result := (alpha - x) / (y - x);
+end;
+
 function CompareEuclidean192Ptr(pa, pb: PFloat): TFloat;
 var
   i: Integer;
@@ -604,7 +557,7 @@ end;
 
 procedure TMainForm.btnDoMakeUniqueClick(Sender: TObject);
 const
-  cTilesAtATime = 100 * cTileMapSize;
+  cTilesAtATime = 12 * cTileMapSize;
 
   procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
@@ -654,10 +607,7 @@ begin
   ProgressRedraw(2);
 
   for i := 0 to High(FKeyFrames) do
-  begin
-    FreeAndNil(FKeyFrames[i].TileDS^.KDT);
     FreeMemAndNil(FKeyFrames[i].TileDS);
-  end;
 
   tbFrameChange(nil);
 end;
@@ -796,7 +746,7 @@ begin
     FKeyFrames[j].StartFrame := sfr;
     FKeyFrames[j].EndFrame := efr;
     FKeyFrames[j].FrameCount := efr - sfr + 1;
-    FKeyFrames[j].FrameDitheringLeft := -1;
+    FKeyFrames[j].FramesLeft := -1;
   end;
 
   ProgressRedraw(1);
@@ -910,7 +860,7 @@ begin
 
   palPict.Width := cScreenWidth;
   palPict.Height := cScreenHeight;
-  //palPict.PixelFormat := pf24bit;
+  palPict.PixelFormat := pf32bit;
 
   try
     for i := 0 to High(FFrames) do
@@ -1117,17 +1067,11 @@ var
   VecInv: PCardinal;
   y2pal: PInteger;
 begin
-  EnterCriticalSection(Plan.CacheCS);
   if Plan.CountCache[col] < $80 then
   begin
     Result := Plan.CountCache[col];
     Move(Plan.ListCache[col, 0], List[0], Result);
-    LeaveCriticalSection(Plan.CacheCS);
     Exit;
-  end
-  else
-  begin
-    LeaveCriticalSection(Plan.CacheCS);
   end;
 
   FromRGB(col, r, g, b);
@@ -1340,8 +1284,12 @@ begin
 {$endif}
 
   EnterCriticalSection(Plan.CacheCS);
-  Plan.ListCache[col] := Copy(List, 0, Result);
-  Plan.CountCache[col] := Result;
+  if Plan.CountCache[col] >= $80 then
+  begin
+    Plan.ListCache[col] := Copy(List, 0, Result);
+    ReadWriteBarrier;
+    Plan.CountCache[col] := Result;
+  end;
   LeaveCriticalSection(Plan.CacheCS);
 end;
 
@@ -1533,13 +1481,16 @@ var
   TileDCT, OrigTileDCT: TFloatDynArray;
 begin
   EnterCriticalSection(FCS);
-  if AFrame^.KeyFrame^.FrameDitheringLeft < 0 then
+  if AFrame^.KeyFrame^.FramesLeft < 0 then
   begin
     for i := 0 to cPaletteCount - 1 do
       PreparePlan(AFrame^.KeyFrame^.MixingPlans[i], FY2MixedColors, AFrame^.KeyFrame^.PaletteRGB[i]);
-    AFrame^.KeyFrame^.FrameDitheringLeft := AFrame^.KeyFrame^.FrameCount;
+    AFrame^.KeyFrame^.FramesLeft := AFrame^.KeyFrame^.FrameCount;
   end;
   LeaveCriticalSection(FCS);
+
+  SetLength(OrigTileDCT, cTileDCTSize);
+  SetLength(TileDCT, cTileDCTSize);
 
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
@@ -1581,8 +1532,8 @@ begin
     end;
 
   EnterCriticalSection(FCS);
-  Dec(AFrame^.KeyFrame^.FrameDitheringLeft);
-  if AFrame^.KeyFrame^.FrameDitheringLeft <= 0 then
+  Dec(AFrame^.KeyFrame^.FramesLeft);
+  if AFrame^.KeyFrame^.FramesLeft <= 0 then
     for i := 0 to cPaletteCount - 1 do
       TerminatePlan(AFrame^.KeyFrame^.MixingPlans[i]);
   LeaveCriticalSection(FCS);
@@ -1780,7 +1731,7 @@ var
   YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
   pYuv, pLut: PFloat;
 begin
-  SetLength(DCT, 3 * sqr(cTileWidth));
+  Assert(Length(DCT) >= cTileDCTSize, 'DCT too small!');
 
   if FromPal then
   begin
@@ -1841,8 +1792,8 @@ begin
            DCT[di] *= 16.0 / sqrt(cDCTQuantization[cpn, v, u]);
 
         Inc(di);
-	    end;
-    end;
+      end;
+  end;
 end;
 
 procedure TMainForm.VMirrorPalTile(var ATile: TTile);
@@ -1991,6 +1942,8 @@ var
 begin
   if Length(FFrames) <= 0 then
     Exit;
+
+  mirrored := mirrored and reduced;
 
   AFrameIndex := EnsureRange(AFrameIndex, 0, high(FFrames));
 
@@ -2348,34 +2301,23 @@ begin
   DS := New(PTileDataset);
   AKF^.TileDS := DS;
 
-  // make a list of all used tiles
-  SetLength(DS^.FrameDataset, AKF^.FrameCount * cTileMapSize);
-
   SetLength(used, Length(FTiles));
   FillByte(used[0], Length(FTiles), 0);
 
-  di := 0;
   for frame := 0 to AKF^.FrameCount - 1 do
   begin
     frm := @FFrames[AKF^.StartFrame + frame];
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
-      begin
-        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, FUseLAB, False, False, cKFGamma, frm^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DS^.FrameDataset[di]);
-        Inc(di);
-
         used[frm^.TileMap[sy, sx].GlobalTileIndex] := True;
-      end;
   end;
-
-  Assert(di = AKF^.FrameCount * cTileMapSize);
 
   TRSize := 0;
   for i := 0 to High(used) do
     TRSize += Ord(used[i]);
 
   SetLength(DS^.TRToTileIdx, TRSize);
-  SetLength(DS^.Dataset, TRSize * cPaletteCount * 4);
+  SetLength(DS^.Dataset, TRSize * cPaletteCount * 4, cTileDCTSize);
 
   di := 0;
   for i := 0 to High(FTiles) do
@@ -2399,7 +2341,7 @@ begin
   for i := 0 to High(DS^.Dataset) do
     DS^.Tags[i] := i;
 
-  KDTreeBuildTagged(DS^.Dataset, DS^.Tags, Length(DS^.Dataset[0]), 0, 2, DS^.KDT);
+  AKF^.FramesLeft := -1;
 end;
 
 procedure TMainForm.DoFrameTiling(AFrame: PFrame);
@@ -2411,31 +2353,31 @@ var
   TPF, MaxTPF, i, tri: Integer;
   Used: TBooleanDynArray;
   DCT: TFloatDynArray;
-  Tags: TIVector;
-  KDBuf: Tkdtreerequestbuffer;
 begin
   DS := AFrame^.KeyFrame^.TileDS;
+
+  EnterCriticalSection(FCS);
+  if AFrame^.KeyFrame^.FramesLeft < 0 then
+  begin
+    DS^.KDT := ann_kdtree_create(PPFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+    AFrame^.KeyFrame^.FramesLeft := AFrame^.KeyFrame^.FrameCount;
+  end;
+  LeaveCriticalSection(FCS);
 
   // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
   SetLength(Used, Length(FTiles));
-  SetLength(Tags, 1);
+  SetLength(DCT, cTileDCTSize);
 
   MaxTPF := 0;
   FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
 
-  kdtreecreaterequestbuffer(DS^.KDT, KDBuf);
-
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
-      DCT := DS^.FrameDataset[AFrame^.Index * cTileMapSize + sy * cTileMapWidth + sx];
+      ComputeTileDCT(AFrame^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, FUseLAB, False, False, cKFGamma, AFrame^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DCT);
 
-      i := kdtreetsqueryknn(DS^.KDT, KDBuf, DCT, 1, True);
-      Assert(i = 1);
-      kdtreetsqueryresultstags(DS^.KDT, KDBuf, Tags);
-      Assert(i = 1);
-      tri := Tags[0];
+      tri := ann_kdtree_search(DS^.KDT, PFloat(DCT), 0.0);
 
       tmiO := @FFrames[AFrame^.Index].TileMap[sy, sx];
 
@@ -2447,8 +2389,6 @@ begin
       Used[tmiO^.GlobalTileIndex] := True;
     end;
 
-  FreeAndNil(KDBuf);
-
   TPF := 0;
   for i := 0 to High(Used) do
     Inc(TPF, Ord(Used[i]));
@@ -2456,7 +2396,16 @@ begin
   MaxTPF := max(MaxTPF, TPF);
 
   EnterCriticalSection(FCS);
-  WriteLn('KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset));
+  Dec(AFrame^.KeyFrame^.FramesLeft);
+  if AFrame^.KeyFrame^.FramesLeft <= 0 then
+  begin
+    ann_kdtree_destroy(DS^.KDT);
+    DS^.KDT := nil;
+  end;
+  LeaveCriticalSection(FCS);
+
+  EnterCriticalSection(FCS);
+  WriteLn('KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft);
   LeaveCriticalSection(FCS);
 end;
 
@@ -2470,6 +2419,9 @@ var
   Tile_, PrevTile: TTile;
   TileDCT, PrevTileDCT: TFloatDynArray;
 begin
+  SetLength(PrevTileDCT, cTileDCTSize);
+  SetLength(TileDCT, cTileDCTSize);
+
   for sx := 0 to cTileMapWidth - 1 do
   begin
     PrevTMI := @APrevFrame^.TileMap[Y, sx];
@@ -2480,8 +2432,8 @@ begin
     PrevTile := FTiles[PrevTMI^.GlobalTileIndex]^;
     Tile_ := FTiles[TMI^.GlobalTileIndex]^;
 
-    ComputeTileDCT(PrevTile, True, True, FUseLAB, PrevTMI^.HMirror, PrevTMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
-    ComputeTileDCT(Tile_, True, True, FUseLAB, TMI^.HMirror, TMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
+    ComputeTileDCT(PrevTile, True, True, FUseLAB, PrevTMI^.HMirror, PrevTMI^.VMirror, cSmoothingGamma, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
+    ComputeTileDCT(Tile_, True, True, FUseLAB, TMI^.HMirror, TMI^.VMirror, cSmoothingGamma, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
 
     cmp := CompareEuclidean192(TileDCT, PrevTileDCT);
     cmp := sqrt(cmp * cSqrtFactor);
