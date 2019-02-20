@@ -23,7 +23,7 @@ const
   cRandomKModesCount = 7;
   cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.0);
   cSmoothingGamma = -1;
-  cKFGamma = 0;
+  cKFGamma = -1;
   cKFFromPal = True;
   cKFQWeighting = True;
   cKFSearchEpsilon = 1e-7;
@@ -138,6 +138,7 @@ type
     Tags: TInteger1DArray;
     Dataset: TFloatDynArray2;
     TRToTileIdx: TIntegerDynArray;
+    TRToPalIdx: TByteDynArray;
     KDT: PANNkdtree;
   end;
 
@@ -297,18 +298,18 @@ type
     procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; ColorReach: TFloat);
     procedure FinalDitherTiles(AFrame: PFrame);
 
-    function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer): Integer;
-    function GetTileGridMedian(const ATile: TTile; other: Boolean): Integer;
+    function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
+    function GetTileGridMedian(const ATile: TTile; other: Boolean; out UseCount: Integer): Integer;
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
-    function WriteTileDatasetLine(const ATile: TTile; var DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
+    function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat = 0.0; Epsilon: TFloat = 1e-12; Data: Pointer = nil): TFloat;
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
     function GetMaxTPF(AKF: PKeyFrame): Integer;
-    procedure DoKeyFrameTiling(AKF: PKeyFrame);
+    procedure PrepareFrameTiling(AKF: PKeyFrame);
     procedure DoFrameTiling(AFrame: PFrame);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
@@ -591,7 +592,7 @@ procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
 
   procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoKeyFrameTiling(@FKeyFrames[AIndex]);
+    PrepareFrameTiling(@FKeyFrames[AIndex]);
   end;
 
 var
@@ -2045,13 +2046,20 @@ begin
 
   if not playing then
   begin
-    for i := 0 to cScreenHeight - 1 do
+    for j := 0 to cScreenHeight - 1 do
     begin
-      Move(PInteger(imgSource.Picture.Bitmap.ScanLine[i])^, oriCorr[i * cScreenWidth], cScreenWidth * SizeOf(Integer));
-      Move(PInteger(imgDest.Picture.Bitmap.ScanLine[i])^, chgCorr[i * cScreenWidth], cScreenWidth * SizeOf(Integer));
+      Move(PInteger(imgSource.Picture.Bitmap.ScanLine[j])^, oriCorr[j * cScreenWidth], cScreenWidth * SizeOf(Integer));
+      Move(PInteger(imgDest.Picture.Bitmap.ScanLine[j])^, chgCorr[j * cScreenWidth], cScreenWidth * SizeOf(Integer));
     end;
 
-    lblCorrel.Caption := FormatFloat('0.0000', ComputeCorrelation(oriCorr, chgCorr));
+    for j := 0 to cScreenHeight - 1 do
+      for i := 0 to cScreenWidth - 1 do
+      begin
+        oriCorr[cScreenWidth * cScreenHeight + i * cScreenHeight + j] := oriCorr[j * cScreenWidth + i];
+        chgCorr[cScreenWidth * cScreenHeight + i * cScreenHeight + j] := chgCorr[j * cScreenWidth + i];
+      end;
+
+    lblCorrel.Caption := FormatFloat('0.0000000', ComputeCorrelation(oriCorr, chgCorr));
   end;
 end;
 
@@ -2288,54 +2296,69 @@ begin
     Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
 end;
 
-procedure TMainForm.DoKeyFrameTiling(AKF: PKeyFrame);
+procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame);
 var
   TRSize, di, i, frame, sy, sx: Integer;
   frm: PFrame;
   T: PTile;
   DS: PTileDataset;
-  used: TBooleanDynArray;
+  used: array[0 .. cPaletteCount - 1] of TBooleanDynArray;
   vmir, hmir: Boolean;
   palIdx: Integer;
 begin
   DS := New(PTileDataset);
   AKF^.TileDS := DS;
 
-  SetLength(used, Length(FTiles));
-  FillByte(used[0], Length(FTiles), 0);
+  for palIdx := 0 to cPaletteCount - 1 do
+  begin
+    SetLength(used[palIdx], Length(FTiles));
+    FillByte(used[palIdx, 0], Length(FTiles), 0);
+  end;
 
   for frame := 0 to AKF^.FrameCount - 1 do
   begin
     frm := @FFrames[AKF^.StartFrame + frame];
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
-        used[frm^.TileMap[sy, sx].GlobalTileIndex] := True;
+        used[frm^.TileMap[sy, sx].PalIdx, frm^.TileMap[sy, sx].GlobalTileIndex] := True;
   end;
 
   TRSize := 0;
-  for i := 0 to High(used) do
-    TRSize += Ord(used[i]);
+  for palIdx := 0 to cPaletteCount - 1 do
+    for i := 0 to High(FTiles) do
+      TRSize += Ord(used[palIdx, i]);
 
-  SetLength(DS^.TRToTileIdx, TRSize);
+  SetLength(DS^.TRToTileIdx, TRSize * cPaletteCount);
+  SetLength(DS^.TRToPalIdx, TRSize * cPaletteCount);
   SetLength(DS^.Dataset, TRSize * cPaletteCount * 4, cTileDCTSize);
 
   di := 0;
   for i := 0 to High(FTiles) do
-    if used[i] then
-    begin
-      DS^.TRToTileIdx[di div (cPaletteCount * 4)] := i;
-      T := FTiles[i];
+  begin
+    T := FTiles[i];
 
-      for palIdx := 0 to cPaletteCount - 1 do
+    for palIdx := 0 to cPaletteCount - 1 do
+      if used[palIdx, i] then
+      begin
+        DS^.TRToTileIdx[di shr 2] := i;
+        DS^.TRToPalIdx[di shr 2] := palIdx;
+
         for vmir := False to True do
           for hmir := False to True do
           begin
             ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, hmir, vmir, cKFGamma, AKF^.PaletteRGB[palIdx], DS^.Dataset[di]);
             Inc(di);
           end;
-    end;
+      end;
+  end;
 
-  Assert(di = TRSize * cPaletteCount * 4);
+  EnterCriticalSection(FCS);
+  WriteLn('KF: ', AKF^.StartFrame, #9'TileCnt: ', di, #9'MaxTileCnt: ', Length(DS^.Dataset));
+  LeaveCriticalSection(FCS);
+
+  SetLength(DS^.Dataset, di);
+  SetLength(DS^.TRToTileIdx, di shr 2);
+  SetLength(DS^.TRToPalIdx, di shr 2);
 
   SetLength(DS^.Tags, Length(DS^.Dataset));
   for i := 0 to High(DS^.Dataset) do
@@ -2381,10 +2404,10 @@ begin
 
       tmiO := @FFrames[AFrame^.Index].TileMap[sy, sx];
 
-      tmiO^.GlobalTileIndex := DS^.TRToTileIdx[tri div (cPaletteCount * 4)];
+      tmiO^.GlobalTileIndex := DS^.TRToTileIdx[tri shr 2];
+      tmiO^.PalIdx :=  DS^.TRToPalIdx[tri shr 2];
       tmiO^.HMirror := (tri and 1) <> 0;
       tmiO^.VMirror := (tri and 2) <> 0;
-      tmiO^.PalIdx := (tri shr 2) and (cPaletteCount - 1);
 
       Used[tmiO^.GlobalTileIndex] := True;
     end;
@@ -2466,53 +2489,46 @@ begin
         Inc(Result, Ord(FFrames[i].TileMap[sy, sx].GlobalTileIndex = ATileIndex));
 end;
 
-function TMainForm.GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer): Integer;
-var i, j: Integer;
+function TMainForm.GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
+var uc, i, j: Integer;
     px: Byte;
-    cntL, cntH: array [0..cTilePaletteSize - 1] of Integer;
+    cnt: array [0..cTilePaletteSize - 1] of Integer;
     highest: Integer;
 begin
-  FillDWord(cntL[0], cTilePaletteSize, DWORD(Low(Integer)));
-  FillDWord(cntH[0], cTilePaletteSize, High(Integer));
+  FillDWord(cnt[0], cTilePaletteSize, DWORD(Low(Integer)));
 
   for j := y to y + h - 1 do
     for i := x to x + w - 1 do
     begin
       px := ATile.PalPixels[j, i];
 
-      if cntL[px] = Low(Integer) then
-        cntL[px] := 1
+      if cnt[px] = Low(Integer) then
+        cnt[px] := 1
       else
-        Inc(cntL[px]);
-
-      if cntH[px] = High(Integer) then
-        cntH[px] := 1
-      else
-        Inc(cntH[px]);
+        Inc(cnt[px]);
     end;
 
-  Result := cTilePaletteSize - 1;
-
-  if MaxIntValue(cntL) = MinIntValue(cntH) then // "lack of significativity" test
-    Exit;
-
+  Result := 0;
   highest := -1;
+  uc := 0;
   for i := 0 to cTilePaletteSize - 1 do
-    if cntL[i] >= highest then
+    if cnt[i] >= highest then
     begin
       Result := i;
-      highest := cntL[i];
+      highest := cnt[i];
+      Inc(uc, Ord(cnt[i] <> 0));
     end;
+
+  UseCount := uc;
 end;
 
-function TMainForm.GetTileGridMedian(const ATile: TTile; other: Boolean): Integer;
-var i, j: Integer;
+function TMainForm.GetTileGridMedian(const ATile: TTile; other: Boolean; out UseCount: Integer): Integer;
+var uc, i, j: Integer;
     px: Byte;
-    cntL, cntH: array [0..cTilePaletteSize - 1] of Integer;
+    cnt: array [0..cTilePaletteSize - 1] of Integer;
     highest: Integer;
 begin
-  FillDWord(cntL[0], cTilePaletteSize, DWORD(Low(Integer)));
-  FillDWord(cntH[0], cTilePaletteSize, High(Integer));
+  FillDWord(cnt[0], cTilePaletteSize, DWORD(Low(Integer)));
 
   for j := 0 to cTileWidth - 1 do
     for i := 0 to cTileWidth - 1 do
@@ -2520,34 +2536,29 @@ begin
       begin
         px := ATile.PalPixels[j, i];
 
-        if cntL[px] = Low(Integer) then
-          cntL[px] := 1
+        if cnt[px] = Low(Integer) then
+          cnt[px] := 1
         else
-          Inc(cntL[px]);
-
-        if cntH[px] = High(Integer) then
-          cntH[px] := 1
-        else
-          Inc(cntH[px]);
+          Inc(cnt[px]);
       end;
 
-  Result := cTilePaletteSize - 1;
-
-  if MaxIntValue(cntL) = MinIntValue(cntH) then // "lack of significativity" test
-    Exit;
-
+  Result := 0;
   highest := -1;
+  uc := 0;
   for i := 0 to cTilePaletteSize - 1 do
-    if cntL[i] >= highest then
+    if cnt[i] >= highest then
     begin
       Result := i;
-      highest := cntL[i];
+      highest := cnt[i];
+      Inc(uc, Ord(cnt[i] <> 0));
     end;
+
+  UseCount := uc;
 end;
 
-function TMainForm.WriteTileDatasetLine(const ATile: TTile; var DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
+function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
 var
-  acc, x, y: Integer;
+  acc, x, y, UseCount: Integer;
   b: Byte;
 begin
   Result := 0;
@@ -2561,28 +2572,43 @@ begin
       Inc(Result);
     end;
 
-  //DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 4, 4);
-  //Inc(Result);
-  //DataLine[Result] := GetTileZoneMedian(ATile, 4, 0, 4, 4);
-  //Inc(Result);
-  //DataLine[Result] := GetTileZoneMedian(ATile, 0, 4, 4, 4);
-  //Inc(Result);
-  //DataLine[Result] := GetTileZoneMedian(ATile, 4, 4, 4, 4);
-  //Inc(Result);
-  //
-  //DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 8, 8);
-  //Inc(Result);
-  //
-  //DataLine[Result] := GetTileGridMedian(ATile, True);
-  //Inc(Result);
-  //
-  //DataLine[Result] := GetTileGridMedian(ATile, False);
-  //Inc(Result);
+  DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 4, 4, UseCount);
+  Inc(Result);
+  DataLine[Result] := UseCount;
+  Inc(Result);
 
-  PxlAccum := acc;
+  DataLine[Result] := GetTileZoneMedian(ATile, 4, 0, 4, 4, UseCount);
+  Inc(Result);
+  DataLine[Result] := UseCount;
+  Inc(Result);
+
+  DataLine[Result] := GetTileZoneMedian(ATile, 0, 4, 4, 4, UseCount);
+  Inc(Result);
+  DataLine[Result] := UseCount;
+  Inc(Result);
+
+  DataLine[Result] := GetTileZoneMedian(ATile, 4, 4, 4, 4, UseCount);
+  Inc(Result);
+  DataLine[Result] := UseCount;
+  Inc(Result);
+
+  DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 8, 8, UseCount);
+  Inc(Result);
+  DataLine[Result] := UseCount;
+  Inc(Result);
+
+  DataLine[Result] := GetTileGridMedian(ATile, True, UseCount);
+  Inc(Result);
+  DataLine[Result] := UseCount;
+  Inc(Result);
+
+  DataLine[Result] := GetTileGridMedian(ATile, False, UseCount);
+  Inc(Result);
+  DataLine[Result] := UseCount;
+  Inc(Result);
 
   // clear remaining bytes
-  //FillByte(DataLine[Result], cKModesFeatureCount - Result, 0);
+  FillByte(DataLine[Result], cKModesFeatureCount - Result, 0);
 end;
 
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);

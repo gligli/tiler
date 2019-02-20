@@ -300,18 +300,18 @@ object MainForm: TMainForm
     TabOrder = 15
   end
   object lblCorrel: TLabel
-    Left = 924
-    Height = 15
+    Left = 909
+    Height = 13
     Top = 772
-    Width = 35
+    Width = 51
     Alignment = taRightJustify
     Anchors = [akRight, akBottom]
     AutoSize = False
-    Caption = '0.0000'
+    Caption = '0.0000000'
     ParentColor = False
   end
   object Label5: TLabel
-    Left = 836
+    Left = 820
     Height = 13
     Top = 772
     Width = 79
