@@ -196,6 +196,7 @@ type
     Label10: TLabel;
     Label11: TLabel;
     Label12: TLabel;
+    Label13: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
@@ -221,6 +222,7 @@ type
     seAvgTPF: TSpinEdit;
     seColReach: TFloatSpinEdit;
     sedPalIdx: TSpinEdit;
+    seStartFrame: TSpinEdit;
     seMaxTiles: TSpinEdit;
     seTempoSmoo: TSpinEdit;
     sePage: TSpinEdit;
@@ -630,7 +632,7 @@ var
     try
       EnterCriticalSection(FCS);
       bmp.Bitmap.PixelFormat:=pf32bit;
-      bmp.LoadFromFile(Format(inPath, [AIndex]));
+      bmp.LoadFromFile(Format(inPath, [AIndex + PtrInt(AData)]));
       LeaveCriticalSection(FCS);
 
       LoadFrame(@FFrames[AIndex], bmp.Bitmap);
@@ -644,7 +646,7 @@ var
 var
   i, j: Integer;
   fn: String;
-  kfCnt, frc: Integer;
+  kfCnt, frc, startFrame: Integer;
   isKf: Boolean;
   kfSL: TStringList;
   sfr, efr: Integer;
@@ -661,6 +663,7 @@ begin
   ProgressRedraw(-1, esLoad);
 
   inPath := edInput.Text;
+  startFrame := seStartFrame.Value;
   frc := seFrameCount.Value;
 
   if frc <= 0 then
@@ -669,7 +672,7 @@ begin
     begin
       i := 0;
       repeat
-        fn := Format(inPath, [i]);
+        fn := Format(inPath, [i + startFrame]);
         Inc(i);
       until not FileExists(fn);
 
@@ -689,7 +692,7 @@ begin
 
   for i := 0 to High(FFrames) do
   begin
-    fn := Format(inPath, [i]);
+    fn := Format(inPath, [i + startFrame]);
     if not FileExists(fn) then
     begin
       SetLength(FFrames, 0);
@@ -698,7 +701,7 @@ begin
     end;
   end;
 
-  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(startFrame));
 
   kfSL := TStringList.Create;
   try
@@ -709,7 +712,7 @@ begin
     kfCnt := 0;
     for i := 0 to High(FFrames) do
     begin
-      fn := ChangeFileExt(Format(inPath, [i]), '.kf');
+      fn := ChangeFileExt(Format(inPath, [i + startFrame]), '.kf');
       isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
       if isKf then
       begin
@@ -722,7 +725,7 @@ begin
     kfCnt := -1;
     for i := 0 to High(FFrames) do
     begin
-      fn := ChangeFileExt(Format(inPath, [i]), '.kf');
+      fn := ChangeFileExt(Format(inPath, [i + startFrame]), '.kf');
       isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
       if isKf then
         Inc(kfCnt);
@@ -861,7 +864,7 @@ begin
 
   palPict.Width := cScreenWidth;
   palPict.Height := cScreenHeight;
-  palPict.PixelFormat := pf32bit;
+  palPict.PixelFormat := pf24bit;
 
   try
     for i := 0 to High(FFrames) do

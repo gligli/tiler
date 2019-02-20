@@ -23,19 +23,19 @@ object MainForm: TMainForm
   object cbxStep: TComboBox
     Left = 206
     Height = 21
-    Top = 240
+    Top = 258
     Width = 113
     ItemHeight = 13
     Style = csDropDownList
-    TabOrder = 20
+    TabOrder = 21
   end
   object pbProgress: TProgressBar
     Left = 8
     Height = 16
-    Top = 272
+    Top = 290
     Width = 273
     Smooth = True
-    TabOrder = 11
+    TabOrder = 12
   end
   object imgSource: TImage
     Left = 320
@@ -73,7 +73,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 19
+    TabOrder = 20
   end
   object chkPlay: TCheckBox
     Left = 288
@@ -82,7 +82,7 @@ object MainForm: TMainForm
     Width = 40
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 13
+    TabOrder = 14
   end
   object lblTileCount: TLabel
     Left = 8
@@ -102,12 +102,12 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 14
+    TabOrder = 15
   end
   object Label2: TLabel
     Left = 8
     Height = 13
-    Top = 160
+    Top = 178
     Width = 118
     Caption = 'Tile limit (all; per frame)'
     ParentColor = False
@@ -115,16 +115,16 @@ object MainForm: TMainForm
   object seFrameCount: TSpinEdit
     Left = 263
     Height = 21
-    Top = 92
+    Top = 110
     Width = 56
-    MaxValue = 10000
-    TabOrder = 3
+    MaxValue = 100000
+    TabOrder = 4
     Value = 6
   end
   object Label3: TLabel
     Left = 8
     Height = 13
-    Top = 94
+    Top = 112
     Width = 136
     Caption = 'Frame count (0: automatic)'
     ParentColor = False
@@ -135,7 +135,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 232
     TabOrder = 0
-    Text = 'C:\tiler_misc\avs\%.4d.png'
+    Text = 'C:\tiler_misc\av\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -148,12 +148,12 @@ object MainForm: TMainForm
   object btnRunAll: TButton
     Left = 8
     Height = 25
-    Top = 240
+    Top = 258
     Width = 72
     Caption = 'Run (F10)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 10
+    TabOrder = 11
   end
   object sePage: TSpinEdit
     Left = 264
@@ -162,7 +162,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 12
+    TabOrder = 13
   end
   object Label6: TLabel
     Left = 180
@@ -175,7 +175,7 @@ object MainForm: TMainForm
   object Label7: TLabel
     Left = 8
     Height = 13
-    Top = 116
+    Top = 134
     Width = 196
     Caption = 'Palette color reach (colors ''weirdness'')'
     ParentColor = False
@@ -183,11 +183,11 @@ object MainForm: TMainForm
   object seAvgTPF: TSpinEdit
     Left = 263
     Height = 21
-    Top = 158
+    Top = 176
     Width = 56
     MaxValue = 0
     OnEditingDone = seAvgTPFEditingDone
-    TabOrder = 7
+    TabOrder = 8
     Value = 3040
   end
   object Label10: TLabel
@@ -224,7 +224,7 @@ object MainForm: TMainForm
   object Label9: TLabel
     Left = 8
     Height = 13
-    Top = 182
+    Top = 200
     Width = 153
     Caption = 'Temporal smoothing strength'
     ParentColor = False
@@ -232,9 +232,9 @@ object MainForm: TMainForm
   object seTempoSmoo: TSpinEdit
     Left = 263
     Height = 21
-    Top = 180
+    Top = 198
     Width = 56
-    TabOrder = 8
+    TabOrder = 9
     Value = 3
   end
   object imgPalette: TImage
@@ -254,12 +254,12 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 16
+    TabOrder = 17
   end
   object lblPct: TLabel
     Left = 281
     Height = 15
-    Top = 273
+    Top = 291
     Width = 39
     Alignment = taRightJustify
     AutoSize = False
@@ -275,16 +275,16 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 18
+    TabOrder = 19
   end
   object seMaxTiles: TSpinEdit
     Left = 206
     Height = 21
-    Top = 158
+    Top = 176
     Width = 56
     MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
-    TabOrder = 6
+    TabOrder = 7
   end
   object chkReduced: TCheckBox
     Left = 407
@@ -297,7 +297,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 15
+    TabOrder = 16
   end
   object lblCorrel: TLabel
     Left = 909
@@ -322,16 +322,16 @@ object MainForm: TMainForm
   object chkLAB: TCheckBox
     Left = 8
     Height = 17
-    Top = 204
+    Top = 222
     Width = 211
     Caption = 'CIE L*a*b* color space instead of YUV'
     OnChange = chkLABChange
-    TabOrder = 9
+    TabOrder = 10
   end
   object cbxYilMix: TComboBox
     Left = 263
     Height = 21
-    Top = 136
+    Top = 154
     Width = 56
     ItemHeight = 13
     ItemIndex = 3
@@ -343,13 +343,13 @@ object MainForm: TMainForm
       '16'
     )
     OnChange = cbxYilMixChange
-    TabOrder = 5
+    TabOrder = 6
     Text = '8'
   end
   object Label11: TLabel
     Left = 9
     Height = 13
-    Top = 138
+    Top = 156
     Width = 149
     Caption = 'Yiluoma 2 mixed colors count'
     ParentColor = False
@@ -362,7 +362,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     MinValue = -1
     OnChange = tbFrameChange
-    TabOrder = 17
+    TabOrder = 18
     Value = -1
   end
   object Label8: TLabel
@@ -377,7 +377,7 @@ object MainForm: TMainForm
   object Label12: TLabel
     Left = 120
     Height = 13
-    Top = 244
+    Top = 262
     Width = 77
     Caption = 'Run up to step'
     ParentColor = False
@@ -385,12 +385,29 @@ object MainForm: TMainForm
   object seColReach: TFloatSpinEdit
     Left = 263
     Height = 21
-    Top = 114
+    Top = 132
     Width = 56
     Increment = 0.5
     MinValue = 0
-    TabOrder = 4
+    TabOrder = 5
     Value = 6
+  end
+  object Label13: TLabel
+    Left = 8
+    Height = 13
+    Top = 90
+    Width = 56
+    Caption = 'Start frame'
+    ParentColor = False
+  end
+  object seStartFrame: TSpinEdit
+    Left = 263
+    Height = 21
+    Top = 88
+    Width = 56
+    MaxValue = 100000
+    TabOrder = 3
+    Value = 157
   end
   object IdleTimer: TIdleTimer
     Interval = 42
