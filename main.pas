@@ -184,6 +184,7 @@ type
     cbxYilMix: TComboBox;
     chkGamma: TCheckBox;
     chkLAB: TCheckBox;
+    chkTransPalette: TCheckBox;
     chkReduced: TCheckBox;
     chkMirrored: TCheckBox;
     chkDithered: TCheckBox;
@@ -237,7 +238,7 @@ type
     procedure btnDitherClick(Sender: TObject);
     procedure btnDoMakeUniqueClick(Sender: TObject);
     procedure btnDoGlobalTilingClick(Sender: TObject);
-    procedure btnDoKeyFrameTilingClick(Sender: TObject);
+    procedure btnDoFrameTilingClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
@@ -311,7 +312,7 @@ type
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
     function GetMaxTPF(AKF: PKeyFrame): Integer;
-    procedure PrepareFrameTiling(AKF: PKeyFrame);
+    procedure PrepareFrameTiling(AKF: PKeyFrame; TransPalette: Boolean);
     procedure DoFrameTiling(AFrame: PFrame);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
@@ -585,7 +586,7 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
+procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
@@ -594,7 +595,7 @@ procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
 
   procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    PrepareFrameTiling(@FKeyFrames[AIndex]);
+    PrepareFrameTiling(@FKeyFrames[AIndex], chkTransPalette.Checked);
   end;
 
 var
@@ -707,7 +708,11 @@ begin
   try
     fn := ChangeFileExt(Format(inPath, [0]), '.kf');
     if FileExists(fn) then
+    begin
       kfSL.LoadFromFile(fn);
+      for i := 0 to startFrame - 1 do
+        kfSL.Delete(0);
+    end;
 
     kfCnt := 0;
     for i := 0 to High(FFrames) do
@@ -810,7 +815,7 @@ begin
     btnDoGlobalTilingClick(nil);
 
   if lastStep >= esFrameTiling then
-    btnDoKeyFrameTilingClick(nil);
+    btnDoFrameTilingClick(nil);
 
   if lastStep >= esReindex then
     btnReindexClick(nil);
@@ -916,7 +921,7 @@ begin
     VK_F3: btnDitherClick(nil);
     VK_F4: btnDoMakeUniqueClick(nil);
     VK_F5: btnDoGlobalTilingClick(nil);
-    VK_F6: btnDoKeyFrameTilingClick(nil);
+    VK_F6: btnDoFrameTilingClick(nil);
     VK_F7: btnReindexClick(nil);
     VK_F8: btnSmoothClick(nil);
     VK_F9: btnSaveClick(nil);
@@ -999,9 +1004,9 @@ begin
   SetLength(Plan.LumaPal, Length(pal));
   SetLength(Plan.Y2Palette, Length(pal));
 
-  SetLength(Plan.CountCache, cTotalColors);
-  SetLength(Plan.ListCache, cTotalColors);
-  FillByte(Plan.CountCache[0], cTotalColors, $ff);
+  SetLength(Plan.CountCache, 1 shl 24);
+  SetLength(Plan.ListCache, 1 shl 24);
+  FillByte(Plan.CountCache[0], 1 shl 24, $ff);
 
   InitializeCriticalSection(Plan.CacheCS);
 
@@ -1431,10 +1436,10 @@ begin
 
     // after LastUsed put 'weird' colors (ie. colors not in frames, but relevant for Y2)
 
-    for i := LastUsed + 1 to LastUsed + (LastUsed shr 1) do
+    for i := LastUsed + 1 to min(cTotalColors - 1, LastUsed + (LastUsed shr 1)) do
     begin
       CMItem := PCountIndexArray(CMUsage[i]);
-      CMItem^ := PCountIndexArray(CMUsage[(i - LastUsed) shl 1])^;
+      CMItem^ := PCountIndexArray(CMUsage[EnsureRange((i - LastUsed - 1) shl 1, 0, cTotalColors - 1)])^;
       CMItem^[ciCount] := 0;
       col := HSLToRGB(CMItem^[ciHue], 255 - CMItem^[ciSat], CMItem^[ciLit]);
       col := col shr cRGShift;
@@ -2299,7 +2304,7 @@ begin
     Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
 end;
 
-procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame);
+procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame; TransPalette: Boolean);
 var
   TRSize, di, i, frame, sy, sx: Integer;
   frm: PFrame;
@@ -2321,9 +2326,20 @@ begin
   for frame := 0 to AKF^.FrameCount - 1 do
   begin
     frm := @FFrames[AKF^.StartFrame + frame];
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
-        used[frm^.TileMap[sy, sx].PalIdx, frm^.TileMap[sy, sx].GlobalTileIndex] := True;
+
+    if TransPalette then
+    begin
+      for palIdx := 0 to cPaletteCount - 1 do
+        for sy := 0 to cTileMapHeight - 1 do
+          for sx := 0 to cTileMapWidth - 1 do
+            used[palIdx, frm^.TileMap[sy, sx].GlobalTileIndex] := True;
+    end
+    else
+    begin
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
+          used[frm^.TileMap[sy, sx].PalIdx, frm^.TileMap[sy, sx].GlobalTileIndex] := True;
+    end;
   end;
 
   TRSize := 0;

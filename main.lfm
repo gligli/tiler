@@ -21,21 +21,21 @@ object MainForm: TMainForm
   LCLVersion = '2.0.0.4'
   WindowState = wsMaximized
   object cbxStep: TComboBox
-    Left = 206
+    Left = 207
     Height = 21
-    Top = 258
+    Top = 272
     Width = 113
     ItemHeight = 13
     Style = csDropDownList
-    TabOrder = 21
+    TabOrder = 22
   end
   object pbProgress: TProgressBar
-    Left = 8
+    Left = 9
     Height = 16
-    Top = 290
+    Top = 304
     Width = 273
     Smooth = True
-    TabOrder = 12
+    TabOrder = 13
   end
   object imgSource: TImage
     Left = 320
@@ -73,7 +73,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 20
+    TabOrder = 21
   end
   object chkPlay: TCheckBox
     Left = 288
@@ -82,7 +82,7 @@ object MainForm: TMainForm
     Width = 40
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 14
+    TabOrder = 15
   end
   object lblTileCount: TLabel
     Left = 8
@@ -102,7 +102,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 15
+    TabOrder = 16
   end
   object Label2: TLabel
     Left = 8
@@ -146,14 +146,14 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object btnRunAll: TButton
-    Left = 8
+    Left = 9
     Height = 25
-    Top = 258
+    Top = 272
     Width = 72
     Caption = 'Run (F10)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 11
+    TabOrder = 12
   end
   object sePage: TSpinEdit
     Left = 264
@@ -162,7 +162,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 13
+    TabOrder = 14
   end
   object Label6: TLabel
     Left = 180
@@ -254,12 +254,12 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 17
+    TabOrder = 18
   end
   object lblPct: TLabel
-    Left = 281
+    Left = 282
     Height = 15
-    Top = 291
+    Top = 305
     Width = 39
     Alignment = taRightJustify
     AutoSize = False
@@ -275,7 +275,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 19
+    TabOrder = 20
   end
   object seMaxTiles: TSpinEdit
     Left = 206
@@ -297,7 +297,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 16
+    TabOrder = 17
   end
   object lblCorrel: TLabel
     Left = 909
@@ -362,7 +362,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     MinValue = -1
     OnChange = tbFrameChange
-    TabOrder = 18
+    TabOrder = 19
     Value = -1
   end
   object Label8: TLabel
@@ -375,9 +375,9 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label12: TLabel
-    Left = 120
+    Left = 121
     Height = 13
-    Top = 262
+    Top = 276
     Width = 77
     Caption = 'Run up to step'
     ParentColor = False
@@ -409,6 +409,15 @@ object MainForm: TMainForm
     TabOrder = 3
     Value = 157
   end
+  object chkTransPalette: TCheckBox
+    Left = 8
+    Height = 17
+    Top = 240
+    Width = 235
+    Caption = 'Exended frame tiling palette usage (slow!)'
+    OnChange = chkLABChange
+    TabOrder = 11
+  end
   object IdleTimer: TIdleTimer
     Interval = 42
     OnTimer = IdleTimerTimer
@@ -439,9 +448,9 @@ object MainForm: TMainForm
       OnClick = btnDoGlobalTilingClick
     end
     object MenuItem3: TMenuItem
-      Caption = 'Tile (key frame)'
+      Caption = 'Tile (frame)'
       ShortCut = 117
-      OnClick = btnDoKeyFrameTilingClick
+      OnClick = btnDoFrameTilingClick
     end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'
