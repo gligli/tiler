@@ -1059,9 +1059,9 @@ begin
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * cRedMultiplier * 3 div 4; // 3 div 4 for 0.75 chroma importance reduction
-  Result += diffG * diffG * cGreenMultiplier * 3 div 4;
-  Result += diffB * diffB * cBlueMultiplier * 3 div 4;
+  Result := diffR * diffR * cRedMultiplier div 2; // div 2 for 0.5 chroma importance reduction
+  Result += diffG * diffG * cGreenMultiplier div 2;
+  Result += diffB * diffB * cBlueMultiplier div 2;
   Result += lumadiff * lumadiff;
 end;
 
@@ -1122,9 +1122,9 @@ begin
     pinsrq xmm5, rax, 0
     pinsrq xmm5, rax, 1
 
-    mov rax, (cRedMultiplier * 3 / 16) or ((cGreenMultiplier * 3 / 16) shl 32)
+    mov rax, (cRedMultiplier * 2 / 16) or ((cGreenMultiplier * 2 / 16) shl 32)
     pinsrq xmm6, rax, 0
-    mov rax, (cBlueMultiplier * 3 / 16) or ((cLumaMultiplier * 4 / 16) shl 32)
+    mov rax, (cBlueMultiplier * 2 / 16) or ((cLumaMultiplier * 4 / 16) shl 32)
     pinsrq xmm6, rax, 1
 
     pop rcx
