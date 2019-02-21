@@ -119,7 +119,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 100000
     TabOrder = 4
-    Value = 6
+    Value = 12
   end
   object Label3: TLabel
     Left = 8
@@ -413,8 +413,8 @@ object MainForm: TMainForm
     Left = 8
     Height = 17
     Top = 240
-    Width = 235
-    Caption = 'Exended frame tiling palette usage (slow!)'
+    Width = 239
+    Caption = 'Extended frame tiling palette usage (slow!)'
     OnChange = chkLABChange
     TabOrder = 11
   end

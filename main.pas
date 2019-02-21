@@ -26,7 +26,6 @@ const
   cKFGamma = -1;
   cKFFromPal = True;
   cKFQWeighting = True;
-  cKFSearchEpsilon = 1e-7;
 
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
@@ -710,6 +709,7 @@ begin
     if FileExists(fn) then
     begin
       kfSL.LoadFromFile(fn);
+      kfSL.Insert(0, 'I'); // fix format shifted 1 frame in the past
       for i := 0 to startFrame - 1 do
         kfSL.Delete(0);
     end;
@@ -1548,19 +1548,19 @@ begin
   LeaveCriticalSection(FCS);
 end;
 
-function CompareTilePalPixels(Item1, Item2, UserParameter:Pointer):Integer;
+function CompareTilePalPixels(Item1, Item2:Pointer):Integer;
 var
   t1, t2: PTile;
 begin
-  t1 := PPTile(Item1)^;
-  t2 := PPTile(Item2)^;
-  Result := CompareByte(t1^.PalPixels[0, 0], t2^.PalPixels[0, 0], sqr(cTileWidth));
+  t1 := PTile(Item1);
+  t2 := PTile(Item2);
+  Result := CompareDWord(t1^.PalPixels[0, 0], t2^.PalPixels[0, 0], sqr(cTileWidth) div SizeOf(DWORD));
 end;
 
 procedure TMainForm.MakeTilesUnique(FirstTileIndex, TileCount: Integer);
 var
   i, firstSameIdx: Integer;
-  sortArr: array of PTile;
+  sortList: TList;
   sameIdx: array of Integer;
 
   procedure DoOneMerge;
@@ -1570,32 +1570,42 @@ var
     if i - firstSameIdx >= 2 then
     begin
       for j := firstSameIdx to i - 1 do
-        sameIdx[j - firstSameIdx] := sortArr[j]^.TmpIndex;
+        sameIdx[j - firstSameIdx] := PTile(sortList[j])^.TmpIndex;
       MergeTiles(sameIdx, i - firstSameIdx, sameIdx[0], nil);
     end;
     firstSameIdx := i;
   end;
 
 begin
-  // sort global tiles by palette indexes (L to R, T to B)
+  sortList := TList.Create;
+  try
 
-  SetLength(sameIdx, TileCount);
-  sortArr := Copy(FTiles, FirstTileIndex, TileCount);
+    // sort global tiles by palette indexes (L to R, T to B)
 
-  for i := 0 to High(sortArr) do
-    sortArr[i]^.TmpIndex := i + FirstTileIndex;
+    SetLength(sameIdx, TileCount);
 
-  QuickSort(sortArr[0], 0, High(sortArr), SizeOf(PTile), @CompareTilePalPixels);
+    sortList.Count := TileCount;
+    for i := 0 to TileCount - 1 do
+    begin
+      sortList[i] := FTiles[i + FirstTileIndex];
+      PTile(sortList[i])^.TmpIndex := i + FirstTileIndex;
+    end;
 
-  // merge exactly similar tiles (so, consecutive after prev code)
+    sortList.Sort(@CompareTilePalPixels);
 
-  firstSameIdx := 0;
-  for i := 1 to High(sortArr) do
-    if CompareByte(sortArr[i - 1]^.PalPixels[0, 0], sortArr[i]^.PalPixels[0, 0], sqr(cTileWidth)) <> 0 then
-      DoOneMerge;
+    // merge exactly similar tiles (so, consecutive after prev code)
 
-  i := High(sortArr);
-  DoOneMerge;
+    firstSameIdx := 0;
+    for i := 1 to sortList.Count - 1 do
+      if CompareDWord(PTile(sortList[i - 1])^.PalPixels[0, 0], PTile(sortList[i])^.PalPixels[0, 0], sqr(cTileWidth) div SizeOf(DWORD)) <> 0 then
+        DoOneMerge;
+
+    i := sortList.Count - 1;
+    DoOneMerge;
+
+  finally
+    sortList.Free;
+  end;
 end;
 
 procedure TMainForm.LoadTiles;
