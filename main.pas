@@ -17,7 +17,7 @@ type
 const
   cTileMapWidth = 160;
   cTileMapHeight = 66;
-  cPaletteCount = 16;
+  cPaletteCount = 32;
   cBitsPerComp = 8;
   cTilePaletteSize = 32;
   cRandomKModesCount = 7;
@@ -2045,13 +2045,13 @@ begin
 
   imgPalette.Picture.Bitmap.BeginUpdate;
   try
-    for j := 0 to imgPalette.Height - 1 do
+    for j := 0 to imgPalette.Picture.Bitmap.Height - 1 do
     begin
       p := imgPalette.Picture.Bitmap.ScanLine[j];
-      for i := 0 to imgPalette.Width - 1 do
+      for i := 0 to imgPalette.Picture.Bitmap.Width - 1 do
       begin
-        if Assigned(Frame^.KeyFrame^.PaletteRGB[j div 16]) then
-          p^ := SwapRB(Frame^.KeyFrame^.PaletteRGB[j div 16, i * cTilePaletteSize div imgPalette.Width])
+        if Assigned(Frame^.KeyFrame^.PaletteRGB[j]) then
+          p^ := SwapRB(Frame^.KeyFrame^.PaletteRGB[j, i])
         else
           p^ := $00ff00ff;
 
@@ -2812,8 +2812,8 @@ begin
   imgTiles.Picture.Bitmap.Height:=cScreenHeight;
   imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgPalette.Picture.Bitmap.Width := cScreenWidth;
-  imgPalette.Picture.Bitmap.Height := 16 * cPaletteCount;
+  imgPalette.Picture.Bitmap.Width := cTilePaletteSize;
+  imgPalette.Picture.Bitmap.Height := cPaletteCount;
   imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
 
   imgTiles.Width := cScreenWidth div 2;
@@ -2822,7 +2822,7 @@ begin
   imgSource.Height := cScreenHeight;
   imgDest.Width := cScreenWidth;
   imgDest.Height := cScreenHeight;
-  imgPalette.Height := 16 * cPaletteCount;
+  imgPalette.Height := min(256, 16 * cPaletteCount);
 
   imgTiles.Left := imgSource.Left - imgTiles.Width;
   if imgTiles.Left < 0 then

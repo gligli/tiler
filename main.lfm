@@ -242,7 +242,9 @@ object MainForm: TMainForm
     Height = 64
     Top = 720
     Width = 256
+    AntialiasingMode = amOff
     PopupMenu = pmProcesses
+    Stretch = True
   end
   object chkMirrored: TCheckBox
     Left = 479
@@ -390,7 +392,7 @@ object MainForm: TMainForm
     Increment = 0.5
     MinValue = 0
     TabOrder = 5
-    Value = 6
+    Value = 7
   end
   object Label13: TLabel
     Left = 8
