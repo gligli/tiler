@@ -281,7 +281,7 @@ asm
   push r10
   push rdx
 
-  sub rsp, 16 * 12
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -292,14 +292,12 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
-  movdqu oword ptr [rsp + $a0], xmm10
-  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm6, oword ptr [item_rcx]
-  movdqu xmm7, oword ptr [item_rcx + $10]
-  movdqu xmm8, oword ptr [item_rcx + $20]
-  movdqu xmm9, oword ptr [item_rcx + $30]
-  movdqu xmm10, oword ptr [item_rcx + $40]
+  movdqu xmm5, oword ptr [item_rcx]
+  movdqu xmm6, oword ptr [item_rcx + $10]
+  movdqu xmm7, oword ptr [item_rcx + $20]
+  movdqu xmm8, oword ptr [item_rcx + $30]
+  movdqu xmm9, oword ptr [item_rcx + $40]
 
   lea rbx, [list_rdx + 8 * count_r8]
 
@@ -317,31 +315,10 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    movdqa xmm11, xmm0
-    psubb xmm11, xmm6
-    pabsb xmm11, xmm11
-
-    movdqa xmm5, xmm1
-    psadbw xmm5, xmm7
-    paddw xmm11, xmm5
-
-    movdqa xmm5, xmm2
-    psadbw xmm5, xmm8
-    paddw xmm11, xmm5
-
-    movdqa xmm5, xmm3
-    psadbw xmm5, xmm9
-    paddw xmm11, xmm5
-
-    movdqa xmm5, xmm4
-    psadbw xmm5, xmm10
-    paddw xmm11, xmm5
-
-    pcmpeqb xmm0, xmm6
-    pcmpeqb xmm1, xmm7
-    pcmpeqb xmm2, xmm8
-    pcmpeqb xmm3, xmm9
-    pcmpeqb xmm4, xmm10
+    pcmpeqb xmm0, xmm5
+    pcmpeqb xmm1, xmm6
+    pcmpeqb xmm2, xmm7
+    pcmpeqb xmm3, xmm8
 
     pmovmskb edi, xmm0
     mov rsi, rdi
@@ -357,16 +334,12 @@ asm
     not rsi
     popcnt rsi, rsi
 
+    pcmpeqb xmm4, xmm9
+
     pmovmskb edi, xmm4
     not di
     popcnt di, di
     add rsi, rdi
-
-    shl rsi, cDissimSubMatchingSize
-    pextrw r10d, xmm11, 0
-    add rsi, r10
-    pextrw r10d, xmm11, 4
-    add rsi, r10
 
     cmp rsi, r8
     ja worst
@@ -390,9 +363,7 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  movdqu xmm10, oword ptr [rsp + $a0]
-  movdqu xmm11, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  add rsp, 16 * 10
 
   mov qword ptr [pbest_r9], r8
 
@@ -421,7 +392,7 @@ asm
   push r9
   push r10
 
-  sub rsp, 16 * 12
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -432,14 +403,12 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
-  movdqu oword ptr [rsp + $a0], xmm10
-  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm6, oword ptr [item_rcx]
-  movdqu xmm7, oword ptr [item_rcx + $10]
-  movdqu xmm8, oword ptr [item_rcx + $20]
-  movdqu xmm9, oword ptr [item_rcx + $30]
-  movdqu xmm10, oword ptr [item_rcx + $40]
+  movdqu xmm5, oword ptr [item_rcx]
+  movdqu xmm6, oword ptr [item_rcx + $10]
+  movdqu xmm7, oword ptr [item_rcx + $20]
+  movdqu xmm8, oword ptr [item_rcx + $30]
+  movdqu xmm9, oword ptr [item_rcx + $40]
 
   mov eax, count
   lea rbx, [list_rdx + 8 * rax - 8]
@@ -458,31 +427,10 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    movdqa xmm11, xmm0
-    psubb xmm11, xmm6
-    pabsb xmm11, xmm11
-
-    movdqa xmm5, xmm1
-    psadbw xmm5, xmm7
-    paddw xmm11, xmm5
-
-    movdqa xmm5, xmm2
-    psadbw xmm5, xmm8
-    paddw xmm11, xmm5
-
-    movdqa xmm5, xmm3
-    psadbw xmm5, xmm9
-    paddw xmm11, xmm5
-
-    movdqa xmm5, xmm4
-    psadbw xmm5, xmm10
-    paddw xmm11, xmm5
-
-    pcmpeqb xmm0, xmm6
-    pcmpeqb xmm1, xmm7
-    pcmpeqb xmm2, xmm8
-    pcmpeqb xmm3, xmm9
-    pcmpeqb xmm4, xmm10
+    pcmpeqb xmm0, xmm5
+    pcmpeqb xmm1, xmm6
+    pcmpeqb xmm2, xmm7
+    pcmpeqb xmm3, xmm8
 
     pmovmskb edi, xmm0
     mov rsi, rdi
@@ -498,16 +446,12 @@ asm
     not rsi
     popcnt rsi, rsi
 
+    pcmpeqb xmm4, xmm9
+
     pmovmskb edi, xmm4
     not di
     popcnt di, di
     add rsi, rdi
-
-    shl rsi, cDissimSubMatchingSize
-    pextrw r10d, xmm11, 0
-    add rsi, r10
-    pextrw r10d, xmm11, 4
-    add rsi, r10
 
     mov rax, qword ptr [mindist_r9]
     cmp rsi, rax
@@ -537,9 +481,7 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  movdqu xmm10, oword ptr [rsp + $a0]
-  movdqu xmm11, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  add rsp, 16 * 10
 
   pop r10
   pop r9
@@ -620,11 +562,12 @@ end;
 
 function TKModes.InitFarthestFirst(InitPoint: Integer): TByteDynArray2;
 var
-  nattrs, npoints, icentroid, ifarthest: Integer;
+  icentroid, ifarthest, i: Integer;
+  max: UInt64;
   used: TBooleanDynArray;
   mindistance: TUInt64DynArray;
 
-  procedure UpdateMinDistance(icenter: Integer);
+  procedure UpdateMinDistance(icenter: Integer); inline;
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
   var
     i: Integer;
@@ -640,47 +583,38 @@ var
   end;
 {$else}
   begin
-    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], npoints);
+    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
   end;
 {$endif}
 
-  function FarthestAway: Integer;
-  var
-    i: Integer;
-    max: UInt64;
-  begin
-    max := 0;
-    Result := -1;
-    for i := 0 to NumPoints - 1 do
-      if not Used[i] and ((MinDistance[i] > max) or (Result = -1)) then
-      begin
-        max := MinDistance[i];
-        Result := i;
-      end;
-  end;
-
 begin
-  nattrs := Length(X[0]);
-  npoints := Length(X);
-  SetLength(Result, NumClusters, nattrs);
-  SetLength(used, npoints);
-  SetLength(mindistance, npoints);
+  SetLength(Result, NumClusters, NumAttrs);
+  SetLength(used, NumPoints);
+  SetLength(mindistance, NumPoints);
 
   for icentroid := 0 to NumClusters - 1 do
-    FillByte(Result[icentroid, 0], nattrs, High(Byte));
-  FillChar(used[0], npoints, False);
-  FillQWord(mindistance[0], npoints, High(UInt64));
+    FillByte(Result[icentroid, 0], NumAttrs, High(Byte));
+  FillChar(used[0], NumPoints, False);
+  FillQWord(mindistance[0], NumPoints, High(UInt64));
 
   icentroid := 0;
   ifarthest := InitPoint;
-  Move(X[ifarthest, 0], Result[icentroid, 0], nattrs);
+  Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
   used[ifarthest] := True;
   UpdateMinDistance(ifarthest);
 
   for icentroid := 1 to NumClusters - 1 do
   begin
-    ifarthest := FarthestAway;
-    Move(X[ifarthest, 0], Result[icentroid, 0], nattrs);
+    max := 0;
+    ifarthest := -1;
+    for i := 0 to NumPoints - 1 do
+      if (MinDistance[i] > max) and not Used[i] then
+      begin
+        max := MinDistance[i];
+        ifarthest := i;
+      end;
+
+    Move(X[ifarthest, 0], Result[icentroid, 0], NumAttrs);
     used[ifarthest] := True;
     UpdateMinDistance(ifarthest);
   end;
@@ -726,44 +660,61 @@ begin
 end;
 
 function TKModes.KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
+const
+  cBinSize = 480;
 var
-  ipoint, clust, old_clust, from_clust, rindx, cnt, dummy, i: Integer;
-  dis, cost_acc: UInt64;
-  choices: TIntegerDynArray;
+  ipoint, old_clust, from_clust, rindx, cnt, dummy, i, bin, last: Integer;
+  cost_acc: UInt64;
+  clust, choices: TIntegerDynArray;
+  dis: TUInt64DynArray;
+
+  procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    clust[AIndex] := GetMinMatchingDissim(centroids, X[AIndex], Length(centroids), dis[AIndex]);
+  end;
+
 begin
   Result := 0;
   cost_acc := 0;
 
   SetLength(choices, NumPoints);
+  SetLength(clust, NumPoints);
+  SetLength(dis, NumPoints);
 
-  for ipoint := 0 to NumPoints - 1 do
+  for bin := 0 to NumPoints div cBinSize do
   begin
-    clust := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
-    Inc(cost_acc, dis);
+    last := min((bin + 1) * cBinSize, NumPoints) - 1;
 
-    if membship[ipoint] <> clust then
+    ProcThreadPool.DoParallelLocalProc(@DoGMMD, bin * cBinSize, last, nil, NumThreads);
+
+    for ipoint := bin * cBinSize to last do
     begin
-      Inc(Result);
-      old_clust := membship[ipoint];
+      Inc(cost_acc, dis[ipoint]);
 
-      MovePointCat(X[ipoint], ipoint, clust, old_clust);
-
-      if CountClusterMembers(old_clust) = 0 then
+      if membship[ipoint] <> clust[ipoint] then
       begin
-        from_clust := GetMaxClusterMembers(dummy);
-        writeln('zero', #9, from_clust, #9, dummy);
+        Inc(Result);
+        old_clust := membship[ipoint];
 
-        cnt := 0;
-        for i := 0 to High(membship) do
-          if membship[i] = from_clust then
-          begin
-            choices[cnt] := i;
-            Inc(cnt);
-          end;
+        MovePointCat(X[ipoint], ipoint, clust[ipoint], old_clust);
 
-        rindx := choices[RandInt(cnt, Seed)];
+        if CountClusterMembers(old_clust) = 0 then
+        begin
+          from_clust := GetMaxClusterMembers(dummy);
+          writeln('zero', #9, from_clust, #9, dummy);
 
-        MovePointCat(X[rindx], rindx, old_clust, from_clust);
+          cnt := 0;
+          for i := 0 to High(membship) do
+            if membship[i] = from_clust then
+            begin
+              choices[cnt] := i;
+              Inc(cnt);
+            end;
+
+          rindx := choices[RandInt(cnt, Seed)];
+
+          MovePointCat(X[rindx], rindx, old_clust, from_clust);
+        end;
       end;
     end;
   end;
