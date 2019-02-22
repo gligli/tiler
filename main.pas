@@ -44,37 +44,40 @@ const
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
 
-  cUV = 7;
+  cUV = 10;
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of TFloat = (
     (
-      (16, 16, 16, 16, 16, 16, 16, 16),
-      (16, 16, 16, 16, 16, 16, 16, 16),
-      (16, 16, 16, 16, 16, 16, 16, 16),
-      (16, 16, 16, 16, 16, 16, 16, 16),
-      (16, 16, 16, 16, 16, 16, 16, 16),
-      (16, 16, 16, 16, 16, 16, 16, 16),
-      (16, 16, 16, 16, 16, 16, 16, 16),
-      (16, 16, 16, 16, 16, 16, 16, 16)
+      // optimized
+      (16, 11, 12, 15,  21,  32,  50,  66),
+      (11, 12, 13, 18,  24,  46,  62,  73),
+      (12, 13, 16, 23,  38,  56,  73,  75),
+      (15, 18, 23, 29,  53,  75,  83,  80),
+      (21, 24, 38, 53,  68,  95, 103,  94),
+      (32, 46, 56, 75,  95, 104, 117,  96),
+      (50, 62, 73, 83, 103, 117, 120, 128),
+      (66, 73, 75, 80,  94,  96, 128, 144)
     ),
     (
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV)
+      // Improved (reduced high frequency chroma importance)
+      (17*cUV,  18*cUV,  24*cUV,  47*cUV,  99*cUV,  99*cUV,  99*cUV,  99*cUV),
+      (18*cUV,  21*cUV,  26*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV),
+      (24*cUV,  26*cUV,  56*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV),
+      (47*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV),
+      (99*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV),
+      (99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV),
+      (99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV, 192*cUV),
+      (99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV, 192*cUV, 208*cUV)
     ),
     (
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV),
-      (cUV, cUV, cUV, cUV, cUV, cUV, cUV, cUV)
+      // Improved (reduced high frequency chroma importance)
+      (17*cUV,  18*cUV,  24*cUV,  47*cUV,  99*cUV,  99*cUV,  99*cUV,  99*cUV),
+      (18*cUV,  21*cUV,  26*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV),
+      (24*cUV,  26*cUV,  56*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV),
+      (47*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV),
+      (99*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV),
+      (99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV),
+      (99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV, 192*cUV),
+      (99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV, 192*cUV, 208*cUV)
     )
   );
 
@@ -183,7 +186,7 @@ type
     cbxStep: TComboBox;
     cbxYilMix: TComboBox;
     chkGamma: TCheckBox;
-    chkLAB: TCheckBox;
+    chkHSL: TCheckBox;
     chkTransPalette: TCheckBox;
     chkReduced: TCheckBox;
     chkMirrored: TCheckBox;
@@ -246,7 +249,7 @@ type
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
-    procedure chkLABChange(Sender: TObject);
+    procedure chkHSLChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -259,7 +262,7 @@ type
     FFrames: array of TFrame;
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
-    FUseLAB: Boolean;
+    FUseHSL: Boolean;
     FY2MixedColors: Integer;
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
@@ -274,17 +277,13 @@ type
     procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
       ATilePage: Integer);
 
-    procedure RGBToHSL(RGBCol : Integer; var h, s, l: Byte);
-    function HSLToRGB(H, S, L: Byte): Integer;
-    procedure RGBToYUV(r, g, b: Integer; GammaCor: Integer; out y, u, v: TFloat); overload;
-    procedure RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); overload;
-    procedure RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); overload;
-    procedure RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); overload;
-    procedure RGBToColSpc(r, g, b: TFloat; LAB: Boolean; out ol, oa, ob: TFloat); overload;
-    procedure RGBToColSpc(col: Integer; LAB: Boolean; GammaCor: Integer; out ol, oa, ob: TFloat); overload;
+    function HSLToRGB(h, s, l: Byte): Integer;
+    procedure RGBToHSL(col: Integer; var h, s, l: Byte); overload;
+    procedure RGBToHSL(col: Integer; out h, s, l: TFloat); overload;
+    procedure RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat);
 
-    procedure ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, LAB, HMirror, VMirror: Boolean; GammaCor: Integer; const pal: array of Integer;
-      var DCT: TFloatDynArray);
+    procedure ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HSL, HMirror, VMirror: Boolean; GammaCor: Integer;
+      const pal: array of Integer; var DCT: TFloatDynArray);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -617,9 +616,9 @@ begin
   tbFrameChange(nil);
 end;
 
-procedure TMainForm.chkLABChange(Sender: TObject);
+procedure TMainForm.chkHSLChange(Sender: TObject);
 begin
-  FUseLAB := chkLAB.Checked;
+  FUseHSL := chkHSL.Checked;
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
@@ -1512,14 +1511,14 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile^, False, False, False, False, False, 0, OrigTile^.PaletteRGB, OrigTileDCT);
+      ComputeTileDCT(OrigTile^, False, True, False, False, False, -1, OrigTile^.PaletteRGB, OrigTileDCT);
 
       PalIdx := -1;
       best := MaxDouble;
       for i := 0 to cPaletteCount - 1 do
       begin
         DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
-        ComputeTileDCT(OrigTile^, True, False, False, False, False, 0, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
+        ComputeTileDCT(OrigTile^, True, True, False, False, False, -1, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
         cmp := CompareEuclidean192(TileDCT, OrigTileDCT);
         if cmp < best then
         begin
@@ -1638,11 +1637,14 @@ begin
   end;
 end;
 
-procedure TMainForm.RGBToYUV(r, g, b: Integer;  GammaCor: Integer; out y, u, v: TFloat); inline;
+procedure TMainForm.RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat); inline;
 var
   fr, fg, fb: TFloat;
   yy, uu, vv: TFloat;
+  r, g, b: Integer;
 begin
+  FromRGB(col, r, g, b);
+
   if GammaCor >= 0 then
   begin
     fr := GammaCorrect(GammaCor, r);
@@ -1656,128 +1658,89 @@ begin
     fb := b / 255.0;
   end;
 
-  yy := 0.299*fr + 0.587*fg + 0.114*fb;
+  yy :=  0.299*fr + 0.587*fg + 0.114*fb;
   uu := -0.147*fr - 0.289*fg + 0.436*fb;
-  vv := 0.615*fr - 0.515*fg - 0.100*fb;
+  vv :=  0.615*fr - 0.515*fg - 0.100*fb;
 
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
 
-procedure TMainForm.RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); inline;
+procedure TMainForm.RGBToHSL(col: Integer; out h, s, l: TFloat);
 var
-  yy, uu, vv: TFloat;
+  bh, bs, bl: Byte;
 begin
-  yy := 0.299*fr + 0.587*fg + 0.114*fb;
-  uu := -0.147*fr - 0.289*fg + 0.436*fb;
-  vv := 0.615*fr - 0.515*fg - 0.100*fb;
-
-  y := yy; u := uu; v := vv; // for safe "out" param
+  bh := 0; bs := 0; bl := 0;
+  RGBToHSL(col, bh, bs, bl);
+  h := bh / 255.0;
+  s := bs / 255.0;
+  l := bl / 255.0;
 end;
 
-procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); inline;
-var
-  r, g, b, x, y, z: TFloat;
-begin
-  r := GammaCorrect(1, ir);
-  g := GammaCorrect(1, ig);
-  b := GammaCorrect(1, ib);
-
-  if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
-  if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
-  if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
-
-  // CIE XYZ color space from the Wright–Guild data
-  x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
-  y := (r * 0.17697 + g * 0.81240 + b * 0.01063) / 0.17697;
-  z := (r * 0.00000 + g * 0.01000 + b * 0.99000) / 0.17697;
-
-{$if false}
-  // Illuminant D50
-  x /= 96.6797;
-  y /= 100.000;
-  z /= 82.5188;
-{$else}
-  // Illuminant D65
-  x /= 95.0470;
-  y /= 100.000;
-  z /= 108.883;
-{$endif}
-
-  if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
-  if y > 0.008856 then y := power(y, 1/3) else y := (7.787 * y) + 16/116;
-  if z > 0.008856 then z := power(z, 1/3) else z := (7.787 * z) + 16/116;
-
-  ol := (116 * y) - 16;
-  oa := 500 * (x - y);
-  ob := 200 * (y - z);
-end;
-
-procedure TMainForm.RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); inline;
-var
-  ll, aa, bb: TFloat;
-begin
-  RGBToLAB(Integer(round(r * 255.0)), round(g * 255.0), round(b * 255.0), ll, aa, bb);
-  ol := ll;
-  oa := aa;
-  ob := bb;
-end;
-
-procedure TMainForm.RGBToColSpc(r, g, b: TFloat; LAB: Boolean; out ol, oa, ob: TFloat);
-begin
-  if LAB then
-    RGBToLAB(r, g, b, ol, oa, ob)
-  else
-    RGBToYUV(r, g, b, ol, oa, ob);
-end;
-
-procedure TMainForm.RGBToColSpc(col: Integer; LAB: Boolean; GammaCor: Integer; out ol, oa, ob: TFloat);
-var
-  ir, ig, ib: Integer;
-begin
-  FromRGB(col, ir, ig, ib);
-  if LAB then
-    RGBToLAB(ir, ig, ib, ol, oa, ob)
-  else
-    RGBToYUV(ir, ig, ib, GammaCor, ol, oa, ob);
-end;
-
-procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, LAB, HMirror, VMirror: Boolean;
+procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HSL, HMirror, VMirror: Boolean;
   GammaCor: Integer; const pal: array of Integer; var DCT: TFloatDynArray);
 const
   cUVRatio: array[0..cTileWidth-1] of TFloat = (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1);
 var
   u, v, x, y, xx, yy, di, cpn: Integer;
   vRatio, z: TFloat;
-  YUVPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
+  CpnPixels: array[0..2, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
   pYuv, pLut: PFloat;
 begin
   Assert(Length(DCT) >= cTileDCTSize, 'DCT too small!');
 
   if FromPal then
   begin
-    for y := 0 to (cTileWidth - 1) do
-      for x := 0 to (cTileWidth - 1) do
-      begin
-        xx := x;
-        yy := y;
-        if HMirror then xx := cTileWidth - 1 - x;
-        if VMirror then yy := cTileWidth - 1 - y;
-
-        RGBToColSpc(pal[ATile.PalPixels[yy,xx]], LAB, GammaCor, YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
-      end;
+    if HSL then
+    begin
+      for y := 0 to (cTileWidth - 1) do
+        for x := 0 to (cTileWidth - 1) do
+        begin
+          xx := x;
+          yy := y;
+          if HMirror then xx := cTileWidth - 1 - x;
+          if VMirror then yy := cTileWidth - 1 - y;
+          RGBToHSL(pal[ATile.PalPixels[yy,xx]], CpnPixels[0,y,x], CpnPixels[1,y,x], CpnPixels[2,y,x])
+        end;
+    end
+    else
+    begin
+      for y := 0 to (cTileWidth - 1) do
+        for x := 0 to (cTileWidth - 1) do
+        begin
+          xx := x;
+          yy := y;
+          if HMirror then xx := cTileWidth - 1 - x;
+          if VMirror then yy := cTileWidth - 1 - y;
+          RGBToYUV(pal[ATile.PalPixels[yy,xx]], GammaCor, CpnPixels[0,y,x], CpnPixels[1,y,x], CpnPixels[2,y,x]);
+        end;
+    end;
   end
   else
   begin
-    for y := 0 to (cTileWidth - 1) do
-      for x := 0 to (cTileWidth - 1) do
-      begin
-        xx := x;
-        yy := y;
-        if HMirror then xx := cTileWidth - 1 - x;
-        if VMirror then yy := cTileWidth - 1 - y;
-
-        RGBToColSpc(ATile.RGBPixels[yy,xx], LAB, GammaCor, YUVPixels[0,y,x], YUVPixels[1,y,x], YUVPixels[2,y,x]);
-      end;
+    if HSL then
+    begin
+      for y := 0 to (cTileWidth - 1) do
+        for x := 0 to (cTileWidth - 1) do
+        begin
+          xx := x;
+          yy := y;
+          if HMirror then xx := cTileWidth - 1 - x;
+          if VMirror then yy := cTileWidth - 1 - y;
+          RGBToHSL(ATile.RGBPixels[yy,xx], CpnPixels[0,y,x], CpnPixels[1,y,x], CpnPixels[2,y,x])
+        end;
+    end
+    else
+    begin
+      for y := 0 to (cTileWidth - 1) do
+        for x := 0 to (cTileWidth - 1) do
+        begin
+          xx := x;
+          yy := y;
+          if HMirror then xx := cTileWidth - 1 - x;
+          if VMirror then yy := cTileWidth - 1 - y;
+          RGBToYUV(ATile.RGBPixels[yy,xx], GammaCor, CpnPixels[0,y,x], CpnPixels[1,y,x], CpnPixels[2,y,x]);
+        end;
+    end;
   end;
 
   di := 0;
@@ -1792,7 +1755,7 @@ begin
 
         for y := 0 to (cTileWidth - 1) do
         begin
-          pYuv := @YUVPixels[cpn, y, 0];
+          pYuv := @CpnPixels[cpn, y, 0];
           pLut := @gDCTLut[v, u, y, 0];
 
           // unroll x by cTileWidth
@@ -1809,7 +1772,7 @@ begin
         DCT[di] := cUVRatio[u] * vRatio * z;
 
         if QWeighting then
-           DCT[di] *= 16.0 / sqrt(cDCTQuantization[cpn, v, u]);
+           DCT[di] *= 16.0 / sqrt(cDCTQuantization[ifthen(not HSL, cpn), v, u]);
 
         Inc(di);
       end;
@@ -2099,7 +2062,7 @@ begin
 end;
 
 // from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
-procedure TMainForm.RGBToHSL(RGBCol: Integer; var h, s, l: Byte);
+procedure TMainForm.RGBToHSL(col: Integer; var h, s, l: Byte);
 var
   rr, gg, bb: Integer;
 
@@ -2120,7 +2083,7 @@ var
 var
   Delta: Integer;
 begin
-  FromRGB(RGBCol, rr, gg, bb);
+  FromRGB(col, rr, gg, bb);
 
   l := (RGBMaxValue + RGBMinValue) shr 1;
   if (l = RGBMinValue) then
@@ -2145,7 +2108,7 @@ begin
   end;
 end;
 
-function TMainForm.HSLToRGB(H, S, L: Byte): Integer;
+function TMainForm.HSLToRGB(h, s, l: Byte): Integer;
 const
   MaxHue: Integer = 255;
   MaxSat: Integer = 255;
@@ -2154,27 +2117,27 @@ const
 var
  f, LS, p, q, r: integer;
 begin
- if (S = 0) then
-   Result := ToRGB(L, L, L)
+ if (s = 0) then
+   Result := ToRGB(l, l, l)
  else
   begin
-   H := H mod MaxHue;
-   S := EnsureRange(S, 0, MaxSat);
-   L := EnsureRange(L, 0, MaxLum);
+   h := h mod MaxHue;
+   s := EnsureRange(s, 0, MaxSat);
+   l := EnsureRange(l, 0, MaxLum);
 
-   f := H mod Divisor;
-   H := H div Divisor;
-   LS := L*S;
-   p := L - LS div MaxLum;
-   q := L - (LS*f) div (255 * Divisor);
-   r := L - (LS*(Divisor - f)) div (255 * Divisor);
-   case H of
-    0: Result := ToRGB(L, r, p);
-    1: Result := ToRGB(q, L, p);
-    2: Result := ToRGB(p, L, r);
-    3: Result := ToRGB(p, q, L);
-    4: Result := ToRGB(r, p, L);
-    5: Result := ToRGB(L, p, q);
+   f := h mod Divisor;
+   h := h div Divisor;
+   LS := l*s;
+   p := l - LS div MaxLum;
+   q := l - (LS*f) div (255 * Divisor);
+   r := l - (LS*(Divisor - f)) div (255 * Divisor);
+   case h of
+    0: Result := ToRGB(l, r, p);
+    1: Result := ToRGB(q, l, p);
+    2: Result := ToRGB(p, l, r);
+    3: Result := ToRGB(p, q, l);
+    4: Result := ToRGB(r, p, l);
+    5: Result := ToRGB(l, p, q);
    else
     Result := ToRGB(0, 0, 0);
    end;
@@ -2392,7 +2355,7 @@ begin
         for vmir := False to True do
           for hmir := False to True do
           begin
-            ComputeTileDCT(T^, True, cKFQWeighting, FUseLAB, hmir, vmir, cKFGamma, AKF^.PaletteRGB[palIdx], DS^.Dataset[di]);
+            ComputeTileDCT(T^, True, cKFQWeighting, FUseHSL, hmir, vmir, cKFGamma, AKF^.PaletteRGB[palIdx], DS^.Dataset[di]);
             Inc(di);
           end;
       end;
@@ -2444,7 +2407,7 @@ begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
-      ComputeTileDCT(AFrame^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, FUseLAB, False, False, cKFGamma, AFrame^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DCT);
+      ComputeTileDCT(AFrame^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, FUseHSL, False, False, cKFGamma, AFrame^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DCT);
 
       tri := ann_kdtree_search(DS^.KDT, PFloat(DCT), 0.0);
 
@@ -2501,8 +2464,8 @@ begin
     PrevTile := FTiles[PrevTMI^.GlobalTileIndex]^;
     Tile_ := FTiles[TMI^.GlobalTileIndex]^;
 
-    ComputeTileDCT(PrevTile, True, True, FUseLAB, PrevTMI^.HMirror, PrevTMI^.VMirror, cSmoothingGamma, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
-    ComputeTileDCT(Tile_, True, True, FUseLAB, TMI^.HMirror, TMI^.VMirror, cSmoothingGamma, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
+    ComputeTileDCT(PrevTile, True, True, FUseHSL, PrevTMI^.HMirror, PrevTMI^.VMirror, cSmoothingGamma, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
+    ComputeTileDCT(Tile_, True, True, FUseHSL, TMI^.HMirror, TMI^.VMirror, cSmoothingGamma, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
 
     cmp := CompareEuclidean192(TileDCT, PrevTileDCT);
     cmp := sqrt(cmp * cSqrtFactor);
@@ -2855,7 +2818,7 @@ begin
   sedPalIdx.MaxValue := cPaletteCount - 1;
 
   cbxYilMixChange(nil);
-  chkLABChange(nil);
+  chkHSLChange(nil);
 
   for es := esLoad to High(TEncoderStep) do
     cbxStep.AddItem(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), TObject(PtrInt(Ord(es))));

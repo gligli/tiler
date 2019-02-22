@@ -321,13 +321,13 @@ object MainForm: TMainForm
     Caption = 'Correlation (Q):'
     ParentColor = False
   end
-  object chkLAB: TCheckBox
+  object chkHSL: TCheckBox
     Left = 8
     Height = 17
     Top = 222
-    Width = 211
-    Caption = 'CIE L*a*b* color space instead of YUV'
-    OnChange = chkLABChange
+    Width = 178
+    Caption = 'HSL color space instead of YUV'
+    OnChange = chkHSLChange
     TabOrder = 10
   end
   object cbxYilMix: TComboBox
@@ -417,7 +417,6 @@ object MainForm: TMainForm
     Top = 240
     Width = 239
     Caption = 'Extended frame tiling palette usage (slow!)'
-    OnChange = chkLABChange
     TabOrder = 11
   end
   object IdleTimer: TIdleTimer
