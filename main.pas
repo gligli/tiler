@@ -161,6 +161,7 @@ type
     TileDS: PTileDataset;
     MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
     FramesLeft: Integer;
+    CS: TRTLCriticalSection;
   end;
 
   { T8BitPortableNetworkGraphic }
@@ -268,6 +269,7 @@ type
     function ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
+    procedure ClearAll;
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
       ATilePage: Integer);
@@ -653,12 +655,7 @@ var
 begin
   ProgressRedraw;
 
-  for i := 0 to High(FTiles) do
-    Dispose(FTiles[i]);
-
-  SetLength(FFrames, 0);
-  SetLength(FKeyFrames, 0);
-  SetLength(FTiles, 0);
+  ClearAll;
 
   ProgressRedraw(-1, esLoad);
 
@@ -756,6 +753,7 @@ begin
     FKeyFrames[j].EndFrame := efr;
     FKeyFrames[j].FrameCount := efr - sfr + 1;
     FKeyFrames[j].FramesLeft := -1;
+    InitializeCriticalSection(FKeyFrames[j].CS);
   end;
 
   ProgressRedraw(1);
@@ -1492,14 +1490,14 @@ var
   OrigTile: PTile;
   TileDCT, OrigTileDCT: TFloatDynArray;
 begin
-  EnterCriticalSection(FCS);
+  EnterCriticalSection(AFrame^.KeyFrame^.CS);
   if AFrame^.KeyFrame^.FramesLeft < 0 then
   begin
     for i := 0 to cPaletteCount - 1 do
       PreparePlan(AFrame^.KeyFrame^.MixingPlans[i], FY2MixedColors, AFrame^.KeyFrame^.PaletteRGB[i]);
     AFrame^.KeyFrame^.FramesLeft := AFrame^.KeyFrame^.FrameCount;
   end;
-  LeaveCriticalSection(FCS);
+  LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 
   SetLength(OrigTileDCT, cTileDCTSize);
   SetLength(TileDCT, cTileDCTSize);
@@ -1543,12 +1541,12 @@ begin
       OrigTile^ := BestTile;
     end;
 
-  EnterCriticalSection(FCS);
+  EnterCriticalSection(AFrame^.KeyFrame^.CS);
   Dec(AFrame^.KeyFrame^.FramesLeft);
   if AFrame^.KeyFrame^.FramesLeft <= 0 then
     for i := 0 to cPaletteCount - 1 do
       TerminatePlan(AFrame^.KeyFrame^.MixingPlans[i]);
-  LeaveCriticalSection(FCS);
+  LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 end;
 
 function CompareTilePalPixels(Item1, Item2:Pointer):Integer;
@@ -1905,6 +1903,22 @@ begin
   finally
     ABitmap.EndUpdate;
   end;
+end;
+
+procedure TMainForm.ClearAll;
+var
+  i: Integer;
+begin
+  for i := 0 to High(FTiles) do
+    Dispose(FTiles[i]);
+
+  SetLength(FFrames, 0);
+
+  for i := 0 to High(FKeyFrames) do
+    DeleteCriticalSection(FKeyFrames[i].CS);
+
+  SetLength(FKeyFrames, 0);
+  SetLength(FTiles, 0);
 end;
 
 procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
@@ -2411,13 +2425,13 @@ var
 begin
   DS := AFrame^.KeyFrame^.TileDS;
 
-  EnterCriticalSection(FCS);
+  EnterCriticalSection(AFrame^.KeyFrame^.CS);
   if AFrame^.KeyFrame^.FramesLeft < 0 then
   begin
     DS^.KDT := ann_kdtree_create(PPFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
     AFrame^.KeyFrame^.FramesLeft := AFrame^.KeyFrame^.FrameCount;
   end;
-  LeaveCriticalSection(FCS);
+  LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 
   // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
@@ -2450,14 +2464,14 @@ begin
 
   MaxTPF := max(MaxTPF, TPF);
 
-  EnterCriticalSection(FCS);
+  EnterCriticalSection(AFrame^.KeyFrame^.CS);
   Dec(AFrame^.KeyFrame^.FramesLeft);
   if AFrame^.KeyFrame^.FramesLeft <= 0 then
   begin
     ann_kdtree_destroy(DS^.KDT);
     DS^.KDT := nil;
   end;
-  LeaveCriticalSection(FCS);
+  LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 
   EnterCriticalSection(FCS);
   WriteLn('KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft);
@@ -2861,13 +2875,10 @@ begin
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
-var
-  i: Integer;
 begin
   DeleteCriticalSection(FCS);
 
-  for i := 0 to High(FTiles) do
-    Dispose(FTiles[i]);
+  ClearAll;
 end;
 
 initialization
