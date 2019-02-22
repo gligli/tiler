@@ -278,7 +278,7 @@ type
       ATilePage: Integer);
 
     function HSLToRGB(h, s, l: Byte): Integer;
-    procedure RGBToHSL(col: Integer; var h, s, l: Byte); overload;
+    procedure RGBToHSL(col: Integer; out h, s, l: Byte); overload;
     procedure RGBToHSL(col: Integer; out h, s, l: TFloat); overload;
     procedure RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat);
 
@@ -829,11 +829,13 @@ end;
 
 procedure TMainForm.btnDebugClick(Sender: TObject);
 var
-  i: Integer;
+  i, j: Integer;
   seed: Cardinal;
-  pal: array[0.. 5] of Integer;
+  pal: array[0..15] of Integer;
   list: TByteDynArray;
   plan: TMixingPlan;
+
+  hh,ss,ll: Byte;
 begin
   seed := 42;
   for i := 0 to 15 do
@@ -845,6 +847,15 @@ begin
   DeviseBestMixingPlan(plan, $ff8000, list);
   DeviseBestMixingPlan(plan, $808080, list);
   DeviseBestMixingPlan(plan, $000000, list);
+
+
+  for i := 0 to 255 do
+    for j := 0 to 255 do
+    begin
+      hh := 0; ss := 0; ll := 0;
+      RGBToHSL(HSLToRGB(i,j,255), hh, ss, ll);
+      imgDest.Canvas.Pixels[i,j] := SwapRB(HSLToRGB(hh,ss,ll));
+    end;
 end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
@@ -1341,9 +1352,9 @@ function CompareCMUHSL(Item1,Item2:Pointer):Integer;
 begin
   Result := CompareValue(PCountIndexArray(Item1)^.Lit, PCountIndexArray(Item2)^.Lit);
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
-  if Result = 0 then
     Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
+  if Result = 0 then
+    Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; ColorReach: TFloat);
@@ -1436,7 +1447,7 @@ begin
 
     CmlPct := 0;
     acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
-    acc := acc - (acc div 10); // 90% point
+    acc := acc - (acc div 20); // 95% point
     for i := 0 to cTotalColors - 1 do
     begin
       acc -= PCountIndexArray(CMUsage[i])^.Count;
@@ -1450,6 +1461,21 @@ begin
     EnterCriticalSection(FCS);
     WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct);
     LeaveCriticalSection(FCS);
+
+    // after LastUsed put 'weird' colors (ie. colors not in frames, but relevant for Y2)
+
+    for i := LastUsed + 1 to min(cTotalColors, LastUsed + (LastUsed shr 1)) - 1 do
+    begin
+      CMItem := PCountIndexArray(CMUsage[i]);
+      CMItem^ := PCountIndexArray(CMUsage[EnsureRange((i - LastUsed - 1) shl 1, 0, cTotalColors - 1)])^;
+      CMItem^.Count := 0;
+      col := HSLToRGB(CMItem^.Hue, 255 - CMItem^.Sat, CMItem^.Lit);
+{$if cBitsPerComp <> 8}
+      col := col shr cRGShift;
+      col := (col and cRMask) or ((col and cGMask) shr cRGShift) or ((col and cBMask) shr cBShift);
+{$endif}
+      CMItem^.Index := col;
+    end;
 
     // split most used colors into tile palettes
 
@@ -1699,7 +1725,7 @@ begin
           yy := y;
           if HMirror then xx := cTileWidth - 1 - x;
           if VMirror then yy := cTileWidth - 1 - y;
-          RGBToHSL(pal[ATile.PalPixels[yy,xx]], CpnPixels[0,y,x], CpnPixels[1,y,x], CpnPixels[2,y,x])
+          RGBToHSL(pal[ATile.PalPixels[yy,xx]], CpnPixels[2,y,x], CpnPixels[1,y,x], CpnPixels[0,y,x])
         end;
     end
     else
@@ -1726,7 +1752,7 @@ begin
           yy := y;
           if HMirror then xx := cTileWidth - 1 - x;
           if VMirror then yy := cTileWidth - 1 - y;
-          RGBToHSL(ATile.RGBPixels[yy,xx], CpnPixels[0,y,x], CpnPixels[1,y,x], CpnPixels[2,y,x])
+          RGBToHSL(ATile.RGBPixels[yy,xx], CpnPixels[2,y,x], CpnPixels[1,y,x], CpnPixels[0,y,x])
         end;
     end
     else
@@ -2062,7 +2088,7 @@ begin
 end;
 
 // from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
-procedure TMainForm.RGBToHSL(col: Integer; var h, s, l: Byte);
+procedure TMainForm.RGBToHSL(col: Integer; out h, s, l: Byte);
 var
   rr, gg, bb: Integer;
 
@@ -2081,36 +2107,39 @@ var
   end;
 
 var
-  Delta: Integer;
+  Delta, mx, mn, hh, ss, ll: Integer;
 begin
   FromRGB(col, rr, gg, bb);
 
-  l := (RGBMaxValue + RGBMinValue) shr 1;
-  if (l = RGBMinValue) then
+  mx := RGBMaxValue;
+  mn := RGBMinValue;
+
+  hh := 0;
+  ss := 0;
+  ll := mx;
+  if ll <> mn then
   begin
-    h := 0;
-    s := 0;
-  end
-  else
-  begin
-    Delta := RGBMaxValue-RGBMinValue;
+    Delta := ll - mn;
+    ss := MulDiv(Delta, 255, ll);
 
-    s := IfThen(l >= 128, Delta div (512 - RGBMaxValue - RGBMinValue), Delta div (RGBMaxValue + RGBMinValue));
+    if (rr = ll) then
+      hh := MulDiv(42, gg - bb, Delta)
+    else if (gg = ll) then
+      hh := MulDiv(42, bb - rr, Delta) + 84
+    else if (bb = ll) then
+      hh := MulDiv(42, rr - gg, Delta) + 168;
 
-    if (rr = l) then
-      h := MulDiv(42, gg-bb, Delta)
-    else if (gg = l) then
-      h := MulDiv(42, bb-rr, Delta) + 85
-    else if (bb = l) then
-      h := MulDiv(42, rr-gg, Delta) + 170;
-
-    h := h and $ff;
+    hh := hh mod 252;
   end;
+
+  h := hh;
+  s := ss;
+  l := ll;
 end;
 
 function TMainForm.HSLToRGB(h, s, l: Byte): Integer;
 const
-  MaxHue: Integer = 255;
+  MaxHue: Integer = 252;
   MaxSat: Integer = 255;
   MaxLum: Integer = 255;
   Divisor: Integer = 42;
