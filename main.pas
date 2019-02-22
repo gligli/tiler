@@ -272,8 +272,8 @@ type
     procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
       ATilePage: Integer);
 
-    procedure RGBToHSL(RGBCol : Integer; var h, s, l: integer);
-    function HSLToRGB(H, S, L: integer): Integer;
+    procedure RGBToHSL(RGBCol : Integer; var h, s, l: Byte);
+    function HSLToRGB(H, S, L: Byte): Integer;
     procedure RGBToYUV(r, g, b: Integer; GammaCor: Integer; out y, u, v: TFloat); overload;
     procedure RGBToYUV(fr, fg, fb: TFloat; out y, u, v: TFloat); overload;
     procedure RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); overload;
@@ -1321,50 +1321,60 @@ begin
 end;
 
 type
-  TCountIndex = (ciCount, ciIndex, ciHue, ciSat, ciLit);
-  TCountIndexArray = array[Low(TCountIndex)..High(TCountIndex)] of Integer;
+  TCountIndexArray = packed record
+    Count, Index: Integer;
+    Hue, Sat, Lit, Dummy: Byte;
+  end;
+
   PCountIndexArray = ^TCountIndexArray;
 
 
 function CompareCMUCntHSL(Item1,Item2:Pointer):Integer;
 begin
-  Result := PCountIndexArray(Item2)^[ciCount] - PCountIndexArray(Item1)^[ciCount];
+  Result := PCountIndexArray(Item2)^.Count - PCountIndexArray(Item1)^.Count;
   if Result = 0 then
-    Result := PCountIndexArray(Item1)^[ciHue] - PCountIndexArray(Item2)^[ciHue];
+    Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
   if Result = 0 then
-    Result := PCountIndexArray(Item1)^[ciLit] - PCountIndexArray(Item2)^[ciLit];
+    Result := CompareValue(PCountIndexArray(Item1)^.Lit, PCountIndexArray(Item2)^.Lit);
   if Result = 0 then
-    Result := PCountIndexArray(Item1)^[ciSat] - PCountIndexArray(Item2)^[ciSat];
+    Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
 end;
 
 function CompareCMUHSL(Item1,Item2:Pointer):Integer;
 begin
-  Result := PCountIndexArray(Item1)^[ciLit] - PCountIndexArray(Item2)^[ciLit];
+  Result := CompareValue(PCountIndexArray(Item1)^.Lit, PCountIndexArray(Item2)^.Lit);
   if Result = 0 then
-    Result := PCountIndexArray(Item1)^[ciHue] - PCountIndexArray(Item2)^[ciHue];
+    Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
   if Result = 0 then
-    Result := PCountIndexArray(Item1)^[ciSat] - PCountIndexArray(Item2)^[ciSat];
+    Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; ColorReach: TFloat);
+{$if cBitsPerComp <> 8}
 const
   cRGShift = (8 - cBitsPerComp);
   cBShift = (8 - cBitsPerComp) * 2;
   cRMask = ((1 shl cBitsPerComp) - 1);
   cGMask = ((1 shl cBitsPerComp) - 1) shl 8;
   cBMask = ((1 shl cBitsPerComp) - 1) shl 16;
+{$endif}
 var
-  col, cnt, sx, sy, tx, ty, i, PalIdx, LastUsed, CmlPct, acc: Integer;
+  col, sx, sy, tx, ty, i, PalIdx, LastUsed, CmlPct, acc: Integer;
   GTile: PTile;
   CMUsage, CMPal: TList;
   CMItem: PCountIndexArray;
+{$if cBitsPerComp <> 8}
+  cnt: Integer;
   TrueColorUsage: TCardinalDynArray;
+{$endif}
   CmlReach: TFloat;
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
+{$if cBitsPerComp <> 8}
   SetLength(TrueColorUsage, 1 shl (24 - cRGShift));
   FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
+{$endif}
 
   CMUsage := TList.Create;
   CMPal := TList.Create;
@@ -1373,9 +1383,9 @@ begin
     for i := 0 to cTotalColors - 1 do
     begin
       New(CMItem);
-      CMItem^[ciCount] := 0;
-      CMItem^[ciIndex] := i;
-      RGBToHSL(FColorMap[i], CMItem^[ciHue], CMItem^[ciSat], CMItem^[ciLit]);
+      CMItem^.Count := 0;
+      CMItem^.Index := i;
+      RGBToHSL(FColorMap[i], CMItem^.Hue, CMItem^.Sat, CMItem^.Lit);
       CMUsage[i] := CMItem;
     end;
 
@@ -1392,26 +1402,36 @@ begin
             for tx := 0 to cTileWidth - 1 do
             begin
               col := GTile^.RGBPixels[ty, tx];
+{$if cBitsPerComp <> 8}
               col := col shr cRGShift;
               Inc(TrueColorUsage[col]);
+{$else}
+              Inc(PCountIndexArray(CMUsage[col])^.Count);
+{$endif}
             end;
         end;
     end;
 
+{$if cBitsPerComp <> 8}
     for i := 0 to High(TrueColorUsage) do
     begin
       cnt := TrueColorUsage[i];
+
+      if cnt = 0 then
+        Continue;
+
       col := (i and cRMask) or ((i and cGMask) shr cRGShift) or ((i and cBMask) shr cBShift);
-      Inc(PCountIndexArray(CMUsage[col])^[ciCount], cnt);
+      Inc(PCountIndexArray(CMUsage[col])^.Count, cnt);
     end;
+{$endif}
 
     // sort colors by use count
 
     CMUsage.Sort(@CompareCMUCntHSL);
 
     LastUsed := -1;
-    for i := cTotalColors - 1 downto 0 do
-      if PCountIndexArray(CMUsage[i])^[ciCount] <> 0 then
+    for i := cTotalColors - 1 downto 0 do    //TODO: rev algo
+      if PCountIndexArray(CMUsage[i])^.Count <> 0 then
       begin
         LastUsed := i;
         Break;
@@ -1419,10 +1439,10 @@ begin
 
     CmlPct := 0;
     acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
-    acc := acc - (acc div 20); // 95% point
+    acc := acc - (acc div 10); // 90% point
     for i := 0 to cTotalColors - 1 do
     begin
-      acc -= PCountIndexArray(CMUsage[i])^[ciCount];
+      acc -= PCountIndexArray(CMUsage[i])^.Count;
       if acc <= 0 then
       begin
         CmlPct := i;
@@ -1434,42 +1454,25 @@ begin
     WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct);
     LeaveCriticalSection(FCS);
 
-    // after LastUsed put 'weird' colors (ie. colors not in frames, but relevant for Y2)
+    // split most used colors into tile palettes
 
-    for i := LastUsed + 1 to min(cTotalColors - 1, LastUsed + (LastUsed shr 1)) do
-    begin
-      CMItem := PCountIndexArray(CMUsage[i]);
-      CMItem^ := PCountIndexArray(CMUsage[EnsureRange((i - LastUsed - 1) shl 1, 0, cTotalColors - 1)])^;
-      CMItem^[ciCount] := 0;
-      col := HSLToRGB(CMItem^[ciHue], 255 - CMItem^[ciSat], CMItem^[ciLit]);
-      col := col shr cRGShift;
-      col := (col and cRMask) or ((col and cGMask) shr cRGShift) or ((col and cBMask) shr cBShift);
-      CMItem^[ciIndex] := col;
-    end;
-
-    // split most used colors into 16 color palettes, with the best few repeated everywhere
-
-    for PalIdx := 0 to cPaletteCount - 1 do
-    begin
-      SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
-      SetLength(AKeyFrame^.PaletteRGB[PalIdx], cTilePaletteSize);
-    end;
-
-    CmlReach := EnsureRange((CmlPct + 1) * ColorReach, 0, cTotalColors);
+    CmlReach := EnsureRange((CmlPct + 1) * ColorReach, 0, cTotalColors - 1);
     for PalIdx := 0 to cPaletteCount - 1 do
     begin
       CMPal.Clear;
       for i := 0 to cTilePaletteSize - 1 do
         CMPal.Add(CMUsage[Round(gPalettePattern[PalIdx, i] * CmlReach)]);
+
       CMPal.Sort(@CompareCMUHSL);
 
+      SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
+      SetLength(AKeyFrame^.PaletteRGB[PalIdx], cTilePaletteSize);
       for i := 0 to cTilePaletteSize - 1 do
-        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^[ciIndex];
-    end;
-
-    for PalIdx := 0 to cPaletteCount - 1 do
-      for i := 0 to cTilePaletteSize - 1 do
+      begin
+        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
         AKeyFrame^.PaletteRGB[PalIdx, i] := FColorMap[AKeyFrame^.PaletteIndexes[PalIdx, i]];
+      end;
+    end;
 
     for i := 0 to CMUsage.Count - 1 do
       Dispose(PCountIndexArray(CMUsage[i]));
@@ -2082,7 +2085,7 @@ begin
 end;
 
 // from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
-procedure TMainForm.RGBToHSL(RGBCol: Integer; var h, s, l: integer);
+procedure TMainForm.RGBToHSL(RGBCol: Integer; var h, s, l: Byte);
 var
   rr, gg, bb: Integer;
 
@@ -2118,40 +2121,40 @@ begin
     s := IfThen(l >= 128, Delta div (512 - RGBMaxValue - RGBMinValue), Delta div (RGBMaxValue + RGBMinValue));
 
     if (rr = l) then
-      h := MulDiv(60, gg-bb, Delta)
+      h := MulDiv(42, gg-bb, Delta)
     else if (gg = l) then
-      h := MulDiv(60, bb-rr, Delta) + 120
+      h := MulDiv(42, bb-rr, Delta) + 85
     else if (bb = l) then
-      h := MulDiv(60, rr-gg, Delta) + 240;
+      h := MulDiv(42, rr-gg, Delta) + 170;
 
-    if (h < 0) then h := h + 360;
+    h := h and $ff;
   end;
 end;
 
-function TMainForm.HSLToRGB(H, S, L: integer): Integer;
+function TMainForm.HSLToRGB(H, S, L: Byte): Integer;
 const
-  MaxHue: integer = 360;
-  MaxSat: integer = 255;
-  MaxLum: integer = 255;
-  Divisor = 255*60;
+  MaxHue: Integer = 255;
+  MaxSat: Integer = 255;
+  MaxLum: Integer = 255;
+  Divisor: Integer = 42;
 var
- hTemp, f, LS, p, q, r: integer;
+ f, LS, p, q, r: integer;
 begin
- H := H mod MaxHue;
- S := EnsureRange(S, 0, MaxSat);
- L := EnsureRange(L, 0, MaxLum);
  if (S = 0) then
    Result := ToRGB(L, L, L)
  else
   begin
-   hTemp := H mod MaxHue;
-   f := hTemp mod 60;
-   hTemp := hTemp div 60;
+   H := H mod MaxHue;
+   S := EnsureRange(S, 0, MaxSat);
+   L := EnsureRange(L, 0, MaxLum);
+
+   f := H mod Divisor;
+   H := H div Divisor;
    LS := L*S;
    p := L - LS div MaxLum;
-   q := L - (LS*f) div Divisor;
-   r := L - (LS*(60 - f)) div Divisor;
-   case hTemp of
+   q := L - (LS*f) div (255 * Divisor);
+   r := L - (LS*(Divisor - f)) div (255 * Divisor);
+   case H of
     0: Result := ToRGB(L, r, p);
     1: Result := ToRGB(q, L, p);
     2: Result := ToRGB(p, L, r);
@@ -2382,7 +2385,7 @@ begin
   end;
 
   EnterCriticalSection(FCS);
-  WriteLn('KF: ', AKF^.StartFrame, #9'TileCnt: ', di, #9'MaxTileCnt: ', Length(DS^.Dataset));
+  WriteLn('KF: ', AKF^.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset));
   LeaveCriticalSection(FCS);
 
   SetLength(DS^.Dataset, di);
