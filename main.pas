@@ -1328,22 +1328,22 @@ type
 
 function CompareCMUCntHSL(Item1,Item2:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]);
+  Result := PCountIndexArray(Item2)^[ciCount] - PCountIndexArray(Item1)^[ciCount];
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]);
+    Result := PCountIndexArray(Item1)^[ciHue] - PCountIndexArray(Item2)^[ciHue];
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^[ciLit], PCountIndexArray(Item2)^[ciLit]);
+    Result := PCountIndexArray(Item1)^[ciLit] - PCountIndexArray(Item2)^[ciLit];
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^[ciSat], PCountIndexArray(Item2)^[ciSat]);
+    Result := PCountIndexArray(Item1)^[ciSat] - PCountIndexArray(Item2)^[ciSat];
 end;
 
 function CompareCMUHSL(Item1,Item2:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item1)^[ciLit], PCountIndexArray(Item2)^[ciLit]);
+  Result := PCountIndexArray(Item1)^[ciLit] - PCountIndexArray(Item2)^[ciLit];
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]);
+    Result := PCountIndexArray(Item1)^[ciHue] - PCountIndexArray(Item2)^[ciHue];
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^[ciSat], PCountIndexArray(Item2)^[ciSat]);
+    Result := PCountIndexArray(Item1)^[ciSat] - PCountIndexArray(Item2)^[ciSat];
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; ColorReach: TFloat);
@@ -2101,30 +2101,30 @@ var
   end;
 
 var
-  Delta, Min: Integer;
+  Delta: Integer;
 begin
   FromRGB(RGBCol, rr, gg, bb);
 
-  L := RGBMaxValue;
-  Min := RGBMinValue;
-  Delta := L-Min;
-  if (L = Min) then
+  l := (RGBMaxValue + RGBMinValue) shr 1;
+  if (l = RGBMinValue) then
   begin
-    H := 0;
-    S := 0;
+    h := 0;
+    s := 0;
   end
   else
   begin
-    S := MulDiv(Delta, 255, L);
+    Delta := RGBMaxValue-RGBMinValue;
 
-    if (rr = L) then
-      H := MulDiv(60, gg-bb, Delta)
-    else if (gg = L) then
-      H := MulDiv(60, bb-rr, Delta) + 120
-    else if (bb = L) then
-      H := MulDiv(60, rr-gg, Delta) + 240;
+    s := IfThen(l >= 128, Delta div (512 - RGBMaxValue - RGBMinValue), Delta div (RGBMaxValue + RGBMinValue));
 
-    if (H < 0) then H := H + 360;
+    if (rr = l) then
+      h := MulDiv(60, gg-bb, Delta)
+    else if (gg = l) then
+      h := MulDiv(60, bb-rr, Delta) + 120
+    else if (bb = l) then
+      h := MulDiv(60, rr-gg, Delta) + 240;
+
+    if (h < 0) then h := h + 360;
   end;
 end;
 
@@ -2357,9 +2357,9 @@ begin
     for i := 0 to High(FTiles) do
       TRSize += Ord(used[palIdx, i]);
 
-  SetLength(DS^.TRToTileIdx, TRSize * cPaletteCount);
-  SetLength(DS^.TRToPalIdx, TRSize * cPaletteCount);
-  SetLength(DS^.Dataset, TRSize * cPaletteCount * 4, cTileDCTSize);
+  SetLength(DS^.TRToTileIdx, TRSize);
+  SetLength(DS^.TRToPalIdx, TRSize);
+  SetLength(DS^.Dataset, TRSize * 4, cTileDCTSize);
 
   di := 0;
   for i := 0 to High(FTiles) do
