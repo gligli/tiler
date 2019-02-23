@@ -659,6 +659,22 @@ begin
   Self.Log := aLog;
 end;
 
+type
+  TGMMD = record
+    clust: TIntegerDynArray;
+    dis: TUInt64DynArray;
+    X, centroids: TByteDynArray2;
+  end;
+  PGMMD = ^TGMMD;
+
+procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+var
+  GMMD: PGMMD;
+begin
+  GMMD := PGMMD(AData);
+  GMMD^.clust[AIndex] := GetMinMatchingDissim(GMMD^.centroids, GMMD^.X[AIndex], Length(GMMD^.centroids), GMMD^.dis[AIndex]);
+end;
+
 function TKModes.KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
 const
   cBinSize = 480;
@@ -667,12 +683,7 @@ var
   cost_acc: UInt64;
   clust, choices: TIntegerDynArray;
   dis: TUInt64DynArray;
-
-  procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    clust[AIndex] := GetMinMatchingDissim(centroids, X[AIndex], Length(centroids), dis[AIndex]);
-  end;
-
+  GMMD: TGMMD;
 begin
   Result := 0;
   cost_acc := 0;
@@ -681,11 +692,16 @@ begin
   SetLength(clust, NumPoints);
   SetLength(dis, NumPoints);
 
+  GMMD.clust := clust;
+  GMMD.dis := dis;
+  GMMD.X := X;
+  GMMD.centroids := centroids;
+
   for bin := 0 to NumPoints div cBinSize do
   begin
     last := min((bin + 1) * cBinSize, NumPoints) - 1;
 
-    ProcThreadPool.DoParallelLocalProc(@DoGMMD, bin * cBinSize, last, nil, NumThreads);
+    ProcThreadPool.DoParallel(@DoGMMD, bin * cBinSize, last, @GMMD, NumThreads);
 
     for ipoint := bin * cBinSize to last do
     begin
