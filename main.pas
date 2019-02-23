@@ -987,9 +987,7 @@ begin
   x := lerp(Mini, Maxi, 1.0 - cInvPhi);
   y := Func(x, Data);
 
-  //EnterCriticalSection(FCS);
-  //WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
-  //LeaveCriticalSection(FCS);
+  //DebugLn(['X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi)]);
 
   case CompareValue(y, ObjectiveY, Epsilon) of
     LessThanValue:
@@ -1458,9 +1456,7 @@ begin
       end;
     end;
 
-    EnterCriticalSection(FCS);
-    WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct);
-    LeaveCriticalSection(FCS);
+    DebugLn(['KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct]);
 
     // after LastUsed put 'weird' colors (ie. colors not in frames, but relevant for Y2)
 
@@ -2390,16 +2386,12 @@ begin
       end;
   end;
 
-  EnterCriticalSection(FCS);
-  WriteLn('KF: ', AKF^.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset));
-  LeaveCriticalSection(FCS);
+  assert(di = TRSize * 4);
 
-  SetLength(DS^.Dataset, di);
-  SetLength(DS^.TRToTileIdx, di shr 2);
-  SetLength(DS^.TRToPalIdx, di shr 2);
+  DebugLn(['KF: ', AKF^.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset)]);
 
-  SetLength(DS^.Tags, Length(DS^.Dataset));
-  for i := 0 to High(DS^.Dataset) do
+  SetLength(DS^.Tags, di);
+  for i := 0 to High(DS^.Tags) do
     DS^.Tags[i] := i;
 
   AKF^.FramesLeft := -1;
@@ -2465,9 +2457,7 @@ begin
   end;
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 
-  EnterCriticalSection(FCS);
-  WriteLn('KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft);
-  LeaveCriticalSection(FCS);
+  DebugLn(['KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft]);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
