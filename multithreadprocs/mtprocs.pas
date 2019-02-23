@@ -1,18 +1,15 @@
-{ Unit for light weight threads.
-
+{
+ **********************************************************************
   This file is part of the Free Pascal run time library.
+
+  See the file COPYING.FPC, included in this distribution,
+  for details about the license.
+ **********************************************************************
+
+  Unit for light weight threads.
 
   Copyright (C) 2008 Mattias Gaertner mattias@freepascal.org
 
-  See the file COPYING.FPC, included in this distribution,
-  for details about the copyright.
-
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-
- **********************************************************************}
-{
   Abstract:
     Light weight threads.
     This unit provides methods to easily run a procedure/method with several
@@ -711,6 +708,7 @@ begin
   BlockCount:=ProcThreadPool.MaxThreadCount;
   BlockSize:=(LoopLength div BlockCount);
   if (BlockSize<MinBlockSize) then BlockSize:=MinBlockSize;
+  if BlockSize<1 then BlockSize:=1;
   BlockCount:=((LoopLength-1) div BlockSize)+1;
 end;
 
@@ -792,11 +790,7 @@ begin
         AThread.AddToList(FFirstActiveThread,mtptlPool);
         AThread.Item.FState:=mtptsActive;
         if NewThread then
-          {$IF defined(VER2_4_2) or defined(VER2_4_3)}
-          AThread.Resume
-          {$ELSE}
           AThread.Start
-          {$ENDIF}
         else
           RTLeventSetEvent(AThread.Item.fWaitForPool);
       end;

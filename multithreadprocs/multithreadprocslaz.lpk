@@ -1,26 +1,19 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0"?>
 <CONFIG>
   <Package Version="4">
     <Name Value="MultiThreadProcsLaz"/>
-    <Type Value="RunAndDesignTime"/>
     <Author Value="Mattias Gaertner  mattias@freepascal.org"/>
     <CompilerOptions>
-      <Version Value="11"/>
+      <Version Value="10"/>
       <SearchPaths>
         <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
       </SearchPaths>
-      <CodeGeneration>
-        <SmartLinkUnit Value="True"/>
-        <RelocatableUnit Value="True"/>
-        <Optimizations>
-          <OptimizationLevel Value="4"/>
-        </Optimizations>
-      </CodeGeneration>
-      <Linking>
-        <Debugging>
-          <UseExternalDbgSyms Value="True"/>
-        </Debugging>
-      </Linking>
+      <Other>
+        <CompilerMessages>
+          <UseMsgFile Value="True"/>
+        </CompilerMessages>
+        <CompilerPath Value="$(CompPath)"/>
+      </Other>
     </CompilerOptions>
     <Description Value="Running procedures and methods parallel via a thread pool."/>
     <License Value="modified LGPL2"/>
@@ -39,6 +32,7 @@
         <UnitName Value="MTPCPU"/>
       </Item3>
     </Files>
+    <Type Value="RunAndDesignTime"/>
     <RequiredPkgs Count="1">
       <Item1>
         <PackageName Value="FCL"/>
@@ -51,6 +45,7 @@
     </UsageOptions>
     <PublishOptions>
       <Version Value="2"/>
+      <IgnoreBinaries Value="False"/>
     </PublishOptions>
   </Package>
 </CONFIG>
