@@ -697,7 +697,7 @@ begin
   GMMD.X := X;
   GMMD.centroids := centroids;
 
-  for bin := 0 to NumPoints div cBinSize do
+  for bin := 0 to ((NumPoints - 1) div cBinSize + 1) - 1 do
   begin
     last := min((bin + 1) * cBinSize, NumPoints) - 1;
 
