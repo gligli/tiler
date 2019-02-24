@@ -20,7 +20,7 @@ const
   cTileMapWidth = 160;
   cTileMapHeight = 66;
   cPaletteCount = 32;
-  cBitsPerComp = 8;
+  cBitsPerComp = 7;
   cTilePaletteSize = 32;
   cRandomKModesCount = 7;
   cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.0);
@@ -1363,14 +1363,10 @@ end;
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; ColorReach: TFloat);
 {$if cBitsPerComp <> 8}
 const
-  cRGShift = (8 - cBitsPerComp);
-  cBShift = (8 - cBitsPerComp) * 2;
-  cRMask = ((1 shl cBitsPerComp) - 1);
-  cGMask = ((1 shl cBitsPerComp) - 1) shl 8;
-  cBMask = ((1 shl cBitsPerComp) - 1) shl 16;
+  cBPCMul = (1 shl cBitsPerComp) - 1;
 {$endif}
 var
-  col, sx, sy, tx, ty, i, PalIdx, LastUsed, CmlPct, acc: Integer;
+  col, sx, sy, tx, ty, i, PalIdx, LastUsed, CmlPct, acc, r, g, b: Integer;
   GTile: PTile;
   CMUsage, CMPal: TList;
   CMItem: PCountIndexArray;
@@ -1383,7 +1379,7 @@ begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
 {$if cBitsPerComp <> 8}
-  SetLength(TrueColorUsage, 1 shl (24 - cRGShift));
+  SetLength(TrueColorUsage, 1 shl 24);
   FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
 {$endif}
 
@@ -1414,7 +1410,6 @@ begin
             begin
               col := GTile^.RGBPixels[ty, tx];
 {$if cBitsPerComp <> 8}
-              col := col shr cRGShift;
               Inc(TrueColorUsage[col]);
 {$else}
               Inc(PCountIndexArray(CMUsage[col])^.Count);
@@ -1431,7 +1426,12 @@ begin
       if cnt = 0 then
         Continue;
 
-      col := (i and cRMask) or ((i and cGMask) shr cRGShift) or ((i and cBMask) shr cBShift);
+      FromRGB(i, r, g, b);
+      r := r * cBPCMul div 255;
+      g := g * cBPCMul div 255;
+      b := b * cBPCMul div 255;
+      col := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
+
       Inc(PCountIndexArray(CMUsage[col])^.Count, cnt);
     end;
 {$endif}
@@ -1472,8 +1472,11 @@ begin
       CMItem^.Count := 0;
       col := HSLToRGB(CMItem^.Hue, 255 - CMItem^.Sat, CMItem^.Lit);
 {$if cBitsPerComp <> 8}
-      col := col shr cRGShift;
-      col := (col and cRMask) or ((col and cGMask) shr cRGShift) or ((col and cBMask) shr cBShift);
+      FromRGB(col, r, g, b);
+      r := r * cBPCMul div 255;
+      g := g * cBPCMul div 255;
+      b := b * cBPCMul div 255;
+      col := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
 {$endif}
       CMItem^.Index := col;
     end;
