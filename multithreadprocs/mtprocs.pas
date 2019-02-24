@@ -24,7 +24,10 @@ unit MTProcs;
 interface
 
 uses
-  Classes, SysUtils, MTPCPU;
+  Classes, SysUtils, MTPCPU, windows;
+
+const
+  cCSSpinCount = 100000;
 
 type
   TProcThreadGroup = class;
@@ -597,7 +600,7 @@ begin
   FMaxThreadCount:=GetSystemThreadCount;
   if FMaxThreadCount<1 then
     FMaxThreadCount:=1;
-  InitCriticalSection(FCritSection);
+  InitializeCriticalSectionAndSpinCount(FCritSection, cCSSpinCount);
 end;
 
 destructor TProcThreadPool.Destroy;
@@ -657,7 +660,7 @@ begin
   // free threads
   CleanTerminatedThreads;
 
-  DoneCriticalsection(FCritSection);
+  DeleteCriticalSection(FCritSection);
   inherited Destroy;
 end;
 
