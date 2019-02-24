@@ -1446,7 +1446,7 @@ begin
 
     CmlPct := 0;
     acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
-    acc := acc - (acc div 20); // 95% point
+    acc := acc - (acc div 10); // 90% point
     for i := 0 to cTotalColors - 1 do
     begin
       acc -= PCountIndexArray(CMUsage[i])^.Count;
@@ -1795,7 +1795,7 @@ begin
         DCT[di] := cUVRatio[u] * vRatio * z;
 
         if QWeighting then
-           DCT[di] *= 16.0 / sqrt(cDCTQuantization[ifthen(not HSL, cpn), v, u]);
+           DCT[di] *= 16.0 / sqrt(cDCTQuantization[cpn, v, u]);
 
         Inc(di);
       end;
