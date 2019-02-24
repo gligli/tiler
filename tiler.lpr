@@ -13,13 +13,11 @@ uses
 
 type
 
-  { TEvtHolder }
+{ TEvtHolder }
 
-  TEvtHolder = class
-    procedure AppException(Sender : TObject; E : Exception);
-  end;
-
-{ TDummy }
+TEvtHolder = class
+  procedure AppException(Sender : TObject; E : Exception);
+end;
 
 procedure TEvtHolder.AppException(Sender: TObject; E: Exception);
 begin

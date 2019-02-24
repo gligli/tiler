@@ -93,7 +93,7 @@ const
     42, 26, 38, 22, 41, 25, 37, 21
   );
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 3, 2, 2, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 3, 1, 2, 1, 1);
 
 type
   TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
@@ -137,7 +137,6 @@ type
   PFrame = ^TFrame;
 
   TTileDataset = record
-    Tags: TInteger1DArray;
     Dataset: TFloatDynArray2;
     TRToTileIdx: TIntegerDynArray;
     TRToPalIdx: TByteDynArray;
@@ -250,6 +249,7 @@ type
     procedure btnDebugClick(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
     procedure chkHSLChange(Sender: TObject);
+    procedure chkTransPaletteChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -262,7 +262,7 @@ type
     FFrames: array of TFrame;
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
-    FUseHSL: Boolean;
+    FUseHSL, FTransPalette: Boolean;
     FY2MixedColors: Integer;
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
@@ -312,7 +312,8 @@ type
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
     function GetMaxTPF(AKF: PKeyFrame): Integer;
-    procedure PrepareFrameTiling(AKF: PKeyFrame; TransPalette: Boolean);
+    procedure PrepareFrameTiling(AKF: PKeyFrame);
+    procedure TerminateFrameTiling(AKF: PKeyFrame);
     procedure DoFrameTiling(AFrame: PFrame);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
@@ -593,25 +594,18 @@ procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
     DoFrameTiling(@FFrames[AIndex]);
   end;
 
-  procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    PrepareFrameTiling(@FKeyFrames[AIndex], chkTransPalette.Checked);
-  end;
-
 var
   i: Integer;
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
 
-  ProgressRedraw(-1, esFrameTiling);
-  ProcThreadPool.DoParallelLocalProc(@DoKF, 0, High(FKeyFrames));
-  ProgressRedraw(1);
-  ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FFrames));
-  ProgressRedraw(2);
-
   for i := 0 to High(FKeyFrames) do
-    FreeMemAndNil(FKeyFrames[i].TileDS);
+    FKeyFrames[i].FramesLeft := -1;
+
+  ProgressRedraw(-1, esFrameTiling);
+  ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FFrames));
+  ProgressRedraw(1);
 
   tbFrameChange(nil);
 end;
@@ -619,6 +613,11 @@ end;
 procedure TMainForm.chkHSLChange(Sender: TObject);
 begin
   FUseHSL := chkHSL.Checked;
+end;
+
+procedure TMainForm.chkTransPaletteChange(Sender: TObject);
+begin
+  FTransPalette := chkTransPalette.Checked;
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
@@ -856,6 +855,8 @@ begin
       RGBToHSL(HSLToRGB(i,j,255), hh, ss, ll);
       imgDest.Canvas.Pixels[i,j] := SwapRB(HSLToRGB(hh,ss,ll));
     end;
+
+  TerminatePlan(plan);
 end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
@@ -2088,14 +2089,14 @@ procedure TMainForm.RGBToHSL(col: Integer; out h, s, l: Byte);
 var
   rr, gg, bb: Integer;
 
-  function RGBMaxValue: byte;
+  function RGBMaxValue: Integer;
   begin
     Result := rr;
     if (Result < gg) then Result := gg;
     if (Result < bb) then Result := bb;
   end;
 
-  function RGBMinValue : byte;
+  function RGBMinValue : Integer;
   begin
     Result := rr;
     if (Result > gg) then Result := gg;
@@ -2319,7 +2320,7 @@ begin
     Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
 end;
 
-procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame; TransPalette: Boolean);
+procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame);
 var
   TRSize, di, i, frame, sy, sx: Integer;
   frm: PFrame;
@@ -2342,7 +2343,7 @@ begin
   begin
     frm := @FFrames[AKF^.StartFrame + frame];
 
-    if TransPalette then
+    if FTransPalette then
     begin
       for palIdx := 0 to cPaletteCount - 1 do
         for sy := 0 to cTileMapHeight - 1 do
@@ -2390,11 +2391,18 @@ begin
 
   DebugLn(['KF: ', AKF^.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset)]);
 
-  SetLength(DS^.Tags, di);
-  for i := 0 to High(DS^.Tags) do
-    DS^.Tags[i] := i;
+  DS^.KDT := ann_kdtree_create(PPFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+end;
 
-  AKF^.FramesLeft := -1;
+procedure TMainForm.TerminateFrameTiling(AKF: PKeyFrame);
+begin
+  ann_kdtree_destroy(AKF^.TileDS^.KDT);
+  AKF^.TileDS^.KDT := nil;
+  SetLength(AKF^.TileDS^.Dataset, 0);
+  SetLength(AKF^.TileDS^.TRToPalIdx, 0);
+  SetLength(AKF^.TileDS^.TRToTileIdx, 0);
+  Dispose(AKF^.TileDS);
+  AKF^.TileDS := nil;
 end;
 
 procedure TMainForm.DoFrameTiling(AFrame: PFrame);
@@ -2407,15 +2415,15 @@ var
   Used: TBooleanDynArray;
   DCT: TFloatDynArray;
 begin
-  DS := AFrame^.KeyFrame^.TileDS;
-
   EnterCriticalSection(AFrame^.KeyFrame^.CS);
   if AFrame^.KeyFrame^.FramesLeft < 0 then
   begin
-    DS^.KDT := ann_kdtree_create(PPFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+    PrepareFrameTiling(AFrame^.KeyFrame);
     AFrame^.KeyFrame^.FramesLeft := AFrame^.KeyFrame^.FrameCount;
   end;
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
+
+  DS := AFrame^.KeyFrame^.TileDS;
 
   // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
@@ -2448,16 +2456,13 @@ begin
 
   MaxTPF := max(MaxTPF, TPF);
 
+  DebugLn(['KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft]);
+
   EnterCriticalSection(AFrame^.KeyFrame^.CS);
   Dec(AFrame^.KeyFrame^.FramesLeft);
   if AFrame^.KeyFrame^.FramesLeft <= 0 then
-  begin
-    ann_kdtree_destroy(DS^.KDT);
-    DS^.KDT := nil;
-  end;
+    TerminateFrameTiling(AFrame^.KeyFrame);
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
-
-  DebugLn(['KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft]);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
@@ -2838,6 +2843,7 @@ begin
 
   cbxYilMixChange(nil);
   chkHSLChange(nil);
+  chkTransPaletteChange(nil);
 
   for es := esLoad to High(TEncoderStep) do
     cbxStep.AddItem(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), TObject(PtrInt(Ord(es))));

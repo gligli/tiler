@@ -417,6 +417,7 @@ object MainForm: TMainForm
     Top = 240
     Width = 239
     Caption = 'Extended frame tiling palette usage (slow!)'
+    OnChange = chkTransPaletteChange
     TabOrder = 11
   end
   object IdleTimer: TIdleTimer
