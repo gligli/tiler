@@ -15,6 +15,8 @@ type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
 
 const
+  // tweakable constants
+
   cTileMapWidth = 160;
   cTileMapHeight = 66;
   cPaletteCount = 32;
@@ -27,24 +29,12 @@ const
   cKFFromPal = True;
   cKFQWeighting = True;
 
-  cRedMultiplier = 299;
-  cGreenMultiplier = 587;
-  cBlueMultiplier = 114;
-  cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
+  cRedMultiplier = 2126;
+  cGreenMultiplier = 7152;
+  cBlueMultiplier = 722;
+  cRGBw = 13; // in 1 / 32th ~ cuberoot(2) / 3
+  cCw = sqrt(2) / 2;
 
-  cSmoothingPrevFrame = 1;
-  cVecInvWidth = 16;
-  cTotalColors = 1 shl (cBitsPerComp * 3);
-  cTileWidth = 8;
-  cTileMapSize = cTileMapWidth * cTileMapHeight;
-  cScreenWidth = cTileMapWidth * cTileWidth;
-  cScreenHeight = cTileMapHeight * cTileWidth;
-  cTileDCTSize = 3 * sqr(cTileWidth);
-
-  cPhi = (1 + sqrt(5)) / 2;
-  cInvPhi = 1 / cPhi;
-
-  cUV = 10;
   cDCTQuantization: array[0..2{YUV}, 0..7, 0..7] of TFloat = (
     (
       // optimized
@@ -59,27 +49,41 @@ const
     ),
     (
       // Improved (reduced high frequency chroma importance)
-      (17*cUV,  18*cUV,  24*cUV,  47*cUV,  99*cUV,  99*cUV,  99*cUV,  99*cUV),
-      (18*cUV,  21*cUV,  26*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV),
-      (24*cUV,  26*cUV,  56*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV),
-      (47*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV),
-      (99*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV),
-      (99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV),
-      (99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV, 192*cUV),
-      (99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV, 192*cUV, 208*cUV)
+      (17*cCw,  18*cCw,  24*cCw,  47*cCw,  99*cCw,  99*cCw,  99*cCw,  99*cCw),
+      (18*cCw,  21*cCw,  26*cCw,  66*cCw,  99*cCw,  99*cCw,  99*cCw, 112*cCw),
+      (24*cCw,  26*cCw,  56*cCw,  99*cCw,  99*cCw,  99*cCw, 112*cCw, 128*cCw),
+      (47*cCw,  66*cCw,  99*cCw,  99*cCw,  99*cCw, 112*cCw, 128*cCw, 144*cCw),
+      (99*cCw,  99*cCw,  99*cCw,  99*cCw, 112*cCw, 128*cCw, 144*cCw, 160*cCw),
+      (99*cCw,  99*cCw,  99*cCw, 112*cCw, 128*cCw, 144*cCw, 160*cCw, 176*cCw),
+      (99*cCw,  99*cCw, 112*cCw, 128*cCw, 144*cCw, 160*cCw, 176*cCw, 192*cCw),
+      (99*cCw, 112*cCw, 128*cCw, 144*cCw, 160*cCw, 176*cCw, 192*cCw, 208*cCw)
     ),
     (
       // Improved (reduced high frequency chroma importance)
-      (17*cUV,  18*cUV,  24*cUV,  47*cUV,  99*cUV,  99*cUV,  99*cUV,  99*cUV),
-      (18*cUV,  21*cUV,  26*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV),
-      (24*cUV,  26*cUV,  56*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV),
-      (47*cUV,  66*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV),
-      (99*cUV,  99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV),
-      (99*cUV,  99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV),
-      (99*cUV,  99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV, 192*cUV),
-      (99*cUV, 112*cUV, 128*cUV, 144*cUV, 160*cUV, 176*cUV, 192*cUV, 208*cUV)
+      (17*cCw,  18*cCw,  24*cCw,  47*cCw,  99*cCw,  99*cCw,  99*cCw,  99*cCw),
+      (18*cCw,  21*cCw,  26*cCw,  66*cCw,  99*cCw,  99*cCw,  99*cCw, 112*cCw),
+      (24*cCw,  26*cCw,  56*cCw,  99*cCw,  99*cCw,  99*cCw, 112*cCw, 128*cCw),
+      (47*cCw,  66*cCw,  99*cCw,  99*cCw,  99*cCw, 112*cCw, 128*cCw, 144*cCw),
+      (99*cCw,  99*cCw,  99*cCw,  99*cCw, 112*cCw, 128*cCw, 144*cCw, 160*cCw),
+      (99*cCw,  99*cCw,  99*cCw, 112*cCw, 128*cCw, 144*cCw, 160*cCw, 176*cCw),
+      (99*cCw,  99*cCw, 112*cCw, 128*cCw, 144*cCw, 160*cCw, 176*cCw, 192*cCw),
+      (99*cCw, 112*cCw, 128*cCw, 144*cCw, 160*cCw, 176*cCw, 192*cCw, 208*cCw)
     )
   );
+
+  // don't change these
+
+  cLumaMultiplier = cRedMultiplier + cGreenMultiplier + cBlueMultiplier;
+  cSmoothingPrevFrame = 1;
+  cVecInvWidth = 16;
+  cTotalColors = 1 shl (cBitsPerComp * 3);
+  cTileWidth = 8;
+  cTileMapSize = cTileMapWidth * cTileMapHeight;
+  cScreenWidth = cTileMapWidth * cTileWidth;
+  cScreenHeight = cTileMapHeight * cTileWidth;
+  cTileDCTSize = 3 * sqr(cTileWidth);
+  cPhi = (1 + sqrt(5)) / 2;
+  cInvPhi = 1 / cPhi;
 
   cDitheringListLen = 256;
   cDitheringMap : array[0..8*8 - 1] of Byte = (
@@ -1066,9 +1070,9 @@ begin
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * cRedMultiplier div 2; // div 2 for 0.5 chroma importance reduction
-  Result += diffG * diffG * cGreenMultiplier div 2;
-  Result += diffB * diffB * cBlueMultiplier div 2;
+  Result := diffR * diffR * cRedMultiplier * cRGBw div 32;
+  Result += diffG * diffG * cGreenMultiplier * cRGBw div 32;
+  Result += diffB * diffB * cBlueMultiplier * cRGBw div 32;
   Result += lumadiff * lumadiff;
 end;
 
@@ -1129,9 +1133,9 @@ begin
     pinsrq xmm5, rax, 0
     pinsrq xmm5, rax, 1
 
-    mov rax, (cRedMultiplier * 2 / 16) or ((cGreenMultiplier * 2 / 16) shl 32)
+    mov rax, (cRedMultiplier * cRGBw / 128) or ((cGreenMultiplier * cRGBw / 128) shl 32)
     pinsrq xmm6, rax, 0
-    mov rax, (cBlueMultiplier * 2 / 16) or ((cLumaMultiplier * 4 / 16) shl 32)
+    mov rax, (cBlueMultiplier * cRGBw / 128) or ((cLumaMultiplier * 32 / 128) shl 32)
     pinsrq xmm6, rax, 1
 
     pop rcx
@@ -1534,14 +1538,14 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile^, False, True, False, False, False, -1, OrigTile^.PaletteRGB, OrigTileDCT);
+      ComputeTileDCT(OrigTile^, False, False, False, False, False, -1, OrigTile^.PaletteRGB, OrigTileDCT);
 
       PalIdx := -1;
       best := MaxDouble;
       for i := 0 to cPaletteCount - 1 do
       begin
         DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
-        ComputeTileDCT(OrigTile^, True, True, False, False, False, -1, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
+        ComputeTileDCT(OrigTile^, True, False, False, False, False, -1, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
         cmp := CompareEuclidean192(TileDCT, OrigTileDCT);
         if cmp < best then
         begin
@@ -1681,9 +1685,9 @@ begin
     fb := b / 255.0;
   end;
 
-  yy :=  0.299*fr + 0.587*fg + 0.114*fb;
-  uu := -0.147*fr - 0.289*fg + 0.436*fb;
-  vv :=  0.615*fr - 0.515*fg - 0.100*fb;
+  yy := (cRedMultiplier * fr + cGreenMultiplier * fg + cBlueMultiplier * fb) / cLumaMultiplier;
+  uu := (fb - yy) * (0.5 / (1.0 - cBlueMultiplier / cLumaMultiplier));
+  vv := (fr - yy) * (0.5 / (1.0 - cRedMultiplier / cLumaMultiplier));
 
   y := yy; u := uu; v := vv; // for safe "out" param
 end;

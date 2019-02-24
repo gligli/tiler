@@ -409,7 +409,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 100000
     TabOrder = 3
-    Value = 157
+    Value = 512
   end
   object chkTransPalette: TCheckBox
     Left = 8
