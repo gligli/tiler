@@ -20,7 +20,7 @@ const
   cTileMapWidth = 160;
   cTileMapHeight = 66;
   cPaletteCount = 32;
-  cBitsPerComp = 7;
+  cBitsPerComp = 8;
   cTilePaletteSize = 32;
   cRandomKModesCount = 7;
   cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.0);
@@ -227,7 +227,7 @@ type
     PopupMenu1: TPopupMenu;
     pbProgress: TProgressBar;
     seAvgTPF: TSpinEdit;
-    seColReach: TFloatSpinEdit;
+    sePalVAR: TFloatSpinEdit;
     sedPalIdx: TSpinEdit;
     seStartFrame: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -264,7 +264,7 @@ type
   private
     FKeyFrames: array of TKeyFrame;
     FFrames: array of TFrame;
-    FColorMap: array[0..cTotalColors - 1] of Integer;
+    FColorMap: array[0..cTotalColors - 1, 0..5] of Byte;
     FTiles: array of PTile;
     FUseHSL, FTransPalette: Boolean;
     FY2MixedColors: Integer;
@@ -291,7 +291,7 @@ type
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
-    function ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
+    function ColorCompare(r1, g1, b1, r2, g2, b2: Int64): Int64;
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure TerminatePlan(var Plan: TMixingPlan);
     function DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
@@ -302,7 +302,7 @@ type
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; ColorReach: TFloat);
+    procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
     procedure FinalDitherTiles(AFrame: PFrame);
 
     function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
@@ -360,7 +360,14 @@ begin
   Result := (b shl 16) or (g shl 8) or r;
 end;
 
-procedure FromRGB(col: Integer; out r, g, b: Integer); inline;
+procedure FromRGB(col: Integer; out r, g, b: Integer); inline; overload;
+begin
+  r := col and $ff;
+  g := (col shr 8) and $ff;
+  b := (col shr 16) and $ff;
+end;
+
+procedure FromRGB(col: Integer; out r, g, b: Byte); inline; overload;
 begin
   r := col and $ff;
   g := (col shr 8) and $ff;
@@ -371,9 +378,11 @@ var
   gGammaCorLut: array[0..High(cGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
   gDCTLut:array[0..cTileWidth - 1, 0..cTileWidth - 1,0..cTileWidth - 1,0..cTileWidth - 1] of TFloat;
-  gPalettePattern : array[0 .. cPaletteCount - 1, 0 .. cTilePaletteSize - 1] of TFloat;
+  gPalettePattern : array[0 .. cTilePaletteSize - 1, 0 .. cPaletteCount - 1] of TFloat;
 
 procedure InitLuts;
+const
+  cCurvature = 2.0;
 var
   g, i, j, v, u, y, x: Int64;
   f, fp: TFloat;
@@ -391,29 +400,19 @@ begin
         for x := 0 to (cTileWidth - 1) do
 		      gDCTLut[v, u, y, x] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
 
-  for j := 0 to cPaletteCount - 1 do
+  f := 0;
+  for i := 1 to cTilePaletteSize do
   begin
-    x := 1;
-    v := 1;
-    u := 0;
-    f := 0;
-    for i := 0 to cTilePaletteSize do
-    begin
-      x := u + v;
-      u := v;
-      v := x;
+    fp := f;
+    f := power(i, cCurvature);
 
-      fp := f;
-      f := sqrt(x) - 1.0;
-
-      if i > 0 then
-        gPalettePattern[j, i - 1] := ((j + 1) / cPaletteCount) * (f - fp) + fp;
-    end;
+    for j := 0 to cPaletteCount - 1 do
+      gPalettePattern[i - 1, j] := (j / (cPaletteCount - 1)) * max(cPaletteCount, f - fp) + fp;
   end;
 
   for j := 0 to cPaletteCount - 1 do
     for i := 0 to cTilePaletteSize - 1 do
-      gPalettePattern[j, i] /= gPalettePattern[cPaletteCount - 1, cTilePaletteSize - 1];
+      gPalettePattern[j, i] /= gPalettePattern[cTilePaletteSize - 1, cPaletteCount - 1];
 end;
 
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -543,7 +542,7 @@ procedure TMainForm.btnDitherClick(Sender: TObject);
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FindBestKeyframePalette(@FKeyFrames[AIndex], seColReach.Value);
+    FindBestKeyframePalette(@FKeyFrames[AIndex], sePalVAR.Value / 100);
   end;
 
   procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -1060,7 +1059,7 @@ begin
   Result := CompareValue(pi1^, pi2^);
 end;
 
-function TMainForm.ColorCompare(r1, g1, b1, r2, g2, b2: Integer): Int64;
+function TMainForm.ColorCompare(r1, g1, b1, r2, g2, b2: Int64): Int64;
 var
   luma1, luma2, lumadiff, diffR, diffG, diffB: Int64;
 begin
@@ -1360,13 +1359,13 @@ begin
     Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
 end;
 
-procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; ColorReach: TFloat);
+procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
 {$if cBitsPerComp <> 8}
 const
   cBPCMul = (1 shl cBitsPerComp) - 1;
 {$endif}
 var
-  col, sx, sy, tx, ty, i, PalIdx, LastUsed, CmlPct, acc, r, g, b: Integer;
+  col, sx, sy, tx, ty, i, j, bestI, PalIdx, LastUsed, CmlPct, acc, r, g, b, rr, gg, bb: Integer;
   GTile: PTile;
   CMUsage, CMPal: TList;
   CMItem: PCountIndexArray;
@@ -1374,7 +1373,8 @@ var
   cnt: Integer;
   TrueColorUsage: TCardinalDynArray;
 {$endif}
-  CmlReach: TFloat;
+  diff, best: Int64;
+  ciI, ciJ: PCountIndexArray;
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
@@ -1392,7 +1392,7 @@ begin
       New(CMItem);
       CMItem^.Count := 0;
       CMItem^.Index := i;
-      RGBToHSL(FColorMap[i], CMItem^.Hue, CMItem^.Sat, CMItem^.Lit);
+      CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Lit := FColorMap[i, 5];
       CMUsage[i] := CMItem;
     end;
 
@@ -1450,7 +1450,7 @@ begin
 
     CmlPct := 0;
     acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
-    acc := acc - (acc div 10); // 90% point
+    acc := round(acc * PalVAR);
     for i := 0 to cTotalColors - 1 do
     begin
       acc -= PCountIndexArray(CMUsage[i])^.Count;
@@ -1463,32 +1463,41 @@ begin
 
     DebugLn(['KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct]);
 
-    // after LastUsed put 'weird' colors (ie. colors not in frames, but relevant for Y2)
+    // prune colors that are too close to each other
 
-    for i := LastUsed + 1 to min(cTotalColors, LastUsed + (LastUsed shr 1)) - 1 do
-    begin
-      CMItem := PCountIndexArray(CMUsage[i]);
-      CMItem^ := PCountIndexArray(CMUsage[EnsureRange((i - LastUsed - 1) shl 1, 0, cTotalColors - 1)])^;
-      CMItem^.Count := 0;
-      col := HSLToRGB(CMItem^.Hue, 255 - CMItem^.Sat, CMItem^.Lit);
-{$if cBitsPerComp <> 8}
-      FromRGB(col, r, g, b);
-      r := r * cBPCMul div 255;
-      g := g * cBPCMul div 255;
-      b := b * cBPCMul div 255;
-      col := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
-{$endif}
-      CMItem^.Index := col;
-    end;
+    CMUsage.Count := LastUsed + 1;
+    repeat
+      bestI := -1;
+      best := High(Int64);
+
+      ciJ := PCountIndexArray(CMUsage[0]);
+      rr := FColorMap[ciJ^.Index, 0]; gg := FColorMap[ciJ^.Index, 1]; bb := FColorMap[ciJ^.Index, 2];
+      for i := 1 to CMUsage.Count - 1 do
+      begin
+        ciI := PCountIndexArray(CMUsage[i]);
+        r := FColorMap[ciI^.Index, 0]; g := FColorMap[ciI^.Index, 1]; b := FColorMap[ciI^.Index, 2];
+        diff := ColorCompare(r, g, b, rr, gg, bb);
+        if (diff < best) and (((ciJ^.Count - ciI^.Count) shl 3) < ciJ^.Count) then // ensure we merge colors that are roughly as probable
+        begin
+          best := diff;
+          bestI := i;
+        end;
+        rr := r; gg := g; bb := b;
+        ciJ := ciI;
+      end;
+
+      Assert(bestI >= 0);
+      CMUsage.Delete(bestI);
+
+    until CMUsage.Count < CmlPct;
 
     // split most used colors into tile palettes
 
-    CmlReach := EnsureRange((CmlPct + 1) * ColorReach, 0, cTotalColors - 1);
     for PalIdx := 0 to cPaletteCount - 1 do
     begin
       CMPal.Clear;
       for i := 0 to cTilePaletteSize - 1 do
-        CMPal.Add(CMUsage[Round(gPalettePattern[PalIdx, i] * CmlReach)]);
+        CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
 
       CMPal.Sort(@CompareCMUHSL);
 
@@ -1497,7 +1506,8 @@ begin
       for i := 0 to cTilePaletteSize - 1 do
       begin
         AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
-        AKeyFrame^.PaletteRGB[PalIdx, i] := FColorMap[AKeyFrame^.PaletteIndexes[PalIdx, i]];
+        j := AKeyFrame^.PaletteIndexes[PalIdx, i];
+        AKeyFrame^.PaletteRGB[PalIdx, i] := ToRGB(FColorMap[j, 0], FColorMap[j, 1], FColorMap[j, 2]);
       end;
     end;
 
@@ -1541,14 +1551,14 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile^, False, False, False, False, False, -1, OrigTile^.PaletteRGB, OrigTileDCT);
+      ComputeTileDCT(OrigTile^, False, False, False, False, False, 0, OrigTile^.PaletteRGB, OrigTileDCT);
 
       PalIdx := -1;
       best := MaxDouble;
       for i := 0 to cPaletteCount - 1 do
       begin
         DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
-        ComputeTileDCT(OrigTile^, True, False, False, False, False, -1, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
+        ComputeTileDCT(OrigTile^, True, False, False, False, False, 0, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
         cmp := CompareEuclidean192(TileDCT, OrigTileDCT);
         if cmp < best then
         begin
@@ -2865,7 +2875,8 @@ begin
       (((((i shr (cBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
       (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
 
-    FColorMap[i] := col;
+    FromRGB(col, FColorMap[i, 0], FColorMap[i, 1], FColorMap[i, 2]);
+    RGBToHSL(col, FColorMap[i, 3], FColorMap[i, 4], FColorMap[i, 5]);
   end;
 end;
 

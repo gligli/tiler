@@ -176,8 +176,8 @@ object MainForm: TMainForm
     Left = 8
     Height = 13
     Top = 134
-    Width = 196
-    Caption = 'Palette color reach (colors ''weirdness'')'
+    Width = 99
+    Caption = 'Palette value at risk'
     ParentColor = False
   end
   object seAvgTPF: TSpinEdit
@@ -384,7 +384,7 @@ object MainForm: TMainForm
     Caption = 'Run up to step'
     ParentColor = False
   end
-  object seColReach: TFloatSpinEdit
+  object sePalVAR: TFloatSpinEdit
     Left = 263
     Height = 21
     Top = 132
@@ -392,7 +392,7 @@ object MainForm: TMainForm
     Increment = 0.5
     MinValue = 0
     TabOrder = 5
-    Value = 7
+    Value = 97.5
   end
   object Label13: TLabel
     Left = 8
@@ -409,7 +409,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 100000
     TabOrder = 3
-    Value = 512
+    Value = 157
   end
   object chkTransPalette: TCheckBox
     Left = 8
