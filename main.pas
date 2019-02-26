@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  ap, correlation, IntfGraphics, FPimage, FPWritePNG, zstream;
+  ap, correlation, IntfGraphics, FPimage, FPWritePNG, zstream, GraphUtil;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -281,9 +281,9 @@ type
     procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
       ATilePage: Integer);
 
-    function HSLToRGB(h, s, l: Byte): Integer;
-    procedure RGBToHSL(col: Integer; out h, s, l: Byte); overload;
-    procedure RGBToHSL(col: Integer; out h, s, l: TFloat); overload;
+    function HSVToRGB(h, s, v: Byte): Integer;
+    procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
+    procedure RGBToHSV(col: Integer; out h, s, v: TFloat); overload;
     procedure RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat);
 
     procedure ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HSL, HMirror, VMirror: Boolean; GammaCor: Integer;
@@ -855,8 +855,8 @@ begin
     for j := 0 to 255 do
     begin
       hh := 0; ss := 0; ll := 0;
-      RGBToHSL(HSLToRGB(i,j,255), hh, ss, ll);
-      imgDest.Canvas.Pixels[i,j] := SwapRB(HSLToRGB(hh,ss,ll));
+      RGBToHSV(HSVToRGB(i,j,255), hh, ss, ll);
+      imgDest.Canvas.Pixels[i,j] := SwapRB(HSVToRGB(hh,ss,ll));
     end;
 
   TerminatePlan(plan);
@@ -1705,15 +1705,15 @@ begin
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
 
-procedure TMainForm.RGBToHSL(col: Integer; out h, s, l: TFloat);
+procedure TMainForm.RGBToHSV(col: Integer; out h, s, v: TFloat);
 var
-  bh, bs, bl: Byte;
+  bh, bs, bv: Byte;
 begin
-  bh := 0; bs := 0; bl := 0;
-  RGBToHSL(col, bh, bs, bl);
+  bh := 0; bs := 0; bv := 0;
+  RGBToHSV(col, bh, bs, bv);
   h := bh / 255.0;
   s := bs / 255.0;
-  l := bl / 255.0;
+  v := bv / 255.0;
 end;
 
 procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HSL, HMirror, VMirror: Boolean;
@@ -1739,7 +1739,7 @@ begin
           yy := y;
           if HMirror then xx := cTileWidth - 1 - x;
           if VMirror then yy := cTileWidth - 1 - y;
-          RGBToHSL(pal[ATile.PalPixels[yy,xx]], CpnPixels[2,y,x], CpnPixels[1,y,x], CpnPixels[0,y,x])
+          RGBToHSV(pal[ATile.PalPixels[yy,xx]], CpnPixels[2,y,x], CpnPixels[1,y,x], CpnPixels[0,y,x])
         end;
     end
     else
@@ -1766,7 +1766,7 @@ begin
           yy := y;
           if HMirror then xx := cTileWidth - 1 - x;
           if VMirror then yy := cTileWidth - 1 - y;
-          RGBToHSL(ATile.RGBPixels[yy,xx], CpnPixels[2,y,x], CpnPixels[1,y,x], CpnPixels[0,y,x])
+          RGBToHSV(ATile.RGBPixels[yy,xx], CpnPixels[2,y,x], CpnPixels[1,y,x], CpnPixels[0,y,x])
         end;
     end
     else
@@ -2102,7 +2102,7 @@ begin
 end;
 
 // from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
-procedure TMainForm.RGBToHSL(col: Integer; out h, s, l: Byte);
+procedure TMainForm.RGBToHSV(col: Integer; out h, s, v: Byte);
 var
   rr, gg, bb: Integer;
 
@@ -2148,10 +2148,10 @@ begin
 
   h := hh;
   s := ss;
-  l := ll;
+  v := ll;
 end;
 
-function TMainForm.HSLToRGB(h, s, l: Byte): Integer;
+function TMainForm.HSVToRGB(h, s, v: Byte): Integer;
 const
   MaxHue: Integer = 252;
   MaxSat: Integer = 255;
@@ -2161,26 +2161,26 @@ var
  f, LS, p, q, r: integer;
 begin
  if (s = 0) then
-   Result := ToRGB(l, l, l)
+   Result := ToRGB(v, v, v)
  else
   begin
    h := h mod MaxHue;
    s := EnsureRange(s, 0, MaxSat);
-   l := EnsureRange(l, 0, MaxLum);
+   v := EnsureRange(v, 0, MaxLum);
 
    f := h mod Divisor;
    h := h div Divisor;
-   LS := l*s;
-   p := l - LS div MaxLum;
-   q := l - (LS*f) div (255 * Divisor);
-   r := l - (LS*(Divisor - f)) div (255 * Divisor);
+   LS := v*s;
+   p := v - LS div MaxLum;
+   q := v - (LS*f) div (255 * Divisor);
+   r := v - (LS*(Divisor - f)) div (255 * Divisor);
    case h of
-    0: Result := ToRGB(l, r, p);
-    1: Result := ToRGB(q, l, p);
-    2: Result := ToRGB(p, l, r);
-    3: Result := ToRGB(p, q, l);
-    4: Result := ToRGB(r, p, l);
-    5: Result := ToRGB(l, p, q);
+    0: Result := ToRGB(v, r, p);
+    1: Result := ToRGB(q, v, p);
+    2: Result := ToRGB(p, v, r);
+    3: Result := ToRGB(p, q, v);
+    4: Result := ToRGB(r, p, v);
+    5: Result := ToRGB(v, p, q);
    else
     Result := ToRGB(0, 0, 0);
    end;
@@ -2876,7 +2876,7 @@ begin
       (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
 
     FromRGB(col, FColorMap[i, 0], FColorMap[i, 1], FColorMap[i, 2]);
-    RGBToHSL(col, FColorMap[i, 3], FColorMap[i, 4], FColorMap[i, 5]);
+    RGBToHSV(col, FColorMap[i, 3], FColorMap[i, 4], FColorMap[i, 5]);
   end;
 end;
 
