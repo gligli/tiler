@@ -677,7 +677,7 @@ end;
 
 function TKModes.KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
 const
-  cBinSize = 480;
+  cBinSize = 960;
 var
   ipoint, old_clust, from_clust, rindx, cnt, dummy, i, bin, last: Integer;
   cost_acc: UInt64;
