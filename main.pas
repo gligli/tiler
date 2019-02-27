@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  ap, correlation, IntfGraphics, FPimage, FPWritePNG, zstream, GraphUtil;
+  correlation, IntfGraphics, FPimage, FPWritePNG, zstream;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -24,10 +24,10 @@ const
   cTilePaletteSize = 32;
   cRandomKModesCount = 7;
   cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.0);
+  cFTGamma = -1;
+  cFTFromPal = False;
+  cFTQWeighting = True;
   cSmoothingGamma = -1;
-  cKFGamma = -1;
-  cKFFromPal = True;
-  cKFQWeighting = True;
 
   cRedMul = 2126;
   cGreenMul = 7152;
@@ -2391,7 +2391,7 @@ begin
         for vmir := False to True do
           for hmir := False to True do
           begin
-            ComputeTileDCT(T^, True, cKFQWeighting, hmir, vmir, cKFGamma, AKF^.PaletteRGB[palIdx], DS^.Dataset[di]);
+            ComputeTileDCT(T^, True, cFTQWeighting, hmir, vmir, cFTGamma, AKF^.PaletteRGB[palIdx], DS^.Dataset[di]);
             Inc(di);
           end;
       end;
@@ -2446,7 +2446,7 @@ begin
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
-      ComputeTileDCT(AFrame^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, False, False, cKFGamma, AFrame^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DCT);
+      ComputeTileDCT(AFrame^.Tiles[sy * cTileMapWidth + sx], cFTFromPal, cFTQWeighting, False, False, cFTGamma, AFrame^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DCT);
 
       tri := ann_kdtree_search(DS^.KDT, PFloat(DCT), 0.0);
 
