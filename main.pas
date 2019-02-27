@@ -2658,11 +2658,51 @@ procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset, Centroids: TByteDynArray2;
   Clusters: TIntegerDynArray;
-  i, j, k, x, y, di, acc, best, StartingPoint, ActualNbTiles: Integer;
-  ToMerge: array of Integer;
+  i, di, acc, best, StartingPoint, ActualNbTiles: Integer;
   WasActive: TBooleanDynArray;
   KModes: TKModes;
-  NewTile: TPalPixels;
+
+  procedure DoMerge(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    i, k, di: Integer;
+    ToMerge: TByteDynArray2;
+    ToMergeIdxs: TIntegerDynArray;
+    dis: UInt64;
+  begin
+    ToMerge := nil;
+    ToMergeIdxs := nil;
+
+    // build a list of this centroid tiles
+
+    di := 0;
+    k := 0;
+    for i := 0 to High(FTiles) do
+    begin
+      if not WasActive[i] then
+        Continue;
+
+      if Clusters[k] = AIndex then
+      begin
+        if di >= Length(ToMerge) then
+        begin
+          SetLength(ToMerge, (Length(ToMerge) + 1) shl 1);
+          SetLength(ToMergeIdxs, Length(ToMerge));
+        end;
+        ToMerge[di] := Dataset[k];
+        ToMergeIdxs[di] := i;
+        Inc(di);
+      end;
+
+      Inc(k);
+    end;
+
+    // choose a tile from the centroids
+
+    k := GetMinMatchingDissim(ToMerge, Centroids[AIndex], di, dis);
+    if di >= 2 then
+      MergeTiles(ToMergeIdxs, di, ToMergeIdxs[k], nil);
+  end;
+
 begin
   SetLength(Dataset, Length(FTiles), cKModesFeatureCount);
   SetLength(WasActive, Length(FTiles));
@@ -2710,39 +2750,7 @@ begin
 
   // for each group, merge the tiles
 
-  SetLength(ToMerge, Length(FTiles));
-
-  for j := 0 to ActualNbTiles - 1 do
-  begin
-    di := 0;
-    k := 0;
-    for i := 0 to High(FTiles) do
-    begin
-      if not WasActive[i] then
-        Continue;
-
-      if Clusters[k] = j then
-      begin
-        ToMerge[di] := i;
-        Inc(di);
-      end;
-
-      Inc(k);
-    end;
-
-    // recreate a tile from the centroids
-
-    i := 0;
-    for y := 0 to cTileWidth - 1 do
-      for x := 0 to cTileWidth - 1 do
-      begin
-        NewTile[y, x] := Centroids[j, i];
-        Inc(i);
-      end;
-
-    if di >= 2 then
-      MergeTiles(ToMerge, di, ToMerge[0], @NewTile)
-  end;
+  ProcThreadPool.DoParallelLocalProc(@DoMerge, 0, DesiredNbTiles - 1);
 
   ProgressRedraw(3);
 end;
