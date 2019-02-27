@@ -221,9 +221,6 @@ begin
   Result := Cnt;
 end;
 
-const
-  cDissimSubMatchingSize = 34;
-
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
@@ -670,9 +667,12 @@ type
 procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
   GMMD: PGMMD;
+  dis: UInt64;
 begin
   GMMD := PGMMD(AData);
-  GMMD^.clust[AIndex] := GetMinMatchingDissim(GMMD^.centroids, GMMD^.X[AIndex], Length(GMMD^.centroids), GMMD^.dis[AIndex]);
+  GMMD^.clust[AIndex] := GetMinMatchingDissim(GMMD^.centroids, GMMD^.X[AIndex], Length(GMMD^.centroids), dis);
+  if Assigned(GMMD^.dis) then
+    GMMD^.dis[AIndex] := dis;
 end;
 
 function TKModes.KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
@@ -750,6 +750,7 @@ var
   cost, ncost: UInt64;
   InvGoldenRatio, GRAcc: Single;
   Seed: Cardinal;
+  GMMD: TGMMD;
 begin
   Seed := $42381337;
 
@@ -811,15 +812,15 @@ begin
       for i := 0 to NumAttrs - 1 do
         FillDWord(cl_attr_freq[j, i, 0], ANumModalities, 0);
 
+    GMMD.clust := membship;
+    GMMD.dis := nil;
+    GMMD.X := X;
+    GMMD.centroids := centroids;
+    ProcThreadPool.DoParallel(@DoGMMD, 0, NumPoints - 1, @GMMD, NumThreads);
+
     for ipoint := 0 to NumPoints - 1 do
-    begin
-      clust := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
-
-      membship[ipoint] := clust;
-
       for iattr := 0 to NumAttrs - 1 do
-        Inc(cl_attr_freq[clust, iattr, X[ipoint, iattr]]);
-    end;
+        Inc(cl_attr_freq[membship[ipoint], iattr, X[ipoint, iattr]]);
 
     for ik := 0 to NumClusters - 1  do
     begin
