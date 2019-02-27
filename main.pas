@@ -1356,7 +1356,7 @@ var
   cnt: Integer;
   TrueColorUsage: TCardinalDynArray;
 {$endif}
-  diff, best: Int64;
+  diff, best, PrevBest: Int64;
   ciI, ciJ: PCountIndexArray;
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
@@ -1452,8 +1452,10 @@ begin
     // prune colors that are too close to each other
 
     CMUsage.Count := LastUsed + 1;
+    best := High(Int64);
     repeat
       bestI := -1;
+      PrevBest := best;
       best := High(Int64);
 
       ciJ := PCountIndexArray(CMUsage[0]);
@@ -1494,7 +1496,7 @@ begin
 
       CMUsage.Delete(bestI - 1);
 
-    until CMUsage.Count < CmlPct;
+    until (CMUsage.Count <= CmlPct) or (best = PrevBest);
 
     // split most used colors into tile palettes
 
