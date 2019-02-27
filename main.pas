@@ -161,6 +161,13 @@ type
 
   PTileDataset = ^TTileDataset;
 
+  TCountIndexArray = packed record
+    Count, Index: Integer;
+    Hue, Sat, Val, Dummy: Byte;
+  end;
+
+  PCountIndexArray = ^TCountIndexArray;
+
   TMixingPlan = record
     // static
     LumaPal: array of Integer;
@@ -1312,29 +1319,20 @@ begin
     end;
 end;
 
-type
-  TCountIndexArray = packed record
-    Count, Index: Integer;
-    Hue, Sat, Lit, Dummy: Byte;
-  end;
-
-  PCountIndexArray = ^TCountIndexArray;
-
-
 function CompareCMUCntHSL(Item1,Item2:Pointer):Integer;
 begin
   Result := PCountIndexArray(Item2)^.Count - PCountIndexArray(Item1)^.Count;
   if Result = 0 then
     Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Lit, PCountIndexArray(Item2)^.Lit);
+    Result := CompareValue(PCountIndexArray(Item1)^.Val, PCountIndexArray(Item2)^.Val);
   if Result = 0 then
     Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
 end;
 
 function CompareCMUHSL(Item1,Item2:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item1)^.Lit, PCountIndexArray(Item2)^.Lit);
+  Result := CompareValue(PCountIndexArray(Item1)^.Val, PCountIndexArray(Item2)^.Val);
   if Result = 0 then
     Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
   if Result = 0 then
@@ -1347,9 +1345,9 @@ const
   cBPCMul = (1 shl cBitsPerComp) - 1;
 {$endif}
 var
-  col, sx, sy, tx, ty, i, j, bestI, PalIdx, LastUsed, CmlPct, acc, r, g, b, rr, gg, bb: Integer;
+  col, sx, sy, tx, ty, i, j, bestI, PalIdx, LastUsed, CmlPct, AtCmlPct, acc, r, g, b, rr, gg, bb: Integer;
   GTile: PTile;
-  CMUsage, CMPal: TList;
+  CMUsage, CMPal: TFPList;
   CMItem: PCountIndexArray;
 {$if cBitsPerComp <> 8}
   cnt: Integer;
@@ -1365,8 +1363,8 @@ begin
   FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
 {$endif}
 
-  CMUsage := TList.Create;
-  CMPal := TList.Create;
+  CMUsage := TFPList.Create;
+  CMPal := TFPList.Create;
   try
     CMUsage.Count := cTotalColors;
     for i := 0 to cTotalColors - 1 do
@@ -1374,7 +1372,7 @@ begin
       New(CMItem);
       CMItem^.Count := 0;
       CMItem^.Index := i;
-      CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Lit := FColorMap[i, 5];
+      CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
       CMUsage[i] := CMItem;
     end;
 
@@ -1442,8 +1440,11 @@ begin
         Break;
       end;
     end;
+    AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
 
-    DebugLn(['KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct]);
+    DebugLn(['KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct]);
+
+    CmlPct := max(CmlPct, min(LastUsed + 1, cTilePaletteSize * cPaletteCount)); // ensure enough colors
 
     // prune colors that are too close to each other
 
@@ -1459,7 +1460,7 @@ begin
         ciI := PCountIndexArray(CMUsage[i]);
         r := FColorMap[ciI^.Index, 0]; g := FColorMap[ciI^.Index, 1]; b := FColorMap[ciI^.Index, 2];
         diff := ColorCompare(r, g, b, rr, gg, bb);
-        if (diff < best) and (((ciJ^.Count - ciI^.Count) shl 3) < ciJ^.Count) then // ensure we merge colors that are roughly as probable
+        if diff < best then
         begin
           best := diff;
           bestI := i;
@@ -1469,7 +1470,26 @@ begin
       end;
 
       Assert(bestI >= 0);
-      CMUsage.Delete(bestI);
+
+      ciI := PCountIndexArray(CMUsage[bestI]);
+      ciJ := PCountIndexArray(CMUsage[bestI - 1]);
+
+      acc := ciI^.Count + ciJ^.Count;
+      ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
+      ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
+      ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
+      ciI^.Count := acc;
+
+      ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
+{$if cBitsPerComp <> 8}
+      FromRGB(ciI^.Index, r, g, b);
+      r := r * cBPCMul div 255;
+      g := g * cBPCMul div 255;
+      b := b * cBPCMul div 255;
+      ciI^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
+{$endif}
+
+      CMUsage.Delete(bestI - 1);
 
     until CMUsage.Count < CmlPct;
 
@@ -1582,7 +1602,7 @@ end;
 procedure TMainForm.MakeTilesUnique(FirstTileIndex, TileCount: Integer);
 var
   i, firstSameIdx: Integer;
-  sortList: TList;
+  sortList: TFPList;
   sameIdx: array of Integer;
 
   procedure DoOneMerge;
@@ -1599,7 +1619,7 @@ var
   end;
 
 begin
-  sortList := TList.Create;
+  sortList := TFPList.Create;
   try
 
     // sort global tiles by palette indexes (L to R, T to B)

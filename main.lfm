@@ -383,7 +383,7 @@ object MainForm: TMainForm
     Increment = 0.5
     MinValue = 0
     TabOrder = 5
-    Value = 97.5
+    Value = 95
   end
   object Label13: TLabel
     Left = 8
