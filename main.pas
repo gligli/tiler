@@ -392,7 +392,7 @@ begin
 end;
 
 var
-  gGammaCorLut: array[0..High(cGamma), 0..High(Byte)] of TFloat;
+  gGammaCorLut: array[-1..High(cGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
   gDCTLut:array[0..cTileWidth - 1, 0..cTileWidth - 1,0..cTileWidth - 1,0..cTileWidth - 1] of TFloat;
   gPalettePattern : array[0 .. cTilePaletteSize - 1, 0 .. cPaletteCount - 1] of TFloat;
@@ -404,9 +404,12 @@ var
   g, i, j, v, u, y, x: Int64;
   f, fp: TFloat;
 begin
-  for g := 0 to High(cGamma) do
+  for g := -1 to High(cGamma) do
     for i := 0 to High(Byte) do
-      gGammaCorLut[g, i] := power(i / 255.0, cGamma[g]);
+      if g >= 0 then
+        gGammaCorLut[g, i] := power(i / 255.0, cGamma[g])
+      else
+        gGammaCorLut[g, i] := i / 255.0;
 
   for i := 0 to High(gVecInv) do
     gVecInv[i] := iDiv0(1 shl cVecInvWidth, i shr 2);
@@ -1553,14 +1556,14 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile^, False, False, False, False, 0, OrigTile^.PaletteRGB, OrigTileDCT);
+      ComputeTileDCT(OrigTile^, False, False, False, False, -1, OrigTile^.PaletteRGB, OrigTileDCT);
 
       PalIdx := -1;
       best := MaxDouble;
       for i := 0 to cPaletteCount - 1 do
       begin
         DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
-        ComputeTileDCT(OrigTile^, True, False, False, False, 0, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
+        ComputeTileDCT(OrigTile^, True, False, False, False, -1, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
         cmp := CompareEuclideanDCT(TileDCT, OrigTileDCT);
         if cmp < best then
         begin
@@ -1723,11 +1726,26 @@ procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HMir
 const
   cUVRatio: array[0..cTileWidth-1] of TFloat = (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1);
 var
-  r, g, b: Byte;
   u, v, x, y, xx, yy, di, cpn: Integer;
   vRatio, z: TFloat;
   CpnPixels: array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
   pCpn, pLut: PFloat;
+
+  procedure ToCpn(col, x, y: Integer);
+  var
+    r, g, b: Byte;
+    fr, fg, fb: TFloat;
+  begin
+    FromRGB(col, r, g, b);
+
+    fr := GammaCorrect(GammaCor, r);
+    fg := GammaCorrect(GammaCor, g);
+    fb := GammaCorrect(GammaCor, b);
+
+    CpnPixels[0, y, x] := (fr * cRedMul + fg * cGreenMul + fb * cBlueMul) / cLumaDiv;
+    CpnPixels[1, y, x] := fr; CpnPixels[2, y, x] := fg; CpnPixels[3, y, x] := fb;
+  end;
+
 begin
   Assert(Length(DCT) >= cTileDCTSize, 'DCT too small!');
 
@@ -1741,9 +1759,7 @@ begin
         if HMirror then xx := cTileWidth - 1 - x;
         if VMirror then yy := cTileWidth - 1 - y;
 
-        FromRGB(pal[ATile.PalPixels[yy,xx]], r, g, b);
-        CpnPixels[0, y, x] := (r * cRedMul + g * cGreenMul + b * cBlueMul) / (256.0 * cLumaDiv);
-        CpnPixels[1, y, x] := r / 256.0; CpnPixels[2, y, x] := g / 256.0; CpnPixels[3, y, x] := b / 256.0;
+        ToCpn(pal[ATile.PalPixels[yy,xx]], x, y);
       end;
   end
   else
@@ -1756,9 +1772,7 @@ begin
         if HMirror then xx := cTileWidth - 1 - x;
         if VMirror then yy := cTileWidth - 1 - y;
 
-        FromRGB(ATile.RGBPixels[yy,xx], r, g, b);
-        CpnPixels[0, y, x] := (r * cRedMul + g * cGreenMul + b * cBlueMul) / (256.0 * cLumaDiv);
-        CpnPixels[1, y, x] := r / 256.0; CpnPixels[2, y, x] := g / 256.0; CpnPixels[3, y, x] := b / 256.0;
+        ToCpn(ATile.RGBPixels[yy,xx], x, y);
       end;
   end;
 
