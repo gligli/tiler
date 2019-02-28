@@ -1474,27 +1474,28 @@ begin
         ciJ := ciI;
       end;
 
-      Assert(bestI >= 0);
+      if bestI > 0 then
+      begin
+        ciI := PCountIndexArray(CMUsage[bestI]);
+        ciJ := PCountIndexArray(CMUsage[bestI - 1]);
 
-      ciI := PCountIndexArray(CMUsage[bestI]);
-      ciJ := PCountIndexArray(CMUsage[bestI - 1]);
+        acc := ciI^.Count + ciJ^.Count;
+        ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
+        ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
+        ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
+        ciI^.Count := acc;
 
-      acc := ciI^.Count + ciJ^.Count;
-      ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
-      ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
-      ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
-      ciI^.Count := acc;
-
-      ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
+        ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
 {$if cBitsPerComp <> 8}
-      FromRGB(ciI^.Index, r, g, b);
-      r := r * cBPCMul div 255;
-      g := g * cBPCMul div 255;
-      b := b * cBPCMul div 255;
-      ciI^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
+        FromRGB(ciI^.Index, r, g, b);
+        r := r * cBPCMul div 255;
+        g := g * cBPCMul div 255;
+        b := b * cBPCMul div 255;
+        ciI^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
 {$endif}
 
-      CMUsage.Delete(bestI - 1);
+        CMUsage.Delete(bestI - 1);
+      end;
 
     until (CMUsage.Count <= CmlPct) or (best = PrevBest);
 
@@ -1986,113 +1987,117 @@ begin
   if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
     Exit;
 
-  if not playing then
-  begin
-    lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame: ' + IntToStr(GetFrameTileCount(Frame));
+  try
+    if not playing then
+    begin
+      lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame: ' + IntToStr(GetFrameTileCount(Frame));
 
-    imgTiles.Picture.Bitmap.BeginUpdate;
+      imgTiles.Picture.Bitmap.BeginUpdate;
+      try
+        imgTiles.Picture.Bitmap.Canvas.Brush.Color := clAqua;
+        imgTiles.Picture.Bitmap.Canvas.Brush.Style := bsSolid;
+        imgTiles.Picture.Bitmap.Canvas.Clear;
+
+        for sy := 0 to cTileMapHeight - 1 do
+          for sx := 0 to cTileMapWidth div 2 - 1 do
+          begin
+            ti := cTileMapWidth div 2 * sy + sx + cTileMapSize div 2 * ATilePage;
+
+            if ti < Length(FTiles) then
+            begin
+              tilePtr := FTiles[ti];
+              pal := Frame^.KeyFrame^.PaletteRGB[Max(0, palIdx)];
+
+              DrawTile(imgTiles.Picture.Bitmap, sx, sy, tilePtr, pal, False, False);
+            end;
+          end;
+      finally
+        imgTiles.Picture.Bitmap.EndUpdate;
+      end;
+    end;
+
+    imgSource.Picture.Bitmap.BeginUpdate;
     try
-      imgTiles.Picture.Bitmap.Canvas.Brush.Color := clAqua;
-      imgTiles.Picture.Bitmap.Canvas.Brush.Style := bsSolid;
-      imgTiles.Picture.Bitmap.Canvas.Clear;
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
+        begin
+          tilePtr :=  @Frame^.Tiles[sy * cTileMapWidth + sx];
+          DrawTile(imgSource.Picture.Bitmap, sx, sy, tilePtr, nil, False, False);
+        end;
+    finally
+      imgSource.Picture.Bitmap.EndUpdate;
+    end;
+
+    imgDest.Picture.Bitmap.BeginUpdate;
+    try
+      SetLength(oriCorr, cScreenHeight * cScreenWidth * 2);
+      SetLength(chgCorr, cScreenHeight * cScreenWidth * 2);
 
       for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth div 2 - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
         begin
-          ti := cTileMapWidth div 2 * sy + sx + cTileMapSize div 2 * ATilePage;
+          TMItem := Frame^.TileMap[sy, sx];
+          ti := TMItem.GlobalTileIndex;
 
           if ti < Length(FTiles) then
           begin
-            tilePtr := FTiles[ti];
-            pal := Frame^.KeyFrame^.PaletteRGB[Max(0, palIdx)];
+            tilePtr :=  @Frame^.Tiles[sy * cTileMapWidth + sx];
+            pal := tilePtr^.PaletteRGB;
 
-            DrawTile(imgTiles.Picture.Bitmap, sx, sy, tilePtr, pal, False, False);
+            if reduced then
+            begin
+              tilePtr := FTiles[ti];
+              if palIdx < 0 then
+                pal := Frame^.KeyFrame^.PaletteRGB[TMItem.PalIdx]
+              else
+                pal := Frame^.KeyFrame^.PaletteRGB[palIdx];
+            end;
+
+            DrawTile(imgDest.Picture.Bitmap, sx, sy, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
           end;
         end;
     finally
-      imgTiles.Picture.Bitmap.EndUpdate;
+      imgDest.Picture.Bitmap.EndUpdate;
     end;
-  end;
 
-  imgSource.Picture.Bitmap.BeginUpdate;
-  try
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
+    imgPalette.Picture.Bitmap.BeginUpdate;
+    try
+      for j := 0 to imgPalette.Picture.Bitmap.Height - 1 do
       begin
-        tilePtr :=  @Frame^.Tiles[sy * cTileMapWidth + sx];
-        DrawTile(imgSource.Picture.Bitmap, sx, sy, tilePtr, nil, False, False);
-      end;
-  finally
-    imgSource.Picture.Bitmap.EndUpdate;
-  end;
-
-  imgDest.Picture.Bitmap.BeginUpdate;
-  try
-    SetLength(oriCorr, cScreenHeight * cScreenWidth * 2);
-    SetLength(chgCorr, cScreenHeight * cScreenWidth * 2);
-
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
-      begin
-        TMItem := Frame^.TileMap[sy, sx];
-        ti := TMItem.GlobalTileIndex;
-
-        if ti < Length(FTiles) then
+        p := imgPalette.Picture.Bitmap.ScanLine[j];
+        for i := 0 to imgPalette.Picture.Bitmap.Width - 1 do
         begin
-          tilePtr :=  @Frame^.Tiles[sy * cTileMapWidth + sx];
-          pal := tilePtr^.PaletteRGB;
+          if Assigned(Frame^.KeyFrame^.PaletteRGB[j]) then
+            p^ := SwapRB(Frame^.KeyFrame^.PaletteRGB[j, i])
+          else
+            p^ := $00ff00ff;
 
-          if reduced then
-          begin
-            tilePtr := FTiles[ti];
-            if palIdx < 0 then
-              pal := Frame^.KeyFrame^.PaletteRGB[TMItem.PalIdx]
-            else
-              pal := Frame^.KeyFrame^.PaletteRGB[palIdx];
-          end;
-
-          DrawTile(imgDest.Picture.Bitmap, sx, sy, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
+          Inc(p);
         end;
       end;
-  finally
-    imgDest.Picture.Bitmap.EndUpdate;
-  end;
-
-  imgPalette.Picture.Bitmap.BeginUpdate;
-  try
-    for j := 0 to imgPalette.Picture.Bitmap.Height - 1 do
-    begin
-      p := imgPalette.Picture.Bitmap.ScanLine[j];
-      for i := 0 to imgPalette.Picture.Bitmap.Width - 1 do
-      begin
-        if Assigned(Frame^.KeyFrame^.PaletteRGB[j]) then
-          p^ := SwapRB(Frame^.KeyFrame^.PaletteRGB[j, i])
-        else
-          p^ := $00ff00ff;
-
-        Inc(p);
-      end;
-    end;
-  finally
-    imgPalette.Picture.Bitmap.EndUpdate;
-  end;
-
-  if not playing then
-  begin
-    for j := 0 to cScreenHeight - 1 do
-    begin
-      Move(PInteger(imgSource.Picture.Bitmap.ScanLine[j])^, oriCorr[j * cScreenWidth], cScreenWidth * SizeOf(Integer));
-      Move(PInteger(imgDest.Picture.Bitmap.ScanLine[j])^, chgCorr[j * cScreenWidth], cScreenWidth * SizeOf(Integer));
+    finally
+      imgPalette.Picture.Bitmap.EndUpdate;
     end;
 
-    for j := 0 to cScreenHeight - 1 do
-      for i := 0 to cScreenWidth - 1 do
+    if not playing then
+    begin
+      for j := 0 to cScreenHeight - 1 do
       begin
-        oriCorr[cScreenWidth * cScreenHeight + i * cScreenHeight + j] := oriCorr[j * cScreenWidth + i];
-        chgCorr[cScreenWidth * cScreenHeight + i * cScreenHeight + j] := chgCorr[j * cScreenWidth + i];
+        Move(PInteger(imgSource.Picture.Bitmap.ScanLine[j])^, oriCorr[j * cScreenWidth], cScreenWidth * SizeOf(Integer));
+        Move(PInteger(imgDest.Picture.Bitmap.ScanLine[j])^, chgCorr[j * cScreenWidth], cScreenWidth * SizeOf(Integer));
       end;
 
-    lblCorrel.Caption := FormatFloat('0.0000000', ComputeCorrelation(oriCorr, chgCorr));
+      for j := 0 to cScreenHeight - 1 do
+        for i := 0 to cScreenWidth - 1 do
+        begin
+          oriCorr[cScreenWidth * cScreenHeight + i * cScreenHeight + j] := oriCorr[j * cScreenWidth + i];
+          chgCorr[cScreenWidth * cScreenHeight + i * cScreenHeight + j] := chgCorr[j * cScreenWidth + i];
+        end;
+
+      lblCorrel.Caption := FormatFloat('0.0000000', ComputeCorrelation(oriCorr, chgCorr));
+    end;
+  finally
+    Repaint;
   end;
 end;
 
