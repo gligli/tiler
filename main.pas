@@ -23,8 +23,9 @@ const
   cBitsPerComp = 8;
   cTilePaletteSize = 32;
   cRandomKModesCount = 7;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 1.0);
-  cFTGamma = -1;
+  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.1);
+  cDitheringGamma = 1;
+  cFTGamma = 1;
   cFTFromPal = False;
   cFTQWeighting = True;
   cSmoothingGamma = -1;
@@ -395,7 +396,7 @@ var
   gGammaCorLut: array[-1..High(cGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
   gDCTLut:array[0..cTileWidth - 1, 0..cTileWidth - 1,0..cTileWidth - 1,0..cTileWidth - 1] of TFloat;
-  gPalettePattern : array[0 .. cTilePaletteSize - 1, 0 .. cPaletteCount - 1] of TFloat;
+  gPalettePattern : array[0 .. cPaletteCount - 1, 0 .. cTilePaletteSize - 1] of TFloat;
 
 procedure InitLuts;
 const
@@ -427,12 +428,12 @@ begin
     f := power(i, cCurvature);
 
     for j := 0 to cPaletteCount - 1 do
-      gPalettePattern[i - 1, j] := (j / (cPaletteCount - 1)) * max(cPaletteCount, f - fp) + fp;
+      gPalettePattern[j, i - 1] := ((j + 1) / cPaletteCount) * max(cPaletteCount, f - fp) + fp;
   end;
 
   for j := 0 to cPaletteCount - 1 do
     for i := 0 to cTilePaletteSize - 1 do
-      gPalettePattern[j, i] /= gPalettePattern[cTilePaletteSize - 1, cPaletteCount - 1];
+      gPalettePattern[j, i] /= gPalettePattern[cPaletteCount - 1, cTilePaletteSize - 1];
 end;
 
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -1559,14 +1560,14 @@ begin
 
       // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-      ComputeTileDCT(OrigTile^, False, False, False, False, -1, OrigTile^.PaletteRGB, OrigTileDCT);
+      ComputeTileDCT(OrigTile^, False, False, False, False, cDitheringGamma, OrigTile^.PaletteRGB, OrigTileDCT);
 
       PalIdx := -1;
       best := MaxDouble;
       for i := 0 to cPaletteCount - 1 do
       begin
         DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
-        ComputeTileDCT(OrigTile^, True, False, False, False, -1, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
+        ComputeTileDCT(OrigTile^, True, False, False, False, cDitheringGamma, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
         cmp := CompareEuclideanDCT(TileDCT, OrigTileDCT);
         if cmp < best then
         begin
