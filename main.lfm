@@ -44,6 +44,7 @@ object MainForm: TMainForm
     Width = 640
     AntialiasingMode = amOff
     PopupMenu = pmProcesses
+    Stretch = True
   end
   object imgDest: TImage
     Left = 320
@@ -52,6 +53,7 @@ object MainForm: TMainForm
     Width = 640
     AntialiasingMode = amOff
     PopupMenu = pmProcesses
+    Stretch = True
   end
   object imgTiles: TImage
     Left = 0
@@ -59,6 +61,7 @@ object MainForm: TMainForm
     Top = 360
     Width = 320
     PopupMenu = pmProcesses
+    Stretch = True
   end
   object tbFrame: TTrackBar
     Left = 280
@@ -291,7 +294,7 @@ object MainForm: TMainForm
   object chkReduced: TCheckBox
     Left = 407
     Height = 19
-    Top = 769
+    Top = 770
     Width = 64
     Anchors = [akLeft, akBottom]
     AutoSize = False

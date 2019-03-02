@@ -17,15 +17,24 @@ type
 const
   // tweakable constants
 
+{$if true}
   cTileMapWidth = 160;
   cTileMapHeight = 66;
   cPaletteCount = 32;
   cBitsPerComp = 8;
   cTilePaletteSize = 32;
+{$else}
+  cTileMapWidth = 40;
+  cTileMapHeight = 28;
+  cPaletteCount = 4;
+  cBitsPerComp = 3;
+  cTilePaletteSize = 15;
+{$endif}
+
   cRandomKModesCount = 7;
   cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.1);
-  cDitheringGamma = 1;
-  cFTGamma = 1;
+  cDitheringGamma = -1;
+  cFTGamma = -1;
   cFTFromPal = False;
   cFTQWeighting = True;
   cSmoothingGamma = -1;
@@ -370,7 +379,7 @@ end;
 
 function SwapRB(c: Integer): Integer; inline;
 begin
-  Result := ((c and $ff) shl 16) or ((c shr 16) and $ff) or (c and $ff00ff00);
+  Result := ((c and $ff) shl 16) or ((c shr 16) and $ff) or (c and $ff00);
 end;
 
 function ToRGB(r, g, b: Byte): Integer; inline;
@@ -1679,10 +1688,10 @@ begin
   begin
     tileCnt := i * cTileMapSize;
     for j := 0 to cTileMapSize - 1 do
-      CopyTile(FFrames[i].Tiles[j], FTiles[tileCnt+j]^);
+      CopyTile(FFrames[i].Tiles[j], FTiles[tileCnt + j]^);
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
-        Inc(FFrames[i].TileMap[y,x].GlobalTileIndex, tileCnt);
+        Inc(FFrames[i].TileMap[y, x].GlobalTileIndex, tileCnt);
   end;
 end;
 
@@ -1850,7 +1859,7 @@ end;
 
 procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
 var
-  i, j, px, r, g, b, ti, tx, ty: Integer;
+  i, j, col, ti, tx, ty: Integer;
   pcol: PInteger;
 begin
   for j := 0 to (cTileMapHeight - 1) do
@@ -1874,18 +1883,14 @@ begin
       pcol := ABitmap.ScanLine[j];
       for i := 0 to (cScreenWidth - 1) do
         begin
-          px := pcol^;
+          col := pcol^;
           Inc(pcol);
-
-          b := px and $ff;
-          g := (px shr 8) and $ff;
-          r := (px shr 16) and $ff;
 
           ti := cTileMapWidth * (j shr 3) + (i shr 3);
           tx := i and (cTileWidth - 1);
           ty := j and (cTileWidth - 1);
 
-          AFrame^.Tiles[ti].RGBPixels[ty, tx] := ToRGB(r, g, b);
+          AFrame^.Tiles[ti].RGBPixels[ty, tx] := SwapRB(col);
         end;
     end;
 
@@ -2002,7 +2007,7 @@ begin
         for sy := 0 to cTileMapHeight - 1 do
           for sx := 0 to cTileMapWidth div 2 - 1 do
           begin
-            ti := cTileMapWidth div 2 * sy + sx + cTileMapSize div 2 * ATilePage;
+            ti := cTileMapWidth * sy + sx + (cTileMapWidth div 2) * (ATilePage and 1) + cTileMapSize * (ATilePage shr 1);
 
             if ti < Length(FTiles) then
             begin
@@ -2846,12 +2851,12 @@ begin
   imgPalette.Picture.Bitmap.Height := cPaletteCount;
   imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgTiles.Width := cScreenWidth div 2;
-  imgTiles.Height := cScreenHeight;
-  imgSource.Width := cScreenWidth;
-  imgSource.Height := cScreenHeight;
-  imgDest.Width := cScreenWidth;
-  imgDest.Height := cScreenHeight;
+  imgTiles.Width := cScreenWidth shr (1 - IfThen(cScreenHeight <= 256, 1, 0));
+  imgTiles.Height := cScreenHeight shl IfThen(cScreenHeight <= 256, 1, 0);
+  imgSource.Width := cScreenWidth shl IfThen(cScreenHeight <= 256, 1, 0);
+  imgSource.Height := cScreenHeight shl IfThen(cScreenHeight <= 256, 1, 0);
+  imgDest.Width := cScreenWidth shl IfThen(cScreenHeight <= 256, 1, 0);
+  imgDest.Height := cScreenHeight shl IfThen(cScreenHeight <= 256, 1, 0);
   imgPalette.Height := min(256, 16 * cPaletteCount);
 
   imgTiles.Left := imgSource.Left - imgTiles.Width;
