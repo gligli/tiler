@@ -20,9 +20,9 @@ const
 {$if true}
   cTileMapWidth = 160;
   cTileMapHeight = 66;
-  cPaletteCount = 32;
+  cPaletteCount = 64;
   cBitsPerComp = 8;
-  cTilePaletteSize = 32;
+  cTilePaletteSize = 64;
 {$else}
   cTileMapWidth = 40;
   cTileMapHeight = 28;
@@ -39,10 +39,16 @@ const
   cFTQWeighting = True;
   cSmoothingGamma = -1;
 
+{$if false}
   cRedMul = 2126;
   cGreenMul = 7152;
   cBlueMul = 722;
-  cRGBw = 13; // in 1 / 32th ~ cuberoot(2) / 3
+{$else}
+  cRedMul = 299;
+  cGreenMul = 587;
+  cBlueMul = 114;
+{$endif}
+  cRGBw = 13; // in 1 / 32th
 
   // don't change these
 
@@ -223,6 +229,7 @@ type
     chkMirrored: TCheckBox;
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
+    chkUseTK: TCheckBox;
     edInput: TEdit;
     edOutputDir: TEdit;
     edWAV: TEdit;
@@ -281,6 +288,7 @@ type
     procedure btnDebugClick(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
     procedure chkTransPaletteChange(Sender: TObject);
+    procedure chkUseTKChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -294,6 +302,7 @@ type
     FColorMap: array[0..cTotalColors - 1, 0..5] of Byte;
     FTiles: array of PTile;
     FTransPalette: Boolean;
+    FUseThomasKnoll: Boolean;
     FY2MixedColors: Integer;
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
@@ -322,6 +331,7 @@ type
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure TerminatePlan(var Plan: TMixingPlan);
     function DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
+    procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
 
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
@@ -623,6 +633,11 @@ end;
 procedure TMainForm.chkTransPaletteChange(Sender: TObject);
 begin
   FTransPalette := chkTransPalette.Checked;
+end;
+
+procedure TMainForm.chkUseTKChange(Sender: TObject);
+begin
+  FUseThomasKnoll := chkUseTK.Checked;
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
@@ -1019,7 +1034,6 @@ begin
   SetLength(Plan.CountCache, 1 shl 24);
   SetLength(Plan.ListCache, 1 shl 24);
   FillByte(Plan.CountCache[0], 1 shl 24, $ff);
-
   InitializeCriticalSection(Plan.CacheCS);
 
   for i := 0 to High(pal) do
@@ -1314,6 +1328,76 @@ begin
   LeaveCriticalSection(Plan.CacheCS);
 end;
 
+procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
+const
+  cDitheringLen = length(cDitheringMap);
+var
+  index, chosen, c: Integer;
+  src : array[0..2] of Integer;
+  s, t, e: array[0..2] of Int64;
+  least_penalty, penalty: Int64;
+begin
+  if Plan.CountCache[col] < $80 then
+  begin
+    Move(Plan.ListCache[col, 0], List[0], cDitheringLen);
+    Exit;
+  end;
+
+  FromRGB(col, src[0], src[1], src[2]);
+
+  s[0] := src[0];
+  s[1] := src[1];
+  s[2] := src[2];
+
+  e[0] := 0;
+  e[1] := 0;
+  e[2] := 0;
+
+  for c := 0 to cDitheringLen - 1 do
+  begin
+    t[0] := s[0] + (e[0] * 9) div 100;
+    t[1] := s[1] + (e[1] * 9) div 100;
+    t[2] := s[2] + (e[2] * 9) div 100;
+
+    t[0] := EnsureRange(t[0], 0, 255);
+    t[1] := EnsureRange(t[1], 0, 255);
+    t[2] := EnsureRange(t[2], 0, 255);
+
+    least_penalty := High(Int64);
+    chosen := c and (length(Plan.Y2Palette) - 1);
+    for index := 0 to length(Plan.Y2Palette) - 1 do
+    begin
+      penalty := ColorCompare(t[0], t[1], t[2], Plan.Y2Palette[index][0], Plan.Y2Palette[index][1], Plan.Y2Palette[index][2]);
+      if penalty < least_penalty then
+      begin
+        least_penalty := penalty;
+        chosen := index;
+      end;
+    end;
+
+    List[c] := chosen;
+
+    e[0] += s[0];
+    e[1] += s[1];
+    e[2] += s[2];
+
+    e[0] -= Plan.Y2Palette[chosen][0];
+    e[1] -= Plan.Y2Palette[chosen][1];
+    e[2] -= Plan.Y2Palette[chosen][2];
+  end;
+
+  QuickSort(List[0], 0, cDitheringLen - 1, SizeOf(Byte), @PlanCompareLuma, @Plan.LumaPal[0]);
+
+  EnterCriticalSection(Plan.CacheCS);
+  if Plan.CountCache[col] >= $80 then
+  begin
+    Plan.ListCache[col] := Copy(List, 0, cDitheringLen);
+    ReadWriteBarrier;
+    Plan.CountCache[col] := cDitheringLen;
+  end;
+  LeaveCriticalSection(Plan.CacheCS);
+end;
+
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 var
   x, y: Integer;
@@ -1322,14 +1406,27 @@ var
 begin
   SetLength(list, cDitheringListLen);
 
-  for y := 0 to (cTileWidth - 1) do
-    for x := 0 to (cTileWidth - 1) do
-    begin
-      map_value := cDitheringMap[(y shl 3) + x];
-      count := DeviseBestMixingPlan(Plan, ATile.RGBPixels[y,x], list);
-      map_value := (map_value * count) shr 6;
-      ATile.PalPixels[y, x] := List[map_value];
-    end;
+  if FUseThomasKnoll then
+  begin
+   for y := 0 to (cTileWidth - 1) do
+     for x := 0 to (cTileWidth - 1) do
+     begin
+       map_value := cDitheringMap[(y shl 3) + x];
+       DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
+       ATile.PalPixels[y, x] := list[map_value];
+     end;
+  end
+  else
+  begin
+    for y := 0 to (cTileWidth - 1) do
+      for x := 0 to (cTileWidth - 1) do
+      begin
+        map_value := cDitheringMap[(y shl 3) + x];
+        count := DeviseBestMixingPlan(Plan, ATile.RGBPixels[y,x], list);
+        map_value := (map_value * count) shr 6;
+        ATile.PalPixels[y, x] := list[map_value];
+      end;
+  end;
 end;
 
 function CompareCMUCntHSL(Item1,Item2:Pointer):Integer;
@@ -2152,9 +2249,9 @@ begin
     hh := hh mod 252;
   end;
 
-  h := hh;
-  s := ss;
-  v := ll;
+  h := hh and $ff;
+  s := ss and $ff;
+  v := ll and $ff;
 end;
 
 function TMainForm.HSVToRGB(h, s, v: Byte): Integer;
@@ -2874,6 +2971,7 @@ begin
 
   cbxYilMixChange(nil);
   chkTransPaletteChange(nil);
+  chkUseTKChange(nil);
 
   for es := esLoad to High(TEncoderStep) do
     cbxStep.AddItem(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), TObject(PtrInt(Ord(es))));
