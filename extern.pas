@@ -29,6 +29,9 @@ type
 
   PANNkdtree = ^TANNkdtree;
 
+  TDLUserPal = array[0..2, 0..65535] of Byte;
+  PDLUserPal = ^TDLUserPal;
+
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount: Integer; RestartCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
@@ -42,6 +45,9 @@ function ann_kdtree_create(pa: PPFloat; n, dd, bs: Integer; split: TANNsplitRule
 procedure ann_kdtree_destroy(akd: PANNkdtree); cdecl; external 'ANN.dll';
 function ann_kdtree_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
 function ann_kdtree_pri_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
+
+function dl1quant(inbuf: PByte; width, height, quant_to: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
+function dl3quant(inbuf: PByte; width, height, quant_to: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 
 implementation
 

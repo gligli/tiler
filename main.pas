@@ -20,7 +20,7 @@ const
 {$if true}
   cTileMapWidth = 160;
   cTileMapHeight = 66;
-  cPaletteCount = 64;
+  cPaletteCount = 32;
   cBitsPerComp = 8;
   cTilePaletteSize = 64;
 {$else}
@@ -230,6 +230,7 @@ type
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
     chkUseTK: TCheckBox;
+    chkUseDL3: TCheckBox;
     edInput: TEdit;
     edOutputDir: TEdit;
     edWAV: TEdit;
@@ -288,6 +289,7 @@ type
     procedure btnDebugClick(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
     procedure chkTransPaletteChange(Sender: TObject);
+    procedure chkUseDL3Change(Sender: TObject);
     procedure chkUseTKChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -303,6 +305,7 @@ type
     FTiles: array of PTile;
     FTransPalette: Boolean;
     FUseThomasKnoll: Boolean;
+    FUseDennisLeeV3: Boolean;
     FY2MixedColors: Integer;
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
@@ -635,6 +638,11 @@ begin
   FTransPalette := chkTransPalette.Checked;
 end;
 
+procedure TMainForm.chkUseDL3Change(Sender: TObject);
+begin
+  FUseDennisLeeV3 := chkUseDL3.Checked;
+end;
+
 procedure TMainForm.chkUseTKChange(Sender: TObject);
 begin
   FUseThomasKnoll := chkUseTK.Checked;
@@ -855,6 +863,8 @@ var
   plan: TMixingPlan;
 
   hh,ss,ll: Byte;
+
+  dlpal: TDLUserPal;
 begin
   seed := 42;
   for i := 0 to 15 do
@@ -875,6 +885,14 @@ begin
       RGBToHSV(HSVToRGB(i,j,255), hh, ss, ll);
       imgDest.Canvas.Pixels[i,j] := SwapRB(HSVToRGB(hh,ss,ll));
     end;
+
+  imgDest.Picture.Bitmap.BeginUpdate;
+  imgDest.Picture.Bitmap.ScanLine[0];
+  dl3quant(PByte(imgDest.Picture.Bitmap.ScanLine[0]), imgDest.Picture.Bitmap.Width, imgDest.Picture.Bitmap.Height, 64, @dlpal);
+  imgDest.Picture.Bitmap.EndUpdate;
+
+  for i := 0 to 255 do
+    writeln(dlpal[0][i], #9, dlpal[1][i], #9, dlpal[2][i]);
 
   TerminatePlan(plan);
 end;
@@ -1465,6 +1483,10 @@ var
 {$endif}
   diff, best, PrevBest: Int64;
   ciI, ciJ: PCountIndexArray;
+
+  dlCnt: Integer;
+  dlInput, dlPtr: PByte;
+  dlPal: TDLUserPal;
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
@@ -1526,91 +1548,132 @@ begin
     end;
 {$endif}
 
-    // sort colors by use count
-
-    CMUsage.Sort(@CompareCMUCntHSL);
-
-    LastUsed := -1;
-    for i := cTotalColors - 1 downto 0 do    //TODO: rev algo
-      if PCountIndexArray(CMUsage[i])^.Count <> 0 then
-      begin
-        LastUsed := i;
-        Break;
-      end;
-
-    CmlPct := 0;
-    acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
-    acc := round(acc * PalVAR);
-    for i := 0 to cTotalColors - 1 do
+    if FUseDennisLeeV3 then
     begin
-      acc -= PCountIndexArray(CMUsage[i])^.Count;
-      if acc <= 0 then
+      dlCnt := 0;
+      for i := 0 to cTotalColors - 1 do
+        if PCountIndexArray(CMUsage[i])^.Count <> 0 then
+          Inc(dlCnt, PCountIndexArray(CMUsage[i])^.Count);
+
+      dlInput := GetMem(dlCnt * 3);
+      dlPtr := dlInput;
+      for i := 0 to cTotalColors - 1 do
+        if PCountIndexArray(CMUsage[i])^.Count <> 0 then
+          for j := 0 to  PCountIndexArray(CMUsage[i])^.Count - 1 do
+          begin
+            FromRGB(i, r, g, b);
+            dlPtr^ := r; Inc(dlPtr);
+            dlPtr^ := g; Inc(dlPtr);
+            dlPtr^ := b; Inc(dlPtr);
+          end;
+
+      Assert(dlPtr - dlInput = dlCnt * 3);
+
+      dl3quant(dlInput, dlCnt, 1, cPaletteCount * cTilePaletteSize, @dlPal);
+
+      for i := 0 to CMUsage.Count - 1 do
+        Dispose(PCountIndexArray(CMUsage[i]));
+      CMUsage.Clear;
+
+      CMUsage.Count := cPaletteCount * cTilePaletteSize;
+      for i := 0 to cPaletteCount * cTilePaletteSize - 1 do
       begin
-        CmlPct := i;
-        Break;
+        New(CMItem);
+        CMItem^.Count := 1;
+        CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
+        CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
+        CMUsage[i] := CMItem;
       end;
-    end;
-    AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
+    end
+    else
+    begin
+      // sort colors by use count
 
-    DebugLn(['KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct]);
+      CMUsage.Sort(@CompareCMUCntHSL);
 
-    CmlPct := max(CmlPct, min(LastUsed + 1, cTilePaletteSize * cPaletteCount)); // ensure enough colors
-
-    // prune colors that are too close to each other
-
-    CMUsage.Count := LastUsed + 1;
-    best := High(Int64);
-    repeat
-      bestI := -1;
-      PrevBest := best;
-      best := High(Int64);
-
-      ciJ := PCountIndexArray(CMUsage[0]);
-      rr := FColorMap[ciJ^.Index, 0]; gg := FColorMap[ciJ^.Index, 1]; bb := FColorMap[ciJ^.Index, 2];
-      for i := 1 to CMUsage.Count - 1 do
-      begin
-        ciI := PCountIndexArray(CMUsage[i]);
-        r := FColorMap[ciI^.Index, 0]; g := FColorMap[ciI^.Index, 1]; b := FColorMap[ciI^.Index, 2];
-        diff := ColorCompare(r, g, b, rr, gg, bb);
-        if diff < best then
+      LastUsed := -1;
+      for i := cTotalColors - 1 downto 0 do    //TODO: rev algo
+        if PCountIndexArray(CMUsage[i])^.Count <> 0 then
         begin
-          best := diff;
-          bestI := i;
+          LastUsed := i;
+          Break;
         end;
-        rr := r; gg := g; bb := b;
-        ciJ := ciI;
-      end;
 
-      if bestI > 0 then
+      CmlPct := 0;
+      acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
+      acc := round(acc * PalVAR);
+      for i := 0 to cTotalColors - 1 do
       begin
-        ciI := PCountIndexArray(CMUsage[bestI]);
-        ciJ := PCountIndexArray(CMUsage[bestI - 1]);
+        acc -= PCountIndexArray(CMUsage[i])^.Count;
+        if acc <= 0 then
+        begin
+          CmlPct := i;
+          Break;
+        end;
+      end;
+      AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
 
-        acc := ciI^.Count + ciJ^.Count;
-        ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
-        ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
-        ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
-        ciI^.Count := acc;
+      DebugLn(['KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct]);
 
-        ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
+      CmlPct := max(CmlPct, min(LastUsed + 1, cTilePaletteSize * cPaletteCount)); // ensure enough colors
+
+      // prune colors that are too close to each other
+
+      CMUsage.Count := LastUsed + 1;
+      best := High(Int64);
+      repeat
+        bestI := -1;
+        PrevBest := best;
+        best := High(Int64);
+
+        ciJ := PCountIndexArray(CMUsage[0]);
+        rr := FColorMap[ciJ^.Index, 0]; gg := FColorMap[ciJ^.Index, 1]; bb := FColorMap[ciJ^.Index, 2];
+        for i := 1 to CMUsage.Count - 1 do
+        begin
+          ciI := PCountIndexArray(CMUsage[i]);
+          r := FColorMap[ciI^.Index, 0]; g := FColorMap[ciI^.Index, 1]; b := FColorMap[ciI^.Index, 2];
+          diff := ColorCompare(r, g, b, rr, gg, bb);
+          if diff < best then
+          begin
+            best := diff;
+            bestI := i;
+          end;
+          rr := r; gg := g; bb := b;
+          ciJ := ciI;
+        end;
+
+        if bestI > 0 then
+        begin
+          ciI := PCountIndexArray(CMUsage[bestI]);
+          ciJ := PCountIndexArray(CMUsage[bestI - 1]);
+
+          acc := ciI^.Count + ciJ^.Count;
+          ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
+          ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
+          ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
+          ciI^.Count := acc;
+
+          ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
 {$if cBitsPerComp <> 8}
-        FromRGB(ciI^.Index, r, g, b);
-        r := r * cBPCMul div 255;
-        g := g * cBPCMul div 255;
-        b := b * cBPCMul div 255;
-        ciI^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
+          FromRGB(ciI^.Index, r, g, b);
+          r := r * cBPCMul div 255;
+          g := g * cBPCMul div 255;
+          b := b * cBPCMul div 255;
+          ciI^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
 {$endif}
 
-        CMUsage.Delete(bestI - 1);
-      end;
+          CMUsage.Delete(bestI - 1);
+        end;
 
-    until (CMUsage.Count <= CmlPct) or (best = PrevBest);
+      until (CMUsage.Count <= CmlPct) or (best = PrevBest);
+    end;
 
     // split most used colors into tile palettes
 
     for PalIdx := 0 to cPaletteCount - 1 do
     begin
       CMPal.Clear;
+
       for i := 0 to cTilePaletteSize - 1 do
         CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
 
@@ -2971,6 +3034,7 @@ begin
 
   cbxYilMixChange(nil);
   chkTransPaletteChange(nil);
+  chkUseDL3Change(nil);
   chkUseTKChange(nil);
 
   for es := esLoad to High(TEncoderStep) do
