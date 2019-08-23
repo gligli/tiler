@@ -12,8 +12,8 @@
 	Dmitry Groshev, March 2007
 */
 
-#include <stdlib.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <math.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -58,20 +58,6 @@ typedef struct
 	ulong squares[255+255+1];
 } CLOSEST_INFO;
 
-static void	copy_pal(uchar userpal[3][PALETTE_MAX]);
-static void	dlq_init(void);
-static int	dlq_start(void);
-static void	dlq_finish(void);
-static int	build_table1(uchar *image, ulong pixels);
-static void	fixheap(ulong id);
-static void	reduce_table1(int num_colors);
-static void	set_palette1(int index, int level);
-
-static int	init_table(void);
-static int	quantize_image3(uchar *inbuf, uchar *outbuf, int width, int height, int dither);
-
-
-
 // Taken from dl3 below
 
 typedef struct {
@@ -82,9 +68,34 @@ typedef struct {
 	uchar rr, gg, bb;
 } CUBE3;
 
-static CUBE3 *rgb_table3;
 
+typedef struct {
+	CUBE3 *rgb_table3;
 
+	uchar palette[3][PALETTE_MAX];
+	CUBE1 *rgb_table1[6];
+	ushort r_offset[256], g_offset[256], b_offset[256];
+	CLOSEST_INFO c_info;
+	int tot_colors, pal_index, did_init;
+	ulong *squares1;
+	FCUBE *heap;
+	short *dl_image;
+
+	slong sqr_tbl[255 + 255 + 1], *squares3;
+} DLCONTEXT;
+
+static void	copy_pal(DLCONTEXT *ctx, uchar userpal[3][PALETTE_MAX]);
+static void	dlq_init(DLCONTEXT *ctx);
+static int	dlq_start(DLCONTEXT *ctx);
+static void	dlq_finish(DLCONTEXT *ctx);
+static int	build_table1(DLCONTEXT *ctx, uchar *image, ulong pixels);
+static void	fixheap(DLCONTEXT *ctx, ulong id);
+static void	reduce_table1(DLCONTEXT *ctx, int num_colors);
+static void	set_palette1(DLCONTEXT *ctx, int index, int level);
+
+static int	init_table(DLCONTEXT *ctx);
+
+static int	quantize_image3(uchar *inbuf, uchar *outbuf, int width, int height, int dither);
 
 /*
  * DL1 Quantization
@@ -123,218 +134,213 @@ static CUBE3 *rgb_table3;
  *
  */
 
-static	uchar palette[3][PALETTE_MAX];
-static	CUBE1 *rgb_table1[6];
-static	ushort r_offset[256], g_offset[256], b_offset[256];
-static	CLOSEST_INFO c_info;
-static	int tot_colors, pal_index, did_init = 0;
-static	ulong *squares1;
-static	FCUBE *heap = NULL;
-static	short *dl_image = NULL;
-
 int dl1quant(uchar *inbuf, int width, int height, int quant_to, uchar userpal[3][PALETTE_MAX])
 {
-	if (!did_init)
+	DLCONTEXT *ctx = calloc(sizeof(DLCONTEXT), 1);
+	
+	if (!ctx->did_init)
 	{
-		did_init = 1;
-		dlq_init();
+		ctx->did_init = 1;
+		dlq_init(ctx);
 	}
-	if (dlq_start() == 0)
+	if (dlq_start(ctx) == 0)
 	{
-		dlq_finish();
+		dlq_finish(ctx);
 		return 1;
 	}
-	if (build_table1(inbuf, (ulong)width * (ulong)height) == 0)
+	if (build_table1(ctx, inbuf, (ulong)width * (ulong)height) == 0)
 	{
-		dlq_finish();
+		dlq_finish(ctx);
 		return 1;
 	}
-	reduce_table1(quant_to);
-	set_palette1(0, 0);
+	reduce_table1(ctx, quant_to);
+	set_palette1(ctx, 0, 0);
 
-	dlq_finish();
-	copy_pal(userpal);
+	dlq_finish(ctx);
+	copy_pal(ctx, userpal);
+
+	free(ctx);
 
 	return 0;		// Success
 }
 
-static void copy_pal(uchar userpal[3][PALETTE_MAX])
+static void copy_pal(DLCONTEXT *ctx, uchar userpal[3][PALETTE_MAX])
 {
 	int i;
 
 	for (i = 0; i < PALETTE_MAX; i++)
 	{
-		userpal[0][i] = palette[0][i];
-		userpal[1][i] = palette[1][i];
-		userpal[2][i] = palette[2][i];
+		userpal[0][i] = ctx->palette[0][i];
+		userpal[1][i] = ctx->palette[1][i];
+		userpal[2][i] = ctx->palette[2][i];
 	}
 }
 
-static void dlq_init(void)
+static void dlq_init(DLCONTEXT *ctx)
 {
 	int i;
 
 	for (i = 0; i < 256; i++)
 	{
-		r_offset[i] = (i & 128) << 7 | (i & 64) << 5 | (i & 32) << 3 |
+		ctx->r_offset[i] = (i & 128) << 7 | (i & 64) << 5 | (i & 32) << 3 |
 			(i & 16)  << 1 | (i & 8)  >> 1;
-		g_offset[i] = (i & 128) << 6 | (i & 64) << 4 | (i & 32) << 2 |
+		ctx->g_offset[i] = (i & 128) << 6 | (i & 64) << 4 | (i & 32) << 2 |
 			(i & 16)  << 0 | (i & 8)  >> 2;
-		b_offset[i] = (i & 128) << 5 | (i & 64) << 3 | (i & 32) << 1 |
+		ctx->b_offset[i] = (i & 128) << 5 | (i & 64) << 3 | (i & 32) << 1 |
 			(i & 16)  >> 1 | (i & 8)  >> 3;
 	}
 
-	for (i = -255; i <= 255; i++) c_info.squares[i+255] = i*i;
-	squares1 = c_info.squares + 255;
+	for (i = -255; i <= 255; i++) ctx->c_info.squares[i+255] = i*i;
+	ctx->squares1 = ctx->c_info.squares + 255;
 }
 
-static int dlq_start(void)
+static int dlq_start(DLCONTEXT *ctx)
 {
 	int i;
 
-	rgb_table1[0] = (CUBE1 *) calloc(sizeof(CUBE1), 1);
-	rgb_table1[1] = (CUBE1 *) calloc(sizeof(CUBE1), 8);
-	rgb_table1[2] = (CUBE1 *) calloc(sizeof(CUBE1), 64);
-	rgb_table1[3] = (CUBE1 *) calloc(sizeof(CUBE1), 512);
-	rgb_table1[4] = (CUBE1 *) calloc(sizeof(CUBE1), 4096);
-	rgb_table1[5] = (CUBE1 *) calloc(sizeof(CUBE1), 32768);
+	ctx->rgb_table1[0] = (CUBE1 *) calloc(sizeof(CUBE1), 1);
+	ctx->rgb_table1[1] = (CUBE1 *) calloc(sizeof(CUBE1), 8);
+	ctx->rgb_table1[2] = (CUBE1 *) calloc(sizeof(CUBE1), 64);
+	ctx->rgb_table1[3] = (CUBE1 *) calloc(sizeof(CUBE1), 512);
+	ctx->rgb_table1[4] = (CUBE1 *) calloc(sizeof(CUBE1), 4096);
+	ctx->rgb_table1[5] = (CUBE1 *) calloc(sizeof(CUBE1), 32768);
 
-	for (i = 0; i <= 5; i++) if (rgb_table1[i] == NULL) return 0;	// Failure
+	for (i = 0; i <= 5; i++) if (ctx->rgb_table1[i] == NULL) return 0;	// Failure
 
-	pal_index = 0;
+	ctx->pal_index = 0;
 	return 1;		// Success
 }
 
-static void dlq_finish(void)
+static void dlq_finish(DLCONTEXT *ctx)
 {
-	if (rgb_table1[0] != NULL) free(rgb_table1[0]);
-	if (rgb_table1[1] != NULL) free(rgb_table1[1]);
-	if (rgb_table1[2] != NULL) free(rgb_table1[2]);
-	if (rgb_table1[3] != NULL) free(rgb_table1[3]);
-	if (rgb_table1[4] != NULL) free(rgb_table1[4]);
-	if (rgb_table1[5] != NULL) free(rgb_table1[5]);
+	if (ctx->rgb_table1[0] != NULL) free(ctx->rgb_table1[0]);
+	if (ctx->rgb_table1[1] != NULL) free(ctx->rgb_table1[1]);
+	if (ctx->rgb_table1[2] != NULL) free(ctx->rgb_table1[2]);
+	if (ctx->rgb_table1[3] != NULL) free(ctx->rgb_table1[3]);
+	if (ctx->rgb_table1[4] != NULL) free(ctx->rgb_table1[4]);
+	if (ctx->rgb_table1[5] != NULL) free(ctx->rgb_table1[5]);
 
-	if (heap != NULL) free(heap);
-	if (dl_image != NULL) free(dl_image);
+	if (ctx->heap != NULL) free(ctx->heap);
+	if (ctx->dl_image != NULL) free(ctx->dl_image);
 }
 
 /* returns 1 on success, 0 on failure */
-static int build_table1(uchar *image, ulong pixels)
+static int build_table1(DLCONTEXT *ctx, uchar *image, ulong pixels)
 {
 	ulong i, index, cur_count, head, tail;
 	slong j;
 
-	heap = (FCUBE *) malloc(sizeof(FCUBE) * 32769);
-	if (heap == NULL) return 0;
+	ctx->heap = (FCUBE *) malloc(sizeof(FCUBE) * 32769);
+	if (ctx->heap == NULL) return 0;
 
 	for (i = 0; i < pixels; i++)
 	{
-		index = r_offset[image[0]] + g_offset[image[1]] + b_offset[image[2]];
+		index = ctx->r_offset[image[0]] + ctx->g_offset[image[1]] + ctx->b_offset[image[2]];
 
-		rgb_table1[5][index].r += image[0];
-		rgb_table1[5][index].g += image[1];
-		rgb_table1[5][index].b += image[2];
+		ctx->rgb_table1[5][index].r += image[0];
+		ctx->rgb_table1[5][index].g += image[1];
+		ctx->rgb_table1[5][index].b += image[2];
 
-		rgb_table1[5][index].pixel_count++;
+		ctx->rgb_table1[5][index].pixel_count++;
 		image += 3;
 	}
 
-	tot_colors = 0;
+	ctx->tot_colors = 0;
 	for (i = 0; i < LOOKUP_SIZE; i++)
 	{
-		cur_count = rgb_table1[5][i].pixel_count;
+		cur_count = ctx->rgb_table1[5][i].pixel_count;
 		if (cur_count)
 		{
-			heap[++tot_colors].level = 5;
-			heap[tot_colors].index = i;
-			rgb_table1[5][i].pixels_in_cube = cur_count;
+			ctx->heap[++ctx->tot_colors].level = 5;
+			ctx->heap[ctx->tot_colors].index = i;
+			ctx->rgb_table1[5][i].pixels_in_cube = cur_count;
 
 			head = i;
 			for (j = 4; j >= 0; j--)
 			{
 				tail = head & 0x7;
 				head >>= 3;
-				rgb_table1[j][head].pixels_in_cube += cur_count;
-				rgb_table1[j][head].children |= 1 << tail;
+				ctx->rgb_table1[j][head].pixels_in_cube += cur_count;
+				ctx->rgb_table1[j][head].children |= 1 << tail;
 			}
 		}
 	}
 
-	for (i = tot_colors; i > 0; i--) fixheap(i);
+	for (i = ctx->tot_colors; i > 0; i--) fixheap(ctx, i);
 
 	return 1;
 }
 
-static void fixheap(ulong id)
+static void fixheap(DLCONTEXT *ctx, ulong id)
 {
-	uchar thres_level = heap[id].level;
-	ulong thres_index = heap[id].index, index, half_totc = tot_colors >> 1,
-	thres_val = rgb_table1[thres_level][thres_index].pixels_in_cube;
+	uchar thres_level = ctx->heap[id].level;
+	ulong thres_index = ctx->heap[id].index, index, half_totc = ctx->tot_colors >> 1,
+	thres_val = ctx->rgb_table1[thres_level][thres_index].pixels_in_cube;
 
 	while (id <= half_totc)
 	{
 		index = id << 1;
 
-		if (index < tot_colors)
-		if (rgb_table1[heap[index].level][heap[index].index].pixels_in_cube
-			> rgb_table1[heap[index+1].level][heap[index+1].index].pixels_in_cube)
+		if (index < ctx->tot_colors)
+		if (ctx->rgb_table1[ctx->heap[index].level][ctx->heap[index].index].pixels_in_cube
+			> ctx->rgb_table1[ctx->heap[index+1].level][ctx->heap[index+1].index].pixels_in_cube)
 				index++;
 
-		if (thres_val <= rgb_table1[heap[index].level][heap[index].index].pixels_in_cube)
+		if (thres_val <= ctx->rgb_table1[ctx->heap[index].level][ctx->heap[index].index].pixels_in_cube)
 			break;
 		else
 		{
-			heap[id] = heap[index];
+			ctx->heap[id] = ctx->heap[index];
 			id = index;
 		}
 	}
-	heap[id].level = thres_level;
-	heap[id].index = thres_index;
+	ctx->heap[id].level = thres_level;
+	ctx->heap[id].index = thres_index;
 }
 
-static void reduce_table1(int num_colors)
+static void reduce_table1(DLCONTEXT *ctx, int num_colors)
 {
-	while (tot_colors > num_colors)
+	while (ctx->tot_colors > num_colors)
 	{
-		uchar tmp_level = heap[1].level, t_level = tmp_level - 1;
-		ulong tmp_index = heap[1].index, t_index = tmp_index >> 3;
+		uchar tmp_level = ctx->heap[1].level, t_level = tmp_level - 1;
+		ulong tmp_index = ctx->heap[1].index, t_index = tmp_index >> 3;
 
-		if (rgb_table1[t_level][t_index].pixel_count) heap[1] = heap[tot_colors--];
+		if (ctx->rgb_table1[t_level][t_index].pixel_count) ctx->heap[1] = ctx->heap[ctx->tot_colors--];
 		else
 		{
-			heap[1].level = t_level;
-			heap[1].index = t_index;
+			ctx->heap[1].level = t_level;
+			ctx->heap[1].index = t_index;
 		}
-		rgb_table1[t_level][t_index].pixel_count += rgb_table1[tmp_level][tmp_index].pixel_count;
-		rgb_table1[t_level][t_index].r += rgb_table1[tmp_level][tmp_index].r;
-		rgb_table1[t_level][t_index].g += rgb_table1[tmp_level][tmp_index].g;
-		rgb_table1[t_level][t_index].b += rgb_table1[tmp_level][tmp_index].b;
-		rgb_table1[t_level][t_index].children &= ~(1 << (tmp_index & 0x7));
-		fixheap(1);
+		ctx->rgb_table1[t_level][t_index].pixel_count += ctx->rgb_table1[tmp_level][tmp_index].pixel_count;
+		ctx->rgb_table1[t_level][t_index].r += ctx->rgb_table1[tmp_level][tmp_index].r;
+		ctx->rgb_table1[t_level][t_index].g += ctx->rgb_table1[tmp_level][tmp_index].g;
+		ctx->rgb_table1[t_level][t_index].b += ctx->rgb_table1[tmp_level][tmp_index].b;
+		ctx->rgb_table1[t_level][t_index].children &= ~(1 << (tmp_index & 0x7));
+		fixheap(ctx, 1);
 	}
 }
 
-static void set_palette1(int index, int level)
+static void set_palette1(DLCONTEXT *ctx, int index, int level)
 {
 	ulong r_sum, g_sum, b_sum, sum;
 	int i;
 
-	if (rgb_table1[level][index].children)
+	if (ctx->rgb_table1[level][index].children)
 		for (i = 7; i >= 0; i--)
-			if (rgb_table1[level][index].children & (1 << i))
-				set_palette1((index << 3) + i, level + 1);
+			if (ctx->rgb_table1[level][index].children & (1 << i))
+				set_palette1(ctx, (index << 3) + i, level + 1);
 
-	if (rgb_table1[level][index].pixel_count)
+	if (ctx->rgb_table1[level][index].pixel_count)
 	{
-		rgb_table1[level][index].palette_index = pal_index;
-		r_sum = rgb_table1[level][index].r;
-		g_sum = rgb_table1[level][index].g;
-		b_sum = rgb_table1[level][index].b;
-		sum = rgb_table1[level][index].pixel_count;
-		palette[0][pal_index] = (r_sum + (sum >> 1)) / sum;
-		palette[1][pal_index] = (g_sum + (sum >> 1)) / sum;
-		palette[2][pal_index] = (b_sum + (sum >> 1)) / sum;
-		pal_index++;
+		ctx->rgb_table1[level][index].palette_index = ctx->pal_index;
+		r_sum = ctx->rgb_table1[level][index].r;
+		g_sum = ctx->rgb_table1[level][index].g;
+		b_sum = ctx->rgb_table1[level][index].b;
+		sum = ctx->rgb_table1[level][index].pixel_count;
+		ctx->palette[0][ctx->pal_index] = (r_sum + (sum >> 1)) / sum;
+		ctx->palette[1][ctx->pal_index] = (g_sum + (sum >> 1)) / sum;
+		ctx->palette[2][ctx->pal_index] = (b_sum + (sum >> 1)) / sum;
+		ctx->pal_index++;
 	}
 }
 
@@ -346,11 +352,11 @@ static void set_palette1(int index, int level)
  * Copyright (C) 1993-1997 Dennis Lee
  */
 
-static void	build_table3(uchar *image, int size);
-static ulong	calc_err(int, int);
-static int	reduce_table3(int num_colors);
-static void	set_palette3(void);
-static int	bestcolor3(int r, int g, int b);
+static void	build_table3(DLCONTEXT *ctx, uchar *image, int size);
+static ulong	calc_err(DLCONTEXT *ctx, int, int);
+static int	reduce_table3(DLCONTEXT *ctx, int num_colors);
+static void	set_palette3(DLCONTEXT *ctx);
+static int	bestcolor3(DLCONTEXT *ctx, int r, int g, int b);
 
 
 /*
@@ -395,28 +401,30 @@ static int	bestcolor3(int r, int g, int b);
  *
  */
 
-static slong sqr_tbl[255+255+1], *squares3;
-
 int dl3floste(uchar *inbuf, uchar *outbuf, int width, int height,
 			int quant_to, int dither, uchar userpal[3][PALETTE_MAX])
 {
+	DLCONTEXT *ctx = calloc(sizeof(DLCONTEXT), 1);
+
 	// This procedure was written by M.Tyler to quantize with current palette
 
 	int i, j;
 
-	if (init_table() == 0) return 1;
+	if (init_table(ctx) == 0) return 1;
 
-	tot_colors = quant_to;
+	ctx->tot_colors = quant_to;
 	for (i=0; i<quant_to; i++)
 		for (j=0; j<3; j++)
-			palette[j][i] = userpal[j][i];
+			ctx->palette[j][i] = userpal[j][i];
 
-	if (quantize_image3(inbuf, outbuf, width, height, dither) == 0)
+	if (quantize_image3(ctx, inbuf, outbuf, width, height, dither) == 0)
 	{
-		free(rgb_table3);
+		free(ctx->rgb_table3);
 		return 1;
 	}
-	free(rgb_table3);
+	free(ctx->rgb_table3);
+
+	free(ctx);
 
 	return 0;
 }
@@ -424,28 +432,32 @@ int dl3floste(uchar *inbuf, uchar *outbuf, int width, int height,
 
 int dl3quant(uchar *inbuf, int width, int height, int quant_to, uchar userpal[3][PALETTE_MAX])
 {
-	if (init_table() == 0) return 1;
-	build_table3(inbuf, width * height);
+	DLCONTEXT *ctx = calloc(sizeof(DLCONTEXT), 1);
 
-	if ( reduce_table3(quant_to) ) return 0;	// Return if stop button pressed
-	set_palette3();
+	if (init_table(ctx) == 0) return 1;
+	build_table3(ctx, inbuf, width * height);
 
-	copy_pal(userpal);
+	if ( reduce_table3(ctx, quant_to) ) return 0;	// Return if stop button pressed
+	set_palette3(ctx);
+
+	copy_pal(ctx, userpal);
+
+	free(ctx);
 
 	return 0;		// Success
 }
 
-static int init_table(void)
+static int init_table(DLCONTEXT *ctx)
 {
 	int i;
 
-	rgb_table3 = (CUBE3 *) calloc(sizeof(CUBE3), LOOKUP_SIZE);
+	ctx->rgb_table3 = (CUBE3 *) calloc(sizeof(CUBE3), LOOKUP_SIZE);
 
-	if (rgb_table3 == NULL) return 0;
+	if (ctx->rgb_table3 == NULL) return 0;
 
-	for (i = (-255); i <= 255; i++) sqr_tbl[i+255] = i*i;
+	for (i = (-255); i <= 255; i++) ctx->sqr_tbl[i+255] = i*i;
 
-	squares3 = sqr_tbl + 255;
+	ctx->squares3 = ctx->sqr_tbl + 255;
 
 	return 1;
 }
@@ -458,7 +470,7 @@ static void setrgb(CUBE3 *rec)
 	rec->bb = (rec->b + v2) / v;
 }
 
-static void build_table3(uchar *image, int size)
+static void build_table3(DLCONTEXT *ctx, uchar *image, int size)
 {
 	int i, index;
 
@@ -472,152 +484,152 @@ static void build_table3(uchar *image, int size)
 		#error unhandled LOOKUP_SIZE
 #endif
 
-		rgb_table3[index].r += image[0] * CScale;
-		rgb_table3[index].g += image[1];
-		rgb_table3[index].b += image[2];
-		rgb_table3[index].pixel_count++;
+		ctx->rgb_table3[index].r += image[0] * CScale;
+		ctx->rgb_table3[index].g += image[1];
+		ctx->rgb_table3[index].b += image[2];
+		ctx->rgb_table3[index].pixel_count++;
 		image += 3;
 	}
 
-	tot_colors = 0;
+	ctx->tot_colors = 0;
 	for (i = 0; i < LOOKUP_SIZE; i++)
-		if (rgb_table3[i].pixel_count)
+		if (ctx->rgb_table3[i].pixel_count)
 		{
-			setrgb(rgb_table3 + i);
-			rgb_table3[tot_colors++] = rgb_table3[i];
+			setrgb(ctx->rgb_table3 + i);
+			ctx->rgb_table3[ctx->tot_colors++] = ctx->rgb_table3[i];
 		}
 }
 
-static ulong calc_err(int c1, int c2)
+static ulong calc_err(DLCONTEXT *ctx, int c1, int c2)
 {
 	ulong dist1, dist2, P1, P2, P3;
 	int R1, G1, B1, R2, G2, B2, R3, G3, B3;
 
-	P1 = rgb_table3[c1].pixel_count;
-	P2 = rgb_table3[c2].pixel_count;
+	P1 = ctx->rgb_table3[c1].pixel_count;
+	P2 = ctx->rgb_table3[c2].pixel_count;
 	P3 = P1 + P2;
 
-	R3 = (rgb_table3[c1].r + rgb_table3[c2].r + (P3 >> 1)) / P3;
-	G3 = (rgb_table3[c1].g + rgb_table3[c2].g + (P3 >> 1)) / P3;
-	B3 = (rgb_table3[c1].b + rgb_table3[c2].b + (P3 >> 1)) / P3;
+	R3 = (ctx->rgb_table3[c1].r + ctx->rgb_table3[c2].r + (P3 >> 1)) / P3;
+	G3 = (ctx->rgb_table3[c1].g + ctx->rgb_table3[c2].g + (P3 >> 1)) / P3;
+	B3 = (ctx->rgb_table3[c1].b + ctx->rgb_table3[c2].b + (P3 >> 1)) / P3;
 
-	R1 = rgb_table3[c1].rr;
-	G1 = rgb_table3[c1].gg;
-	B1 = rgb_table3[c1].bb;
+	R1 = ctx->rgb_table3[c1].rr;
+	G1 = ctx->rgb_table3[c1].gg;
+	B1 = ctx->rgb_table3[c1].bb;
 
-	R2 = rgb_table3[c2].rr;
-	G2 = rgb_table3[c2].gg;
-	B2 = rgb_table3[c2].bb;
+	R2 = ctx->rgb_table3[c2].rr;
+	G2 = ctx->rgb_table3[c2].gg;
+	B2 = ctx->rgb_table3[c2].bb;
 
-	dist1 = squares3[R3 - R1] + squares3[G3 - G1] + squares3[B3 - B1];
+	dist1 = ctx->squares3[R3 - R1] + ctx->squares3[G3 - G1] + ctx->squares3[B3 - B1];
 	dist1 = (unsigned int)(sqrt(dist1) * P1);
 
-	dist2 = squares3[R2 - R3] + squares3[G2 - G3] + squares3[B2 - B3];
+	dist2 = ctx->squares3[R2 - R3] + ctx->squares3[G2 - G3] + ctx->squares3[B2 - B3];
 	dist2 = (unsigned int)(sqrt(dist2) * P2);
 
 	return (dist1 + dist2);
 }
 
-static void recount_next(int i)
+static void recount_next(DLCONTEXT *ctx, int i)
 {
 	int j, c2 = 0;
 	ulong err, cur_err;
 
 	err = ~0L;
-	for (j = i + 1; j < tot_colors; j++)
+	for (j = i + 1; j < ctx->tot_colors; j++)
 	{
-		cur_err = calc_err(i, j);
+		cur_err = calc_err(ctx, i, j);
 		if (cur_err < err)
 		{
 			err = cur_err;
 			c2 = j;
 		}
 	}
-	rgb_table3[i].err = err;
-	rgb_table3[i].cc = c2;
+	ctx->rgb_table3[i].err = err;
+	ctx->rgb_table3[i].cc = c2;
 }
 
-static void recount_dist(int c1)
+static void recount_dist(DLCONTEXT *ctx, int c1)
 {
 	int i;
 	ulong cur_err;
 
-	recount_next(c1);
+	recount_next(ctx, c1);
 	for (i = 0; i < c1; i++)
 	{
-		if (rgb_table3[i].cc == c1) recount_next(i);
+		if (ctx->rgb_table3[i].cc == c1) recount_next(ctx, i);
 		else
 		{
-			cur_err = calc_err(i, c1);
-			if (cur_err < rgb_table3[i].err)
+			cur_err = calc_err(ctx, i, c1);
+			if (cur_err < ctx->rgb_table3[i].err)
 			{
-				rgb_table3[i].err = cur_err;
-				rgb_table3[i].cc = c1;
+				ctx->rgb_table3[i].err = cur_err;
+				ctx->rgb_table3[i].cc = c1;
 			}
 		}
 	}
 }
 
-static int reduce_table3(int num_colors)
+static int reduce_table3(DLCONTEXT *ctx, int num_colors)
 {
 	int i, c1=0, c2=0, grand_total, bailout = false;
 	ulong err;
 
 	progress_init("Quantize Pass 1", 1);
-	for (i = 0; i < (tot_colors - 1); i++)
+	for (i = 0; i < (ctx->tot_colors - 1); i++)
 	{
-		if ( i%16 == 0 ) bailout = progress_update( ((float) i) / (tot_colors-1) );
+		if ( i%16 == 0 ) bailout = progress_update( ((float) i) / (ctx->tot_colors-1) );
 		if (bailout) goto stop;
 
-		recount_next(i);
+		recount_next(ctx, i);
 	}
 	progress_end();
 
-	rgb_table3[i].err = ~0L;
-	rgb_table3[i].cc = tot_colors;
+	ctx->rgb_table3[i].err = ~0L;
+	ctx->rgb_table3[i].cc = ctx->tot_colors;
 
-	grand_total = tot_colors-num_colors;
+	grand_total = ctx->tot_colors-num_colors;
 	progress_init("Quantize Pass 2", 1);
-	while (tot_colors > num_colors)
+	while (ctx->tot_colors > num_colors)
 	{
-		if ( (tot_colors-num_colors)%16 == 0 )
-			bailout = progress_update( ((float) (grand_total-tot_colors+num_colors)) /
+		if ( (ctx->tot_colors-num_colors)%16 == 0 )
+			bailout = progress_update( ((float) (grand_total- ctx->tot_colors+num_colors)) /
 				grand_total );
 		if (bailout) goto stop;
 
 		err = ~0L;
-		for (i = 0; i < tot_colors; i++)
+		for (i = 0; i < ctx->tot_colors; i++)
 		{
-			if (rgb_table3[i].err < err)
+			if (ctx->rgb_table3[i].err < err)
 			{
-				err = rgb_table3[i].err;
+				err = ctx->rgb_table3[i].err;
 				c1 = i;
 			}
 		}
-		c2 = rgb_table3[c1].cc;
-		rgb_table3[c2].r += rgb_table3[c1].r;
-		rgb_table3[c2].g += rgb_table3[c1].g;
-		rgb_table3[c2].b += rgb_table3[c1].b;
-		rgb_table3[c2].pixel_count += rgb_table3[c1].pixel_count;
-		setrgb(rgb_table3 + c2);
-		tot_colors--;
+		c2 = ctx->rgb_table3[c1].cc;
+		ctx->rgb_table3[c2].r += ctx->rgb_table3[c1].r;
+		ctx->rgb_table3[c2].g += ctx->rgb_table3[c1].g;
+		ctx->rgb_table3[c2].b += ctx->rgb_table3[c1].b;
+		ctx->rgb_table3[c2].pixel_count += ctx->rgb_table3[c1].pixel_count;
+		setrgb(ctx->rgb_table3 + c2);
+		ctx->tot_colors--;
 
-		rgb_table3[c1] = rgb_table3[tot_colors];
-		rgb_table3[tot_colors-1].err = ~0L;
-		rgb_table3[tot_colors-1].cc = tot_colors;
+		ctx->rgb_table3[c1] = ctx->rgb_table3[ctx->tot_colors];
+		ctx->rgb_table3[ctx->tot_colors-1].err = ~0L;
+		ctx->rgb_table3[ctx->tot_colors-1].cc = ctx->tot_colors;
 
 		for (i = 0; i < c1; i++)
 		{
-			if (rgb_table3[i].cc == tot_colors) rgb_table3[i].cc = c1;
+			if (ctx->rgb_table3[i].cc == ctx->tot_colors) ctx->rgb_table3[i].cc = c1;
 		}
 
-		for (i = c1 + 1; i < tot_colors; i++)
+		for (i = c1 + 1; i < ctx->tot_colors; i++)
 		{
-			if (rgb_table3[i].cc == tot_colors) recount_next(i);
+			if (ctx->rgb_table3[i].cc == ctx->tot_colors) recount_next(ctx, i);
 		}
 
-		recount_dist(c1);
-		if (c2 != tot_colors) recount_dist(c2);
+		recount_dist(ctx, c1);
+		if (c2 != ctx->tot_colors) recount_dist(ctx, c2);
 	}
 stop:
 	progress_end();
@@ -625,22 +637,22 @@ stop:
 	return bailout;
 }
 
-static void set_palette3(void)
+static void set_palette3(DLCONTEXT *ctx)
 {
 	int i;
 	ulong sum;
 
-	for (i = 0; i < tot_colors; i++)
+	for (i = 0; i < ctx->tot_colors; i++)
 	{
-		sum = rgb_table3[i].pixel_count;
-		palette[0][i] = rgb_table3[i].rr;
-		palette[1][i] = rgb_table3[i].gg;
-		palette[2][i] = rgb_table3[i].bb;
+		sum = ctx->rgb_table3[i].pixel_count;
+		ctx->palette[0][i] = ctx->rgb_table3[i].rr;
+		ctx->palette[1][i] = ctx->rgb_table3[i].gg;
+		ctx->palette[2][i] = ctx->rgb_table3[i].bb;
 	}
-	free(rgb_table3);
+	free(ctx->rgb_table3);
 }
 
-static int quantize_image3(uchar *in, uchar *out, int width, int height, int dither)
+static int quantize_image3(DLCONTEXT *ctx, uchar *in, uchar *out, int width, int height, int dither)
 {
 	int i;
 	sshort *lookup, *erowerr, *orowerr, *thisrowerr, *nextrowerr;
@@ -652,7 +664,7 @@ static int quantize_image3(uchar *in, uchar *out, int width, int height, int dit
 	{
 		for (i = 0; i < (width * height); i++)
 		{
-			out[i] = bestcolor3(in[0], in[1], in[2]);
+			out[i] = bestcolor3(ctx, in[0], in[1], in[2]);
 			in += 3;
 		}
 	}
@@ -721,12 +733,12 @@ static int quantize_image3(uchar *in, uchar *out, int width, int height, int dit
 
 				offset = (r_pix&248) << 7 | (g_pix&248) << 2 | b_pix >> 3;
 				if (lookup[offset] < 0)
-					lookup[offset] = bestcolor3(r_pix, g_pix, b_pix);
+					lookup[offset] = bestcolor3(ctx, r_pix, g_pix, b_pix);
 
 				*out = lookup[offset];
-				r_pix = dith_max[r_pix - palette[0][lookup[offset]]];
-				g_pix = dith_max[g_pix - palette[1][lookup[offset]]];
-				b_pix = dith_max[b_pix - palette[2][lookup[offset]]];
+				r_pix = dith_max[r_pix - ctx->palette[0][lookup[offset]]];
+				g_pix = dith_max[g_pix - ctx->palette[1][lookup[offset]]];
+				b_pix = dith_max[b_pix - ctx->palette[2][lookup[offset]]];
 
 				two_val = r_pix * 2;
 				nextrowerr[0-3]  = r_pix;
@@ -775,18 +787,18 @@ static int quantize_image3(uchar *in, uchar *out, int width, int height, int dit
 	return 1;
 }
 
-static int bestcolor3(int r, int g, int b)
+static int bestcolor3(DLCONTEXT *ctx, int r, int g, int b)
 {
 	ulong i, bestcolor=0, curdist, mindist;
 	slong rdist, gdist, bdist;
 
 	mindist = 200000;
-	for (i = 0; i < tot_colors; i++)
+	for (i = 0; i < ctx->tot_colors; i++)
 	{
-		rdist = palette[0][i] - r;
-		gdist = palette[1][i] - g;
-		bdist = palette[2][i] - b;
-		curdist = squares3[rdist] + squares3[gdist] + squares3[bdist];
+		rdist = ctx->palette[0][i] - r;
+		gdist = ctx->palette[1][i] - g;
+		bdist = ctx->palette[2][i] - b;
+		curdist = ctx->squares3[rdist] + ctx->squares3[gdist] + ctx->squares3[bdist];
 		if (curdist < mindist)
 		{
 			mindist = curdist;

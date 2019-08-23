@@ -420,7 +420,9 @@ object MainForm: TMainForm
     Top = 256
     Width = 166
     Caption = 'Use Thomas Knoll dithering'
+    Checked = True
     OnChange = chkUseTKChange
+    State = cbChecked
     TabOrder = 12
   end
   object chkUseDL3: TCheckBox
