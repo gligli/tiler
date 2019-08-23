@@ -331,6 +331,7 @@ type
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
     function ColorCompare(r1, g1, b1, r2, g2, b2: Int64): Int64;
+    function ColorCompareTK(r1, g1, b1, r2, g2, b2: Int64): Int64;
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure TerminatePlan(var Plan: TMixingPlan);
     function DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
@@ -1346,12 +1347,28 @@ begin
   LeaveCriticalSection(Plan.CacheCS);
 end;
 
+function TMainForm.ColorCompareTK(r1, g1, b1, r2, g2, b2: Int64): Int64;
+var
+  luma1, luma2, lumadiff, diffR, diffG, diffB: Int64;
+begin
+  luma1 := r1 * cRedMul + g1 * cGreenMul + b1 * cBlueMul;
+  luma2 := r2 * cRedMul + g2 * cGreenMul + b2 * cBlueMul;
+  lumadiff := (luma1 - luma2) div cLumaDiv;
+  diffR := r1 - r2;
+  diffG := g1 - g2;
+  diffB := b1 - b2;
+  Result := diffR * diffR * cRGBw div 32;
+  Result += diffG * diffG * cRGBw div 32;
+  Result += diffB * diffB * cRGBw div 32;
+  Result += lumadiff * lumadiff;
+end;
+
 procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
 const
   cDitheringLen = length(cDitheringMap);
 var
   index, chosen, c: Integer;
-  src : array[0..2] of Integer;
+  src : array[0..2] of Byte;
   s, t, e: array[0..2] of Int64;
   least_penalty, penalty: Int64;
 begin
@@ -1377,15 +1394,15 @@ begin
     t[1] := s[1] + (e[1] * 9) div 100;
     t[2] := s[2] + (e[2] * 9) div 100;
 
-    t[0] := EnsureRange(t[0], 0, 255);
-    t[1] := EnsureRange(t[1], 0, 255);
-    t[2] := EnsureRange(t[2], 0, 255);
+    //t[0] := EnsureRange(t[0], 0, 255);
+    //t[1] := EnsureRange(t[1], 0, 255);
+    //t[2] := EnsureRange(t[2], 0, 255);
 
     least_penalty := High(Int64);
     chosen := c and (length(Plan.Y2Palette) - 1);
     for index := 0 to length(Plan.Y2Palette) - 1 do
     begin
-      penalty := ColorCompare(t[0], t[1], t[2], Plan.Y2Palette[index][0], Plan.Y2Palette[index][1], Plan.Y2Palette[index][2]);
+      penalty := ColorCompareTK(t[0], t[1], t[2], Plan.Y2Palette[index][0], Plan.Y2Palette[index][1], Plan.Y2Palette[index][2]);
       if penalty < least_penalty then
       begin
         least_penalty := penalty;
