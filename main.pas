@@ -18,14 +18,10 @@ const
   // tweakable constants
 
 {$if true}
-  cTileMapWidth = 160;
-  cTileMapHeight = 66;
   cPaletteCount = 32;
   cBitsPerComp = 8;
   cTilePaletteSize = 64;
 {$else}
-  cTileMapWidth = 40;
-  cTileMapHeight = 28;
   cPaletteCount = 4;
   cBitsPerComp = 3;
   cTilePaletteSize = 15;
@@ -57,9 +53,6 @@ const
   cVecInvWidth = 16;
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
-  cTileMapSize = cTileMapWidth * cTileMapHeight;
-  cScreenWidth = cTileMapWidth * cTileWidth;
-  cScreenHeight = cTileMapHeight * cTileWidth;
   cColorCpns = 4;
   cTileDCTSize = cColorCpns * sqr(cTileWidth);
   cPhi = (1 + sqrt(5)) / 2;
@@ -161,8 +154,8 @@ type
 
   TFrame = record
     Index: Integer;
-    Tiles: array[0..(cTileMapSize - 1)] of TTile;
-    TileMap: array[0..(cTileMapHeight - 1),0..(cTileMapWidth - 1)] of TTileMapItem;
+    Tiles: array of TTile;
+    TileMap: array of array of TTileMapItem;
     KeyFrame: PKeyFrame;
   end;
 
@@ -310,9 +303,17 @@ type
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
 
+    FTileMapWidth: Integer;
+    FTileMapHeight: Integer;
+    FTileMapSize: Integer;
+    FScreenWidth: Integer;
+    FScreenHeight: Integer;
+
     FCS: TRTLCriticalSection;
 
     function ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+
+    procedure ReframeUI(AWidth, AHeight: Integer);
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
     procedure ClearAll;
@@ -585,21 +586,23 @@ begin
 end;
 
 procedure TMainForm.btnDoMakeUniqueClick(Sender: TObject);
-const
-  cTilesAtATime = 12 * cTileMapSize;
+var
+  TilesAtATime: Integer;
 
   procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    MakeTilesUnique(AIndex * cTilesAtATime, Min(Length(FTiles) - AIndex * cTilesAtATime, cTilesAtATime));
+    MakeTilesUnique(AIndex * TilesAtATime, Min(Length(FTiles) - AIndex * TilesAtATime, TilesAtATime));
   end;
 
 begin
+  TilesAtATime := 12 * FTileMapSize;
+
   if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(-1, esMakeUnique);
 
-  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div cTilesAtATime);
+  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
 
   ProgressRedraw(1);
 
@@ -679,6 +682,7 @@ var
   isKf: Boolean;
   kfSL: TStringList;
   sfr, efr: Integer;
+  bmp: TPicture;
 begin
   ProgressRedraw;
 
@@ -723,6 +727,15 @@ begin
       tbFrame.Max := 0;
       raise EFileNotFoundException.Create('File not found: ' + fn);
     end;
+  end;
+
+  bmp := TPicture.Create;
+  try
+    bmp.Bitmap.PixelFormat:=pf32bit;
+    bmp.LoadFromFile(Format(inPath, [startFrame]));
+    ReframeUI(bmp.Width div cTileWidth, bmp.Height div cTileWidth);
+  finally
+    bmp.Free;
   end;
 
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(startFrame));
@@ -915,8 +928,8 @@ begin
 {$endif}
      palPict := TFastPortableNetworkGraphic.Create;
 
-  palPict.Width := cScreenWidth;
-  palPict.Height := cScreenHeight;
+  palPict.Width := FScreenWidth;
+  palPict.Height := FScreenHeight;
   palPict.PixelFormat := pf24bit;
 
   try
@@ -950,7 +963,7 @@ begin
 
   ProgressRedraw(-1, esSmooth);
 
-  ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, cTileMapHeight - 1);
+  ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, FTileMapHeight - 1);
 
   ProgressRedraw(1);
 
@@ -1433,6 +1446,53 @@ begin
   LeaveCriticalSection(Plan.CacheCS);
 end;
 
+procedure TMainForm.ReframeUI(AWidth, AHeight: Integer);
+begin
+  FTileMapWidth := min(AWidth, 1920 div cTileWidth);
+  FTileMapHeight := min(AHeight, 1080 div cTileWidth);
+
+  FTileMapSize := FTileMapWidth * FTileMapHeight;
+  FScreenWidth := FTileMapWidth * cTileWidth;
+  FScreenHeight := FTileMapHeight * cTileWidth;
+
+  imgSource.Picture.Bitmap.Width:=FScreenWidth;
+  imgSource.Picture.Bitmap.Height:=FScreenHeight;
+  imgSource.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  imgDest.Picture.Bitmap.Width:=FScreenWidth;
+  imgDest.Picture.Bitmap.Height:=FScreenHeight;
+  imgDest.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  imgTiles.Picture.Bitmap.Width:=FScreenWidth div 2;
+  imgTiles.Picture.Bitmap.Height:=FScreenHeight;
+  imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  imgPalette.Picture.Bitmap.Width := cTilePaletteSize;
+  imgPalette.Picture.Bitmap.Height := cPaletteCount;
+  imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
+
+  imgTiles.Width := FScreenWidth shr (1 - IfThen(FScreenHeight <= 256, 1, 0));
+  imgTiles.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
+  imgSource.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
+  imgSource.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
+  imgDest.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
+  imgDest.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
+  imgPalette.Height := min(256, 16 * cPaletteCount);
+
+  imgTiles.Left := imgSource.Left - imgTiles.Width;
+  if imgTiles.Left < 0 then
+  begin
+    imgDest.Left := imgDest.Left - imgTiles.Left;
+    imgSource.Left := imgSource.Left - imgTiles.Left;
+    imgTiles.Left := 0;
+  end;
+
+  imgDest.Top := imgSource.Top + imgSource.Height;
+  imgPalette.Top := imgTiles.Top + imgTiles.Height;
+
+  sedPalIdx.MaxValue := cPaletteCount - 1;
+end;
+
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 var
   x, y: Integer;
@@ -1529,8 +1589,8 @@ begin
 
     for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
     begin
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
         begin
           GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
 
@@ -1617,7 +1677,7 @@ begin
         end;
 
       CmlPct := 0;
-      acc := AKeyFrame^.FrameCount * cTileMapSize * sqr(cTileWidth);
+      acc := AKeyFrame^.FrameCount * FTileMapSize * sqr(cTileWidth);
       acc := round(acc * PalVAR);
       for i := 0 to cTotalColors - 1 do
       begin
@@ -1736,8 +1796,8 @@ begin
   SetLength(OrigTileDCT, cTileDCTSize);
   SetLength(TileDCT, cTileDCTSize);
 
-  for sy := 0 to cTileMapHeight - 1 do
-    for sx := 0 to cTileMapWidth - 1 do
+  for sy := 0 to FTileMapHeight - 1 do
+    for sx := 0 to FTileMapWidth - 1 do
     begin
       OrigTile := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
 
@@ -1765,11 +1825,11 @@ begin
 
       // now that the palette is chosen, keep only one version of the tile
 
-      CopyTile(BestTile, AFrame^.Tiles[sx + sy * cTileMapWidth]);
+      CopyTile(BestTile, AFrame^.Tiles[sx + sy * FTileMapWidth]);
 
       AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
-      AFrame^.Tiles[sx + sy * cTileMapWidth].PaletteRGB := Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
-      AFrame^.Tiles[sx + sy * cTileMapWidth].PaletteIndexes := Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
+      AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
+      AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
       SetLength(BestTile.PaletteIndexes, 0);
       SetLength(BestTile.PaletteRGB, 0);
       OrigTile^ := BestTile;
@@ -1852,7 +1912,7 @@ begin
   for i := 0 to High(FTiles) do
     Dispose(FTiles[i]);
 
-  tileCnt := Length(FFrames) * cTileMapSize;
+  tileCnt := Length(FFrames) * FTileMapSize;
 
   SetLength(FTiles, tileCnt);
 
@@ -1863,11 +1923,11 @@ begin
   // copy frame tiles to global tiles, point tilemap on proper global tiles
   for i := 0 to High(FFrames) do
   begin
-    tileCnt := i * cTileMapSize;
-    for j := 0 to cTileMapSize - 1 do
+    tileCnt := i * FTileMapSize;
+    for j := 0 to FTileMapSize - 1 do
       CopyTile(FFrames[i].Tiles[j], FTiles[tileCnt + j]^);
-    for y := 0 to (cTileMapHeight - 1) do
-      for x := 0 to (cTileMapWidth - 1) do
+    for y := 0 to (FTileMapHeight - 1) do
+      for x := 0 to (FTileMapWidth - 1) do
         Inc(FFrames[i].TileMap[y, x].GlobalTileIndex, tileCnt);
   end;
 end;
@@ -2039,10 +2099,13 @@ var
   i, j, col, ti, tx, ty: Integer;
   pcol: PInteger;
 begin
-  for j := 0 to (cTileMapHeight - 1) do
-    for i := 0 to (cTileMapWidth - 1) do
+  SetLength(AFrame^.Tiles, FTileMapSize);
+  SetLength(AFrame^.TileMap, FTileMapHeight, FTileMapWidth);
+
+  for j := 0 to (FTileMapHeight - 1) do
+    for i := 0 to (FTileMapWidth - 1) do
     begin
-      AFrame^.TileMap[j, i].GlobalTileIndex := cTileMapWidth * j + i;
+      AFrame^.TileMap[j, i].GlobalTileIndex := FTileMapWidth * j + i;
       AFrame^.TileMap[j, i].HMirror := False;
       AFrame^.TileMap[j, i].VMirror := False;
       AFrame^.TileMap[j, i].PalIdx := 0;
@@ -2050,20 +2113,20 @@ begin
       AFrame^.TileMap[j, i].TmpIndex := -1;
     end;
 
-  Assert(ABitmap.Width = cScreenWidth, 'Wrong video width!');
-  Assert(ABitmap.Height = cScreenHeight, 'Wrong video height!');
+  Assert(ABitmap.Width = FScreenWidth, 'Wrong video width!');
+  Assert(ABitmap.Height = FScreenHeight, 'Wrong video height!');
 
   ABitmap.BeginUpdate;
   try
-    for j := 0 to (cScreenHeight - 1) do
+    for j := 0 to (FScreenHeight - 1) do
     begin
       pcol := ABitmap.ScanLine[j];
-      for i := 0 to (cScreenWidth - 1) do
+      for i := 0 to (FScreenWidth - 1) do
         begin
           col := pcol^;
           Inc(pcol);
 
-          ti := cTileMapWidth * (j shr 3) + (i shr 3);
+          ti := FTileMapWidth * (j shr 3) + (i shr 3);
           tx := i and (cTileWidth - 1);
           ty := j and (cTileWidth - 1);
 
@@ -2071,7 +2134,7 @@ begin
         end;
     end;
 
-    for i := 0 to (cTileMapSize - 1) do
+    for i := 0 to (FTileMapSize - 1) do
     begin
       for ty := 0 to (cTileWidth - 1) do
         for tx := 0 to (cTileWidth - 1) do
@@ -2181,10 +2244,10 @@ begin
         imgTiles.Picture.Bitmap.Canvas.Brush.Style := bsSolid;
         imgTiles.Picture.Bitmap.Canvas.Clear;
 
-        for sy := 0 to cTileMapHeight - 1 do
-          for sx := 0 to cTileMapWidth div 2 - 1 do
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth div 2 - 1 do
           begin
-            ti := cTileMapWidth * sy + sx + (cTileMapWidth div 2) * (ATilePage and 1) + cTileMapSize * (ATilePage shr 1);
+            ti := FTileMapWidth * sy + sx + (FTileMapWidth div 2) * (ATilePage and 1) + FTileMapSize * (ATilePage shr 1);
 
             if ti < Length(FTiles) then
             begin
@@ -2201,10 +2264,10 @@ begin
 
     imgSource.Picture.Bitmap.BeginUpdate;
     try
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
         begin
-          tilePtr :=  @Frame^.Tiles[sy * cTileMapWidth + sx];
+          tilePtr :=  @Frame^.Tiles[sy * FTileMapWidth + sx];
           DrawTile(imgSource.Picture.Bitmap, sx, sy, tilePtr, nil, False, False);
         end;
     finally
@@ -2213,18 +2276,18 @@ begin
 
     imgDest.Picture.Bitmap.BeginUpdate;
     try
-      SetLength(oriCorr, cScreenHeight * cScreenWidth * 2);
-      SetLength(chgCorr, cScreenHeight * cScreenWidth * 2);
+      SetLength(oriCorr, FScreenHeight * FScreenWidth * 2);
+      SetLength(chgCorr, FScreenHeight * FScreenWidth * 2);
 
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
         begin
           TMItem := Frame^.TileMap[sy, sx];
           ti := TMItem.GlobalTileIndex;
 
           if ti < Length(FTiles) then
           begin
-            tilePtr :=  @Frame^.Tiles[sy * cTileMapWidth + sx];
+            tilePtr :=  @Frame^.Tiles[sy * FTileMapWidth + sx];
             pal := tilePtr^.PaletteRGB;
 
             if reduced then
@@ -2264,17 +2327,17 @@ begin
 
     if not playing then
     begin
-      for j := 0 to cScreenHeight - 1 do
+      for j := 0 to FScreenHeight - 1 do
       begin
-        Move(PInteger(imgSource.Picture.Bitmap.ScanLine[j])^, oriCorr[j * cScreenWidth], cScreenWidth * SizeOf(Integer));
-        Move(PInteger(imgDest.Picture.Bitmap.ScanLine[j])^, chgCorr[j * cScreenWidth], cScreenWidth * SizeOf(Integer));
+        Move(PInteger(imgSource.Picture.Bitmap.ScanLine[j])^, oriCorr[j * FScreenWidth], FScreenWidth * SizeOf(Integer));
+        Move(PInteger(imgDest.Picture.Bitmap.ScanLine[j])^, chgCorr[j * FScreenWidth], FScreenWidth * SizeOf(Integer));
       end;
 
-      for j := 0 to cScreenHeight - 1 do
-        for i := 0 to cScreenWidth - 1 do
+      for j := 0 to FScreenHeight - 1 do
+        for i := 0 to FScreenWidth - 1 do
         begin
-          oriCorr[cScreenWidth * cScreenHeight + i * cScreenHeight + j] := oriCorr[j * cScreenWidth + i];
-          chgCorr[cScreenWidth * cScreenHeight + i * cScreenHeight + j] := chgCorr[j * cScreenWidth + i];
+          oriCorr[FScreenWidth * FScreenHeight + i * FScreenHeight + j] := oriCorr[j * FScreenWidth + i];
+          chgCorr[FScreenWidth * FScreenHeight + i * FScreenHeight + j] := chgCorr[j * FScreenWidth + i];
         end;
 
       lblCorrel.Caption := FormatFloat('0.0000000', ComputeCorrelation(oriCorr, chgCorr));
@@ -2445,8 +2508,8 @@ begin
   SetLength(Used, Length(FTiles));
   FillDWord(Used[0], Length(FTiles), 0);
 
-  for j := 0 to cTileMapHeight - 1 do
-    for i := 0 to cTileMapWidth - 1 do
+  for j := 0 to FTileMapHeight - 1 do
+    for i := 0 to FTileMapWidth - 1 do
       Used[AFrame^.TileMap[j, i].GlobalTileIndex] := 1;
 
   for i := 0 to High(Used) do
@@ -2505,8 +2568,8 @@ begin
   end;
 
   for k := 0 to High(FFrames) do
-    for j := 0 to (cTileMapHeight - 1) do
-        for i := 0 to (cTileMapWidth - 1) do
+    for j := 0 to (FTileMapHeight - 1) do
+        for i := 0 to (FTileMapWidth - 1) do
           if FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex]^.TmpIndex = BestIdx then
             FFrames[k].TileMap[j, i].GlobalTileIndex := BestIdx;
 end;
@@ -2546,14 +2609,14 @@ begin
     if FTransPalette then
     begin
       for palIdx := 0 to cPaletteCount - 1 do
-        for sy := 0 to cTileMapHeight - 1 do
-          for sx := 0 to cTileMapWidth - 1 do
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
             used[palIdx, frm^.TileMap[sy, sx].GlobalTileIndex] := True;
     end
     else
     begin
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
           used[frm^.TileMap[sy, sx].PalIdx, frm^.TileMap[sy, sx].GlobalTileIndex] := True;
     end;
   end;
@@ -2633,10 +2696,10 @@ begin
   MaxTPF := 0;
   FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
 
-  for sy := 0 to cTileMapHeight - 1 do
-    for sx := 0 to cTileMapWidth - 1 do
+  for sy := 0 to FTileMapHeight - 1 do
+    for sx := 0 to FTileMapWidth - 1 do
     begin
-      ComputeTileDCT(AFrame^.Tiles[sy * cTileMapWidth + sx], cFTFromPal, cFTQWeighting, False, False, cFTGamma, AFrame^.Tiles[sy * cTileMapWidth + sx].PaletteRGB, DCT);
+      ComputeTileDCT(AFrame^.Tiles[sy * FTileMapWidth + sx], cFTFromPal, cFTQWeighting, False, False, cFTGamma, AFrame^.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
 
       tri := ann_kdtree_search(DS^.KDT, PFloat(DCT), 0.0);
 
@@ -2678,7 +2741,7 @@ begin
   SetLength(PrevTileDCT, cTileDCTSize);
   SetLength(TileDCT, cTileDCTSize);
 
-  for sx := 0 to cTileMapWidth - 1 do
+  for sx := 0 to FTileMapWidth - 1 do
   begin
     PrevTMI := @APrevFrame^.TileMap[Y, sx];
     TMI := @AFrame^.TileMap[Y, sx];
@@ -2717,8 +2780,8 @@ var
 begin
   Result := 0;
   for i := 0 to High(FFrames) do
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
         Inc(Result, Ord(FFrames[i].TileMap[sy, sx].GlobalTileIndex = ATileIndex));
 end;
 
@@ -2992,8 +3055,8 @@ begin
     IdxMap[FTiles[i]^.TmpIndex] := i;
 
   for i := 0 to High(FFrames) do
-    for y := 0 to (cTileMapHeight - 1) do
-      for x := 0 to (cTileMapWidth - 1) do
+    for y := 0 to (FTileMapHeight - 1) do
+      for x := 0 to (FTileMapWidth - 1) do
         FFrames[i].TileMap[y,x].GlobalTileIndex := IdxMap[FFrames[i].TileMap[y,x].GlobalTileIndex];
 end;
 
@@ -3004,6 +3067,8 @@ var
 begin
   InitializeCriticalSection(FCS);
 
+  ReframeUI(160, 66);
+
   FormatSettings.DecimalSeparator := '.';
 
 {$ifdef DEBUG}
@@ -3011,43 +3076,6 @@ begin
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}
-
-  imgSource.Picture.Bitmap.Width:=cScreenWidth;
-  imgSource.Picture.Bitmap.Height:=cScreenHeight;
-  imgSource.Picture.Bitmap.PixelFormat:=pf32bit;
-
-  imgDest.Picture.Bitmap.Width:=cScreenWidth;
-  imgDest.Picture.Bitmap.Height:=cScreenHeight;
-  imgDest.Picture.Bitmap.PixelFormat:=pf32bit;
-
-  imgTiles.Picture.Bitmap.Width:=cScreenWidth div 2;
-  imgTiles.Picture.Bitmap.Height:=cScreenHeight;
-  imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
-
-  imgPalette.Picture.Bitmap.Width := cTilePaletteSize;
-  imgPalette.Picture.Bitmap.Height := cPaletteCount;
-  imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
-
-  imgTiles.Width := cScreenWidth shr (1 - IfThen(cScreenHeight <= 256, 1, 0));
-  imgTiles.Height := cScreenHeight shl IfThen(cScreenHeight <= 256, 1, 0);
-  imgSource.Width := cScreenWidth shl IfThen(cScreenHeight <= 256, 1, 0);
-  imgSource.Height := cScreenHeight shl IfThen(cScreenHeight <= 256, 1, 0);
-  imgDest.Width := cScreenWidth shl IfThen(cScreenHeight <= 256, 1, 0);
-  imgDest.Height := cScreenHeight shl IfThen(cScreenHeight <= 256, 1, 0);
-  imgPalette.Height := min(256, 16 * cPaletteCount);
-
-  imgTiles.Left := imgSource.Left - imgTiles.Width;
-  if imgTiles.Left < 0 then
-  begin
-    imgDest.Left := imgDest.Left - imgTiles.Left;
-    imgSource.Left := imgSource.Left - imgTiles.Left;
-    imgTiles.Left := 0;
-  end;
-
-  imgDest.Top := imgSource.Top + imgSource.Height;
-  imgPalette.Top := imgTiles.Top + imgTiles.Height;
-
-  sedPalIdx.MaxValue := cPaletteCount - 1;
 
   cbxYilMixChange(nil);
   chkTransPaletteChange(nil);
