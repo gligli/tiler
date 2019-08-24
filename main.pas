@@ -70,7 +70,7 @@ const
     42, 26, 38, 22, 41, 25, 37, 21
   );
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 3, 1, 2, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 4, 1, 2, 1, 1);
 
   cDQw = cLumaDiv * cRGBw / 32;
   cDCTQuantization: array[0..cColorCpns-1{YRGB}, 0..7, 0..7] of TFloat = (
@@ -2955,6 +2955,8 @@ var
       MergeTiles(ToMergeIdxs, di, ToMergeIdxs[k], nil);
   end;
 
+var
+  fs: TFileStream;
 begin
   SetLength(Dataset, Length(FTiles), cKModesFeatureCount);
   SetLength(WasActive, Length(FTiles));
@@ -3005,6 +3007,19 @@ begin
   ProcThreadPool.DoParallelLocalProc(@DoMerge, 0, DesiredNbTiles - 1);
 
   ProgressRedraw(3);
+
+  // save raw tiles
+
+  fs := TFileStream.Create(ExtractFilePath(edOutputDir.Text)+'tiles.gts', fmCreate or fmShareDenyWrite);
+  try
+    for i := 0 to High(FTiles) do
+      if FTiles[i]^.Active then
+        fs.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+  finally
+    fs.Free;
+  end;
+
+  ProgressRedraw(4);
 end;
 
 function CompareTileUseCountRev(Item1, Item2, UserParameter:Pointer):Integer;
