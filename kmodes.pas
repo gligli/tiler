@@ -557,6 +557,30 @@ begin
 end;
 
 
+type
+  TUMD = record
+    NumBins, NumPoints, BinSize, icenter: Integer;
+    mindistance: TUInt64DynArray;
+    used: TBooleanDynArray;
+    X: TByteDynArray2;
+  end;
+  PUMD = ^TUMD;
+
+procedure DoUMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+var
+  UMD: PUMD;
+  idx, cnt: Integer;
+begin
+  UMD := PUMD(AData);
+
+  cnt := UMD^.BinSize;
+  idx := AIndex * cnt;
+  if idx >= UMD^.NumBins - 1 then
+    cnt :=  UMD^.NumPoints - idx;
+
+  UpdateMinDistance_Asm(@UMD^.X[UMD^.icenter, 0], @UMD^.X[idx], @UMD^.used[idx], @UMD^.mindistance[idx], cnt);
+end;
+
 function TKModes.InitFarthestFirst(InitPoint: Integer): TByteDynArray2;
 var
   icentroid, ifarthest, i: Integer;
@@ -579,9 +603,28 @@ var
       end;
   end;
 {$else}
+
+{$if False}
   begin
     UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
   end;
+{$else}
+  const
+    cBinSize = 262144;
+  var
+    UMD: TUMD;
+  begin
+    UMD.NumBins := (NumPoints - 1) div cBinSize + 1;
+    UMD.NumPoints := NumPoints;
+    UMD.BinSize := min(NumPoints, cBinSize);
+    UMD.icenter := icenter;
+    UMD.mindistance := mindistance;
+    UMD.used := used;
+    UMD.X := X;
+    ProcThreadPool.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, NumThreads);
+  end;
+{$endif}
+
 {$endif}
 
 begin
