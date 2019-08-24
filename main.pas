@@ -28,12 +28,12 @@ const
 {$endif}
 
   cRandomKModesCount = 7;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (2.0, 2.1);
+  cGamma: array[0..2{YUV,LAB,INV}] of TFloat = (2.0, 2.10, 0.6);
   cDitheringGamma = -1;
   cFTGamma = -1;
   cFTFromPal = False;
   cFTQWeighting = True;
-  cSmoothingGamma = -1;
+  cSmoothingGamma = 2;
 
 {$if false}
   cRedMul = 2126;
@@ -313,13 +313,12 @@ type
 
     function ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
 
-    procedure ReframeUI(AWidth, AHeight: Integer);
-
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
     procedure ClearAll;
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
       ATilePage: Integer);
+    procedure ReframeUI(AWidth, AHeight: Integer);
 
     function HSVToRGB(h, s, v: Byte): Integer;
     procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
@@ -2194,9 +2193,9 @@ procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, re
 
         if gamma then
         begin
-          r := round(GammaCorrect(0, r) * 255.0);
-          g := round(GammaCorrect(0, g) * 255.0);
-          b := round(GammaCorrect(0, b) * 255.0);
+          r := round(GammaCorrect(2, r) * 255.0);
+          g := round(GammaCorrect(2, g) * 255.0);
+          b := round(GammaCorrect(2, b) * 255.0);
         end;
 
         if not tilePtr^.Active then
