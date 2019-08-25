@@ -447,13 +447,13 @@ begin
 		      gDCTLut[v, u, y, x] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
 
   f := 0;
-  for i := 1 to cTilePaletteSize do
+  for i := 0 to cTilePaletteSize - 1 do
   begin
     fp := f;
-    f := power(i, cCurvature);
+    f := power(i + 2, cCurvature);
 
     for j := 0 to cPaletteCount - 1 do
-      gPalettePattern[j, i - 1] := ((j + 1) / cPaletteCount) * max(cPaletteCount, f - fp) + fp;
+      gPalettePattern[j, i] := ((j + 1) / cPaletteCount) * max(cPaletteCount, f - fp) + fp;
   end;
 
   for j := 0 to cPaletteCount - 1 do
@@ -1525,7 +1525,7 @@ begin
   end;
 end;
 
-function CompareCMUCntHSL(Item1,Item2:Pointer):Integer;
+function CompareCMUCntHLS(Item1,Item2:Pointer):Integer;
 begin
   Result := PCountIndexArray(Item2)^.Count - PCountIndexArray(Item1)^.Count;
   if Result = 0 then
@@ -1536,7 +1536,7 @@ begin
     Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
 end;
 
-function CompareCMUHSL(Item1,Item2:Pointer):Integer;
+function CompareCMULHS(Item1,Item2:Pointer):Integer;
 begin
   Result := CompareValue(PCountIndexArray(Item1)^.Val, PCountIndexArray(Item2)^.Val);
   if Result = 0 then
@@ -1697,7 +1697,7 @@ begin
     begin
       // sort colors by use count
 
-      CMUsage.Sort(@CompareCMUCntHSL);
+      CMUsage.Sort(@CompareCMUCntHLS);
 
       LastUsed := -1;
       for i := cTotalColors - 1 downto 0 do    //TODO: rev algo
@@ -1782,14 +1782,10 @@ begin
     begin
       CMPal.Clear;
 
-      if FUseDennisLeeV3 then
-        for i := 0 to cTilePaletteSize - 1 do
-          CMPal.Add(CMUsage[PalIdx + i * cPaletteCount])
-      else
-        for i := 0 to cTilePaletteSize - 1 do
-          CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
+      for i := 0 to cTilePaletteSize - 1 do
+        CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
 
-      CMPal.Sort(@CompareCMUHSL);
+      CMPal.Sort(@CompareCMULHS);
 
       SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
       for i := 0 to cTilePaletteSize - 1 do
