@@ -610,7 +610,7 @@ var
   end;
 {$else}
   const
-    cBinSize = 262144;
+    cBinSize = 524288;
   var
     UMD: TUMD;
   begin
