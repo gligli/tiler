@@ -19,7 +19,7 @@ const
 
 {$if true}
   cPaletteCount = 32;
-  cBitsPerComp = 8;
+  cBitsPerComp = 7;
   cTilePaletteSize = 64;
 {$else}
   cPaletteCount = 4;
@@ -121,6 +121,8 @@ const
   );
 
 type
+  PIntegerDynArray = ^TIntegerDynArray;
+
   TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
 
   PTile = ^TTile;
@@ -1543,6 +1545,28 @@ begin
     Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
 end;
 
+function ComparePalCmlLuma(Item1,Item2,UserParameter:Pointer):Integer;
+var
+  i: Integer;
+  l1, l2: Int64;
+  a1, a2: TIntegerDynArray;
+  slf: TMainForm;
+begin
+  slf := TMainForm(UserParameter);
+
+  a1 := PIntegerDynArray(Item1)^;
+  a2 := PIntegerDynArray(Item2)^;
+  l1 := 0;
+  l2 := 0;
+  for i := 0 to cTilePaletteSize - 1 do
+  begin
+    l1 += slf.FColorMap[a1[i], 5];
+    l2 += slf.FColorMap[a2[i], 5];
+  end;
+
+  Result := CompareValue(l1, l2);
+end;
+
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
 {$if cBitsPerComp <> 8}
 const
@@ -1637,10 +1661,9 @@ begin
         if PCountIndexArray(CMUsage[i])^.Count <> 0 then
           for j := 0 to  PCountIndexArray(CMUsage[i])^.Count - 1 do
           begin
-            FromRGB(i, r, g, b);
-            dlPtr^ := r; Inc(dlPtr);
-            dlPtr^ := g; Inc(dlPtr);
-            dlPtr^ := b; Inc(dlPtr);
+            dlPtr^ := FColorMap[i][0]; Inc(dlPtr);
+            dlPtr^ := FColorMap[i][1]; Inc(dlPtr);
+            dlPtr^ := FColorMap[i][2]; Inc(dlPtr);
           end;
 
       Assert(dlPtr - dlInput = dlCnt * 3);
@@ -1656,7 +1679,16 @@ begin
       begin
         New(CMItem);
         CMItem^.Count := 1;
-        CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
+
+{$if cBitsPerComp = 8}
+          CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
+{$else}
+          r := dlPal[0][i] shr (8 - cBitsPerComp);
+          g := dlPal[1][i] shr (8 - cBitsPerComp);
+          b := dlPal[2][i] shr (8 - cBitsPerComp);
+          CMItem^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
+{$endif}
+
         CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
         CMUsage[i] := CMItem;
       end;
@@ -1750,16 +1782,27 @@ begin
     begin
       CMPal.Clear;
 
-      for i := 0 to cTilePaletteSize - 1 do
-        CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
+      if FUseDennisLeeV3 then
+        for i := 0 to cTilePaletteSize - 1 do
+          CMPal.Add(CMUsage[PalIdx + i * cPaletteCount])
+      else
+        for i := 0 to cTilePaletteSize - 1 do
+          CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
 
       CMPal.Sort(@CompareCMUHSL);
 
       SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
+      for i := 0 to cTilePaletteSize - 1 do
+        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
+    end;
+
+    QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cPaletteCount - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
+
+    for PalIdx := 0 to cPaletteCount - 1 do
+    begin
       SetLength(AKeyFrame^.PaletteRGB[PalIdx], cTilePaletteSize);
       for i := 0 to cTilePaletteSize - 1 do
       begin
-        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
         j := AKeyFrame^.PaletteIndexes[PalIdx, i];
         AKeyFrame^.PaletteRGB[PalIdx, i] := ToRGB(FColorMap[j, 0], FColorMap[j, 1], FColorMap[j, 2]);
       end;
