@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, IntfGraphics, FPimage, FPWritePNG, zstream;
+  correlation, IntfGraphics, FPimage, FPWritePNG, zstream, fgl;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -19,7 +19,7 @@ const
 
 {$if true}
   cPaletteCount = 32;
-  cBitsPerComp = 7;
+  cBitsPerComp = 8;
   cTilePaletteSize = 64;
 {$else}
   cPaletteCount = 4;
@@ -179,6 +179,8 @@ type
 
   PCountIndexArray = ^TCountIndexArray;
 
+  TByteDynArrayList = specialize TFPGList<TByteDynArray>;
+
   TMixingPlan = record
     // static
     LumaPal: array of Integer;
@@ -186,8 +188,8 @@ type
     Y2MixedColors: Integer;
     // dynamic
     CacheCS: TRTLCriticalSection;
-    ListCache: TByteDynArray2;
-    CountCache: TByteDynArray;
+    ListCache: TByteDynArrayList;
+    CountCache: TIntegerDynArray;
   end;
 
   TKeyFrame = record
@@ -1064,10 +1066,10 @@ begin
   SetLength(Plan.LumaPal, Length(pal));
   SetLength(Plan.Y2Palette, Length(pal));
 
-  SetLength(Plan.CountCache, 1 shl 24);
-  SetLength(Plan.ListCache, 1 shl 24);
-  FillByte(Plan.CountCache[0], 1 shl 24, $ff);
   InitializeCriticalSection(Plan.CacheCS);
+  SetLength(Plan.CountCache, 1 shl 24);
+  FillDWord(Plan.CountCache[0], 1 shl 24, $ffffffff);
+  Plan.ListCache := TByteDynArrayList.Create;
 
   for i := 0 to High(pal) do
   begin
@@ -1092,7 +1094,7 @@ begin
   SetLength(Plan.LumaPal, 0);
   SetLength(Plan.Y2Palette, 0);
   SetLength(Plan.CountCache, 0);
-  SetLength(Plan.ListCache, 0);
+  Plan.ListCache.Free;
 end;
 
 function PlanCompareLuma(Item1,Item2,UserParameter:Pointer):Integer;
@@ -1134,11 +1136,13 @@ var
   so_far, sum, add: array[0..3] of Integer;
   VecInv: PCardinal;
   y2pal: PInteger;
+  cachePos: Integer;
 begin
-  if Plan.CountCache[col] < $80 then
+  cachePos := Plan.CountCache[col];
+  if cachePos >= 0 then
   begin
-    Result := Plan.CountCache[col];
-    Move(Plan.ListCache[col, 0], List[0], Result);
+    Result := Length(Plan.ListCache[cachePos]);
+    Move(Plan.ListCache[cachePos][0], List[0], Result);
     Exit;
   end;
 
@@ -1352,11 +1356,12 @@ begin
 {$endif}
 
   EnterCriticalSection(Plan.CacheCS);
-  if Plan.CountCache[col] >= $80 then
+  if Plan.CountCache[col] < 0 then
   begin
-    Plan.ListCache[col] := Copy(List, 0, Result);
+    cachePos := Plan.ListCache.Count;
+    Plan.ListCache.Add(Copy(List, 0, Result));
     ReadWriteBarrier;
-    Plan.CountCache[col] := Result;
+    Plan.CountCache[col] := cachePos;
   end;
   LeaveCriticalSection(Plan.CacheCS);
 end;
@@ -1381,14 +1386,15 @@ procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: 
 const
   cDitheringLen = length(cDitheringMap);
 var
-  index, chosen, c: Integer;
+  cachePos, index, chosen, c: Integer;
   src : array[0..2] of Byte;
   s, t, e: array[0..2] of Int64;
   least_penalty, penalty: Int64;
 begin
-  if Plan.CountCache[col] < $80 then
+  cachePos := Plan.CountCache[col];
+  if cachePos >= 0 then
   begin
-    Move(Plan.ListCache[col, 0], List[0], cDitheringLen);
+    Move(Plan.ListCache[cachePos][0], List[0], cDitheringLen);
     Exit;
   end;
 
@@ -1438,11 +1444,12 @@ begin
   QuickSort(List[0], 0, cDitheringLen - 1, SizeOf(Byte), @PlanCompareLuma, @Plan.LumaPal[0]);
 
   EnterCriticalSection(Plan.CacheCS);
-  if Plan.CountCache[col] >= $80 then
+  if Plan.CountCache[col] < 0 then
   begin
-    Plan.ListCache[col] := Copy(List, 0, cDitheringLen);
+    cachePos := Plan.ListCache.Count;
+    Plan.ListCache.Add(Copy(List, 0, cDitheringLen));
     ReadWriteBarrier;
-    Plan.CountCache[col] := cDitheringLen;
+    Plan.CountCache[col] := cachePos;
   end;
   LeaveCriticalSection(Plan.CacheCS);
 end;
@@ -1816,7 +1823,7 @@ end;
 procedure TMainForm.FinalDitherTiles(AFrame: PFrame);
 var
   i, PalIdx: Integer;
-  sx, sy: Integer;
+  cnt, mx, sx, sy: Integer;
   best, cmp: TFloat;
   BestTile: TTile;
   OrigTile: PTile;
@@ -1876,8 +1883,18 @@ begin
   EnterCriticalSection(AFrame^.KeyFrame^.CS);
   Dec(AFrame^.KeyFrame^.FramesLeft);
   if AFrame^.KeyFrame^.FramesLeft <= 0 then
+  begin
+    mx := 0;
+    cnt := 0;
     for i := 0 to cPaletteCount - 1 do
+    begin
+      mx := Max(AFrame^.KeyFrame^.MixingPlans[i].ListCache.Count, mx);
+      cnt += AFrame^.KeyFrame^.MixingPlans[i].ListCache.Count;
       TerminatePlan(AFrame^.KeyFrame^.MixingPlans[i]);
+    end;
+
+    WriteLn('KF: ', AFrame^.KeyFrame^.StartFrame, #9'CacheCnt: ', cnt, #9'CacheMax: ', mx);
+  end;
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 end;
 
