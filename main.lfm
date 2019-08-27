@@ -21,13 +21,13 @@ object MainForm: TMainForm
   LCLVersion = '2.0.4.0'
   WindowState = wsMaximized
   object cbxStep: TComboBox
-    Left = 202
+    Left = 138
     Height = 23
-    Top = 284
+    Top = 285
     Width = 113
     ItemHeight = 15
     Style = csDropDownList
-    TabOrder = 23
+    TabOrder = 14
   end
   object pbProgress: TProgressBar
     Left = 4
@@ -35,7 +35,7 @@ object MainForm: TMainForm
     Top = 316
     Width = 273
     Smooth = True
-    TabOrder = 14
+    TabOrder = 16
   end
   object imgSource: TImage
     Left = 320
@@ -76,7 +76,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 22
+    TabOrder = 24
   end
   object chkPlay: TCheckBox
     Left = 288
@@ -85,7 +85,7 @@ object MainForm: TMainForm
     Width = 42
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 16
+    TabOrder = 18
   end
   object lblTileCount: TLabel
     Left = 8
@@ -105,7 +105,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 17
+    TabOrder = 19
   end
   object Label2: TLabel
     Left = 8
@@ -165,7 +165,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 15
+    TabOrder = 17
   end
   object Label6: TLabel
     Left = 180
@@ -191,7 +191,7 @@ object MainForm: TMainForm
     MaxValue = 0
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 3040
+    Value = 1000
   end
   object Label10: TLabel
     Left = 8
@@ -259,7 +259,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 19
+    TabOrder = 21
   end
   object lblPct: TLabel
     Left = 277
@@ -280,7 +280,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 21
+    TabOrder = 23
   end
   object seMaxTiles: TSpinEdit
     Left = 206
@@ -302,7 +302,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 18
+    TabOrder = 20
   end
   object lblCorrel: TLabel
     Left = 885
@@ -358,7 +358,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     MinValue = -1
     OnChange = tbFrameChange
-    TabOrder = 20
+    TabOrder = 22
     Value = -1
   end
   object Label8: TLabel
@@ -371,11 +371,11 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label12: TLabel
-    Left = 116
+    Left = 81
     Height = 15
     Top = 288
-    Width = 77
-    Caption = 'Run up to step'
+    Width = 53
+    Caption = 'up to step'
     ParentColor = False
   end
   object sePalVAR: TFloatSpinEdit
@@ -403,7 +403,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 100000
     TabOrder = 3
-    Value = 157
+    Value = 507
   end
   object chkTransPalette: TCheckBox
     Left = 8
@@ -435,6 +435,19 @@ object MainForm: TMainForm
     OnChange = chkUseDL3Change
     State = cbChecked
     TabOrder = 11
+  end
+  object btnReload: TButton
+    Left = 260
+    Height = 25
+    Hint = 'Reload tiles from previous run'
+    Top = 284
+    Width = 56
+    Caption = 'Reload'
+    OnClick = btnReloadClick
+    ParentShowHint = False
+    PopupMenu = pmProcesses
+    ShowHint = True
+    TabOrder = 15
   end
   object IdleTimer: TIdleTimer
     Interval = 42
@@ -485,5 +498,10 @@ object MainForm: TMainForm
       ShortCut = 120
       OnClick = btnSaveClick
     end
+  end
+  object odFile: TOpenDialog
+    Filter = 'All (*.*)|*.*'
+    left = 912
+    top = 584
   end
 end

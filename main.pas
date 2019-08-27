@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, IntfGraphics, FPimage, FPWritePNG, zstream, fgl;
+  correlation, IntfGraphics, FPimage, FPWritePNG, zstream, fgl, filectrl;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -218,6 +218,7 @@ type
 
   TMainForm = class(TForm)
     btnRunAll: TButton;
+    btnReload: TButton;
     cbxStep: TComboBox;
     cbxYilMix: TComboBox;
     chkGamma: TCheckBox;
@@ -256,6 +257,7 @@ type
     MenuItem7: TMenuItem;
     miLoad: TMenuItem;
     MenuItem1: TMenuItem;
+    odFile: TOpenDialog;
     pmProcesses: TPopupMenu;
     PopupMenu1: TPopupMenu;
     pbProgress: TProgressBar;
@@ -279,6 +281,7 @@ type
     procedure btnDoGlobalTilingClick(Sender: TObject);
     procedure btnDoFrameTilingClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
+    procedure btnReloadClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
 
@@ -304,6 +307,7 @@ type
     FUseThomasKnoll: Boolean;
     FUseDennisLeeV3: Boolean;
     FY2MixedColors: Integer;
+
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
 
@@ -356,6 +360,8 @@ type
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
+
+    procedure ReloadPreviousTiling(AFN: String);
 
     function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat = 0.0; Epsilon: TFloat = 1e-12; Data: Pointer = nil): TFloat;
     procedure HMirrorPalTile(var ATile: TTile);
@@ -835,6 +841,17 @@ begin
   ProgressRedraw(2);
 
   tbFrameChange(nil);
+end;
+
+procedure TMainForm.btnReloadClick(Sender: TObject);
+begin
+  if odFile.Execute then
+  begin
+    ReloadPreviousTiling(odFile.FileName);
+
+    ProgressRedraw;
+    tbFrameChange(nil);
+  end;
 end;
 
 procedure TMainForm.btnRunAllClick(Sender: TObject);
@@ -3076,6 +3093,42 @@ begin
   end;
 
   ProgressRedraw(4);
+end;
+
+procedure TMainForm.ReloadPreviousTiling(AFN: String);
+var
+  acc, i, j: Integer;
+  dis: UInt64;
+  fs: TFileStream;
+  Dataset: TByteDynArray2;
+  DataLine: TByteDynArray;
+  T: TTile;
+begin
+  fs := TFileStream.Create(AFN, fmOpenRead or fmShareDenyNone);
+  try
+    FillChar(T, SizeOf(T), 0);
+    T.Active := True;
+
+    SetLength(Dataset, fs.Size div sqr(cTileWidth), cKModesFeatureCount);
+    for i := 0 to High(Dataset) do
+    begin
+      fs.ReadBuffer(T.PalPixels[0, 0], SizeOf(TPalPixels));
+      WriteTileDatasetLine(T, Dataset[i], acc);
+    end;
+
+    SetLength(DataLine, cKModesFeatureCount);
+    for i := 0 to High(FTiles) do
+      if FTiles[i]^.Active then
+      begin
+        WriteTileDatasetLine(FTiles[i]^, DataLine, acc);
+        j := GetMinMatchingDissim(Dataset, DataLine, Length(Dataset), dis);
+        Move(Dataset[j, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+        if dis > 3 * cKModesFeatureCount div 5 then
+          FillChar(Dataset[j, 0], cKModesFeatureCount, $ff); // prevent reloaded tile from being reused
+      end;
+  finally
+    fs.Free;
+  end;
 end;
 
 function CompareTileUseCountRev(Item1, Item2, UserParameter:Pointer):Integer;
