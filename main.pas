@@ -356,6 +356,7 @@ type
 
     function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
     function GetTileGridMedian(const ATile: TTile; other: Boolean; out UseCount: Integer): Integer;
+    procedure GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte);
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
@@ -847,6 +848,8 @@ procedure TMainForm.btnReloadClick(Sender: TObject);
 begin
   if odFile.Execute then
   begin
+    ProgressRedraw(-1, esGlobalTiling);
+
     ReloadPreviousTiling(odFile.FileName);
 
     ProgressRedraw;
@@ -2924,9 +2927,30 @@ begin
   UseCount := uc;
 end;
 
+procedure TMainForm.GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte);
+var
+  i, x, y: Integer;
+  b: Byte;
+  acc: array[0..sqr(cTileWidth)-1] of Byte;
+begin
+  FillByte(acc[0], Length(acc), 0);
+  for y := 0 to cTileWidth - 1 do
+    for x := 0 to cTileWidth - 1 do
+    begin
+      b := ATile.PalPixels[y, x];
+      Inc(acc[b * ZoneCount div sqr(cTileWidth)]);
+    end;
+
+  for i := 0 to ZoneCount - 1 do
+  begin
+    Zones^ := Ord(acc[i] > (sqr(cTileWidth) div ZoneCount));
+    Inc(Zones);
+  end;
+end;
+
 function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
 var
-  acc, x, y, UseCount: Integer;
+  acc, x, y: Integer;
   b: Byte;
 begin
   Result := 0;
@@ -2940,43 +2964,10 @@ begin
       Inc(Result);
     end;
 
-  DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 4, 4, UseCount);
-  Inc(Result);
-  DataLine[Result] := UseCount;
-  Inc(Result);
+  GetTilePalZoneThres(ATile, 16, @DataLine[Result]);
+  Inc(Result, 16);
 
-  DataLine[Result] := GetTileZoneMedian(ATile, 4, 0, 4, 4, UseCount);
-  Inc(Result);
-  DataLine[Result] := UseCount;
-  Inc(Result);
-
-  DataLine[Result] := GetTileZoneMedian(ATile, 0, 4, 4, 4, UseCount);
-  Inc(Result);
-  DataLine[Result] := UseCount;
-  Inc(Result);
-
-  DataLine[Result] := GetTileZoneMedian(ATile, 4, 4, 4, 4, UseCount);
-  Inc(Result);
-  DataLine[Result] := UseCount;
-  Inc(Result);
-
-  DataLine[Result] := GetTileZoneMedian(ATile, 0, 0, 8, 8, UseCount);
-  Inc(Result);
-  DataLine[Result] := UseCount;
-  Inc(Result);
-
-  DataLine[Result] := GetTileGridMedian(ATile, True, UseCount);
-  Inc(Result);
-  DataLine[Result] := UseCount;
-  Inc(Result);
-
-  DataLine[Result] := GetTileGridMedian(ATile, False, UseCount);
-  Inc(Result);
-  DataLine[Result] := UseCount;
-  Inc(Result);
-
-  // clear remaining bytes
-  FillByte(DataLine[Result], cKModesFeatureCount - Result, 0);
+  Assert(Result = cKModesFeatureCount);
 end;
 
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
@@ -3097,10 +3088,36 @@ end;
 
 procedure TMainForm.ReloadPreviousTiling(AFN: String);
 var
+  Dataset: TByteDynArray2;
+
+  //procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  //var
+  //  last, bin, acc, i, j: Integer;
+  //  DataLine: TByteDynArray;
+  //  dis: UInt64;
+  //begin
+  //  SetLength(DataLine, cKModesFeatureCount);
+  //
+  //  bin := Length(FTiles) div Integer(AData);
+  //  last := (AIndex + 1) * bin - 1;
+  //  if AIndex >= Integer(AData) - 1 then
+  //    last := Length(FTiles) - 1;
+  //
+  //  for i := bin * AIndex to last do
+  //    if FTiles[i]^.Active then
+  //    begin
+  //      WriteTileDatasetLine(FTiles[i]^, DataLine, acc);
+  //      j := GetMinMatchingDissim(Dataset, DataLine, Length(Dataset), dis);
+  //      Move(Dataset[j, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+  //      //if dis > 3 * cKModesFeatureCount div 5 then
+  //      //  FillChar(Dataset[j, 0], cKModesFeatureCount, $ff); // prevent reloaded tile from being reused
+  //    end;
+  //end;
+
+var
   acc, i, j: Integer;
   dis: UInt64;
   fs: TFileStream;
-  Dataset: TByteDynArray2;
   DataLine: TByteDynArray;
   T: TTile;
 begin
@@ -3116,6 +3133,11 @@ begin
       WriteTileDatasetLine(T, Dataset[i], acc);
     end;
 
+    ProgressRedraw(1);
+
+    //i := ProcThreadPool.MaxThreadCount * 7;
+    //ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, i - 1, Pointer(i));
+
     SetLength(DataLine, cKModesFeatureCount);
     for i := 0 to High(FTiles) do
       if FTiles[i]^.Active then
@@ -3126,6 +3148,9 @@ begin
         if dis > 3 * cKModesFeatureCount div 5 then
           FillChar(Dataset[j, 0], cKModesFeatureCount, $ff); // prevent reloaded tile from being reused
       end;
+
+    ProgressRedraw(2);
+
   finally
     fs.Free;
   end;
