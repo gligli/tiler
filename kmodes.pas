@@ -221,6 +221,9 @@ begin
   Result := Cnt;
 end;
 
+const
+  cDissimSubMatchingSize = 11;
+
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
@@ -231,7 +234,7 @@ begin
   for i := 0 to High(a) do
   begin
     if a[i] <> b[i] then
-      Result += 1 shl cDissimSubMatchingSize;
+      Result += UInt64(1) shl cDissimSubMatchingSize;
     Result += abs(Int64(a[i]) - Int64(b[i]));
   end;
 end;
@@ -278,7 +281,7 @@ asm
   push r10
   push rdx
 
-  sub rsp, 16 * 10
+  sub rsp, 16 * 12
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -289,12 +292,14 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
+  movdqu oword ptr [rsp + $a0], xmm10
+  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm5, oword ptr [item_rcx]
-  movdqu xmm6, oword ptr [item_rcx + $10]
-  movdqu xmm7, oword ptr [item_rcx + $20]
-  movdqu xmm8, oword ptr [item_rcx + $30]
-  movdqu xmm9, oword ptr [item_rcx + $40]
+  movdqu xmm6, oword ptr [item_rcx]
+  movdqu xmm7, oword ptr [item_rcx + $10]
+  movdqu xmm8, oword ptr [item_rcx + $20]
+  movdqu xmm9, oword ptr [item_rcx + $30]
+  movdqu xmm10, oword ptr [item_rcx + $40]
 
   lea rbx, [list_rdx + 8 * count_r8]
 
@@ -312,10 +317,31 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    pcmpeqb xmm0, xmm5
-    pcmpeqb xmm1, xmm6
-    pcmpeqb xmm2, xmm7
-    pcmpeqb xmm3, xmm8
+    movdqa xmm11, xmm0
+    psubb xmm11, xmm6
+    pabsb xmm11, xmm11
+
+    movdqa xmm5, xmm1
+    psadbw xmm5, xmm7
+    paddw xmm11, xmm5
+
+    movdqa xmm5, xmm2
+    psadbw xmm5, xmm8
+    paddw xmm11, xmm5
+
+    movdqa xmm5, xmm3
+    psadbw xmm5, xmm9
+    paddw xmm11, xmm5
+
+    movdqa xmm5, xmm4
+    psadbw xmm5, xmm10
+    paddw xmm11, xmm5
+
+    pcmpeqb xmm0, xmm6
+    pcmpeqb xmm1, xmm7
+    pcmpeqb xmm2, xmm8
+    pcmpeqb xmm3, xmm9
+    pcmpeqb xmm4, xmm10
 
     pmovmskb edi, xmm0
     mov rsi, rdi
@@ -331,12 +357,16 @@ asm
     not rsi
     popcnt rsi, rsi
 
-    pcmpeqb xmm4, xmm9
-
     pmovmskb edi, xmm4
     not di
     popcnt di, di
     add rsi, rdi
+
+    shl rsi, cDissimSubMatchingSize
+    pextrw r10d, xmm11, 0
+    add rsi, r10
+    pextrw r10d, xmm11, 4
+    add rsi, r10
 
     cmp rsi, r8
     ja worst
@@ -360,7 +390,9 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  add rsp, 16 * 10
+  movdqu xmm10, oword ptr [rsp + $a0]
+  movdqu xmm11, oword ptr [rsp + $b0]
+  add rsp, 16 * 12
 
   mov qword ptr [pbest_r9], r8
 
@@ -389,7 +421,7 @@ asm
   push r9
   push r10
 
-  sub rsp, 16 * 10
+  sub rsp, 16 * 12
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -400,12 +432,14 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
+  movdqu oword ptr [rsp + $a0], xmm10
+  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm5, oword ptr [item_rcx]
-  movdqu xmm6, oword ptr [item_rcx + $10]
-  movdqu xmm7, oword ptr [item_rcx + $20]
-  movdqu xmm8, oword ptr [item_rcx + $30]
-  movdqu xmm9, oword ptr [item_rcx + $40]
+  movdqu xmm6, oword ptr [item_rcx]
+  movdqu xmm7, oword ptr [item_rcx + $10]
+  movdqu xmm8, oword ptr [item_rcx + $20]
+  movdqu xmm9, oword ptr [item_rcx + $30]
+  movdqu xmm10, oword ptr [item_rcx + $40]
 
   mov eax, count
   lea rbx, [list_rdx + 8 * rax - 8]
@@ -424,10 +458,31 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    pcmpeqb xmm0, xmm5
-    pcmpeqb xmm1, xmm6
-    pcmpeqb xmm2, xmm7
-    pcmpeqb xmm3, xmm8
+    movdqa xmm11, xmm0
+    psubb xmm11, xmm6
+    pabsb xmm11, xmm11
+
+    movdqa xmm5, xmm1
+    psadbw xmm5, xmm7
+    paddw xmm11, xmm5
+
+    movdqa xmm5, xmm2
+    psadbw xmm5, xmm8
+    paddw xmm11, xmm5
+
+    movdqa xmm5, xmm3
+    psadbw xmm5, xmm9
+    paddw xmm11, xmm5
+
+    movdqa xmm5, xmm4
+    psadbw xmm5, xmm10
+    paddw xmm11, xmm5
+
+    pcmpeqb xmm0, xmm6
+    pcmpeqb xmm1, xmm7
+    pcmpeqb xmm2, xmm8
+    pcmpeqb xmm3, xmm9
+    pcmpeqb xmm4, xmm10
 
     pmovmskb edi, xmm0
     mov rsi, rdi
@@ -443,12 +498,16 @@ asm
     not rsi
     popcnt rsi, rsi
 
-    pcmpeqb xmm4, xmm9
-
     pmovmskb edi, xmm4
     not di
     popcnt di, di
     add rsi, rdi
+
+    shl rsi, cDissimSubMatchingSize
+    pextrw r10d, xmm11, 0
+    add rsi, r10
+    pextrw r10d, xmm11, 4
+    add rsi, r10
 
     mov rax, qword ptr [mindist_r9]
     cmp rsi, rax
@@ -478,7 +537,9 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  add rsp, 16 * 10
+  movdqu xmm10, oword ptr [rsp + $a0]
+  movdqu xmm11, oword ptr [rsp + $b0]
+  add rsp, 16 * 12
 
   pop r10
   pop r9
@@ -557,6 +618,7 @@ begin
 end;
 
 
+{$if not(defined(GENERIC_DISSIM) or not defined(CPUX86_64))}
 type
   TUMD = record
     NumBins, NumPoints, BinSize, icenter: Integer;
@@ -580,6 +642,7 @@ begin
 
   UpdateMinDistance_Asm(@UMD^.X[UMD^.icenter, 0], @UMD^.X[idx], @UMD^.used[idx], @UMD^.mindistance[idx], cnt);
 end;
+{$endif}
 
 function TKModes.InitFarthestFirst(InitPoint: Integer): TByteDynArray2;
 var
@@ -594,7 +657,7 @@ var
     i: Integer;
     dis: UInt64;
   begin
-    for i := 0 to npoints - 1 do
+    for i := 0 to NumPoints - 1 do
       if not used[i] then
       begin
         dis := MatchingDissim(X[icenter], X[i]);
