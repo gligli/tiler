@@ -3090,29 +3090,29 @@ procedure TMainForm.ReloadPreviousTiling(AFN: String);
 var
   Dataset: TByteDynArray2;
 
-  //procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  //var
-  //  last, bin, acc, i, j: Integer;
-  //  DataLine: TByteDynArray;
-  //  dis: UInt64;
-  //begin
-  //  SetLength(DataLine, cKModesFeatureCount);
-  //
-  //  bin := Length(FTiles) div Integer(AData);
-  //  last := (AIndex + 1) * bin - 1;
-  //  if AIndex >= Integer(AData) - 1 then
-  //    last := Length(FTiles) - 1;
-  //
-  //  for i := bin * AIndex to last do
-  //    if FTiles[i]^.Active then
-  //    begin
-  //      WriteTileDatasetLine(FTiles[i]^, DataLine, acc);
-  //      j := GetMinMatchingDissim(Dataset, DataLine, Length(Dataset), dis);
-  //      Move(Dataset[j, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
-  //      //if dis > 3 * cKModesFeatureCount div 5 then
-  //      //  FillChar(Dataset[j, 0], cKModesFeatureCount, $ff); // prevent reloaded tile from being reused
-  //    end;
-  //end;
+  procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    last, bin, acc, i, j: Integer;
+    DataLine: TByteDynArray;
+    dis: UInt64;
+  begin
+    SetLength(DataLine, cKModesFeatureCount);
+
+    bin := Length(FTiles) div Integer(AData);
+    last := (AIndex + 1) * bin - 1;
+    if AIndex >= Integer(AData) - 1 then
+      last := Length(FTiles) - 1;
+
+    for i := bin * AIndex to last do
+      if FTiles[i]^.Active then
+      begin
+        WriteTileDatasetLine(FTiles[i]^, DataLine, acc);
+        j := GetMinMatchingDissim(Dataset, DataLine, Length(Dataset), dis);
+        Move(Dataset[j, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+        //if dis > 3 * cKModesFeatureCount div 5 then
+        //  FillChar(Dataset[j, 0], cKModesFeatureCount, $ff); // prevent reloaded tile from being reused
+      end;
+  end;
 
 var
   acc, i, j: Integer;
@@ -3135,19 +3135,8 @@ begin
 
     ProgressRedraw(1);
 
-    //i := ProcThreadPool.MaxThreadCount * 7;
-    //ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, i - 1, Pointer(i));
-
-    SetLength(DataLine, cKModesFeatureCount);
-    for i := 0 to High(FTiles) do
-      if FTiles[i]^.Active then
-      begin
-        WriteTileDatasetLine(FTiles[i]^, DataLine, acc);
-        j := GetMinMatchingDissim(Dataset, DataLine, Length(Dataset), dis);
-        Move(Dataset[j, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
-        if dis > 3 * cKModesFeatureCount div 5 then
-          FillChar(Dataset[j, 0], cKModesFeatureCount, $ff); // prevent reloaded tile from being reused
-      end;
+    i := ProcThreadPool.MaxThreadCount * 10;
+    ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, i - 1, Pointer(i));
 
     ProgressRedraw(2);
 
