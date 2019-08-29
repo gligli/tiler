@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, IntfGraphics, FPimage, FPWritePNG, zstream, fgl, filectrl;
+  correlation, IntfGraphics, FPimage, FPWritePNG, zstream, fgl;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -34,6 +34,7 @@ const
   cFTFromPal = False;
   cFTQWeighting = True;
   cSmoothingGamma = 2;
+  cReloadedCandidatesCount = 7;
 
 {$if false}
   cRedMul = 2126;
@@ -138,6 +139,8 @@ type
     PaletteIndexes: TIntegerDynArray;
     PaletteRGB: TIntegerDynArray;
 
+    CandidateTiles: array[0..cReloadedCandidatesCount - 1] of Integer;
+
     Active: Boolean;
     UseCount, AveragedCount, TmpIndex: Integer;
   end;
@@ -218,7 +221,6 @@ type
 
   TMainForm = class(TForm)
     btnRunAll: TButton;
-    btnReload: TButton;
     cbxStep: TComboBox;
     cbxYilMix: TComboBox;
     chkGamma: TCheckBox;
@@ -229,12 +231,12 @@ type
     chkPlay: TCheckBox;
     chkUseTK: TCheckBox;
     chkUseDL3: TCheckBox;
+    chkReload: TCheckBox;
     edInput: TEdit;
     edOutputDir: TEdit;
-    edWAV: TEdit;
+    edReload: TEdit;
     imgPalette: TImage;
     Label1: TLabel;
-    Label10: TLabel;
     Label11: TLabel;
     Label12: TLabel;
     Label13: TLabel;
@@ -257,7 +259,6 @@ type
     MenuItem7: TMenuItem;
     miLoad: TMenuItem;
     MenuItem1: TMenuItem;
-    odFile: TOpenDialog;
     pmProcesses: TPopupMenu;
     PopupMenu1: TPopupMenu;
     pbProgress: TProgressBar;
@@ -281,7 +282,6 @@ type
     procedure btnDoGlobalTilingClick(Sender: TObject);
     procedure btnDoFrameTilingClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
-    procedure btnReloadClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
 
@@ -562,10 +562,19 @@ begin
 
   ProgressRedraw(-1, esGlobalTiling);
 
-  dnt := seMaxTiles.Value;
-  dnt -= Ord(odd(dnt));
+  if chkReload.Checked then
+  begin
+    if not FileExists(edReload.Text) then
+      raise EFileNotFoundException.Create('File not found: ' + edReload.Text);
+    ReloadPreviousTiling(edReload.Text);
+  end
+  else
+  begin
+    dnt := seMaxTiles.Value;
+    dnt -= Ord(odd(dnt));
 
-  DoGlobalTiling(dnt, cRandomKModesCount);
+    DoGlobalTiling(dnt, cRandomKModesCount);
+  end;
 
   tbFrameChange(nil);
 end;
@@ -674,7 +683,7 @@ var
     try
       EnterCriticalSection(FCS);
       bmp.Bitmap.PixelFormat:=pf32bit;
-      bmp.LoadFromFile(Format(inPath, [AIndex + PtrInt(AData)]));
+      bmp.LoadFromFile(Format(inPath, [AIndex + PtrUInt(AData)]));
       LeaveCriticalSection(FCS);
 
       LoadFrame(@FFrames[AIndex], bmp.Bitmap);
@@ -844,19 +853,6 @@ begin
   tbFrameChange(nil);
 end;
 
-procedure TMainForm.btnReloadClick(Sender: TObject);
-begin
-  if odFile.Execute then
-  begin
-    ProgressRedraw(-1, esGlobalTiling);
-
-    ReloadPreviousTiling(odFile.FileName);
-
-    ProgressRedraw;
-    tbFrameChange(nil);
-  end;
-end;
-
 procedure TMainForm.btnRunAllClick(Sender: TObject);
 var
   lastStep: TEncoderStep;
@@ -869,11 +865,14 @@ begin
   if lastStep >= esDither then
     btnDitherClick(nil);
 
-  if lastStep >= esMakeUnique then
+  if not chkReload.Checked and (lastStep >= esMakeUnique) then
     btnDoMakeUniqueClick(nil);
 
   if lastStep >= esGlobalTiling then
     btnDoGlobalTilingClick(nil);
+
+  if chkReload.Checked and (lastStep >= esMakeUnique) then
+    btnDoMakeUniqueClick(nil);
 
   if lastStep >= esFrameTiling then
     btnDoFrameTilingClick(nil);
@@ -1156,13 +1155,14 @@ var
   so_far, sum, add: array[0..3] of Integer;
   VecInv: PCardinal;
   y2pal: PInteger;
+  cachePtr: PInteger;
   cachePos: Integer;
 begin
-  cachePos := Plan.CountCache[col];
-  if cachePos >= 0 then
+  cachePtr := @Plan.CountCache[col];
+  if cachePtr^ >= 0 then
   begin
-    Result := Length(Plan.ListCache[cachePos]);
-    Move(Plan.ListCache[cachePos][0], List[0], Result);
+    Result := Length(Plan.ListCache[cachePtr^]);
+    Move(Plan.ListCache[cachePtr^][0], List[0], Result);
     Exit;
   end;
 
@@ -1406,15 +1406,17 @@ procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: 
 const
   cDitheringLen = length(cDitheringMap);
 var
-  cachePos, index, chosen, c: Integer;
+  index, chosen, c: Integer;
   src : array[0..2] of Byte;
   s, t, e: array[0..2] of Int64;
   least_penalty, penalty: Int64;
+  cachePtr: PInteger;
+  cachePos: Integer;
 begin
-  cachePos := Plan.CountCache[col];
-  if cachePos >= 0 then
+  cachePtr := @Plan.CountCache[col];
+  if cachePtr^ >= 0 then
   begin
-    Move(Plan.ListCache[cachePos][0], List[0], cDitheringLen);
+    Move(Plan.ListCache[cachePtr^][0], List[0], cDitheringLen);
     Exit;
   end;
 
@@ -1606,8 +1608,8 @@ var
   CMItem: PCountIndexArray;
 {$if cBitsPerComp <> 8}
   cnt: Integer;
-  TrueColorUsage: TCardinalDynArray;
 {$endif}
+  TrueColorUsage: TCardinalDynArray;
   diff, best, PrevBest: Int64;
   ciI, ciJ: PCountIndexArray;
 
@@ -1617,24 +1619,12 @@ var
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
-{$if cBitsPerComp <> 8}
   SetLength(TrueColorUsage, 1 shl 24);
   FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
-{$endif}
 
   CMUsage := TFPList.Create;
   CMPal := TFPList.Create;
   try
-    CMUsage.Count := cTotalColors;
-    for i := 0 to cTotalColors - 1 do
-    begin
-      New(CMItem);
-      CMItem^.Count := 0;
-      CMItem^.Index := i;
-      CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
-      CMUsage[i] := CMItem;
-    end;
-
     // get color usage stats
 
     for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
@@ -1648,11 +1638,7 @@ begin
             for tx := 0 to cTileWidth - 1 do
             begin
               col := GTile^.RGBPixels[ty, tx];
-{$if cBitsPerComp <> 8}
               Inc(TrueColorUsage[col]);
-{$else}
-              Inc(PCountIndexArray(CMUsage[col])^.Count);
-{$endif}
             end;
         end;
     end;
@@ -1679,14 +1665,14 @@ begin
     begin
       dlCnt := 0;
       for i := 0 to cTotalColors - 1 do
-        if PCountIndexArray(CMUsage[i])^.Count <> 0 then
-          Inc(dlCnt, PCountIndexArray(CMUsage[i])^.Count);
+        if TrueColorUsage[i] <> 0 then
+          Inc(dlCnt, TrueColorUsage[i]);
 
       dlInput := GetMem(dlCnt * 3);
       dlPtr := dlInput;
       for i := 0 to cTotalColors - 1 do
-        if PCountIndexArray(CMUsage[i])^.Count <> 0 then
-          for j := 0 to  PCountIndexArray(CMUsage[i])^.Count - 1 do
+        if TrueColorUsage[i] <> 0 then
+          for j := 0 to  TrueColorUsage[i] - 1 do
           begin
             dlPtr^ := FColorMap[i][0]; Inc(dlPtr);
             dlPtr^ := FColorMap[i][1]; Inc(dlPtr);
@@ -1696,10 +1682,6 @@ begin
       Assert(dlPtr - dlInput = dlCnt * 3);
 
       dl3quant(dlInput, dlCnt, 1, cPaletteCount * cTilePaletteSize, @dlPal);
-
-      for i := 0 to CMUsage.Count - 1 do
-        Dispose(PCountIndexArray(CMUsage[i]));
-      CMUsage.Clear;
 
       CMUsage.Count := cPaletteCount * cTilePaletteSize;
       for i := 0 to cPaletteCount * cTilePaletteSize - 1 do
@@ -1722,6 +1704,16 @@ begin
     end
     else
     begin
+      CMUsage.Count := cTotalColors;
+      for i := 0 to cTotalColors - 1 do
+      begin
+        New(CMItem);
+        CMItem^.Count := 0;
+        CMItem^.Index := i;
+        CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
+        CMUsage[i] := CMItem;
+      end;
+
       // sort colors by use count
 
       CMUsage.Sort(@CompareCMUCntHLS);
@@ -2659,6 +2651,7 @@ begin
 end;
 
 procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame);
+
 var
   TRSize, di, i, frame, sy, sx: Integer;
   frm: PFrame;
@@ -2667,6 +2660,22 @@ var
   used: array[0 .. cPaletteCount - 1] of TBooleanDynArray;
   vmir, hmir: Boolean;
   palIdx: Integer;
+
+  procedure UseOne(Item: PTileMapItem; palIdx: Integer);
+  var
+    i: Integer;
+  begin
+    if FTiles[Item^.GlobalTileIndex]^.CandidateTiles[0] = 0 then
+    begin
+      used[palIdx, Item^.GlobalTileIndex] := True;
+    end
+    else
+    begin
+      for i := 0 to cReloadedCandidatesCount - 1 do
+        used[palIdx, FTiles[Item^.GlobalTileIndex]^.CandidateTiles[i]] := True;
+    end;
+  end;
+
 begin
   DS := New(PTileDataset);
   AKF^.TileDS := DS;
@@ -2686,13 +2695,13 @@ begin
       for palIdx := 0 to cPaletteCount - 1 do
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
-            used[palIdx, frm^.TileMap[sy, sx].GlobalTileIndex] := True;
+            UseOne(@frm^.TileMap[sy, sx], palIdx);
     end
     else
     begin
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
-          used[frm^.TileMap[sy, sx].PalIdx, frm^.TileMap[sy, sx].GlobalTileIndex] := True;
+          UseOne(@frm^.TileMap[sy, sx], frm^.TileMap[sy, sx].PalIdx);
     end;
   end;
 
@@ -3088,58 +3097,132 @@ end;
 
 procedure TMainForm.ReloadPreviousTiling(AFN: String);
 var
-  Dataset: TByteDynArray2;
+  DummyDataLine: TByteDynArray;
+  Dataset: TByteDynArray3;
+  DatasetThreads: TIntegerDynArray;
+  DatasetCS: TRTLCriticalSection;
+  DatasetUse: TIntegerDynArray;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    last, bin, acc, i, j: Integer;
+    last, bin, acc, i, j, tidx, didx: Integer;
     DataLine: TByteDynArray;
     dis: UInt64;
+    DatasetOutliers: array[0..cReloadedCandidatesCount-1] of TByteDynArray;
+    DatasetOutliersIdx: array[0..cReloadedCandidatesCount-1] of Integer;
   begin
     SetLength(DataLine, cKModesFeatureCount);
 
-    bin := Length(FTiles) div Integer(AData);
+    EnterCriticalSection(DatasetCS);
+
+    tidx := GetCurrentThreadId;
+    didx := -1;
+    for i := 0 to ProcThreadPool.MaxThreadCount - 1  do
+      if DatasetThreads[i] = tidx then
+      begin
+        didx := i;
+        Break;
+      end;
+
+    if didx < 0 then
+    begin
+      for i := 0 to ProcThreadPool.MaxThreadCount - 1  do
+        if DatasetThreads[i] = -1 then
+        begin
+          didx := i;
+          Break;
+        end;
+
+      DatasetThreads[didx] := tidx;
+    end;
+
+    Assert(didx >= 0);
+
+    LeaveCriticalSection(DatasetCS);
+
+    bin := Length(FTiles) div PtrUInt(AData);
     last := (AIndex + 1) * bin - 1;
-    if AIndex >= Integer(AData) - 1 then
+    if AIndex >= PtrUInt(AData) - 1 then
       last := Length(FTiles) - 1;
 
     for i := bin * AIndex to last do
       if FTiles[i]^.Active then
       begin
         WriteTileDatasetLine(FTiles[i]^, DataLine, acc);
-        j := GetMinMatchingDissim(Dataset, DataLine, Length(Dataset), dis);
-        Move(Dataset[j, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
-        //if dis > 3 * cKModesFeatureCount div 5 then
-        //  FillChar(Dataset[j, 0], cKModesFeatureCount, $ff); // prevent reloaded tile from being reused
+
+        for j := 0 to cReloadedCandidatesCount - 1 do
+        begin
+          tidx := GetMinMatchingDissim(Dataset[didx], DataLine, Length(Dataset[0]), dis);
+          DatasetOutliers[j] := Dataset[didx, tidx];
+          DatasetOutliersIdx[j] := tidx;
+          Dataset[didx, tidx] := DummyDataLine;
+
+          FTiles[i]^.CandidateTiles[j] := tidx + Length(FTiles);
+
+          Inc(DatasetUse[tidx]);
+        end;
+
+        for j := 0 to cReloadedCandidatesCount - 1 do
+          Dataset[didx, tidx] := DatasetOutliers[j];
+
+        if i mod 1000 = 0 then
+          WriteLn('Thread: ', didx, #9'TileIdx: ', i);
       end;
   end;
 
 var
-  acc, i, j: Integer;
-  dis: UInt64;
+  acc, i, j, prevLen: Integer;
   fs: TFileStream;
-  DataLine: TByteDynArray;
   T: TTile;
+  PT: PTile;
+  last: PtrUInt;
 begin
   fs := TFileStream.Create(AFN, fmOpenRead or fmShareDenyNone);
   try
     FillChar(T, SizeOf(T), 0);
     T.Active := True;
 
-    SetLength(Dataset, fs.Size div sqr(cTileWidth), cKModesFeatureCount);
-    for i := 0 to High(Dataset) do
+    SetLength(Dataset, ProcThreadPool.MaxThreadCount, fs.Size div sqr(cTileWidth));
+    SetLength(Dataset[0], fs.Size div sqr(cTileWidth), cKModesFeatureCount);
+    SetLength(DatasetUse, Length(Dataset[0]));
+    SetLength(DatasetThreads, ProcThreadPool.MaxThreadCount);
+    FillDWord(DatasetThreads[0], ProcThreadPool.MaxThreadCount, DWORD(-1));
+    for i := 0 to High(Dataset[0]) do
     begin
       fs.ReadBuffer(T.PalPixels[0, 0], SizeOf(TPalPixels));
-      WriteTileDatasetLine(T, Dataset[i], acc);
+      WriteTileDatasetLine(T, Dataset[0, i], acc);
+      for j := 1 to High(Dataset) do
+        Dataset[j, i] := Dataset[0, i];
     end;
 
     ProgressRedraw(1);
 
-    i := ProcThreadPool.MaxThreadCount * 10;
-    ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, i - 1, Pointer(i));
+    InitializeCriticalSection(DatasetCS);
+    SetLength(DummyDataLine, cKModesFeatureCount);
+    FillByte(DummyDataLine[0], cKModesFeatureCount, $ff);
 
-    ProgressRedraw(2);
+    last := ProcThreadPool.MaxThreadCount * 10;
+    ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, i - 1, Pointer(last));
 
+    DeleteCriticalSection(DatasetCS);
+
+    ProgressRedraw(3);
+
+    prevLen := Length(FTiles);
+    SetLength(FTiles, prevLen + Length(Dataset[0]));
+    for i := 0 to High(Dataset[0]) do
+    begin
+      PT := new(PTile);
+      FillChar(PT^, SizeOf(TTile), 0);
+
+      PT^.Active := DatasetUse[i] > 0;
+      PT^.UseCount := DatasetUse[i];
+      Move(Dataset[0, i, 0], PT^.PalPixels[0, 0], sqr(cTileWidth));
+
+      FTiles[i + prevLen] := PT;
+    end;
+
+    ProgressRedraw(4);
   finally
     fs.Free;
   end;

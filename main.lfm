@@ -27,7 +27,7 @@ object MainForm: TMainForm
     Width = 113
     ItemHeight = 15
     Style = csDropDownList
-    TabOrder = 14
+    TabOrder = 15
   end
   object pbProgress: TProgressBar
     Left = 4
@@ -121,7 +121,7 @@ object MainForm: TMainForm
     Top = 110
     Width = 56
     MaxValue = 100000
-    TabOrder = 4
+    TabOrder = 5
     Value = 12
   end
   object Label3: TLabel
@@ -156,7 +156,7 @@ object MainForm: TMainForm
     Caption = 'Run (F10)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 13
+    TabOrder = 14
   end
   object sePage: TSpinEdit
     Left = 264
@@ -190,23 +190,8 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     OnEditingDone = seAvgTPFEditingDone
-    TabOrder = 8
+    TabOrder = 9
     Value = 1000
-  end
-  object Label10: TLabel
-    Left = 8
-    Height = 15
-    Top = 56
-    Width = 69
-    Caption = 'WAV (mono)'
-    ParentColor = False
-  end
-  object edWAV: TEdit
-    Left = 88
-    Height = 23
-    Top = 52
-    Width = 232
-    TabOrder = 2
   end
   object Label1: TLabel
     Left = 8
@@ -237,7 +222,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 198
     Width = 56
-    TabOrder = 9
+    TabOrder = 10
     Value = 3
   end
   object imgPalette: TImage
@@ -289,7 +274,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
-    TabOrder = 7
+    TabOrder = 8
   end
   object chkReduced: TCheckBox
     Left = 407
@@ -339,7 +324,7 @@ object MainForm: TMainForm
       '16'
     )
     OnChange = cbxYilMixChange
-    TabOrder = 6
+    TabOrder = 7
     Text = '8'
   end
   object Label11: TLabel
@@ -385,7 +370,7 @@ object MainForm: TMainForm
     Width = 56
     Increment = 0.5
     MinValue = 0
-    TabOrder = 5
+    TabOrder = 6
     Value = 95
   end
   object Label13: TLabel
@@ -402,7 +387,7 @@ object MainForm: TMainForm
     Top = 88
     Width = 56
     MaxValue = 100000
-    TabOrder = 3
+    TabOrder = 4
     Value = 507
   end
   object chkTransPalette: TCheckBox
@@ -412,7 +397,7 @@ object MainForm: TMainForm
     Width = 243
     Caption = 'Extended frame tiling palette usage (slow!)'
     OnChange = chkTransPaletteChange
-    TabOrder = 10
+    TabOrder = 11
   end
   object chkUseTK: TCheckBox
     Left = 8
@@ -423,7 +408,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = chkUseTKChange
     State = cbChecked
-    TabOrder = 12
+    TabOrder = 13
   end
   object chkUseDL3: TCheckBox
     Left = 8
@@ -434,20 +419,26 @@ object MainForm: TMainForm
     Checked = True
     OnChange = chkUseDL3Change
     State = cbChecked
-    TabOrder = 11
+    TabOrder = 12
   end
-  object btnReload: TButton
-    Left = 260
-    Height = 25
-    Hint = 'Reload tiles from previous run'
-    Top = 284
-    Width = 56
-    Caption = 'Reload'
-    OnClick = btnReloadClick
-    ParentShowHint = False
-    PopupMenu = pmProcesses
-    ShowHint = True
-    TabOrder = 15
+  object chkReload: TCheckBox
+    Left = 8
+    Height = 19
+    Top = 53
+    Width = 80
+    Caption = 'Reload tiles'
+    Checked = True
+    OnChange = chkUseTKChange
+    State = cbChecked
+    TabOrder = 2
+  end
+  object edReload: TEdit
+    Left = 87
+    Height = 23
+    Top = 52
+    Width = 232
+    TabOrder = 3
+    Text = 'C:\tiler_misc\stills_tiled\tiles.gts'
   end
   object IdleTimer: TIdleTimer
     Interval = 42
@@ -498,10 +489,5 @@ object MainForm: TMainForm
       ShortCut = 120
       OnClick = btnSaveClick
     end
-  end
-  object odFile: TOpenDialog
-    Filter = 'All (*.*)|*.*'
-    left = 912
-    top = 584
   end
 end

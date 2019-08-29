@@ -22,6 +22,7 @@ type
   TIntegerDynArray2 = array of TIntegerDynArray;
   TIntegerDynArray3 = array of TIntegerDynArray2;
   TByteDynArray2 = array of TByteDynArray;
+  TByteDynArray3 = array of TByteDynArray2;
   TUInt64DynArray = array of UInt64;
   TSpinlock = LongInt;
 
