@@ -23,11 +23,11 @@ object MainForm: TMainForm
   object cbxStep: TComboBox
     Left = 138
     Height = 23
-    Top = 285
+    Top = 289
     Width = 113
     ItemHeight = 15
     Style = csDropDownList
-    TabOrder = 15
+    TabOrder = 16
   end
   object pbProgress: TProgressBar
     Left = 4
@@ -35,7 +35,7 @@ object MainForm: TMainForm
     Top = 316
     Width = 273
     Smooth = True
-    TabOrder = 16
+    TabOrder = 17
   end
   object imgSource: TImage
     Left = 320
@@ -76,7 +76,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 24
+    TabOrder = 25
   end
   object chkPlay: TCheckBox
     Left = 288
@@ -85,7 +85,7 @@ object MainForm: TMainForm
     Width = 42
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 18
+    TabOrder = 19
   end
   object lblTileCount: TLabel
     Left = 8
@@ -105,12 +105,12 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 19
+    TabOrder = 20
   end
   object Label2: TLabel
     Left = 8
     Height = 15
-    Top = 178
+    Top = 170
     Width = 126
     Caption = 'Tile limit (all; per frame)'
     ParentColor = False
@@ -118,7 +118,7 @@ object MainForm: TMainForm
   object seFrameCount: TSpinEdit
     Left = 263
     Height = 23
-    Top = 110
+    Top = 102
     Width = 56
     MaxValue = 100000
     TabOrder = 5
@@ -127,7 +127,7 @@ object MainForm: TMainForm
   object Label3: TLabel
     Left = 8
     Height = 15
-    Top = 112
+    Top = 104
     Width = 144
     Caption = 'Frame count (0: automatic)'
     ParentColor = False
@@ -151,12 +151,12 @@ object MainForm: TMainForm
   object btnRunAll: TButton
     Left = 4
     Height = 25
-    Top = 284
+    Top = 288
     Width = 72
     Caption = 'Run (F10)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 14
+    TabOrder = 15
   end
   object sePage: TSpinEdit
     Left = 264
@@ -165,7 +165,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 17
+    TabOrder = 18
   end
   object Label6: TLabel
     Left = 180
@@ -178,7 +178,7 @@ object MainForm: TMainForm
   object Label7: TLabel
     Left = 8
     Height = 15
-    Top = 134
+    Top = 126
     Width = 101
     Caption = 'Palette value at risk'
     ParentColor = False
@@ -186,7 +186,7 @@ object MainForm: TMainForm
   object seAvgTPF: TSpinEdit
     Left = 263
     Height = 23
-    Top = 176
+    Top = 168
     Width = 56
     MaxValue = 0
     OnEditingDone = seAvgTPFEditingDone
@@ -212,7 +212,7 @@ object MainForm: TMainForm
   object Label9: TLabel
     Left = 8
     Height = 15
-    Top = 200
+    Top = 192
     Width = 159
     Caption = 'Temporal smoothing strength'
     ParentColor = False
@@ -220,7 +220,7 @@ object MainForm: TMainForm
   object seTempoSmoo: TSpinEdit
     Left = 263
     Height = 23
-    Top = 198
+    Top = 190
     Width = 56
     TabOrder = 10
     Value = 3
@@ -244,7 +244,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 21
+    TabOrder = 22
   end
   object lblPct: TLabel
     Left = 277
@@ -265,12 +265,12 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 23
+    TabOrder = 24
   end
   object seMaxTiles: TSpinEdit
     Left = 206
     Height = 23
-    Top = 176
+    Top = 168
     Width = 56
     MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
@@ -287,7 +287,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 20
+    TabOrder = 21
   end
   object lblCorrel: TLabel
     Left = 885
@@ -312,10 +312,10 @@ object MainForm: TMainForm
   object cbxYilMix: TComboBox
     Left = 263
     Height = 23
-    Top = 154
+    Top = 146
     Width = 56
     ItemHeight = 15
-    ItemIndex = 3
+    ItemIndex = 2
     Items.Strings = (
       '1'
       '2'
@@ -325,12 +325,12 @@ object MainForm: TMainForm
     )
     OnChange = cbxYilMixChange
     TabOrder = 7
-    Text = '8'
+    Text = '4'
   end
   object Label11: TLabel
     Left = 8
     Height = 15
-    Top = 156
+    Top = 148
     Width = 157
     Caption = 'Yiluoma 2 mixed colors count'
     ParentColor = False
@@ -343,7 +343,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     MinValue = -1
     OnChange = tbFrameChange
-    TabOrder = 22
+    TabOrder = 23
     Value = -1
   end
   object Label8: TLabel
@@ -358,7 +358,7 @@ object MainForm: TMainForm
   object Label12: TLabel
     Left = 81
     Height = 15
-    Top = 288
+    Top = 292
     Width = 53
     Caption = 'up to step'
     ParentColor = False
@@ -366,7 +366,7 @@ object MainForm: TMainForm
   object sePalVAR: TFloatSpinEdit
     Left = 263
     Height = 23
-    Top = 132
+    Top = 124
     Width = 56
     Increment = 0.5
     MinValue = 0
@@ -376,7 +376,7 @@ object MainForm: TMainForm
   object Label13: TLabel
     Left = 8
     Height = 15
-    Top = 90
+    Top = 82
     Width = 58
     Caption = 'Start frame'
     ParentColor = False
@@ -384,7 +384,7 @@ object MainForm: TMainForm
   object seStartFrame: TSpinEdit
     Left = 263
     Height = 23
-    Top = 88
+    Top = 80
     Width = 56
     MaxValue = 100000
     TabOrder = 4
@@ -393,7 +393,7 @@ object MainForm: TMainForm
   object chkTransPalette: TCheckBox
     Left = 8
     Height = 19
-    Top = 220
+    Top = 212
     Width = 243
     Caption = 'Extended frame tiling palette usage (slow!)'
     OnChange = chkTransPaletteChange
@@ -402,18 +402,16 @@ object MainForm: TMainForm
   object chkUseTK: TCheckBox
     Left = 8
     Height = 19
-    Top = 256
+    Top = 248
     Width = 166
     Caption = 'Use Thomas Knoll dithering'
-    Checked = True
     OnChange = chkUseTKChange
-    State = cbChecked
     TabOrder = 13
   end
   object chkUseDL3: TCheckBox
     Left = 8
     Height = 19
-    Top = 238
+    Top = 230
     Width = 166
     Caption = 'Use Dennis Lee v3 quantizer'
     Checked = True
@@ -439,6 +437,15 @@ object MainForm: TMainForm
     Width = 232
     TabOrder = 3
     Text = 'C:\tiler_misc\stills_tiled\tiles.gts'
+  end
+  object chkLowMem: TCheckBox
+    Left = 8
+    Height = 19
+    Top = 266
+    Width = 115
+    Caption = 'Lower RAM usage'
+    OnChange = chkLowMemChange
+    TabOrder = 14
   end
   object IdleTimer: TIdleTimer
     Interval = 42

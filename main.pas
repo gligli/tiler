@@ -232,6 +232,7 @@ type
     chkUseTK: TCheckBox;
     chkUseDL3: TCheckBox;
     chkReload: TCheckBox;
+    chkLowMem: TCheckBox;
     edInput: TEdit;
     edOutputDir: TEdit;
     edReload: TEdit;
@@ -288,6 +289,7 @@ type
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
+    procedure chkLowMemChange(Sender: TObject);
     procedure chkTransPaletteChange(Sender: TObject);
     procedure chkUseDL3Change(Sender: TObject);
     procedure chkUseTKChange(Sender: TObject);
@@ -307,6 +309,7 @@ type
     FUseThomasKnoll: Boolean;
     FUseDennisLeeV3: Boolean;
     FY2MixedColors: Integer;
+    FLowMem: Boolean;
 
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
@@ -385,6 +388,34 @@ var
 implementation
 
 {$R *.lfm}
+
+function HasParam(p: String): Boolean;
+var i: Integer;
+begin
+  Result := False;
+  for i := 1 to ParamCount do
+    if SameText(p, ParamStr(i)) then
+      Exit(True);
+end;
+
+function ParamStart(p: String): Integer;
+var i: Integer;
+begin
+  Result := -1;
+  for i := 1 to ParamCount do
+    if AnsiStartsStr(p, ParamStr(i)) then
+      Exit(i);
+end;
+
+function ParamValue(p: String; def: Double): Double;
+var
+  idx: Integer;
+begin
+  idx := ParamStart(p);
+  if idx < 0 then
+    Exit(def);
+  Result := StrToFloatDef(copy(ParamStr(idx), Length(p) + 1), def);
+end;
 
 procedure Exchange(var a, b: Integer);
 var
@@ -997,6 +1028,11 @@ begin
   FY2MixedColors := StrToIntDef(cbxYilMix.Text, 16);
 end;
 
+procedure TMainForm.chkLowMemChange(Sender: TObject);
+begin
+  FLowMem := chkLowMem.Checked;
+end;
+
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
 begin
   case Key of
@@ -1085,10 +1121,13 @@ begin
   SetLength(Plan.LumaPal, Length(pal));
   SetLength(Plan.Y2Palette, Length(pal));
 
-  InitializeCriticalSection(Plan.CacheCS);
-  SetLength(Plan.CountCache, 1 shl 24);
-  FillDWord(Plan.CountCache[0], 1 shl 24, $ffffffff);
-  Plan.ListCache := TByteDynArrayList.Create;
+  if not FLowMem then
+  begin
+    InitializeCriticalSection(Plan.CacheCS);
+    SetLength(Plan.CountCache, 1 shl 24);
+    FillDWord(Plan.CountCache[0], 1 shl 24, $ffffffff);
+    Plan.ListCache := TByteDynArrayList.Create;
+  end;
 
   for i := 0 to High(pal) do
   begin
@@ -1108,12 +1147,15 @@ end;
 
 procedure TMainForm.TerminatePlan(var Plan: TMixingPlan);
 begin
-  DeleteCriticalSection(Plan.CacheCS);
+  if not FLowMem then
+  begin
+    DeleteCriticalSection(Plan.CacheCS);
+    Plan.ListCache.Free;
+    SetLength(Plan.CountCache, 0);
+  end;
 
   SetLength(Plan.LumaPal, 0);
   SetLength(Plan.Y2Palette, 0);
-  SetLength(Plan.CountCache, 0);
-  Plan.ListCache.Free;
 end;
 
 function PlanCompareLuma(Item1,Item2,UserParameter:Pointer):Integer;
@@ -1158,12 +1200,15 @@ var
   cachePtr: PInteger;
   cachePos: Integer;
 begin
-  cachePtr := @Plan.CountCache[col];
-  if cachePtr^ >= 0 then
+  if not FLowMem then
   begin
-    Result := Length(Plan.ListCache[cachePtr^]);
-    Move(Plan.ListCache[cachePtr^][0], List[0], Result);
-    Exit;
+    cachePtr := @Plan.CountCache[col];
+    if cachePtr^ >= 0 then
+    begin
+      Result := Length(Plan.ListCache[cachePtr^]);
+      Move(Plan.ListCache[cachePtr^][0], List[0], Result);
+      Exit;
+    end;
   end;
 
   FromRGB(col, r, g, b);
@@ -1375,15 +1420,18 @@ begin
   end;
 {$endif}
 
-  EnterCriticalSection(Plan.CacheCS);
-  if Plan.CountCache[col] < 0 then
+  if not FLowMem then
   begin
-    cachePos := Plan.ListCache.Count;
-    Plan.ListCache.Add(Copy(List, 0, Result));
-    ReadWriteBarrier;
-    Plan.CountCache[col] := cachePos;
+    EnterCriticalSection(Plan.CacheCS);
+    if Plan.CountCache[col] < 0 then
+    begin
+      cachePos := Plan.ListCache.Count;
+      Plan.ListCache.Add(Copy(List, 0, Result));
+      ReadWriteBarrier;
+      Plan.CountCache[col] := cachePos;
+    end;
+    LeaveCriticalSection(Plan.CacheCS);
   end;
-  LeaveCriticalSection(Plan.CacheCS);
 end;
 
 function TMainForm.ColorCompareTK(r1, g1, b1, r2, g2, b2: Int64): Int64;
@@ -1413,11 +1461,14 @@ var
   cachePtr: PInteger;
   cachePos: Integer;
 begin
-  cachePtr := @Plan.CountCache[col];
-  if cachePtr^ >= 0 then
+  if not FLowMem then
   begin
-    Move(Plan.ListCache[cachePtr^][0], List[0], cDitheringLen);
-    Exit;
+    cachePtr := @Plan.CountCache[col];
+    if cachePtr^ >= 0 then
+    begin
+      Move(Plan.ListCache[cachePtr^][0], List[0], cDitheringLen);
+      Exit;
+    end;
   end;
 
   FromRGB(col, src[0], src[1], src[2]);
@@ -1465,15 +1516,18 @@ begin
 
   QuickSort(List[0], 0, cDitheringLen - 1, SizeOf(Byte), @PlanCompareLuma, @Plan.LumaPal[0]);
 
-  EnterCriticalSection(Plan.CacheCS);
-  if Plan.CountCache[col] < 0 then
+  if not FLowMem then
   begin
-    cachePos := Plan.ListCache.Count;
-    Plan.ListCache.Add(Copy(List, 0, cDitheringLen));
-    ReadWriteBarrier;
-    Plan.CountCache[col] := cachePos;
+    EnterCriticalSection(Plan.CacheCS);
+    if Plan.CountCache[col] < 0 then
+    begin
+      cachePos := Plan.ListCache.Count;
+      Plan.ListCache.Add(Copy(List, 0, cDitheringLen));
+      ReadWriteBarrier;
+      Plan.CountCache[col] := cachePos;
+    end;
+    LeaveCriticalSection(Plan.CacheCS);
   end;
-  LeaveCriticalSection(Plan.CacheCS);
 end;
 
 procedure TMainForm.ReframeUI(AWidth, AHeight: Integer);
@@ -1900,8 +1954,11 @@ begin
     cnt := 0;
     for i := 0 to cPaletteCount - 1 do
     begin
-      mx := Max(AFrame^.KeyFrame^.MixingPlans[i].ListCache.Count, mx);
-      cnt += AFrame^.KeyFrame^.MixingPlans[i].ListCache.Count;
+      if not FLowMem then
+      begin
+        mx := Max(AFrame^.KeyFrame^.MixingPlans[i].ListCache.Count, mx);
+        cnt += AFrame^.KeyFrame^.MixingPlans[i].ListCache.Count;
+      end;
       TerminatePlan(AFrame^.KeyFrame^.MixingPlans[i]);
     end;
 
@@ -3301,6 +3358,7 @@ begin
   chkTransPaletteChange(nil);
   chkUseDL3Change(nil);
   chkUseTKChange(nil);
+  chkLowMemChange(nil);
 
   for es := esLoad to High(TEncoderStep) do
     cbxStep.AddItem(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), TObject(PtrInt(Ord(es))));
