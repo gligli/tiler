@@ -850,8 +850,8 @@ var
   init: TByteDynArray2;
   all: array of TKmodesRun;
 var
-  i, j, init_no, iattr, ipoint, ik, summemb, itr, moves, totalmoves, clust: Integer;
-  best, dis: UInt64;
+  i, j, init_no, iattr, ipoint, ik, summemb, itr, moves, totalmoves: Integer;
+  best: UInt64;
   converged: Boolean;
   cost, ncost: UInt64;
   InvGoldenRatio, GRAcc: Single;
@@ -876,13 +876,6 @@ begin
     MaxIter := MaxInt;
 
   init := nil;
-  //if CountUniqueRows(X) <= NumClusters then
-  //begin
-  //  MaxIter := 0;
-  //  ANumInit := 1;
-  //  init := GetUniqueRows(X);
-  //  NumClusters := Length(init);
-  //end;
 
   if ANumInit <= 0 then
   begin
