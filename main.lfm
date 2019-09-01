@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 289
+  Left = 434
   Height = 784
-  Top = 102
+  Top = 170
   Width = 960
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 960
@@ -396,7 +396,9 @@ object MainForm: TMainForm
     Top = 212
     Width = 243
     Caption = 'Extended frame tiling palette usage (slow!)'
+    Checked = True
     OnChange = chkTransPaletteChange
+    State = cbChecked
     TabOrder = 11
   end
   object chkUseTK: TCheckBox
@@ -405,7 +407,9 @@ object MainForm: TMainForm
     Top = 248
     Width = 166
     Caption = 'Use Thomas Knoll dithering'
+    Checked = True
     OnChange = chkUseTKChange
+    State = cbChecked
     TabOrder = 13
   end
   object chkUseDL3: TCheckBox

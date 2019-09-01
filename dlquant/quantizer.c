@@ -25,8 +25,6 @@
 
 #define DITHER_MAX 20
 
-#define LOOKUP_SIZE 262144
-
 /*
  * File: dl1quant.h
  *
@@ -76,7 +74,7 @@ typedef struct {
 	CUBE1 *rgb_table1[6];
 	ushort r_offset[256], g_offset[256], b_offset[256];
 	CLOSEST_INFO c_info;
-	int tot_colors, pal_index, did_init;
+	int tot_colors, pal_index, did_init, lookup_size, lookup_bpc;
 	ulong *squares1;
 	FCUBE *heap;
 	short *dl_image;
@@ -95,7 +93,7 @@ static void	set_palette1(DLCONTEXT *ctx, int index, int level);
 
 static int	init_table(DLCONTEXT *ctx);
 
-static int	quantize_image3(uchar *inbuf, uchar *outbuf, int width, int height, int dither);
+static int	quantize_image3(DLCONTEXT *ctx, uchar *inbuf, uchar *outbuf, int width, int height, int dither);
 
 /*
  * DL1 Quantization
@@ -134,10 +132,13 @@ static int	quantize_image3(uchar *inbuf, uchar *outbuf, int width, int height, i
  *
  */
 
-int dl1quant(uchar *inbuf, int width, int height, int quant_to, uchar userpal[3][PALETTE_MAX])
+int dl1quant(uchar *inbuf, int width, int height, int quant_to, int lookup_bpc, uchar userpal[3][PALETTE_MAX])
 {
 	DLCONTEXT *ctx = calloc(sizeof(DLCONTEXT), 1);
 	
+	ctx->lookup_size = 1 << (lookup_bpc * 3);
+	ctx->lookup_bpc = lookup_bpc;
+
 	if (!ctx->did_init)
 	{
 		ctx->did_init = 1;
@@ -246,7 +247,7 @@ static int build_table1(DLCONTEXT *ctx, uchar *image, ulong pixels)
 	}
 
 	ctx->tot_colors = 0;
-	for (i = 0; i < LOOKUP_SIZE; i++)
+	for (i = 0; i < ctx->lookup_size; i++)
 	{
 		cur_count = ctx->rgb_table1[5][i].pixel_count;
 		if (cur_count)
@@ -402,9 +403,12 @@ static int	bestcolor3(DLCONTEXT *ctx, int r, int g, int b);
  */
 
 int dl3floste(uchar *inbuf, uchar *outbuf, int width, int height,
-			int quant_to, int dither, uchar userpal[3][PALETTE_MAX])
+			int quant_to, int dither, int lookup_bpc, uchar userpal[3][PALETTE_MAX])
 {
 	DLCONTEXT *ctx = calloc(sizeof(DLCONTEXT), 1);
+
+	ctx->lookup_size = 1 << (lookup_bpc * 3);
+	ctx->lookup_bpc = lookup_bpc;
 
 	// This procedure was written by M.Tyler to quantize with current palette
 
@@ -430,9 +434,12 @@ int dl3floste(uchar *inbuf, uchar *outbuf, int width, int height,
 }
 
 
-int dl3quant(uchar *inbuf, int width, int height, int quant_to, uchar userpal[3][PALETTE_MAX])
+int dl3quant(uchar *inbuf, int width, int height, int quant_to, int lookup_bpc, uchar userpal[3][PALETTE_MAX])
 {
 	DLCONTEXT *ctx = calloc(sizeof(DLCONTEXT), 1);
+
+	ctx->lookup_size = 1 << (lookup_bpc * 3);
+	ctx->lookup_bpc = lookup_bpc;
 
 	if (init_table(ctx) == 0) return 1;
 	build_table3(ctx, inbuf, width * height);
@@ -451,7 +458,7 @@ static int init_table(DLCONTEXT *ctx)
 {
 	int i;
 
-	ctx->rgb_table3 = (CUBE3 *) calloc(sizeof(CUBE3), LOOKUP_SIZE);
+	ctx->rgb_table3 = (CUBE3 *) calloc(sizeof(CUBE3), ctx->lookup_size);
 
 	if (ctx->rgb_table3 == NULL) return 0;
 
@@ -476,13 +483,15 @@ static void build_table3(DLCONTEXT *ctx, uchar *image, int size)
 
 	for (i = 0; i < size; i++)
 	{
-#if LOOKUP_SIZE == 32768
-		index = ((image[0]&248)<<7) + ((image[1]&248)<<2) + (image[2]>>3);
-#elif LOOKUP_SIZE == 262144
-		index = ((image[0] & 252) << 10) + ((image[1] & 252) << 4) + (image[2] >> 2);
-#else
-		#error unhandled LOOKUP_SIZE
-#endif
+		int r, g, b, mbpc;
+
+		mbpc = (1 << ctx->lookup_bpc) - 1;
+
+		r = image[0] * mbpc / 255;
+		g = image[1] * mbpc / 255;
+		b = image[2] * mbpc / 255;
+
+		index = b | (g << ctx->lookup_bpc) | (r << (ctx->lookup_bpc << 1));
 
 		ctx->rgb_table3[index].r += image[0] * CScale;
 		ctx->rgb_table3[index].g += image[1];
@@ -492,7 +501,7 @@ static void build_table3(DLCONTEXT *ctx, uchar *image, int size)
 	}
 
 	ctx->tot_colors = 0;
-	for (i = 0; i < LOOKUP_SIZE; i++)
+	for (i = 0; i < ctx->lookup_size; i++)
 		if (ctx->rgb_table3[i].pixel_count)
 		{
 			setrgb(ctx->rgb_table3 + i);
@@ -672,7 +681,7 @@ static int quantize_image3(DLCONTEXT *ctx, uchar *in, uchar *out, int width, int
 	{
 		range_tbl = malloc(3 * 256);
 		range = range_tbl + 256;
-		lookup  = malloc(sizeof(short) * LOOKUP_SIZE);
+		lookup  = malloc(sizeof(short) * ctx->lookup_size);
 		erowerr = malloc(sizeof(short) * err_len);
 		orowerr = malloc(sizeof(short) * err_len);
 		dith_max_tbl = malloc(512);
@@ -691,7 +700,7 @@ static int quantize_image3(DLCONTEXT *ctx, uchar *in, uchar *out, int width, int
 
 		for (i = 0; i < err_len; i++) erowerr[i] = 0;
 
-		for (i = 0; i < LOOKUP_SIZE; i++) lookup[i] = -1;
+		for (i = 0; i < ctx->lookup_size; i++) lookup[i] = -1;
 
 		for (i = 0; i < 256; i++)
 		{

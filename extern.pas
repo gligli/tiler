@@ -46,8 +46,8 @@ procedure ann_kdtree_destroy(akd: PANNkdtree); cdecl; external 'ANN.dll';
 function ann_kdtree_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
 function ann_kdtree_pri_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
 
-function dl1quant(inbuf: PByte; width, height, quant_to: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
-function dl3quant(inbuf: PByte; width, height, quant_to: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
+function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
+function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 
 implementation
 

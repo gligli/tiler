@@ -15,10 +15,10 @@
 #define ulong	unsigned long
 
 __declspec(dllexport) int __stdcall dl1quant(uchar *inbuf, int width, int height,
-			int quant_to, uchar userpal[3][PALETTE_MAX]);
+			int quant_to, int lookup_bpc, uchar userpal[3][PALETTE_MAX]);
 
 __declspec(dllexport) int __stdcall dl3quant(uchar *inbuf, int width, int height,
-			int quant_to, uchar userpal[3][PALETTE_MAX]);
+			int quant_to, int lookup_bpc, uchar userpal[3][PALETTE_MAX]);
 
 __declspec(dllexport) int __stdcall dl3floste(uchar *inbuf, uchar *outbuf, int width, int height,
-			int quant_to, int dither, uchar userpal[3][PALETTE_MAX]);
+			int quant_to, int dither, int lookup_bpc, uchar userpal[3][PALETTE_MAX]);

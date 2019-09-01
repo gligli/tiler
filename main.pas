@@ -19,8 +19,8 @@ const
 
 {$if true}
   cPaletteCount = 32;
-  cBitsPerComp = 8;
-  cTilePaletteSize = 64;
+  cBitsPerComp = 7;
+  cTilePaletteSize = 32;
 {$else}
   cPaletteCount = 4;
   cBitsPerComp = 3;
@@ -54,7 +54,7 @@ const
   cVecInvWidth = 16;
   cTotalColors = 1 shl (cBitsPerComp * 3);
   cTileWidth = 8;
-  cColorCpns = 4;
+  cColorCpns = 3;
   cTileDCTSize = cColorCpns * sqr(cTileWidth);
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
@@ -87,37 +87,26 @@ const
       (66, 73, 75, 80,  94,  96, 128, 144)
     ),
     (
-      // Red, weighted by luma importance
-      (17/cRedMul*cDQw,  18/cRedMul*cDQw,  24/cRedMul*cDQw,  47/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw),
-      (18/cRedMul*cDQw,  21/cRedMul*cDQw,  26/cRedMul*cDQw,  66/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw, 112/cRedMul*cDQw),
-      (24/cRedMul*cDQw,  26/cRedMul*cDQw,  56/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw, 112/cRedMul*cDQw, 128/cRedMul*cDQw),
-      (47/cRedMul*cDQw,  66/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw, 112/cRedMul*cDQw, 128/cRedMul*cDQw, 144/cRedMul*cDQw),
-      (99/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw, 112/cRedMul*cDQw, 128/cRedMul*cDQw, 144/cRedMul*cDQw, 160/cRedMul*cDQw),
-      (99/cRedMul*cDQw,  99/cRedMul*cDQw,  99/cRedMul*cDQw, 112/cRedMul*cDQw, 128/cRedMul*cDQw, 144/cRedMul*cDQw, 160/cRedMul*cDQw, 176/cRedMul*cDQw),
-      (99/cRedMul*cDQw,  99/cRedMul*cDQw, 112/cRedMul*cDQw, 128/cRedMul*cDQw, 144/cRedMul*cDQw, 160/cRedMul*cDQw, 176/cRedMul*cDQw, 192/cRedMul*cDQw),
-      (99/cRedMul*cDQw, 112/cRedMul*cDQw, 128/cRedMul*cDQw, 144/cRedMul*cDQw, 160/cRedMul*cDQw, 176/cRedMul*cDQw, 192/cRedMul*cDQw, 208/cRedMul*cDQw)
+      // U, weighted by luma importance
+      (17,  18,  24,  47,  99,  99,  99,  99),
+      (18,  21,  26,  66,  99,  99,  99, 112),
+      (24,  26,  56,  99,  99,  99, 112, 128),
+      (47,  66,  99,  99,  99, 112, 128, 144),
+      (99,  99,  99,  99, 112, 128, 144, 160),
+      (99,  99,  99, 112, 128, 144, 160, 176),
+      (99,  99, 112, 128, 144, 160, 176, 192),
+      (99, 112, 128, 144, 160, 176, 192, 208)
     ),
     (
-      // Green, weighted by luma importance
-      (17/cGreenMul*cDQw,  18/cGreenMul*cDQw,  24/cGreenMul*cDQw,  47/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw),
-      (18/cGreenMul*cDQw,  21/cGreenMul*cDQw,  26/cGreenMul*cDQw,  66/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw, 112/cGreenMul*cDQw),
-      (24/cGreenMul*cDQw,  26/cGreenMul*cDQw,  56/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw, 112/cGreenMul*cDQw, 128/cGreenMul*cDQw),
-      (47/cGreenMul*cDQw,  66/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw, 112/cGreenMul*cDQw, 128/cGreenMul*cDQw, 144/cGreenMul*cDQw),
-      (99/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw, 112/cGreenMul*cDQw, 128/cGreenMul*cDQw, 144/cGreenMul*cDQw, 160/cGreenMul*cDQw),
-      (99/cGreenMul*cDQw,  99/cGreenMul*cDQw,  99/cGreenMul*cDQw, 112/cGreenMul*cDQw, 128/cGreenMul*cDQw, 144/cGreenMul*cDQw, 160/cGreenMul*cDQw, 176/cGreenMul*cDQw),
-      (99/cGreenMul*cDQw,  99/cGreenMul*cDQw, 112/cGreenMul*cDQw, 128/cGreenMul*cDQw, 144/cGreenMul*cDQw, 160/cGreenMul*cDQw, 176/cGreenMul*cDQw, 192/cGreenMul*cDQw),
-      (99/cGreenMul*cDQw, 112/cGreenMul*cDQw, 128/cGreenMul*cDQw, 144/cGreenMul*cDQw, 160/cGreenMul*cDQw, 176/cGreenMul*cDQw, 192/cGreenMul*cDQw, 208/cGreenMul*cDQw)
-    ),
-    (
-      // Blue, weighted by luma importance
-      (17/cBlueMul*cDQw,  18/cBlueMul*cDQw,  24/cBlueMul*cDQw,  47/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw),
-      (18/cBlueMul*cDQw,  21/cBlueMul*cDQw,  26/cBlueMul*cDQw,  66/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw, 112/cBlueMul*cDQw),
-      (24/cBlueMul*cDQw,  26/cBlueMul*cDQw,  56/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw, 112/cBlueMul*cDQw, 128/cBlueMul*cDQw),
-      (47/cBlueMul*cDQw,  66/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw, 112/cBlueMul*cDQw, 128/cBlueMul*cDQw, 144/cBlueMul*cDQw),
-      (99/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw, 112/cBlueMul*cDQw, 128/cBlueMul*cDQw, 144/cBlueMul*cDQw, 160/cBlueMul*cDQw),
-      (99/cBlueMul*cDQw,  99/cBlueMul*cDQw,  99/cBlueMul*cDQw, 112/cBlueMul*cDQw, 128/cBlueMul*cDQw, 144/cBlueMul*cDQw, 160/cBlueMul*cDQw, 176/cBlueMul*cDQw),
-      (99/cBlueMul*cDQw,  99/cBlueMul*cDQw, 112/cBlueMul*cDQw, 128/cBlueMul*cDQw, 144/cBlueMul*cDQw, 160/cBlueMul*cDQw, 176/cBlueMul*cDQw, 192/cBlueMul*cDQw),
-      (99/cBlueMul*cDQw, 112/cBlueMul*cDQw, 128/cBlueMul*cDQw, 144/cBlueMul*cDQw, 160/cBlueMul*cDQw, 176/cBlueMul*cDQw, 192/cBlueMul*cDQw, 208/cBlueMul*cDQw)
+      // V, weighted by luma importance
+      (17,  18,  24,  47,  99,  99,  99,  99),
+      (18,  21,  26,  66,  99,  99,  99, 112),
+      (24,  26,  56,  99,  99,  99, 112, 128),
+      (47,  66,  99,  99,  99, 112, 128, 144),
+      (99,  99,  99,  99, 112, 128, 144, 160),
+      (99,  99,  99, 112, 128, 144, 160, 176),
+      (99,  99, 112, 128, 144, 160, 176, 192),
+      (99, 112, 128, 144, 160, 176, 192, 208)
     )
   );
 
@@ -176,7 +165,7 @@ type
   PTileDataset = ^TTileDataset;
 
   TCountIndexArray = packed record
-    Count, Index: Integer;
+    Count, Index, Luma: Integer;
     Hue, Sat, Val, Dummy: Byte;
   end;
 
@@ -304,6 +293,7 @@ type
     FKeyFrames: array of TKeyFrame;
     FFrames: array of TFrame;
     FColorMap: array[0..cTotalColors - 1, 0..5] of Byte;
+    FColorMapLuma: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
     FTransPalette: Boolean;
     FUseThomasKnoll: Boolean;
@@ -955,7 +945,7 @@ begin
 
   imgDest.Picture.Bitmap.BeginUpdate;
   imgDest.Picture.Bitmap.ScanLine[0];
-  dl3quant(PByte(imgDest.Picture.Bitmap.ScanLine[0]), imgDest.Picture.Bitmap.Width, imgDest.Picture.Bitmap.Height, 64, @dlpal);
+  dl3quant(PByte(imgDest.Picture.Bitmap.ScanLine[0]), imgDest.Picture.Bitmap.Width, cBitsPerComp - 2, imgDest.Picture.Bitmap.Height, 64, @dlpal);
   imgDest.Picture.Bitmap.EndUpdate;
 
   for i := 0 to 255 do
@@ -1197,16 +1187,16 @@ var
   so_far, sum, add: array[0..3] of Integer;
   VecInv: PCardinal;
   y2pal: PInteger;
-  cachePtr: PInteger;
   cachePos: Integer;
 begin
   if not FLowMem then
   begin
-    cachePtr := @Plan.CountCache[col];
-    if cachePtr^ >= 0 then
+    cachePos := Plan.CountCache[col];
+    ReadBarrier;
+    if cachePos >= 0 then
     begin
-      Result := Length(Plan.ListCache[cachePtr^]);
-      Move(Plan.ListCache[cachePtr^][0], List[0], Result);
+      Result := Length(Plan.ListCache[cachePos]);
+      Move(Plan.ListCache[cachePos][0], List[0], Result);
       Exit;
     end;
   end;
@@ -1427,7 +1417,7 @@ begin
     begin
       cachePos := Plan.ListCache.Count;
       Plan.ListCache.Add(Copy(List, 0, Result));
-      ReadWriteBarrier;
+      WriteBarrier;
       Plan.CountCache[col] := cachePos;
     end;
     LeaveCriticalSection(Plan.CacheCS);
@@ -1458,15 +1448,15 @@ var
   src : array[0..2] of Byte;
   s, t, e: array[0..2] of Int64;
   least_penalty, penalty: Int64;
-  cachePtr: PInteger;
   cachePos: Integer;
 begin
   if not FLowMem then
   begin
-    cachePtr := @Plan.CountCache[col];
-    if cachePtr^ >= 0 then
+    cachePos := Plan.CountCache[col];
+    ReadBarrier;
+    if cachePos >= 0 then
     begin
-      Move(Plan.ListCache[cachePtr^][0], List[0], cDitheringLen);
+      Move(Plan.ListCache[cachePos][0], List[0], cDitheringLen);
       Exit;
     end;
   end;
@@ -1523,7 +1513,7 @@ begin
     begin
       cachePos := Plan.ListCache.Count;
       Plan.ListCache.Add(Copy(List, 0, cDitheringLen));
-      ReadWriteBarrier;
+      WriteBarrier;
       Plan.CountCache[col] := cachePos;
     end;
     LeaveCriticalSection(Plan.CacheCS);
@@ -1621,11 +1611,13 @@ end;
 
 function CompareCMULHS(Item1,Item2:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item1)^.Val, PCountIndexArray(Item2)^.Val);
+  Result := CompareValue(PCountIndexArray(Item1)^.Luma, PCountIndexArray(Item2)^.Luma);
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
+    Result := CompareValue(PCountIndexArray(Item1)^.Val, PCountIndexArray(Item2)^.Val);
   if Result = 0 then
     Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
+  if Result = 0 then
+    Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
 end;
 
 function ComparePalCmlLuma(Item1,Item2,UserParameter:Pointer):Integer;
@@ -1643,8 +1635,8 @@ begin
   l2 := 0;
   for i := 0 to cTilePaletteSize - 1 do
   begin
-    l1 += slf.FColorMap[a1[i], 5];
-    l2 += slf.FColorMap[a2[i], 5];
+    l1 += slf.FColorMapLuma[a1[i]];
+    l2 += slf.FColorMapLuma[a2[i]];
   end;
 
   Result := CompareValue(l1, l2);
@@ -1660,9 +1652,7 @@ var
   GTile: PTile;
   CMUsage, CMPal: TFPList;
   CMItem: PCountIndexArray;
-{$if cBitsPerComp <> 8}
   cnt: Integer;
-{$endif}
   TrueColorUsage: TCardinalDynArray;
   diff, best, PrevBest: Int64;
   ciI, ciJ: PCountIndexArray;
@@ -1698,6 +1688,17 @@ begin
     end;
 
 {$if cBitsPerComp <> 8}
+    CMUsage.Count := cTotalColors;
+    for i := 0 to cTotalColors - 1 do
+    begin
+      New(CMItem);
+      CMItem^.Count := 0;
+      CMItem^.Index := i;
+      CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
+      CMItem^.Luma := FColorMapLuma[i];
+      CMUsage[i] := CMItem;
+    end;
+
     for i := 0 to High(TrueColorUsage) do
     begin
       cnt := TrueColorUsage[i];
@@ -1718,24 +1719,31 @@ begin
     if FUseDennisLeeV3 then
     begin
       dlCnt := 0;
-      for i := 0 to cTotalColors - 1 do
+      for i := 0 to High(TrueColorUsage) do
         if TrueColorUsage[i] <> 0 then
           Inc(dlCnt, TrueColorUsage[i]);
 
       dlInput := GetMem(dlCnt * 3);
       dlPtr := dlInput;
       for i := 0 to cTotalColors - 1 do
-        if TrueColorUsage[i] <> 0 then
-          for j := 0 to  TrueColorUsage[i] - 1 do
+      begin
+{$if cBitsPerComp = 8}
+        cnt := TrueColorUsage[i];
+{$else}
+        cnt := PCountIndexArray(CMUsage[i])^.Count;
+{$endif}
+        if cnt <> 0 then
+          for j := 0 to  cnt - 1 do
           begin
             dlPtr^ := FColorMap[i][0]; Inc(dlPtr);
             dlPtr^ := FColorMap[i][1]; Inc(dlPtr);
             dlPtr^ := FColorMap[i][2]; Inc(dlPtr);
           end;
+      end;
 
       Assert(dlPtr - dlInput = dlCnt * 3);
 
-      dl3quant(dlInput, dlCnt, 1, cPaletteCount * cTilePaletteSize, @dlPal);
+      dl3quant(dlInput, dlCnt, 1, cPaletteCount * cTilePaletteSize, 5, @dlPal);
 
       CMUsage.Count := cPaletteCount * cTilePaletteSize;
       for i := 0 to cPaletteCount * cTilePaletteSize - 1 do
@@ -1744,20 +1752,22 @@ begin
         CMItem^.Count := 1;
 
 {$if cBitsPerComp = 8}
-          CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
+        CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
 {$else}
-          r := dlPal[0][i] shr (8 - cBitsPerComp);
-          g := dlPal[1][i] shr (8 - cBitsPerComp);
-          b := dlPal[2][i] shr (8 - cBitsPerComp);
-          CMItem^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
+        r := dlPal[0][i] * cBPCMul div 255;
+        g := dlPal[1][i] * cBPCMul div 255;
+        b := dlPal[2][i] * cBPCMul div 255;
+        CMItem^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
 {$endif}
 
         CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
+        CMItem^.Luma := FColorMapLuma[CMItem^.Index];
         CMUsage[i] := CMItem;
       end;
     end
     else
     begin
+{$if cBitsPerComp = 8}
       CMUsage.Count := cTotalColors;
       for i := 0 to cTotalColors - 1 do
       begin
@@ -1765,8 +1775,10 @@ begin
         CMItem^.Count := 0;
         CMItem^.Index := i;
         CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
+        CMItem^.Luma := FColorMapLuma[CMItem^.Index];
         CMUsage[i] := CMItem;
       end;
+{$endif}
 
       // sort colors by use count
 
@@ -1832,6 +1844,7 @@ begin
           ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
           ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
           ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
+          ciI^.Luma := (ciI^.Luma * ciI^.Count + ciJ^.Luma * ciJ^.Count) div acc;
           ciI^.Count := acc;
 
           ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
@@ -2042,7 +2055,10 @@ begin
 
   // allocate tiles
   for i := 0 to High(FTiles) do
+  begin
     FTiles[i] := New(PTile);
+    FillChar(FTiles[i]^, SizeOf(TTile), 0);
+  end;
 
   // copy frame tiles to global tiles, point tilemap on proper global tiles
   for i := 0 to High(FFrames) do
@@ -2107,17 +2123,13 @@ var
 
   procedure ToCpn(col, x, y: Integer);
   var
-    r, g, b: Byte;
-    fr, fg, fb: TFloat;
+    yy, uu, vv: TFloat;
   begin
-    FromRGB(col, r, g, b);
+    RGBToYUV(col, GammaCor, yy, uu, vv);
 
-    fr := GammaCorrect(GammaCor, r);
-    fg := GammaCorrect(GammaCor, g);
-    fb := GammaCorrect(GammaCor, b);
-
-    CpnPixels[0, y, x] := (fr * cRedMul + fg * cGreenMul + fb * cBlueMul) / cLumaDiv;
-    CpnPixels[1, y, x] := fr; CpnPixels[2, y, x] := fg; CpnPixels[3, y, x] := fb;
+    CpnPixels[0, y, x] := yy;
+    CpnPixels[1, y, x] := uu;
+    CpnPixels[2, y, x] := vv;
   end;
 
 begin
@@ -2179,7 +2191,7 @@ begin
         DCT[di] := cUVRatio[u] * vRatio * z;
 
         if QWeighting then
-           DCT[di] *= 16.0 / sqrt(cDCTQuantization[cpn, v, u]);
+           DCT[di] *= 16.0 / cDCTQuantization[cpn, v, u];
 
         Inc(di);
       end;
@@ -3220,7 +3232,7 @@ var
         end;
 
         for j := 0 to cReloadedCandidatesCount - 1 do
-          Dataset[didx, tidx] := DatasetOutliers[j];
+          Dataset[didx, DatasetOutliersIdx[j]] := DatasetOutliers[j];
 
         if i mod 1000 = 0 then
           WriteLn('Thread: ', didx, #9'TileIdx: ', i);
@@ -3228,7 +3240,7 @@ var
   end;
 
 var
-  acc, i, j, prevLen: Integer;
+  acc, i, j, y, x, prevLen: Integer;
   fs: TFileStream;
   T: TTile;
   PT: PTile;
@@ -3247,7 +3259,13 @@ begin
     for i := 0 to High(Dataset[0]) do
     begin
       fs.ReadBuffer(T.PalPixels[0, 0], SizeOf(TPalPixels));
+
+      for y := 0 to cTileWidth - 1 do
+        for x := 0 to cTileWidth - 1 do
+          T.PalPixels[y, x] := (T.PalPixels[y, x] * cTilePaletteSize) div sqr(cTileWidth);
+
       WriteTileDatasetLine(T, Dataset[0, i], acc);
+
       for j := 1 to High(Dataset) do
         Dataset[j, i] := Dataset[0, i];
     end;
@@ -3375,6 +3393,7 @@ begin
 
     FromRGB(col, FColorMap[i, 0], FColorMap[i, 1], FColorMap[i, 2]);
     RGBToHSV(col, FColorMap[i, 3], FColorMap[i, 4], FColorMap[i, 5]);
+    FColorMapLuma[i] := (FColorMap[i, 0] * cRedMul + FColorMap[i, 1] * cGreenMul + FColorMap[i, 2] * cBlueMul) div cLumaDiv;
   end;
 end;
 
