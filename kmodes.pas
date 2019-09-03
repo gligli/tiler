@@ -24,7 +24,6 @@ type
   TByteDynArray2 = array of TByteDynArray;
   TByteDynArray3 = array of TByteDynArray2;
   TUInt64DynArray = array of UInt64;
-  TSpinlock = LongInt;
 
   TKmodesRun = packed record
     Labels: TIntegerDynArray;

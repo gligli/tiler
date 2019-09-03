@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, IntfGraphics, FPimage, FPWritePNG, zstream, fgl;
+  correlation, IntfGraphics, FPimage, FPWritePNG, zstream;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -31,10 +31,10 @@ const
   cGamma: array[0..2{YUV,LAB,INV}] of TFloat = (2.0, 2.10, 0.6);
   cDitheringGamma = -1;
   cFTGamma = -1;
-  cFTFromPal = False;
+  cFTFromPal = True;
   cFTQWeighting = True;
   cSmoothingGamma = 2;
-  cReloadedCandidatesCount = 7;
+  cReloadedCandidatesCount = 1;
 
 {$if false}
   cRedMul = 2126;
@@ -70,6 +70,7 @@ const
     10, 58,  6, 54,  9, 57,  5, 53,
     42, 26, 38, 22, 41, 25, 37, 21
   );
+  cDitheringLen = length(cDitheringMap);
 
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 4, 1, 2, 1, 1);
 
@@ -111,6 +112,9 @@ const
   );
 
 type
+  TSpinlock = LongInt;
+  PSpinLock = ^TSpinlock;
+
   PIntegerDynArray = ^TIntegerDynArray;
 
   TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
@@ -131,7 +135,7 @@ type
     CandidateTiles: array[0..cReloadedCandidatesCount - 1] of Integer;
 
     Active: Boolean;
-    UseCount, AveragedCount, TmpIndex: Integer;
+    UseCount, TmpIndex: Integer;
   end;
 
   PTileMapItem = ^TTileMapItem;
@@ -171,16 +175,14 @@ type
 
   PCountIndexArray = ^TCountIndexArray;
 
-  TByteDynArrayList = specialize TFPGList<TByteDynArray>;
-
   TMixingPlan = record
     // static
     LumaPal: array of Integer;
     Y2Palette: array of array[0..3] of Integer;
     Y2MixedColors: Integer;
     // dynamic
-    CacheCS: TRTLCriticalSection;
-    ListCache: TByteDynArrayList;
+    CacheLock: TSpinlock;
+    ListCache: TList;
     CountCache: TIntegerDynArray;
   end;
 
@@ -378,6 +380,30 @@ var
 implementation
 
 {$R *.lfm}
+
+procedure SpinEnter(Lock: PSpinLock); assembler;
+label spin_lock;
+asm
+spin_lock:
+     mov     eax, 1          // Set the EAX register to 1.
+
+     xchg    eax, [Lock]     // Atomically swap the EAX register with the lock variable.
+                             // This will always store 1 to the lock, leaving the previous value in the EAX register.
+
+     test    eax, eax        // Test EAX with itself. Among other things, this will set the processor's Zero Flag if EAX is 0.
+                             // If EAX is 0, then the lock was unlocked and we just locked it.
+                             // Otherwise, EAX is 1 and we didn't acquire the lock.
+
+     jnz     spin_lock       // Jump back to the MOV instruction if the Zero Flag is not set;
+                             // the lock was previously locked, and so we need to spin until it becomes unlocked.
+end;
+
+procedure SpinLeave(Lock: PSpinLock); assembler;
+asm
+    xor     eax, eax        // Set the EAX register to 0.
+
+    xchg    eax, [Lock]     // Atomically swap the EAX register with the lock variable.
+end;
 
 function HasParam(p: String): Boolean;
 var i: Integer;
@@ -1113,10 +1139,10 @@ begin
 
   if not FLowMem then
   begin
-    InitializeCriticalSection(Plan.CacheCS);
+    SpinLeave(@Plan.CacheLock);
     SetLength(Plan.CountCache, 1 shl 24);
     FillDWord(Plan.CountCache[0], 1 shl 24, $ffffffff);
-    Plan.ListCache := TByteDynArrayList.Create;
+    Plan.ListCache := TList.Create;
   end;
 
   for i := 0 to High(pal) do
@@ -1136,10 +1162,13 @@ begin
 end;
 
 procedure TMainForm.TerminatePlan(var Plan: TMixingPlan);
+var
+  i: Integer;
 begin
   if not FLowMem then
   begin
-    DeleteCriticalSection(Plan.CacheCS);
+    for i := 0 to Plan.ListCache.Count - 1 do
+      Freemem(Plan.ListCache[i]);
     Plan.ListCache.Free;
     SetLength(Plan.CountCache, 0);
   end;
@@ -1188,17 +1217,20 @@ var
   VecInv: PCardinal;
   y2pal: PInteger;
   cachePos: Integer;
+  pb: PByte;
 begin
   if not FLowMem then
   begin
+    SpinEnter(@Plan.CacheLock);
     cachePos := Plan.CountCache[col];
-    ReadBarrier;
     if cachePos >= 0 then
     begin
-      Result := Length(Plan.ListCache[cachePos]);
-      Move(Plan.ListCache[cachePos][0], List[0], Result);
+      Result := PByte(Plan.ListCache[cachePos])[0];
+      Move(PByte(Plan.ListCache[cachePos])[1], List[0], Result);
+      SpinLeave(@Plan.CacheLock);
       Exit;
     end;
+    SpinLeave(@Plan.CacheLock);
   end;
 
   FromRGB(col, r, g, b);
@@ -1412,15 +1444,17 @@ begin
 
   if not FLowMem then
   begin
-    EnterCriticalSection(Plan.CacheCS);
+    SpinEnter(@Plan.CacheLock);
     if Plan.CountCache[col] < 0 then
     begin
       cachePos := Plan.ListCache.Count;
-      Plan.ListCache.Add(Copy(List, 0, Result));
-      WriteBarrier;
+      pb := GetMem(Result + 1);
+      pb[0] := Result;
+      Move(List[0], pb[1], Result);
+      Plan.ListCache.Add(pb);
       Plan.CountCache[col] := cachePos;
     end;
-    LeaveCriticalSection(Plan.CacheCS);
+    SpinLeave(@Plan.CacheLock);
   end;
 end;
 
@@ -1441,26 +1475,12 @@ begin
 end;
 
 procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
-const
-  cDitheringLen = length(cDitheringMap);
 var
   index, chosen, c: Integer;
   src : array[0..2] of Byte;
   s, t, e: array[0..2] of Int64;
   least_penalty, penalty: Int64;
-  cachePos: Integer;
 begin
-  if not FLowMem then
-  begin
-    cachePos := Plan.CountCache[col];
-    ReadBarrier;
-    if cachePos >= 0 then
-    begin
-      Move(Plan.ListCache[cachePos][0], List[0], cDitheringLen);
-      Exit;
-    end;
-  end;
-
   FromRGB(col, src[0], src[1], src[2]);
 
   s[0] := src[0];
@@ -1505,19 +1525,6 @@ begin
   end;
 
   QuickSort(List[0], 0, cDitheringLen - 1, SizeOf(Byte), @PlanCompareLuma, @Plan.LumaPal[0]);
-
-  if not FLowMem then
-  begin
-    EnterCriticalSection(Plan.CacheCS);
-    if Plan.CountCache[col] < 0 then
-    begin
-      cachePos := Plan.ListCache.Count;
-      Plan.ListCache.Add(Copy(List, 0, cDitheringLen));
-      WriteBarrier;
-      Plan.CountCache[col] := cachePos;
-    end;
-    LeaveCriticalSection(Plan.CacheCS);
-  end;
 end;
 
 procedure TMainForm.ReframeUI(AWidth, AHeight: Integer);
@@ -1569,24 +1576,65 @@ end;
 
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 var
-  x, y: Integer;
+  col, x, y: Integer;
   count, map_value: Integer;
   list: TByteDynArray;
+  cachePos: Integer;
+  pb: PByte;
 begin
-  SetLength(list, cDitheringListLen);
-
   if FUseThomasKnoll then
   begin
-   for y := 0 to (cTileWidth - 1) do
-     for x := 0 to (cTileWidth - 1) do
-     begin
-       map_value := cDitheringMap[(y shl 3) + x];
-       DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
-       ATile.PalPixels[y, x] := list[map_value];
-     end;
+    SetLength(list, cDitheringLen);
+
+    if FLowMem then
+    begin
+     for y := 0 to (cTileWidth - 1) do
+       for x := 0 to (cTileWidth - 1) do
+       begin
+         map_value := cDitheringMap[(y shl 3) + x];
+         DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
+         ATile.PalPixels[y, x] := list[map_value];
+       end;
+    end
+    else
+    begin
+      for y := 0 to (cTileWidth - 1) do
+        for x := 0 to (cTileWidth - 1) do
+        begin
+          col := ATile.RGBPixels[y, x];
+          map_value := cDitheringMap[(y shl 3) + x];
+          SpinEnter(@Plan.CacheLock);
+          cachePos := Plan.CountCache[col];
+          if cachePos >= 0 then
+          begin
+            ATile.PalPixels[y, x] := PByte(Plan.ListCache[cachePos])[map_value];
+            SpinLeave(@Plan.CacheLock);
+          end
+          else
+          begin
+            SpinLeave(@Plan.CacheLock);
+
+            DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
+            ATile.PalPixels[y, x] := list[map_value];
+
+            SpinEnter(@Plan.CacheLock);
+            if Plan.CountCache[col] < 0 then
+            begin
+              cachePos := Plan.ListCache.Count;
+              pb := GetMem(cDitheringLen);
+              Move(List[0], pb^, cDitheringLen);
+              Plan.ListCache.Add(pb);
+              Plan.CountCache[col] := cachePos;
+            end;
+            SpinLeave(@Plan.CacheLock);
+          end;
+        end;
+    end;
   end
   else
   begin
+    SetLength(list, cDitheringListLen);
+
     for y := 0 to (cTileWidth - 1) do
       for x := 0 to (cTileWidth - 1) do
       begin
@@ -1743,7 +1791,7 @@ begin
 
       Assert(dlPtr - dlInput = dlCnt * 3);
 
-      dl3quant(dlInput, dlCnt, 1, cPaletteCount * cTilePaletteSize, 5, @dlPal);
+      dl3quant(dlInput, dlCnt, 1, cPaletteCount * cTilePaletteSize, min(5, cBitsPerComp), @dlPal);
 
       CMUsage.Count := cPaletteCount * cTilePaletteSize;
       for i := 0 to cPaletteCount * cTilePaletteSize - 1 do
@@ -2277,7 +2325,7 @@ begin
           AFrame^.Tiles[i].PalPixels[ty, tx] := 0;
 
       AFrame^.Tiles[i].Active := True;
-      AFrame^.Tiles[i].AveragedCount := 1;
+      AFrame^.Tiles[i].UseCount := 1;
       AFrame^.Tiles[i].TmpIndex := -1;
     end;
 
@@ -2656,7 +2704,6 @@ procedure TMainForm.CopyTile(const Src: TTile; var Dest: TTile);
 var x,y: Integer;
 begin
   Dest.Active := Src.Active;
-  Dest.AveragedCount := Src.AveragedCount;
   Dest.TmpIndex := Src.TmpIndex;
   Dest.UseCount := Src.UseCount;
 
@@ -2674,6 +2721,9 @@ begin
       Dest.RGBPixels[y, x] := Src.RGBPixels[y, x];
       Dest.PalPixels[y, x] := Src.PalPixels[y, x];
     end;
+
+  for x := 0 to cReloadedCandidatesCount - 1 do
+    Dest.CandidateTiles[x] := Src.CandidateTiles[x];
 end;
 
 procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer;
@@ -2694,7 +2744,7 @@ begin
     if j = BestIdx then
       Continue;
 
-    Inc(FTiles[BestIdx]^.AveragedCount, FTiles[j]^.AveragedCount);
+    Inc(FTiles[BestIdx]^.UseCount, FTiles[j]^.UseCount);
 
     FTiles[j]^.Active := False;
     FTiles[j]^.TmpIndex := BestIdx;
@@ -3052,7 +3102,7 @@ procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset, Centroids: TByteDynArray2;
   Clusters: TIntegerDynArray;
-  i, di, acc, best, StartingPoint, ActualNbTiles: Integer;
+  k, i, di, acc, best, StartingPoint, ActualNbTiles: Integer;
   WasActive: TBooleanDynArray;
   KModes: TKModes;
 
@@ -3128,6 +3178,7 @@ begin
   end;
 
   SetLength(Dataset, di);
+  k := min(DesiredNbTiles, di);
 
   ProgressRedraw(1);
 
@@ -3135,7 +3186,7 @@ begin
 
   KModes := TKModes.Create(0, 0, True);
   try
-    ActualNbTiles := KModes.ComputeKModes(Dataset, DesiredNbTiles, -StartingPoint, cTilePaletteSize, Clusters, Centroids);
+    ActualNbTiles := KModes.ComputeKModes(Dataset, k, -StartingPoint, cTilePaletteSize, Clusters, Centroids);
     Assert(Length(Centroids) = ActualNbTiles);
     Assert(MaxIntValue(Clusters) = ActualNbTiles - 1);
   finally
@@ -3146,7 +3197,7 @@ begin
 
   // for each group, merge the tiles
 
-  ProcThreadPool.DoParallelLocalProc(@DoMerge, 0, DesiredNbTiles - 1);
+  ProcThreadPool.DoParallelLocalProc(@DoMerge, 0, k - 1);
 
   ProgressRedraw(3);
 
@@ -3228,7 +3279,7 @@ var
 
           FTiles[i]^.CandidateTiles[j] := tidx + Length(FTiles);
 
-          Inc(DatasetUse[tidx]);
+          Inc(DatasetUse[tidx], FTiles[i]^.UseCount);
         end;
 
         for j := 0 to cReloadedCandidatesCount - 1 do
