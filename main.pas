@@ -71,7 +71,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 4, 1, 2, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 5, 1, 2, 1, 1);
 
   cQ = 16.0;
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -351,8 +351,8 @@ type
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
-    function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer; out PalSigni: Integer): Integer;
-    procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
+    function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
+    procedure DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
 
     procedure ReloadPreviousTiling(AFN: String);
 
@@ -621,7 +621,7 @@ begin
     dnt := seMaxTiles.Value;
     dnt -= Ord(odd(dnt));
 
-    DoGlobalTiling(dnt, cRandomKModesCount);
+    DoGlobalTiling(edReload.Text, dnt, cRandomKModesCount);
   end;
 
   tbFrameChange(nil);
@@ -662,7 +662,7 @@ var
   end;
 
 begin
-  TilesAtATime := ProcThreadPool.MaxThreadCount * FTileMapSize;
+  TilesAtATime := FTileMapSize * 25;
 
   if Length(FFrames) = 0 then
     Exit;
@@ -913,14 +913,11 @@ begin
   if lastStep >= esDither then
     btnDitherClick(nil);
 
-  if not chkReload.Checked and (lastStep >= esMakeUnique) then
+  if lastStep >= esMakeUnique then
     btnDoMakeUniqueClick(nil);
 
   if lastStep >= esGlobalTiling then
     btnDoGlobalTilingClick(nil);
-
-  if chkReload.Checked and (lastStep >= esMakeUnique) then
-    btnDoMakeUniqueClick(nil);
 
   if lastStep >= esFrameTiling then
     btnDoFrameTilingClick(nil);
@@ -3138,7 +3135,7 @@ function TMainForm.GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Z
 var
   i, x, y: Integer;
   b: Byte;
-  sig: Boolean;
+  signi: Boolean;
   acc: array[0..sqr(cTileWidth)-1] of Byte;
 begin
   FillByte(acc[0], Length(acc), 0);
@@ -3152,88 +3149,124 @@ begin
   Result := 0;
   for i := 0 to ZoneCount - 1 do
   begin
-    sig := acc[i] > (sqr(cTileWidth) div ZoneCount);
-    Zones^ := Ord(sig);
-    if sig then
+    signi := acc[i] > (sqr(cTileWidth) div ZoneCount);
+    Zones^ := Ord(signi);
+    if signi then
       Result := Result or (1 shl i);
     Inc(Zones);
   end;
 end;
 
-function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer; out PalSigni: Integer): Integer;
+function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
 var
-  acc, x, y: Integer;
-  b: Byte;
+  x, y: Integer;
 begin
   Result := 0;
-  acc := 0;
   for y := 0 to cTileWidth - 1 do
     for x := 0 to cTileWidth - 1 do
     begin
-      b :=ATile.PalPixels[y, x];
-      Inc(acc, b);
-      DataLine[Result] := b;
+      DataLine[Result] := ATile.PalPixels[y, x];
       Inc(Result);
     end;
 
   PalSigni := GetTilePalZoneThres(ATile, 16, @DataLine[Result]);
   Inc(Result, 16);
 
-  PxlAccum := acc;
   Assert(Result = cKModesFeatureCount);
 end;
 
-procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
+procedure TMainForm.DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
 var
-  Dataset, Centroids: TByteDynArray2;
-  Clusters: TIntegerDynArray;
-  k, i, di, acc, sig, best, StartingPoint, ActualNbTiles: Integer;
+  Dataset: TByteDynArray2;
+  TileBlockCount, TileBlockSize, ClusterCount: Integer;
   WasActive: TBooleanDynArray;
-  KModes: TKModes;
 
-  procedure DoMerge(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    i, k, di: Integer;
+    KModes: TKModes;
+    LocDS, LocCentroids: TByteDynArray2;
+    LocClusters: TIntegerDynArray;
+    i, j, k, di, binStart, binCnt, acc, best, StartingPoint: Integer;
+    ActualNbTiles: Integer;
     ToMerge: TByteDynArray2;
     ToMergeIdxs: TIntegerDynArray;
     dis: UInt64;
   begin
+    binStart := AIndex * TileBlockSize;
+    binCnt := TileBlockSize;
+    if AIndex >= TileBlockCount - 1 then
+      binCnt :=  Length(Dataset) - binStart;
+
+    SetLength(LocDS, binCnt, cKModesFeatureCount);
+    StartingPoint := -RestartCount;
+    best := MaxInt;
+    for i := 0 to binCnt - 1 do
+    begin
+      Move(Dataset[i + binStart, 0] , LocDS[i, 0], cKModesFeatureCount);
+
+      acc := 0;
+      for j := 0 to cKModesFeatureCount - 1 do
+        acc += LocDS[i, j];
+
+      if acc <= best then
+      begin
+        StartingPoint := i;
+        best := acc;
+      end;
+    end;
+
+    KModes := TKModes.Create((ProcThreadPool.MaxThreadCount - 1) div TileBlockCount + 1, 0, True);
+    try
+      ActualNbTiles := KModes.ComputeKModes(LocDS, ClusterCount, -StartingPoint, cTilePaletteSize, LocClusters, LocCentroids);
+      Assert(Length(LocCentroids) = ActualNbTiles);
+      Assert(MaxIntValue(LocClusters) = ActualNbTiles - 1);
+    finally
+      KModes.Free;
+    end;
+
     ToMerge := nil;
     ToMergeIdxs := nil;
 
     // build a list of this centroid tiles
 
-    di := 0;
-    k := 0;
-    for i := 0 to High(FTiles) do
+    for j := 0 to ClusterCount - 1 do
     begin
-      if not WasActive[i] then
-        Continue;
-
-      if Clusters[k] = AIndex then
+      di := 0;
+      k := 0;
+      for i := 0 to High(FTiles) do
       begin
-        if di >= Length(ToMerge) then
+        if not WasActive[i] then
+          Continue;
+
+        if (k >= binStart) and (k < binStart + binCnt) and (LocClusters[k - binStart] = j) then
         begin
-          SetLength(ToMerge, (Length(ToMerge) + 1) shl 1);
-          SetLength(ToMergeIdxs, Length(ToMerge));
+          if di >= Length(ToMerge) then
+          begin
+            SetLength(ToMerge, (Length(ToMerge) + 1) shl 1);
+            SetLength(ToMergeIdxs, Length(ToMerge));
+          end;
+          ToMerge[di] := LocDS[k - binStart];
+          ToMergeIdxs[di] := i;
+          Inc(di);
         end;
-        ToMerge[di] := Dataset[k];
-        ToMergeIdxs[di] := i;
-        Inc(di);
+
+        Inc(k);
       end;
 
-      Inc(k);
+      // choose a tile from the centroids
+
+      k := GetMinMatchingDissim(ToMerge, LocCentroids[j], di, dis);
+      if di >= 2 then
+        MergeTiles(ToMergeIdxs, di, ToMergeIdxs[k], nil);
+
+      for k := 0 to High(ToMerge) do
+        ToMerge[k] := nil;
     end;
-
-    // choose a tile from the centroids
-
-    k := GetMinMatchingDissim(ToMerge, Centroids[AIndex], di, dis);
-    if di >= 2 then
-      MergeTiles(ToMergeIdxs, di, ToMergeIdxs[k], nil);
   end;
 
 var
   fs: TFileStream;
+  i, di, signi: Integer;
 begin
   SetLength(Dataset, Length(FTiles), cKModesFeatureCount);
   SetLength(WasActive, Length(FTiles));
@@ -3241,9 +3274,7 @@ begin
   // prepare KModes dataset, one line per tile, 64 palette indexes per line
   // also choose KModes starting point
 
-  StartingPoint := -RestartCount; // by default, random starting point
   di := 0;
-  best := MaxInt;
   for i := 0 to High(FTiles) do
   begin
     WasActive[i] := FTiles[i]^.Active;
@@ -3251,44 +3282,39 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    WriteTileDatasetLine(FTiles[i]^, Dataset[di], acc, sig);
-
-    if acc <= best then
-    begin
-      best := acc;
-      StartingPoint := di;
-    end;
+    WriteTileDatasetLine(FTiles[i]^, Dataset[di], signi);
 
     Inc(di);
   end;
 
   SetLength(Dataset, di);
-  k := min(DesiredNbTiles, di);
 
   ProgressRedraw(1);
 
   // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
-  KModes := TKModes.Create(0, 0, True);
-  try
-    ActualNbTiles := KModes.ComputeKModes(Dataset, k, -StartingPoint, cTilePaletteSize, Clusters, Centroids);
-    Assert(Length(Centroids) = ActualNbTiles);
-    Assert(MaxIntValue(Clusters) = ActualNbTiles - 1);
-  finally
-    KModes.Free;
-  end;
+  TileBlockSize := FTileMapSize * 100;
+  TileBlockCount := (di - 1) div TileBlockSize + 1;
+  ClusterCount := (min(DesiredNbTiles, di) - 1) div TileBlockCount + 1;
+  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, TileBlockCount - 1);
 
   ProgressRedraw(2);
 
-  // for each group, merge the tiles
+  // ensure inter block tile unicity
 
-  ProcThreadPool.DoParallelLocalProc(@DoMerge, 0, k - 1);
+  MakeTilesUnique(0, Length(FTiles));
 
   ProgressRedraw(3);
 
+  // put most probable tiles first
+
+  ReindexTiles;
+
+  ProgressRedraw(4);
+
   // save raw tiles
 
-  fs := TFileStream.Create(ExtractFilePath(edOutputDir.Text)+'tiles.gts', fmCreate or fmShareDenyWrite);
+  fs := TFileStream.Create(OutFN, fmCreate or fmShareDenyWrite);
   try
     for i := 0 to High(FTiles) do
       if FTiles[i]^.Active then
@@ -3297,16 +3323,17 @@ begin
     fs.Free;
   end;
 
-  ProgressRedraw(4);
+  ProgressRedraw(5);
 end;
 
 procedure TMainForm.ReloadPreviousTiling(AFN: String);
 var
   SigniDataset: TByteDynArray3;
+  Dataset: TByteDynArray2;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    last, bin, acc, sig, i, tidx: Integer;
+    last, bin, signi, i, tidx: Integer;
     DataLine: TByteDynArray;
     dis: UInt64;
   begin
@@ -3315,15 +3342,23 @@ var
     bin := Length(FTiles) div PtrUInt(AData);
     last := (AIndex + 1) * bin - 1;
     if AIndex >= PtrUInt(AData) - 1 then
-      last := Length(FTiles) - 1;
+      last := High(FTiles);
 
     for i := bin * AIndex to last do
     begin
       if FTiles[i]^.Active then
       begin
-        WriteTileDatasetLine(FTiles[i]^, DataLine, acc, sig);
-        tidx := GetMinMatchingDissim(SigniDataset[sig], DataLine, Length(SigniDataset[sig]), dis);
-        Move(SigniDataset[sig, tidx, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+        WriteTileDatasetLine(FTiles[i]^, DataLine, signi);
+        if Length(SigniDataset[signi]) > 0 then
+        begin
+          tidx := GetMinMatchingDissim(SigniDataset[signi], DataLine, Length(SigniDataset[signi]), dis);
+          Move(SigniDataset[signi, tidx, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+        end
+        else
+        begin
+          tidx := GetMinMatchingDissim(Dataset, DataLine, Length(Dataset), dis);
+          Move(Dataset[tidx, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+        end;
       end;
 
       if i mod 1000 = 0 then
@@ -3332,11 +3367,10 @@ var
   end;
 
 var
-  acc, signi, i, y, x: Integer;
+  signi, i, y, x: Integer;
   fs: TFileStream;
   T: TTile;
   cnt: PtrUInt;
-  Dataset: TByteDynArray2;
   SigniIndices: TIntegerDynArray2;
 begin
   fs := TFileStream.Create(AFN, fmOpenRead or fmShareDenyNone);
@@ -3354,7 +3388,7 @@ begin
         for x := 0 to cTileWidth - 1 do
           T.PalPixels[y, x] := (T.PalPixels[y, x] * cTilePaletteSize) div sqr(cTileWidth);
 
-      WriteTileDatasetLine(T, Dataset[i], acc, signi);
+      WriteTileDatasetLine(T, Dataset[i], signi);
 
       SetLength(SigniIndices[signi], Length(SigniIndices[signi]) + 1);
       SigniIndices[signi][High(SigniIndices[signi])] := i;
@@ -3376,7 +3410,7 @@ begin
     cnt := ProcThreadPool.MaxThreadCount * 10;
     ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, cnt - 1, Pointer(cnt));
 
-    ProgressRedraw(4);
+    ProgressRedraw(5);
   finally
     fs.Free;
   end;
@@ -3446,7 +3480,7 @@ begin
   FormatSettings.DecimalSeparator := '.';
 
 {$ifdef DEBUG}
-  ProcThreadPool.MaxThreadCount := 1;
+  //ProcThreadPool.MaxThreadCount := 1;
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}
