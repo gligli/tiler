@@ -396,9 +396,7 @@ object MainForm: TMainForm
     Top = 212
     Width = 243
     Caption = 'Extended frame tiling palette usage (slow!)'
-    Checked = True
     OnChange = chkTransPaletteChange
-    State = cbChecked
     TabOrder = 11
   end
   object chkUseTK: TCheckBox

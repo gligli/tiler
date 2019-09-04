@@ -34,7 +34,6 @@ const
   cFTFromPal = True;
   cFTQWeighting = True;
   cSmoothingGamma = 2;
-  cReloadedCandidatesCount = 1;
 
 {$if false}
   cRedMul = 2126;
@@ -74,40 +73,40 @@ const
 
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 4, 1, 2, 1, 1);
 
-  cDQw = cLumaDiv * cRGBw / 32;
-  cDCTQuantization: array[0..cColorCpns-1{YRGB}, 0..7, 0..7] of TFloat = (
+  cQ = 16;
+  cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
     (
       // Luma
-      (16, 11, 12, 15,  21,  32,  50,  66),
-      (11, 12, 13, 18,  24,  46,  62,  73),
-      (12, 13, 16, 23,  38,  56,  73,  75),
-      (15, 18, 23, 29,  53,  75,  83,  80),
-      (21, 24, 38, 53,  68,  95, 103,  94),
-      (32, 46, 56, 75,  95, 104, 117,  96),
-      (50, 62, 73, 83, 103, 117, 120, 128),
-      (66, 73, 75, 80,  94,  96, 128, 144)
+      (cQ / 16, cQ / 11, cQ / 12, cQ / 15, cQ /  21, cQ /  32, cQ /  50, cQ /  66),
+      (cQ / 11, cQ / 12, cQ / 13, cQ / 18, cQ /  24, cQ /  46, cQ /  62, cQ /  73),
+      (cQ / 12, cQ / 13, cQ / 16, cQ / 23, cQ /  38, cQ /  56, cQ /  73, cQ /  75),
+      (cQ / 15, cQ / 18, cQ / 23, cQ / 29, cQ /  53, cQ /  75, cQ /  83, cQ /  80),
+      (cQ / 21, cQ / 24, cQ / 38, cQ / 53, cQ /  68, cQ /  95, cQ / 103, cQ /  94),
+      (cQ / 32, cQ / 46, cQ / 56, cQ / 75, cQ /  95, cQ / 104, cQ / 117, cQ /  96),
+      (cQ / 50, cQ / 62, cQ / 73, cQ / 83, cQ / 103, cQ / 117, cQ / 120, cQ / 128),
+      (cQ / 66, cQ / 73, cQ / 75, cQ / 80, cQ /  94, cQ /  96, cQ / 128, cQ / 144)
     ),
     (
       // U, weighted by luma importance
-      (17,  18,  24,  47,  99,  99,  99,  99),
-      (18,  21,  26,  66,  99,  99,  99, 112),
-      (24,  26,  56,  99,  99,  99, 112, 128),
-      (47,  66,  99,  99,  99, 112, 128, 144),
-      (99,  99,  99,  99, 112, 128, 144, 160),
-      (99,  99,  99, 112, 128, 144, 160, 176),
-      (99,  99, 112, 128, 144, 160, 176, 192),
-      (99, 112, 128, 144, 160, 176, 192, 208)
+      (cQ / 17, cQ /  18, cQ /  24, cQ /  47, cQ /  99, cQ /  99, cQ /  99, cQ /  99),
+      (cQ / 18, cQ /  21, cQ /  26, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112),
+      (cQ / 24, cQ /  26, cQ /  56, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128),
+      (cQ / 47, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144),
+      (cQ / 99, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160),
+      (cQ / 99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176),
+      (cQ / 99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192),
+      (cQ / 99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192, cQ / 208)
     ),
     (
       // V, weighted by luma importance
-      (17,  18,  24,  47,  99,  99,  99,  99),
-      (18,  21,  26,  66,  99,  99,  99, 112),
-      (24,  26,  56,  99,  99,  99, 112, 128),
-      (47,  66,  99,  99,  99, 112, 128, 144),
-      (99,  99,  99,  99, 112, 128, 144, 160),
-      (99,  99,  99, 112, 128, 144, 160, 176),
-      (99,  99, 112, 128, 144, 160, 176, 192),
-      (99, 112, 128, 144, 160, 176, 192, 208)
+      (cQ / 17, cQ /  18, cQ /  24, cQ /  47, cQ /  99, cQ /  99, cQ /  99, cQ /  99),
+      (cQ / 18, cQ /  21, cQ /  26, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112),
+      (cQ / 24, cQ /  26, cQ /  56, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128),
+      (cQ / 47, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144),
+      (cQ / 99, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160),
+      (cQ / 99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176),
+      (cQ / 99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192),
+      (cQ / 99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192, cQ / 208)
     )
   );
 
@@ -131,8 +130,6 @@ type
 
     PaletteIndexes: TIntegerDynArray;
     PaletteRGB: TIntegerDynArray;
-
-    CandidateTiles: array[0..cReloadedCandidatesCount - 1] of Integer;
 
     Active: Boolean;
     UseCount, TmpIndex: Integer;
@@ -329,7 +326,7 @@ type
     procedure RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat);
 
     procedure ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HMirror, VMirror: Boolean; GammaCor: Integer;
-      const pal: array of Integer; var DCT: TFloatDynArray);
+      const pal: array of Integer; var DCT: TFloatDynArray); inline;
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -351,10 +348,10 @@ type
 
     function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
     function GetTileGridMedian(const ATile: TTile; other: Boolean; out UseCount: Integer): Integer;
-    procedure GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte);
+    function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
-    function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
+    function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer; out PalSigni: Integer): Integer;
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     procedure ReloadPreviousTiling(AFN: String);
@@ -476,7 +473,7 @@ end;
 var
   gGammaCorLut: array[-1..High(cGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
-  gDCTLut:array[0..cTileWidth - 1, 0..cTileWidth - 1,0..cTileWidth - 1,0..cTileWidth - 1] of TFloat;
+  gDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
   gPalettePattern : array[0 .. cPaletteCount - 1, 0 .. cTilePaletteSize - 1] of TFloat;
 
 procedure InitLuts;
@@ -496,11 +493,15 @@ begin
   for i := 0 to High(gVecInv) do
     gVecInv[i] := iDiv0(1 shl cVecInvWidth, i shr 2);
 
+  i := 0;
   for v := 0 to (cTileWidth - 1) do
     for u := 0 to (cTileWidth - 1) do
       for y := 0 to (cTileWidth - 1) do
         for x := 0 to (cTileWidth - 1) do
-		      gDCTLut[v, u, y, x] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
+        begin
+          gDCTLut[i] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
+          Inc(i);
+        end;
 
   f := 0;
   for i := 0 to cTilePaletteSize - 1 do
@@ -661,7 +662,7 @@ var
   end;
 
 begin
-  TilesAtATime := 12 * FTileMapSize;
+  TilesAtATime := ProcThreadPool.MaxThreadCount * FTileMapSize;
 
   if Length(FFrames) = 0 then
     Exit;
@@ -2039,7 +2040,7 @@ end;
 
 procedure TMainForm.MakeTilesUnique(FirstTileIndex, TileCount: Integer);
 var
-  i, firstSameIdx: Integer;
+  i, pos, firstSameIdx: Integer;
   sortList: TFPList;
   sameIdx: array of Integer;
 
@@ -2065,11 +2066,15 @@ begin
     SetLength(sameIdx, TileCount);
 
     sortList.Count := TileCount;
+    pos := 0;
     for i := 0 to TileCount - 1 do
-    begin
-      sortList[i] := FTiles[i + FirstTileIndex];
-      PTile(sortList[i])^.TmpIndex := i + FirstTileIndex;
-    end;
+      if FTiles[i + FirstTileIndex]^.Active then
+      begin
+        sortList[pos] := FTiles[i + FirstTileIndex];
+        PTile(sortList[pos])^.TmpIndex := i + FirstTileIndex;
+        Inc(pos);
+      end;
+    sortList.Count := pos;
 
     sortList.Sort(@CompareTilePalPixels);
 
@@ -2160,16 +2165,25 @@ begin
 end;
 
 procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HMirror, VMirror: Boolean;
-  GammaCor: Integer; const pal: array of Integer; var DCT: TFloatDynArray);
+  GammaCor: Integer; const pal: array of Integer; var DCT: TFloatDynArray);  inline;
 const
-  cUVRatio: array[0..cTileWidth-1] of TFloat = (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1);
+  cUVRatio: array[0..cTileWidth-1,0..cTileWidth-1] of TFloat = (
+    (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1)
+  );
 var
-  u, v, x, y, xx, yy, di, cpn: Integer;
-  vRatio, z: TFloat;
+  u, v, x, y, xx, yy, cpn: Integer;
+  z: TFloat;
   CpnPixels: array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
-  pCpn, pLut: PFloat;
+  pRatio, pDCT, pCpn, pLut: PFloat;
 
-  procedure ToCpn(col, x, y: Integer);
+  procedure ToCpn(col, x, y: Integer); inline;
   var
     yy, uu, vv: TFloat;
   begin
@@ -2210,38 +2224,106 @@ begin
       end;
   end;
 
-  di := 0;
+  pDCT := @DCT[0];
   for cpn := 0 to cColorCpns - 1 do
-    for v := 0 to (cTileWidth - 1) do
-    begin
-      vRatio := cUVRatio[v];
+  begin
+    pRatio := @cUVRatio[0, 0];
+    pLut := @gDCTLut[0];
 
+    for v := 0 to (cTileWidth - 1) do
       for u := 0 to (cTileWidth - 1) do
       begin
 		    z := 0.0;
+        pCpn := @CpnPixels[cpn, 0, 0];
 
-        for y := 0 to (cTileWidth - 1) do
-        begin
-          pCpn := @CpnPixels[cpn, y, 0];
-          pLut := @gDCTLut[v, u, y, 0];
+        // unroll y by cTileWidth
 
-          // unroll x by cTileWidth
-          z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-          z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-          z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-          z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-          z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-          z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-          z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-          z += pCpn^ * pLut^;
-        end;
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
 
-        DCT[di] := cUVRatio[u] * vRatio * z;
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
 
         if QWeighting then
-           DCT[di] *= 16.0 / cDCTQuantization[cpn, v, u];
+           z *= cDCTQuantization[cpn, v, u];
 
-        Inc(di);
+        pDCT^ := z * pRatio^;
+        Inc(pDCT);
+        Inc(pRatio);
       end;
   end;
 end;
@@ -2721,9 +2803,6 @@ begin
       Dest.RGBPixels[y, x] := Src.RGBPixels[y, x];
       Dest.PalPixels[y, x] := Src.PalPixels[y, x];
     end;
-
-  for x := 0 to cReloadedCandidatesCount - 1 do
-    Dest.CandidateTiles[x] := Src.CandidateTiles[x];
 end;
 
 procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer;
@@ -2781,18 +2860,8 @@ var
   palIdx: Integer;
 
   procedure UseOne(Item: PTileMapItem; palIdx: Integer);
-  var
-    i: Integer;
   begin
-    if FTiles[Item^.GlobalTileIndex]^.CandidateTiles[0] = 0 then
-    begin
-      used[palIdx, Item^.GlobalTileIndex] := True;
-    end
-    else
-    begin
-      for i := 0 to cReloadedCandidatesCount - 1 do
-        used[palIdx, FTiles[Item^.GlobalTileIndex]^.CandidateTiles[i]] := True;
-    end;
+    used[palIdx, Item^.GlobalTileIndex] := True;
   end;
 
 begin
@@ -3055,10 +3124,11 @@ begin
   UseCount := uc;
 end;
 
-procedure TMainForm.GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte);
+function TMainForm.GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
 var
   i, x, y: Integer;
   b: Byte;
+  sig: Boolean;
   acc: array[0..sqr(cTileWidth)-1] of Byte;
 begin
   FillByte(acc[0], Length(acc), 0);
@@ -3069,14 +3139,18 @@ begin
       Inc(acc[b * ZoneCount div sqr(cTileWidth)]);
     end;
 
+  Result := 0;
   for i := 0 to ZoneCount - 1 do
   begin
-    Zones^ := Ord(acc[i] > (sqr(cTileWidth) div ZoneCount));
+    sig := acc[i] > (sqr(cTileWidth) div ZoneCount);
+    Zones^ := Ord(sig);
+    if sig then
+      Result := Result or (1 shl i);
     Inc(Zones);
   end;
 end;
 
-function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer): Integer;
+function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PxlAccum: Integer; out PalSigni: Integer): Integer;
 var
   acc, x, y: Integer;
   b: Byte;
@@ -3092,9 +3166,10 @@ begin
       Inc(Result);
     end;
 
-  GetTilePalZoneThres(ATile, 16, @DataLine[Result]);
+  PalSigni := GetTilePalZoneThres(ATile, 16, @DataLine[Result]);
   Inc(Result, 16);
 
+  PxlAccum := acc;
   Assert(Result = cKModesFeatureCount);
 end;
 
@@ -3102,7 +3177,7 @@ procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   Dataset, Centroids: TByteDynArray2;
   Clusters: TIntegerDynArray;
-  k, i, di, acc, best, StartingPoint, ActualNbTiles: Integer;
+  k, i, di, acc, sig, best, StartingPoint, ActualNbTiles: Integer;
   WasActive: TBooleanDynArray;
   KModes: TKModes;
 
@@ -3166,7 +3241,7 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    WriteTileDatasetLine(FTiles[i]^, Dataset[di], acc);
+    WriteTileDatasetLine(FTiles[i]^, Dataset[di], acc, sig);
 
     if acc <= best then
     begin
@@ -3217,48 +3292,15 @@ end;
 
 procedure TMainForm.ReloadPreviousTiling(AFN: String);
 var
-  DummyDataLine: TByteDynArray;
-  Dataset: TByteDynArray3;
-  DatasetThreads: TIntegerDynArray;
-  DatasetCS: TRTLCriticalSection;
-  DatasetUse: TIntegerDynArray;
+  SigniDataset: TByteDynArray3;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    last, bin, acc, i, j, tidx, didx: Integer;
+    last, bin, acc, sig, i, tidx: Integer;
     DataLine: TByteDynArray;
     dis: UInt64;
-    DatasetOutliers: array[0..cReloadedCandidatesCount-1] of TByteDynArray;
-    DatasetOutliersIdx: array[0..cReloadedCandidatesCount-1] of Integer;
   begin
     SetLength(DataLine, cKModesFeatureCount);
-
-    EnterCriticalSection(DatasetCS);
-
-    tidx := GetCurrentThreadId;
-    didx := -1;
-    for i := 0 to ProcThreadPool.MaxThreadCount - 1  do
-      if DatasetThreads[i] = tidx then
-      begin
-        didx := i;
-        Break;
-      end;
-
-    if didx < 0 then
-    begin
-      for i := 0 to ProcThreadPool.MaxThreadCount - 1  do
-        if DatasetThreads[i] = -1 then
-        begin
-          didx := i;
-          Break;
-        end;
-
-      DatasetThreads[didx] := tidx;
-    end;
-
-    Assert(didx >= 0);
-
-    LeaveCriticalSection(DatasetCS);
 
     bin := Length(FTiles) div PtrUInt(AData);
     last := (AIndex + 1) * bin - 1;
@@ -3266,48 +3308,35 @@ var
       last := Length(FTiles) - 1;
 
     for i := bin * AIndex to last do
+    begin
       if FTiles[i]^.Active then
       begin
-        WriteTileDatasetLine(FTiles[i]^, DataLine, acc);
-
-        for j := 0 to cReloadedCandidatesCount - 1 do
-        begin
-          tidx := GetMinMatchingDissim(Dataset[didx], DataLine, Length(Dataset[0]), dis);
-          DatasetOutliers[j] := Dataset[didx, tidx];
-          DatasetOutliersIdx[j] := tidx;
-          Dataset[didx, tidx] := DummyDataLine;
-
-          FTiles[i]^.CandidateTiles[j] := tidx + Length(FTiles);
-
-          Inc(DatasetUse[tidx], FTiles[i]^.UseCount);
-        end;
-
-        for j := 0 to cReloadedCandidatesCount - 1 do
-          Dataset[didx, DatasetOutliersIdx[j]] := DatasetOutliers[j];
-
-        if i mod 1000 = 0 then
-          WriteLn('Thread: ', didx, #9'TileIdx: ', i);
+        WriteTileDatasetLine(FTiles[i]^, DataLine, acc, sig);
+        tidx := GetMinMatchingDissim(SigniDataset[sig], DataLine, Length(SigniDataset[sig]), dis);
+        Move(SigniDataset[sig, tidx, 0], FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
       end;
+
+      if i mod 1000 = 0 then
+        WriteLn('Thread: ', GetCurrentThreadId, #9'TileIdx: ', i);
+    end;
   end;
 
 var
-  acc, i, j, y, x, prevLen: Integer;
+  acc, signi, i, y, x: Integer;
   fs: TFileStream;
   T: TTile;
-  PT: PTile;
-  last: PtrUInt;
+  cnt: PtrUInt;
+  Dataset: TByteDynArray2;
+  SigniIndices: TIntegerDynArray2;
 begin
   fs := TFileStream.Create(AFN, fmOpenRead or fmShareDenyNone);
   try
     FillChar(T, SizeOf(T), 0);
     T.Active := True;
 
-    SetLength(Dataset, ProcThreadPool.MaxThreadCount, fs.Size div sqr(cTileWidth));
-    SetLength(Dataset[0], fs.Size div sqr(cTileWidth), cKModesFeatureCount);
-    SetLength(DatasetUse, Length(Dataset[0]));
-    SetLength(DatasetThreads, ProcThreadPool.MaxThreadCount);
-    FillDWord(DatasetThreads[0], ProcThreadPool.MaxThreadCount, DWORD(-1));
-    for i := 0 to High(Dataset[0]) do
+    SetLength(SigniIndices, High(Word) + 1, 0);
+    SetLength(Dataset, fs.Size div sqr(cTileWidth), cKModesFeatureCount);
+    for i := 0 to High(Dataset) do
     begin
       fs.ReadBuffer(T.PalPixels[0, 0], SizeOf(TPalPixels));
 
@@ -3315,38 +3344,27 @@ begin
         for x := 0 to cTileWidth - 1 do
           T.PalPixels[y, x] := (T.PalPixels[y, x] * cTilePaletteSize) div sqr(cTileWidth);
 
-      WriteTileDatasetLine(T, Dataset[0, i], acc);
+      WriteTileDatasetLine(T, Dataset[i], acc, signi);
 
-      for j := 1 to High(Dataset) do
-        Dataset[j, i] := Dataset[0, i];
+      SetLength(SigniIndices[signi], Length(SigniIndices[signi]) + 1);
+      SigniIndices[signi][High(SigniIndices[signi])] := i;
     end;
+
+    SetLength(SigniDataset, High(Word) + 1, 0);
+    for signi := 0 to High(Word) do
+      if Length(SigniIndices[signi]) > 0 then
+      begin
+        SetLength(SigniDataset[signi], Length(SigniIndices[signi]));
+        for i := 0 to High(SigniIndices[signi]) do
+          SigniDataset[signi, i] := Dataset[SigniIndices[signi, i]];
+      end;
+
+    SetLength(SigniIndices, 0);
 
     ProgressRedraw(1);
 
-    InitializeCriticalSection(DatasetCS);
-    SetLength(DummyDataLine, cKModesFeatureCount);
-    FillByte(DummyDataLine[0], cKModesFeatureCount, $ff);
-
-    last := ProcThreadPool.MaxThreadCount * 10;
-    ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, i - 1, Pointer(last));
-
-    DeleteCriticalSection(DatasetCS);
-
-    ProgressRedraw(3);
-
-    prevLen := Length(FTiles);
-    SetLength(FTiles, prevLen + Length(Dataset[0]));
-    for i := 0 to High(Dataset[0]) do
-    begin
-      PT := new(PTile);
-      FillChar(PT^, SizeOf(TTile), 0);
-
-      PT^.Active := DatasetUse[i] > 0;
-      PT^.UseCount := DatasetUse[i];
-      Move(Dataset[0, i, 0], PT^.PalPixels[0, 0], sqr(cTileWidth));
-
-      FTiles[i + prevLen] := PT;
-    end;
+    cnt := ProcThreadPool.MaxThreadCount * 10;
+    ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, cnt - 1, Pointer(cnt));
 
     ProgressRedraw(4);
   finally
