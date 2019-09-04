@@ -223,7 +223,7 @@ object MainForm: TMainForm
     Top = 190
     Width = 56
     TabOrder = 10
-    Value = 3
+    Value = 10
   end
   object imgPalette: TImage
     Left = 0

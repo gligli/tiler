@@ -73,7 +73,7 @@ const
 
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 4, 1, 2, 1, 1);
 
-  cQ = 16;
+  cQ = 16.0;
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
     (
       // Luma
@@ -1025,7 +1025,7 @@ procedure TMainForm.btnSmoothClick(Sender: TObject);
   var i: Integer;
   begin
     for i := cSmoothingPrevFrame to High(FFrames) do
-      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 10.0);
+      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 100.0);
   end;
 begin
   if Length(FFrames) = 0 then
@@ -3033,10 +3033,20 @@ begin
 
     if Abs(cmp) <= Strength then
     begin
-      TMI^.GlobalTileIndex := PrevTMI^.GlobalTileIndex;
-      TMI^.HMirror := PrevTMI^.HMirror;
-      TMI^.VMirror := PrevTMI^.VMirror;
-      TMI^.PalIdx := PrevTMI^.PalIdx;
+      if TMI^.GlobalTileIndex >= PrevTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
+      begin
+        TMI^.GlobalTileIndex := PrevTMI^.GlobalTileIndex;
+        TMI^.HMirror := PrevTMI^.HMirror;
+        TMI^.VMirror := PrevTMI^.VMirror;
+        TMI^.PalIdx := PrevTMI^.PalIdx;
+      end
+      else
+      begin
+        PrevTMI^.GlobalTileIndex := TMI^.GlobalTileIndex;
+        PrevTMI^.HMirror := TMI^.HMirror;
+        PrevTMI^.VMirror := TMI^.VMirror;
+        PrevTMI^.PalIdx := TMI^.PalIdx;
+      end;
       TMI^.Smoothed := True;
     end
     else
