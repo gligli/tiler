@@ -19,7 +19,7 @@ const
 
 {$if true}
   cPaletteCount = 32;
-  cBitsPerComp = 7;
+  cBitsPerComp = 8;
   cTilePaletteSize = 32;
 {$else}
   cPaletteCount = 4;
@@ -3429,7 +3429,7 @@ end;
 
 procedure TMainForm.ReindexTiles;
 var
-  i, x, y, cnt: Integer;
+  i, j, x, y, cnt: Integer;
   IdxMap: TIntegerDynArray;
 begin
   cnt := 0;
@@ -3442,11 +3442,16 @@ begin
 
   // pack the global tiles, removing inactive ones
 
-  for i := High(FTiles) - 1 downto 0 do
+  j := 0;
+  for i := 0 to High(FTiles) do
     if not FTiles[i]^.Active then
     begin
-      Dispose(FTiles[i]);
-      Move(FTiles[i + 1], FTiles[i], (Length(FTiles) - 1 - i) * SizeOf(PTile));
+      Dispose(FTiles[i])
+    end
+    else
+    begin
+      FTiles[j] := FTiles[i];
+      Inc(j);
     end;
 
   SetLength(IdxMap, Length(FTiles));
