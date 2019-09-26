@@ -111,6 +111,21 @@ const
   );
 
 type
+  // GliGli's TileMotion commands
+
+  TGTMCommands = ( // 32bit words; bit 31 (MSB) -> 1; bits 24-30 -> command #; bits 0-23 -> data
+    // single word commands (0-63)
+    gtmFrameEnd = 0, // data bit 0 -> keyframe end
+    gtSkipBlock = 1, // data -> linear TMI skip count
+    gtSkipPattern = 2, // data -> skip (0) or no skip (1) for next 24 TMI, MSB first
+    // ...
+    // multi word commands (64-127) (all commands data bits 16..23 -> payload word count; bits 0..15 -> MW arbitrary index)
+    gtLoadPaletteRGBA32 = 64, // data -> RGBA bytes, word aligned; MW arbitrary index = palette #
+    gtSetDimensions = 65, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (word)
+    // ...
+    gtExtendedMW = 127 // data -> custom commands, proprietary extensions, ...; MW arbitrary index = extended command #
+  );
+
   TSpinlock = LongInt;
   PSpinLock = ^TSpinlock;
 
@@ -351,6 +366,7 @@ type
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
+    procedure FinishMergeTiles;
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
     procedure DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
 
@@ -367,6 +383,8 @@ type
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
     procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
+
+    procedure SaveStream(AStream: TStream);
   public
     { public declarations }
   end;
@@ -2088,6 +2106,8 @@ begin
   finally
     sortList.Free;
   end;
+
+  FinishMergeTiles;
 end;
 
 procedure TMainForm.LoadTiles;
@@ -2805,7 +2825,7 @@ end;
 procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer;
   NewTile: PPalPixels);
 var
-  i, j, k: Integer;
+  j, k: Integer;
 begin
   if TileCount <= 0 then
     Exit;
@@ -2828,12 +2848,16 @@ begin
     FillChar(FTiles[j]^.RGBPixels, SizeOf(FTiles[j]^.RGBPixels), 0);
     FillChar(FTiles[j]^.PalPixels, SizeOf(FTiles[j]^.PalPixels), 0);
   end;
+end;
 
+procedure TMainForm.FinishMergeTiles;
+var
+  i, j, k: Integer;
+begin
   for k := 0 to High(FFrames) do
     for j := 0 to (FTileMapHeight - 1) do
         for i := 0 to (FTileMapWidth - 1) do
-          if FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex]^.TmpIndex = BestIdx then
-            FFrames[k].TileMap[j, i].GlobalTileIndex := BestIdx;
+            FFrames[k].TileMap[j, i].GlobalTileIndex := FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex]^.TmpIndex;
 end;
 
 function TMainForm.GetMaxTPF(AKF: PKeyFrame): Integer;
@@ -3300,6 +3324,8 @@ begin
 
   ProgressRedraw(2);
 
+  FinishMergeTiles;
+
   // ensure inter block tile unicity
 
   MakeTilesUnique(0, Length(FTiles));
@@ -3316,6 +3342,7 @@ begin
 
   fs := TFileStream.Create(OutFN, fmCreate or fmShareDenyWrite);
   try
+    fs.WriteByte(cTilePaletteSize);
     for i := 0 to High(FTiles) do
       if FTiles[i]^.Active then
         fs.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
@@ -3372,6 +3399,7 @@ var
   T: TTile;
   cnt: PtrUInt;
   SigniIndices: TIntegerDynArray2;
+  TilingPaletteSize: Integer;
 begin
   fs := TFileStream.Create(AFN, fmOpenRead or fmShareDenyNone);
   try
@@ -3380,13 +3408,18 @@ begin
 
     SetLength(SigniIndices, High(Word) + 1, 0);
     SetLength(Dataset, fs.Size div sqr(cTileWidth), cKModesFeatureCount);
+
+    TilingPaletteSize := sqr(cTileWidth);
+    if fs.Size mod sqr(cTileWidth) <> 0 then
+      TilingPaletteSize := fs.ReadByte;
+
     for i := 0 to High(Dataset) do
     begin
       fs.ReadBuffer(T.PalPixels[0, 0], SizeOf(TPalPixels));
 
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
-          T.PalPixels[y, x] := (T.PalPixels[y, x] * cTilePaletteSize) div sqr(cTileWidth);
+          T.PalPixels[y, x] := (T.PalPixels[y, x] * cTilePaletteSize) div TilingPaletteSize;
 
       WriteTileDatasetLine(T, Dataset[i], signi);
 
@@ -3471,6 +3504,57 @@ begin
     for y := 0 to (FTileMapHeight - 1) do
       for x := 0 to (FTileMapWidth - 1) do
         FFrames[i].TileMap[y,x].GlobalTileIndex := IdxMap[FFrames[i].TileMap[y,x].GlobalTileIndex];
+end;
+
+procedure TMainForm.SaveStream(AStream: TStream);
+
+  procedure DoTMI(PalIdx: Integer; TileIdx: Integer; VMirror, HMirror: Boolean);
+  var
+    v: Cardinal;
+  begin
+    assert(TileIdx < (1 shl 22));
+    assert(PalIdx < (1 shl 7));
+    v := (TileIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror);
+    AStream.WriteDWord(v);
+  end;
+
+  procedure DoCmd(PalIdx: Integer; TileIdx: Integer);
+  var
+    v: Cardinal;
+  begin
+    assert(TileIdx < (1 shl 24));
+    assert(PalIdx < (1 shl 7));
+    v := TileIdx or (PalIdx shl 24) or (1 shl 31);
+    AStream.WriteDWord(v);
+  end;
+
+var
+  kf, fri, x, y: Integer;
+  frm: PFrame;
+  tmi: PTileMapItem;
+  ZStream: Tcompressionstream;
+begin
+  ZStream := Tcompressionstream.create(clmax, AStream);
+  try
+    for kf := 0 to High(FKeyFrames) do
+    begin
+      for fri := FKeyFrames[kf].StartFrame to FKeyFrames[kf].EndFrame do
+      begin
+        frm := @FFrames[fri];
+
+        for y := 0 to FTileMapHeight - 1 do
+          for x := 0 to FTileMapWidth - 1 do
+          begin
+            tmi := @frm^.TileMap[y, x];
+            DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
+          end;
+
+        ZStream.flush;
+      end;
+    end;
+  finally
+    ZStream.Free;
+  end;
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
