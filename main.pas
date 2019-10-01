@@ -3239,7 +3239,7 @@ var
       end;
     end;
 
-    KModes := TKModes.Create((ProcThreadPool.MaxThreadCount - 1) div TileBlockCount + 1, 0, True);
+    KModes := TKModes.Create(min(1, TileBlockCount - 1), 0, True);
     try
       ActualNbTiles := KModes.ComputeKModes(LocDS, ClusterCount, -StartingPoint, cTilePaletteSize, LocClusters, LocCentroids);
       Assert(Length(LocCentroids) = ActualNbTiles);
@@ -3248,8 +3248,8 @@ var
       KModes.Free;
     end;
 
-    ToMerge := nil;
-    ToMergeIdxs := nil;
+    SetLength(ToMerge, binCnt);
+    SetLength(ToMergeIdxs, binCnt);
 
     // build a list of this centroid tiles
 
@@ -3257,18 +3257,13 @@ var
     begin
       di := 0;
       k := 0;
-      for i := 0 to High(FTiles) do
+      for i := 0 to High(WasActive) do
       begin
         if not WasActive[i] then
           Continue;
 
         if (k >= binStart) and (k < binStart + binCnt) and (LocClusters[k - binStart] = j) then
         begin
-          if di >= Length(ToMerge) then
-          begin
-            SetLength(ToMerge, (Length(ToMerge) + 1) shl 1);
-            SetLength(ToMergeIdxs, Length(ToMerge));
-          end;
           ToMerge[di] := LocDS[k - binStart];
           ToMergeIdxs[di] := i;
           Inc(di);
@@ -3282,9 +3277,6 @@ var
       k := GetMinMatchingDissim(ToMerge, LocCentroids[j], di, dis);
       if di >= 2 then
         MergeTiles(ToMergeIdxs, di, ToMergeIdxs[k], nil);
-
-      for k := 0 to High(ToMerge) do
-        ToMerge[k] := nil;
     end;
   end;
 

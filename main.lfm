@@ -268,10 +268,10 @@ object MainForm: TMainForm
     TabOrder = 24
   end
   object seMaxTiles: TSpinEdit
-    Left = 206
+    Left = 172
     Height = 21
     Top = 168
-    Width = 56
+    Width = 90
     MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
     TabOrder = 8

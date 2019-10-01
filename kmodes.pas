@@ -667,26 +667,27 @@ var
   end;
 {$else}
 
-{$if False}
-  begin
-    UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
-  end;
-{$else}
   const
     cBinSize = 524288;
   var
     UMD: TUMD;
   begin
-    UMD.NumBins := (NumPoints - 1) div cBinSize + 1;
-    UMD.NumPoints := NumPoints;
-    UMD.BinSize := min(NumPoints, cBinSize);
-    UMD.icenter := icenter;
-    UMD.mindistance := mindistance;
-    UMD.used := used;
-    UMD.X := X;
-    ProcThreadPool.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, NumThreads);
+    if NumThreads <= 1 then
+    begin
+      UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
+    end
+    else
+    begin
+      UMD.NumBins := (NumPoints - 1) div cBinSize + 1;
+      UMD.NumPoints := NumPoints;
+      UMD.BinSize := min(NumPoints, cBinSize);
+      UMD.icenter := icenter;
+      UMD.mindistance := mindistance;
+      UMD.used := used;
+      UMD.X := X;
+      ProcThreadPool.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, NumThreads);
+    end;
   end;
-{$endif}
 
 {$endif}
 
@@ -807,7 +808,15 @@ begin
   begin
     last := min((bin + 1) * cBinSize, NumPoints) - 1;
 
-    ProcThreadPool.DoParallel(@DoGMMD, bin * cBinSize, last, @GMMD, NumThreads);
+    if NumThreads <= 1 then
+    begin
+      for ipoint := bin * cBinSize to last do
+        clust[ipoint] := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis[ipoint]);
+    end
+    else
+    begin
+      ProcThreadPool.DoParallel(@DoGMMD, bin * cBinSize, last, @GMMD, NumThreads);
+    end;
 
     for ipoint := bin * cBinSize to last do
     begin
@@ -851,7 +860,7 @@ var
   all: array of TKmodesRun;
 var
   i, j, init_no, iattr, ipoint, ik, summemb, itr, moves, totalmoves: Integer;
-  best: UInt64;
+  best, dis: UInt64;
   converged: Boolean;
   cost, ncost: UInt64;
   InvGoldenRatio, GRAcc: Single;
@@ -911,11 +920,20 @@ begin
       for i := 0 to NumAttrs - 1 do
         FillDWord(cl_attr_freq[j, i, 0], ANumModalities, 0);
 
-    GMMD.clust := membship;
-    GMMD.dis := nil;
-    GMMD.X := X;
-    GMMD.centroids := centroids;
-    ProcThreadPool.DoParallel(@DoGMMD, 0, NumPoints - 1, @GMMD, NumThreads);
+
+    if NumThreads <= 1 then
+    begin
+      for ipoint := 0 to NumPoints - 1 do
+        membship[ipoint] := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
+    end
+    else
+    begin
+      GMMD.clust := membship;
+      GMMD.dis := nil;
+      GMMD.X := X;
+      GMMD.centroids := centroids;
+      ProcThreadPool.DoParallel(@DoGMMD, 0, NumPoints - 1, @GMMD, NumThreads);
+    end;
 
     for ipoint := 0 to NumPoints - 1 do
       for iattr := 0 to NumAttrs - 1 do
