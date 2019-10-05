@@ -438,7 +438,7 @@ object MainForm: TMainForm
     Top = 52
     Width = 232
     TabOrder = 3
-    Text = 'C:\tiler_misc\stills_tiled\tiles.gts'
+    Text = 'C:\tiler_misc\stills3_tiled\tiles.gts'
   end
   object chkLowMem: TCheckBox
     Left = 8

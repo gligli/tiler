@@ -147,7 +147,7 @@ type
     PaletteRGB: TIntegerDynArray;
 
     Active: Boolean;
-    UseCount, TmpIndex: Integer;
+    UseCount, TmpIndex, MergeIndex: Integer;
   end;
 
   PTileMapItem = ^TTileMapItem;
@@ -366,6 +366,7 @@ type
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
+    procedure InitMergeTiles;
     procedure FinishMergeTiles;
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
     procedure DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
@@ -891,29 +892,33 @@ begin
 end;
 
 procedure TMainForm.btnReindexClick(Sender: TObject);
-
-  procedure DoPruneUnusedTiles(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    if FTiles[AIndex]^.Active then
-    begin
-      FTiles[AIndex]^.UseCount := GetTileUseCount(AIndex);
-      FTiles[AIndex]^.Active := FTiles[AIndex]^.UseCount <> 0;
-    end
-    else
-    begin
-      FTiles[AIndex]^.UseCount := 0;
-    end;
-  end;
-
+var
+  i, sx, sy, tidx: Integer;
 begin
   if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(-1, esReindex);
 
-  ProcThreadPool.DoParallelLocalProc(@DoPruneUnusedTiles, 0, High(FTiles));
+  for i := 0 to High(FTiles) do
+  begin
+    FTiles[i]^.UseCount := 0;
+    FTiles[i]^.Active := False;
+  end;
+
+  for i := 0 to High(FFrames) do
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
+      begin
+        tidx := FFrames[i].TileMap[sy, sx].GlobalTileIndex;
+        Inc(FTiles[tidx]^.UseCount);
+        FTiles[tidx]^.Active := True;
+      end;
+
   ProgressRedraw(1);
+
   ReindexTiles;
+
   ProgressRedraw(2);
 
   tbFrameChange(nil);
@@ -2073,6 +2078,8 @@ var
   end;
 
 begin
+  InitMergeTiles;
+
   sortList := TFPList.Create;
   try
 
@@ -2426,6 +2433,7 @@ begin
       AFrame^.Tiles[i].Active := True;
       AFrame^.Tiles[i].UseCount := 1;
       AFrame^.Tiles[i].TmpIndex := -1;
+      AFrame^.Tiles[i].MergeIndex := -1;
     end;
 
   finally
@@ -2804,6 +2812,7 @@ var x,y: Integer;
 begin
   Dest.Active := Src.Active;
   Dest.TmpIndex := Src.TmpIndex;
+  Dest.MergeIndex := Src.MergeIndex;
   Dest.UseCount := Src.UseCount;
 
   SetLength(Dest.PaletteIndexes, Length(Src.PaletteIndexes));
@@ -2843,21 +2852,33 @@ begin
     Inc(FTiles[BestIdx]^.UseCount, FTiles[j]^.UseCount);
 
     FTiles[j]^.Active := False;
-    FTiles[j]^.TmpIndex := BestIdx;
+    FTiles[j]^.MergeIndex := BestIdx;
 
     FillChar(FTiles[j]^.RGBPixels, SizeOf(FTiles[j]^.RGBPixels), 0);
     FillChar(FTiles[j]^.PalPixels, SizeOf(FTiles[j]^.PalPixels), 0);
   end;
 end;
 
+procedure TMainForm.InitMergeTiles;
+var
+  i: Integer;
+begin
+  for i := 0 to High(FTiles) do
+    FTiles[i]^.MergeIndex := -1;
+end;
+
 procedure TMainForm.FinishMergeTiles;
 var
-  i, j, k: Integer;
+  i, j, k, idx: Integer;
 begin
   for k := 0 to High(FFrames) do
     for j := 0 to (FTileMapHeight - 1) do
-        for i := 0 to (FTileMapWidth - 1) do
-            FFrames[k].TileMap[j, i].GlobalTileIndex := FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex]^.TmpIndex;
+      for i := 0 to (FTileMapWidth - 1) do
+      begin
+        idx := FTiles[FFrames[k].TileMap[j, i].GlobalTileIndex]^.MergeIndex;
+        if idx >= 0 then
+          FFrames[k].TileMap[j, i].GlobalTileIndex := idx;
+      end;
 end;
 
 function TMainForm.GetMaxTPF(AKF: PKeyFrame): Integer;
@@ -3031,6 +3052,9 @@ var
   Tile_, PrevTile: TTile;
   TileDCT, PrevTileDCT: TFloatDynArray;
 begin
+  if AFrame^.KeyFrame <> APrevFrame^.KeyFrame then
+    Exit;
+
   SetLength(PrevTileDCT, cTileDCTSize);
   SetLength(TileDCT, cTileDCTSize);
 
@@ -3305,6 +3329,8 @@ begin
 
   SetLength(Dataset, di);
 
+  InitMergeTiles;
+
   ProgressRedraw(1);
 
   // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
@@ -3380,7 +3406,7 @@ var
         end;
       end;
 
-      if i mod 1000 = 0 then
+      if i mod 10000 = 0 then
         WriteLn('Thread: ', GetCurrentThreadId, #9'TileIdx: ', i);
     end;
   end;
