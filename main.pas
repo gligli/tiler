@@ -3461,6 +3461,10 @@ begin
     cnt := ProcThreadPool.MaxThreadCount * 10;
     ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, cnt - 1, Pointer(cnt));
 
+    ProgressRedraw(4);
+
+    MakeTilesUnique(0, Length(FTiles));
+
     ProgressRedraw(5);
   finally
     fs.Free;
