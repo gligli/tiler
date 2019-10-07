@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, IntfGraphics, FPimage, FPWritePNG, zstream;
+  correlation, IntfGraphics, FPimage, FPWritePNG, zbase, zdeflate, zstream;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -71,7 +71,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 5, 1, 2, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 5, 1, 2, 1, 2);
 
   cQ = 16.0;
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -113,7 +113,7 @@ const
 type
   // GliGli's TileMotion commands
 
-  TGTMCommands = ( // 32bit words; bit 31 (MSB) -> 1; bits 24-30 -> command #; bits 0-23 -> data
+  TGTMCommand = ( // 32bit words; bit 31 (MSB) -> 1; bits 24-30 -> command #; bits 0-23 -> data
     // single word commands (0-63)
     gtmFrameEnd = 0, // data bit 0 -> keyframe end
     gtSkipBlock = 1, // data -> linear TMI skip count
@@ -139,7 +139,7 @@ type
   TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
   PPalPixels = ^TPalPixels;
 
-  TTile = record
+  TTile = record // /!\ update CopyTile each time this structure is changed /!\
     RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
     PalPixels: TPalPixels;
 
@@ -147,7 +147,7 @@ type
     PaletteRGB: TIntegerDynArray;
 
     Active: Boolean;
-    UseCount, TmpIndex, MergeIndex: Integer;
+    UseCount, TmpIndex, MergeIndex, OriginalReloadedIndex: Integer;
   end;
 
   PTileMapItem = ^TTileMapItem;
@@ -446,7 +446,7 @@ begin
   idx := ParamStart(p);
   if idx < 0 then
     Exit(def);
-  Result := StrToFloatDef(copy(ParamStr(idx), Length(p) + 1), def);
+  Result := StrToFloatDef(system.copy(ParamStr(idx), Length(p) + 1), def);
 end;
 
 procedure Exchange(var a, b: Integer);
@@ -1003,6 +1003,7 @@ end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
 var
+  fs: TFileStream;
   i: Integer;
   palPict: TPortableNetworkGraphic;
 begin
@@ -1010,6 +1011,15 @@ begin
     Exit;
 
   ProgressRedraw(-1, esSave);
+
+  fs := TFileStream.Create(ExtractFilePath(Format(edOutputDir.Text, [i])) + 'stream.gtm', fmCreate or fmShareDenyWrite);
+  try
+    SaveStream(fs);
+  finally
+    fs.Free;
+  end;
+
+  ProgressRedraw(1);
 
 {$if cTilePaletteSize * cPaletteCount <= 256}
   if chkDithered.Checked and Assigned(FKeyFrames[0].PaletteRGB[0]) then
@@ -1035,7 +1045,7 @@ begin
     palPict.Free;
   end;
 
-  ProgressRedraw(1);
+  ProgressRedraw(2);
 
   tbFrameChange(nil);
 end;
@@ -2021,8 +2031,8 @@ begin
       CopyTile(BestTile, AFrame^.Tiles[sx + sy * FTileMapWidth]);
 
       AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
-      AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
-      AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
+      AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := system.Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
+      AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
       SetLength(BestTile.PaletteIndexes, 0);
       SetLength(BestTile.PaletteRGB, 0);
       OrigTile^ := BestTile;
@@ -2814,6 +2824,7 @@ begin
   Dest.TmpIndex := Src.TmpIndex;
   Dest.MergeIndex := Src.MergeIndex;
   Dest.UseCount := Src.UseCount;
+  Dest.OriginalReloadedIndex := Src.OriginalReloadedIndex;
 
   SetLength(Dest.PaletteIndexes, Length(Src.PaletteIndexes));
   SetLength(Dest.PaletteRGB, Length(Src.PaletteRGB));
@@ -3033,7 +3044,7 @@ begin
 
   MaxTPF := max(MaxTPF, TPF);
 
-  DebugLn(['KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft]);
+  //DebugLn(['KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft]);
 
   EnterCriticalSection(AFrame^.KeyFrame^.CS);
   Dec(AFrame^.KeyFrame^.FramesLeft);
@@ -3530,6 +3541,24 @@ end;
 
 procedure TMainForm.SaveStream(AStream: TStream);
 
+const
+  CMaxBufSize = 2 * 1024 * 1024;
+  CMinKFFrameCount = 72;
+
+var
+  ZStream: z_stream;
+
+  procedure DoDWord(v: Cardinal);
+  var
+    err: Integer;
+  begin
+    ZStream.next_in := @v;
+    ZStream.avail_in := SizeOf(v);
+    err := deflate(ZStream, Z_NO_FLUSH);
+    if err <> Z_OK then
+      raise Ecompressionerror.create(zerror(err));
+  end;
+
   procedure DoTMI(PalIdx: Integer; TileIdx: Integer; VMirror, HMirror: Boolean);
   var
     v: Cardinal;
@@ -3537,27 +3566,39 @@ procedure TMainForm.SaveStream(AStream: TStream);
     assert(TileIdx < (1 shl 22));
     assert(PalIdx < (1 shl 7));
     v := (TileIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror);
-    AStream.WriteDWord(v);
+    DoDWord(v);
   end;
 
-  procedure DoCmd(PalIdx: Integer; TileIdx: Integer);
+  procedure DoCmd(Cmd: TGTMCommand; Data: Integer);
   var
     v: Cardinal;
   begin
-    assert(TileIdx < (1 shl 24));
-    assert(PalIdx < (1 shl 7));
-    v := TileIdx or (PalIdx shl 24) or (1 shl 31);
-    AStream.WriteDWord(v);
+    assert(Data < (1 shl 24));
+    assert(Ord(Cmd) < (1 shl 7));
+    v := Data or (Ord(Cmd) shl 24) or (1 shl 31);
+    DoDWord(v);
   end;
 
 var
-  kf, fri, x, y: Integer;
+  ZBuf: PByte;
+  StartPos, StreamSize, LastKF, KFCount, KFSize, kf, fri, x, y, err: Integer;
+  IsKF: Boolean;
   frm: PFrame;
   tmi: PTileMapItem;
-  ZStream: Tcompressionstream;
 begin
-  ZStream := Tcompressionstream.create(clmax, AStream);
+  StartPos := AStream.Position;
+
+  ZBuf := AllocMem(CMaxBufSize);
   try
+    ZStream.next_out := ZBuf;
+    ZStream.avail_out := CMaxBufSize;
+
+    err:=deflateInit2(ZStream, Z_BEST_COMPRESSION, Z_DEFLATED, -MAX_WBITS, MAX_MEM_LEVEL, Z_FILTERED);
+    if err<>Z_OK then
+      raise Ecompressionerror.create(zerror(err));
+
+    LastKF := 0;
+
     for kf := 0 to High(FKeyFrames) do
     begin
       for fri := FKeyFrames[kf].StartFrame to FKeyFrames[kf].EndFrame do
@@ -3571,12 +3612,37 @@ begin
             DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
           end;
 
-        ZStream.flush;
+        IsKF := (fri = FKeyFrames[kf].EndFrame) and ((FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (kf = High(FKeyFrames)) or (ZStream.avail_out < CMaxBufSize div 2));
+
+        DoCmd(gtmFrameEnd, Ord(IsKF));
+
+        if IsKF then
+        begin
+           ZStream.next_in := nil;
+           ZStream.avail_in := 0;
+           err := deflate(ZStream, Z_FULL_FLUSH);
+           if err <> Z_OK then
+             raise Ecompressionerror.create(zerror(err));
+
+          KFSize := CMaxBufSize - ZStream.avail_out;
+          KFCount := FKeyFrames[kf].EndFrame - LastKF + 1;
+          LastKF := FKeyFrames[kf].EndFrame + 1;
+
+          AStream.Write(ZBuf^, KFSize);
+
+          deflateReset(ZStream);
+
+          WriteLn('KF: ', kf, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
+        end;
       end;
     end;
   finally
-    ZStream.Free;
+    deflateEnd(ZStream);
+    Freemem(ZBuf);
   end;
+
+  StreamSize := AStream.Position - StartPos;
+  WriteLn('Written: ', StreamSize, #9'Bitrate: ', FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames)) + ' kbpf  '#9'(' + FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames) * 24.0)+' kbps)');
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
