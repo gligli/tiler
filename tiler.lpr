@@ -7,7 +7,7 @@ uses
   cthreads,
   {$ENDIF}{$ENDIF}
   Interfaces, // this includes the LCL widgetset
-  Forms, main, kmodes, extern, sysutils, LCLType, Controls;
+  Forms, main, kmodes, extern, sysutils, LCLType, Controls, typinfo;
 
 {$R *.res}
 
@@ -20,9 +20,22 @@ TEvtHolder = class
 end;
 
 procedure TEvtHolder.AppException(Sender: TObject; E: Exception);
+var
+  I: Integer;
+  Frames: PPointer;
+  Report: string;
 begin
-  Screen.Cursor := crDefault;
-  TApplication(Sender).MessageBox(PChar(Format('Exception %s was thwrown:' + sLineBreak + '%s' + sLineBreak, [e.ClassName, e.Message])), PChar(Application.Title), MB_ICONERROR);
+  Report := 'Program exception! ' + LineEnding +
+    'Stacktrace:' + LineEnding + LineEnding;
+  if E <> nil then begin
+    Report := Report + 'Exception class: ' + E.ClassName + LineEnding +
+    'Message: ' + E.Message + LineEnding;
+  end;
+  Report := Report + BackTraceStrFunc(ExceptAddr);
+  Frames := ExceptFrames;
+  for I := 0 to ExceptFrameCount - 1 do
+    Report := Report + LineEnding + BackTraceStrFunc(Frames[I]);
+  TApplication(Sender).MessageBox(PChar(Report), PChar(Application.Title), MB_ICONERROR);
 end;
 
 var
