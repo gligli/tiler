@@ -18,9 +18,9 @@ const
   // tweakable constants
 
 {$if true}
-  cPaletteCount = 64;
-  cBitsPerComp = 8;
-  cTilePaletteSize = 32;
+  cPaletteCount = 32;
+  cBitsPerComp = 6;
+  cTilePaletteSize = 16;
 {$else}
   cPaletteCount = 4;
   cBitsPerComp = 3;
@@ -33,7 +33,7 @@ const
   cFTGamma = -1;
   cFTFromPal = True;
   cFTQWeighting = True;
-  cSmoothingGamma = -1;
+  cSmoothingGamma = 2;
 
 {$if false}
   cRedMul = 2126;
