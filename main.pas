@@ -33,7 +33,7 @@ const
   cFTGamma = -1;
   cFTFromPal = True;
   cFTQWeighting = True;
-  cSmoothingGamma = 2;
+  cSmoothingGamma = -1;
 
 {$if false}
   cRedMul = 2126;
@@ -274,13 +274,13 @@ type
     sedPalIdx: TSpinEdit;
     seStartFrame: TSpinEdit;
     seMaxTiles: TSpinEdit;
-    seTempoSmoo: TSpinEdit;
     sePage: TSpinEdit;
     IdleTimer: TIdleTimer;
     imgTiles: TImage;
     imgSource: TImage;
     imgDest: TImage;
     seFrameCount: TSpinEdit;
+    seTempoSmoo: TFloatSpinEdit;
     tbFrame: TTrackBar;
 
     procedure btnLoadClick(Sender: TObject);
@@ -1061,7 +1061,7 @@ procedure TMainForm.btnSmoothClick(Sender: TObject);
   var i: Integer;
   begin
     for i := cSmoothingPrevFrame to High(FFrames) do
-      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 100.0);
+      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 1000.0);
   end;
 begin
   if Length(FFrames) = 0 then
@@ -2004,12 +2004,12 @@ begin
       CMPal.Clear;
 
       for i := 0 to cTilePaletteSize - 1 do
-        CMPal.Add(CMUsage[i * cTilePaletteSize + PalIdx]);
+        CMPal.Add(CMUsage[round(gPalettePattern[i, PalIdx] * (CMUsage.Count - 1))]);
 
       CMPal.Sort(@CompareCMULHS);
 
       for i := 0 to cTilePaletteSize - 1 do
-        AKeyFrame^.PaletteIndexes[i + cTilePaletteSize, PalIdx] := PCountIndexArray(CMPal[i])^.Index;
+        AKeyFrame^.PaletteIndexes[PalIdx + cTilePaletteSize, i] := PCountIndexArray(CMPal[i])^.Index;
     end;
 
     QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cTilePaletteSize - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);

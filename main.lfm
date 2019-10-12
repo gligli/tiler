@@ -27,7 +27,7 @@ object MainForm: TMainForm
     Width = 147
     ItemHeight = 13
     Style = csDropDownList
-    TabOrder = 16
+    TabOrder = 15
   end
   object pbProgress: TProgressBar
     Left = 4
@@ -35,7 +35,7 @@ object MainForm: TMainForm
     Top = 316
     Width = 273
     Smooth = True
-    TabOrder = 17
+    TabOrder = 16
   end
   object imgSource: TImage
     Left = 320
@@ -76,7 +76,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 25
+    TabOrder = 24
   end
   object chkPlay: TCheckBox
     Left = 288
@@ -85,7 +85,7 @@ object MainForm: TMainForm
     Width = 40
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 19
+    TabOrder = 18
   end
   object lblTileCount: TLabel
     Left = 8
@@ -105,7 +105,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 20
+    TabOrder = 19
   end
   object Label2: TLabel
     Left = 8
@@ -156,7 +156,7 @@ object MainForm: TMainForm
     Caption = 'Run (F10)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 15
+    TabOrder = 14
   end
   object sePage: TSpinEdit
     Left = 264
@@ -165,7 +165,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 18
+    TabOrder = 17
   end
   object Label6: TLabel
     Left = 232
@@ -217,14 +217,6 @@ object MainForm: TMainForm
     Caption = 'Temporal smoothing strength'
     ParentColor = False
   end
-  object seTempoSmoo: TSpinEdit
-    Left = 263
-    Height = 21
-    Top = 190
-    Width = 56
-    TabOrder = 10
-    Value = 10
-  end
   object imgPalette: TImage
     Left = 0
     Height = 64
@@ -244,7 +236,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 22
+    TabOrder = 21
   end
   object lblPct: TLabel
     Left = 277
@@ -265,7 +257,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 24
+    TabOrder = 23
   end
   object seMaxTiles: TSpinEdit
     Left = 172
@@ -287,7 +279,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 21
+    TabOrder = 20
   end
   object lblCorrel: TLabel
     Left = 885
@@ -343,7 +335,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     MinValue = -1
     OnChange = tbFrameChange
-    TabOrder = 23
+    TabOrder = 22
     Value = -1
   end
   object Label8: TLabel
@@ -397,7 +389,7 @@ object MainForm: TMainForm
     Width = 239
     Caption = 'Extended frame tiling palette usage (slow!)'
     OnChange = chkTransPaletteChange
-    TabOrder = 11
+    TabOrder = 10
   end
   object chkUseTK: TCheckBox
     Left = 8
@@ -408,7 +400,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = chkUseTKChange
     State = cbChecked
-    TabOrder = 13
+    TabOrder = 12
   end
   object chkUseDL3: TCheckBox
     Left = 8
@@ -419,7 +411,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = chkUseDL3Change
     State = cbChecked
-    TabOrder = 12
+    TabOrder = 11
   end
   object chkReload: TCheckBox
     Left = 8
@@ -427,9 +419,7 @@ object MainForm: TMainForm
     Top = 53
     Width = 80
     Caption = 'Reload tiles'
-    Checked = True
     OnChange = chkUseTKChange
-    State = cbChecked
     TabOrder = 2
   end
   object edReload: TEdit
@@ -447,7 +437,18 @@ object MainForm: TMainForm
     Width = 112
     Caption = 'Lower RAM usage'
     OnChange = chkLowMemChange
-    TabOrder = 14
+    TabOrder = 13
+  end
+  object seTempoSmoo: TFloatSpinEdit
+    Left = 263
+    Height = 21
+    Top = 190
+    Width = 56
+    Increment = 2.5
+    MaxValue = 1000
+    MinValue = 0
+    TabOrder = 25
+    Value = 50
   end
   object IdleTimer: TIdleTimer
     Interval = 42
