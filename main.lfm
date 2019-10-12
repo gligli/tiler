@@ -21,10 +21,10 @@ object MainForm: TMainForm
   LCLVersion = '2.0.4.0'
   WindowState = wsMaximized
   object cbxStep: TComboBox
-    Left = 138
+    Left = 172
     Height = 21
     Top = 289
-    Width = 113
+    Width = 147
     ItemHeight = 13
     Style = csDropDownList
     TabOrder = 16
@@ -91,7 +91,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 15
     Top = 340
-    Width = 157
+    Width = 220
     AutoSize = False
     ParentColor = False
   end
@@ -168,11 +168,11 @@ object MainForm: TMainForm
     TabOrder = 18
   end
   object Label6: TLabel
-    Left = 180
+    Left = 232
     Height = 13
-    Top = 341
-    Width = 77
-    Caption = 'Show tile page'
+    Top = 339
+    Width = 25
+    Caption = 'Page'
     ParentColor = False
   end
   object Label7: TLabel
@@ -356,11 +356,11 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label12: TLabel
-    Left = 81
+    Left = 88
     Height = 13
     Top = 292
-    Width = 53
-    Caption = 'up to step'
+    Width = 77
+    Caption = 'Run up to step'
     ParentColor = False
   end
   object sePalVAR: TFloatSpinEdit

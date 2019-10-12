@@ -18,7 +18,7 @@ const
   // tweakable constants
 
 {$if true}
-  cPaletteCount = 32;
+  cPaletteCount = 64;
   cBitsPerComp = 8;
   cTilePaletteSize = 32;
 {$else}
@@ -33,7 +33,7 @@ const
   cFTGamma = -1;
   cFTFromPal = True;
   cFTQWeighting = True;
-  cSmoothingGamma = 2;
+  cSmoothingGamma = -1;
 
 {$if false}
   cRedMul = 2126;
@@ -51,7 +51,8 @@ const
   cLumaDiv = cRedMul + cGreenMul + cBlueMul;
   cSmoothingPrevFrame = 1;
   cVecInvWidth = 16;
-  cTotalColors = 1 shl (cBitsPerComp * 3);
+  cRGBBitsPerComp = 8;
+  cRGBColors = 1 shl (cRGBBitsPerComp * 3);
   cTileWidth = 8;
   cColorCpns = 3;
   cTileDCTSize = cColorCpns * sqr(cTileWidth);
@@ -136,11 +137,12 @@ type
   PTile = ^TTile;
   PPTile = ^PTile;
 
+  TRGBPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
   TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
   PPalPixels = ^TPalPixels;
 
   TTile = record // /!\ update CopyTile each time this structure is changed /!\
-    RGBPixels: array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
+    RGBPixels: TRGBPixels;
     PalPixels: TPalPixels;
 
     PaletteIndexes: TIntegerDynArray;
@@ -166,6 +168,7 @@ type
     Index: Integer;
     Tiles: array of TTile;
     TileMap: array of array of TTileMapItem;
+    FSPixels: TByteDynArray;
     KeyFrame: PKeyFrame;
   end;
 
@@ -306,8 +309,8 @@ type
   private
     FKeyFrames: array of TKeyFrame;
     FFrames: array of TFrame;
-    FColorMap: array[0..cTotalColors - 1, 0..5] of Byte;
-    FColorMapLuma: array[0..cTotalColors - 1] of Integer;
+    FColorMap: array[0..cRGBColors - 1, 0..5] of Byte;
+    FColorMapLuma: array[0..cRGBColors - 1] of Integer;
     FTiles: array of PTile;
     FTransPalette: Boolean;
     FUseThomasKnoll: Boolean;
@@ -335,6 +338,8 @@ type
       ATilePage: Integer);
     procedure ReframeUI(AWidth, AHeight: Integer);
 
+    procedure DitherFloydSteinberg(AScreen: TByteDynArray);
+
     function HSVToRGB(h, s, v: Byte): Integer;
     procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
     procedure RGBToHSV(col: Integer; out h, s, v: TFloat); overload;
@@ -351,6 +356,7 @@ type
     procedure TerminatePlan(var Plan: TMixingPlan);
     function DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
     procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
+    procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
@@ -1012,7 +1018,7 @@ begin
 
   ProgressRedraw(-1, esSave);
 
-  fs := TFileStream.Create(ExtractFilePath(Format(edOutputDir.Text, [i])) + 'stream.gtm', fmCreate or fmShareDenyWrite);
+  fs := TFileStream.Create(ExtractFilePath(Format(edOutputDir.Text, [0])) + 'stream.gtm', fmCreate or fmShareDenyWrite);
   try
     SaveStream(fs);
   finally
@@ -1558,6 +1564,60 @@ begin
   QuickSort(List[0], 0, cDitheringLen - 1, SizeOf(Byte), @PlanCompareLuma, @Plan.LumaPal[0]);
 end;
 
+procedure TMainForm.DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
+var
+  x, y, c, yp, xm, xp: Integer;
+  OldPixel, NewPixel, QuantError: Integer;
+  Pixels: array[-1..cTileWidth, -1..cTileWidth, 0..2{RGB}] of Integer;
+begin
+  for y := 0 to (cTileWidth - 1) do
+  begin
+    for x := 0 to (cTileWidth - 1) do
+      FromRGB(ATile.RGBPixels[y, x], Pixels[y, x, 0], Pixels[y, x, 1], Pixels[y, x, 2]);
+
+    Pixels[y, -1, 0] := Pixels[y, 0, 0];
+    Pixels[y, -1, 1] := Pixels[y, 0, 1];
+    Pixels[y, -1, 2] := Pixels[y, 0, 2];
+    Pixels[y, 8, 0] := Pixels[y, 7, 0];
+    Pixels[y, 8, 1] := Pixels[y, 7, 1];
+    Pixels[y, 8, 2] := Pixels[y, 7, 2];
+  end;
+
+  for x := -1 to cTileWidth do
+  begin
+    Pixels[-1, x, 0] := Pixels[0, x, 0];
+    Pixels[-1, x, 1] := Pixels[0, x, 1];
+    Pixels[-1, x, 2] := Pixels[0, x, 2];
+    Pixels[8, x, 0] := Pixels[7, x, 0];
+    Pixels[8, x, 1] := Pixels[7, x, 1];
+    Pixels[8, x, 2] := Pixels[7, x, 2];
+  end;
+
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+      for c := 0 to 2 do
+      begin
+        OldPixel := Pixels[y, x, c];
+        NewPixel := ((OldPixel * ((1 shl cBitsPerComp) - 1)) div 255) shl (8 - cBitsPerComp);
+        QuantError := OldPixel - NewPixel;
+
+        yp := y + 1;
+        xp := x + 1;
+        xm := x - 1;
+
+        Pixels[y,  x,  c] := NewPixel;
+
+        Pixels[y,  xp, c] += (QuantError * 7) shr 4;
+        Pixels[yp, xm, c] += (QuantError * 3) shr 4;
+        Pixels[yp, x,  c] += (QuantError * 5) shr 4;
+        Pixels[yp, xp, c] += (QuantError * 1) shr 4;
+      end;
+
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+      RGBPixels[y, x] := ToRGB(min(255, Pixels[y, x, 0]), min(255, Pixels[y, x, 1]), min(255, Pixels[y, x, 2]));
+end;
+
 procedure TMainForm.ReframeUI(AWidth, AHeight: Integer);
 begin
   FTileMapWidth := min(AWidth, 1920 div cTileWidth);
@@ -1603,6 +1663,38 @@ begin
   imgPalette.Top := imgTiles.Top + imgTiles.Height;
 
   sedPalIdx.MaxValue := cPaletteCount - 1;
+end;
+
+procedure TMainForm.DitherFloydSteinberg(AScreen: TByteDynArray);
+var
+  x, y, c, yp, xm, xp: Integer;
+  OldPixel, NewPixel, QuantError: Integer;
+  ppx: PByte;
+begin
+  ppx := @AScreen[0];
+  for y := 0 to FScreenHeight - 1 do
+    for x := 0 to FScreenWidth - 1 do
+    begin
+      yp := IfThen(y < FScreenHeight - 1, FScreenHeight * 3, 0);
+      xp := IfThen(x < FScreenWidth - 1, 3, 0);
+      xm := IfThen(x > 0, -3, 0);
+
+      for c := 0 to 2 do
+      begin
+        OldPixel := ppx^;
+        NewPixel := ((OldPixel * ((1 shl cBitsPerComp) - 1)) div 255) shl (8 - cBitsPerComp);
+        QuantError := OldPixel - NewPixel;
+
+        ppx^ := NewPixel;
+
+        ppx[xp] += (QuantError * 7) shr 4;
+        ppx[yp + xm] += (QuantError * 3) shr 4;
+        ppx[yp] += (QuantError * 5) shr 4;
+        ppx[yp + xp] += (QuantError * 1) shr 4;
+
+        Inc(ppx);
+      end;
+    end;
 end;
 
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
@@ -1722,16 +1814,12 @@ begin
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
-{$if cBitsPerComp <> 8}
-const
-  cBPCMul = (1 shl cBitsPerComp) - 1;
-{$endif}
 var
   col, sx, sy, tx, ty, i, j, bestI, PalIdx, LastUsed, CmlPct, AtCmlPct, acc, r, g, b, rr, gg, bb: Integer;
   GTile: PTile;
+  FSPixels: TRGBPixels;
   CMUsage, CMPal: TFPList;
   CMItem: PCountIndexArray;
-  cnt: Integer;
   TrueColorUsage: TCardinalDynArray;
   diff, best, PrevBest: Int64;
   ciI, ciJ: PCountIndexArray;
@@ -1742,103 +1830,32 @@ var
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
-  SetLength(TrueColorUsage, 1 shl 24);
-  FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
-
   CMUsage := TFPList.Create;
   CMPal := TFPList.Create;
   try
-    // get color usage stats
-
-    for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
-    begin
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-
-          for ty := 0 to cTileWidth - 1 do
-            for tx := 0 to cTileWidth - 1 do
-            begin
-              col := GTile^.RGBPixels[ty, tx];
-              Inc(TrueColorUsage[col]);
-            end;
-        end;
-    end;
-
-{$if cBitsPerComp <> 8}
-    CMUsage.Count := cTotalColors;
-    for i := 0 to cTotalColors - 1 do
-    begin
-      New(CMItem);
-      CMItem^.Count := 0;
-      CMItem^.Index := i;
-      CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
-      CMItem^.Luma := FColorMapLuma[i];
-      CMUsage[i] := CMItem;
-    end;
-
-    for i := 0 to High(TrueColorUsage) do
-    begin
-      cnt := TrueColorUsage[i];
-
-      if cnt = 0 then
-        Continue;
-
-      FromRGB(i, r, g, b);
-      r := r * cBPCMul div 255;
-      g := g * cBPCMul div 255;
-      b := b * cBPCMul div 255;
-      col := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
-
-      Inc(PCountIndexArray(CMUsage[col])^.Count, cnt);
-    end;
-{$endif}
-
     if FUseDennisLeeV3 then
     begin
-      dlCnt := 0;
-      for i := 0 to High(TrueColorUsage) do
-        if TrueColorUsage[i] <> 0 then
-          Inc(dlCnt, TrueColorUsage[i]);
-
+      dlCnt := AKeyFrame^.FrameCount * FScreenWidth * FScreenHeight;
       dlInput := GetMem(dlCnt * 3);
       dlPtr := dlInput;
-      for i := 0 to cTotalColors - 1 do
+
+      for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
       begin
-{$if cBitsPerComp = 8}
-        cnt := TrueColorUsage[i];
-{$else}
-        cnt := PCountIndexArray(CMUsage[i])^.Count;
-{$endif}
-        if cnt <> 0 then
-          for j := 0 to  cnt - 1 do
-          begin
-            dlPtr^ := FColorMap[i][0]; Inc(dlPtr);
-            dlPtr^ := FColorMap[i][1]; Inc(dlPtr);
-            dlPtr^ := FColorMap[i][2]; Inc(dlPtr);
-          end;
+        j := FTileMapSize * sqr(cTileWidth) * 3;
+        Move(FFrames[i].FSPixels[0], dlPtr^, j);
+        Inc(dlPtr, j);
       end;
 
       Assert(dlPtr - dlInput = dlCnt * 3);
 
-      dl3quant(dlInput, dlCnt, 1, cPaletteCount * cTilePaletteSize, min(5, cBitsPerComp), @dlPal);
+      dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cPaletteCount * cTilePaletteSize, min(5, cBitsPerComp), @dlPal);
 
       CMUsage.Count := cPaletteCount * cTilePaletteSize;
       for i := 0 to cPaletteCount * cTilePaletteSize - 1 do
       begin
         New(CMItem);
-        CMItem^.Count := 1;
-
-{$if cBitsPerComp = 8}
         CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
-{$else}
-        r := dlPal[0][i] * cBPCMul div 255;
-        g := dlPal[1][i] * cBPCMul div 255;
-        b := dlPal[2][i] * cBPCMul div 255;
-        CMItem^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
-{$endif}
-
+        CMItem^.Count := 1;
         CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
         CMItem^.Luma := FColorMapLuma[CMItem^.Index];
         CMUsage[i] := CMItem;
@@ -1846,25 +1863,54 @@ begin
     end
     else
     begin
+      SetLength(TrueColorUsage, cRGBColors);
+      FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
+
+      // get color usage stats
+
+      for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+      begin
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+
 {$if cBitsPerComp = 8}
-      CMUsage.Count := cTotalColors;
-      for i := 0 to cTotalColors - 1 do
+            for ty := 0 to cTileWidth - 1 do
+              for tx := 0 to cTileWidth - 1 do
+              begin
+                col := GTile^.RGBPixels[ty, tx];
+                Inc(TrueColorUsage[col]);
+              end;
+{$else}
+            DitherTileFloydSteinberg(GTile^, FSPixels);
+            for ty := 0 to cTileWidth - 1 do
+              for tx := 0 to cTileWidth - 1 do
+              begin
+                col := FSPixels[ty, tx];
+                Inc(TrueColorUsage[col]);
+              end;
+{$endif}
+          end;
+      end;
+
+      CMUsage.Count := Length(TrueColorUsage);
+      for i := 0 to High(TrueColorUsage) do
       begin
         New(CMItem);
-        CMItem^.Count := 0;
+        CMItem^.Count := TrueColorUsage[i];
         CMItem^.Index := i;
         CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
         CMItem^.Luma := FColorMapLuma[CMItem^.Index];
         CMUsage[i] := CMItem;
       end;
-{$endif}
 
       // sort colors by use count
 
       CMUsage.Sort(@CompareCMUCntHLS);
 
       LastUsed := -1;
-      for i := cTotalColors - 1 downto 0 do    //TODO: rev algo
+      for i := CMUsage.Count - 1 downto 0 do    //TODO: rev algo
         if PCountIndexArray(CMUsage[i])^.Count <> 0 then
         begin
           LastUsed := i;
@@ -1874,7 +1920,7 @@ begin
       CmlPct := 0;
       acc := AKeyFrame^.FrameCount * FTileMapSize * sqr(cTileWidth);
       acc := round(acc * PalVAR);
-      for i := 0 to cTotalColors - 1 do
+      for i := 0 to CMUsage.Count - 1 do
       begin
         acc -= PCountIndexArray(CMUsage[i])^.Count;
         if acc <= 0 then
@@ -1885,7 +1931,7 @@ begin
       end;
       AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
 
-      DebugLn(['KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct]);
+      WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct);
 
       CmlPct := max(CmlPct, min(LastUsed + 1, cTilePaletteSize * cPaletteCount)); // ensure enough colors
 
@@ -1927,13 +1973,6 @@ begin
           ciI^.Count := acc;
 
           ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
-{$if cBitsPerComp <> 8}
-          FromRGB(ciI^.Index, r, g, b);
-          r := r * cBPCMul div 255;
-          g := g * cBPCMul div 255;
-          b := b * cBPCMul div 255;
-          ciI^.Index := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
-{$endif}
 
           CMUsage.Delete(bestI - 1);
         end;
@@ -1943,7 +1982,9 @@ begin
 
     // split most used colors into tile palettes
 
-    for PalIdx := 0 to cPaletteCount - 1 do
+    Assert(cPaletteCount = cTilePaletteSize * 2, 'non transposable');
+
+    for PalIdx := 0 to cTilePaletteSize - 1 do
     begin
       CMPal.Clear;
 
@@ -1953,11 +1994,25 @@ begin
       CMPal.Sort(@CompareCMULHS);
 
       SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
+      SetLength(AKeyFrame^.PaletteIndexes[PalIdx + cTilePaletteSize], cTilePaletteSize);
       for i := 0 to cTilePaletteSize - 1 do
         AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
     end;
 
-    QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cPaletteCount - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
+    for PalIdx := 0 to cTilePaletteSize - 1 do
+    begin
+      CMPal.Clear;
+
+      for i := 0 to cTilePaletteSize - 1 do
+        CMPal.Add(CMUsage[i * cTilePaletteSize + PalIdx]);
+
+      CMPal.Sort(@CompareCMULHS);
+
+      for i := 0 to cTilePaletteSize - 1 do
+        AKeyFrame^.PaletteIndexes[i + cTilePaletteSize, PalIdx] := PCountIndexArray(CMPal[i])^.Index;
+    end;
+
+    QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cTilePaletteSize - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
 
     for PalIdx := 0 to cPaletteCount - 1 do
     begin
@@ -2398,9 +2453,13 @@ procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
 var
   i, j, col, ti, tx, ty: Integer;
   pcol: PInteger;
+  pfs: PByte;
 begin
+  FillChar(AFrame^, SizeOf(TFrame), 0);
+
   SetLength(AFrame^.Tiles, FTileMapSize);
   SetLength(AFrame^.TileMap, FTileMapHeight, FTileMapWidth);
+  SetLength(AFrame^.FSPixels, FScreenHeight * FScreenWidth * 3);
 
   for j := 0 to (FTileMapHeight - 1) do
     for i := 0 to (FTileMapWidth - 1) do
@@ -2408,7 +2467,7 @@ begin
       AFrame^.TileMap[j, i].GlobalTileIndex := FTileMapWidth * j + i;
       AFrame^.TileMap[j, i].HMirror := False;
       AFrame^.TileMap[j, i].VMirror := False;
-      AFrame^.TileMap[j, i].PalIdx := 0;
+      AFrame^.TileMap[j, i].PalIdx := -1;
       AFrame^.TileMap[j, i].Smoothed := False;
       AFrame^.TileMap[j, i].TmpIndex := -1;
     end;
@@ -2418,6 +2477,7 @@ begin
 
   ABitmap.BeginUpdate;
   try
+    pfs := @AFrame^.FSPixels[0];
     for j := 0 to (FScreenHeight - 1) do
     begin
       pcol := ABitmap.ScanLine[j];
@@ -2430,9 +2490,27 @@ begin
           tx := i and (cTileWidth - 1);
           ty := j and (cTileWidth - 1);
 
-          AFrame^.Tiles[ti].RGBPixels[ty, tx] := SwapRB(col);
+          col := SwapRB(col);
+          AFrame^.Tiles[ti].RGBPixels[ty, tx] := col;
+
+          FromRGB(col, pfs[0], pfs[1], pfs[2]);
+          Inc(pfs, 3);
         end;
     end;
+
+    DitherFloydSteinberg(AFrame^.FSPixels);
+
+    //pfs := @AFrame^.FSPixels[0];
+    //for j := 0 to (FScreenHeight - 1) do
+    //  for i := 0 to (FScreenWidth - 1) do
+    //    begin
+    //      ti := FTileMapWidth * (j shr 3) + (i shr 3);
+    //      tx := i and (cTileWidth - 1);
+    //      ty := j and (cTileWidth - 1);
+    //
+    //      AFrame^.Tiles[ti].RGBPixels[ty, tx] := ToRGB(pfs[0], pfs[1], pfs[2]);
+    //      Inc(pfs, 3);
+    //    end;
 
     for i := 0 to (FTileMapSize - 1) do
     begin
@@ -2537,7 +2615,7 @@ begin
   try
     if not playing then
     begin
-      lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame: ' + IntToStr(GetFrameTileCount(Frame));
+      lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + ' : ' + IntToStr(GetFrameTileCount(Frame));
 
       imgTiles.Picture.Bitmap.BeginUpdate;
       try
@@ -2580,6 +2658,10 @@ begin
       SetLength(oriCorr, FScreenHeight * FScreenWidth * 2);
       SetLength(chgCorr, FScreenHeight * FScreenWidth * 2);
 
+      imgDest.Picture.Bitmap.Canvas.Brush.Color := clFuchsia;
+      imgDest.Picture.Bitmap.Canvas.Brush.Style := bsDiagCross;
+      imgDest.Picture.Bitmap.Canvas.Clear;
+
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
@@ -2595,9 +2677,17 @@ begin
             begin
               tilePtr := FTiles[ti];
               if palIdx < 0 then
+              begin
+                if not InRange(TMItem.PalIdx, 0, High(Frame^.KeyFrame^.PaletteRGB)) then
+                  Continue;
                 pal := Frame^.KeyFrame^.PaletteRGB[TMItem.PalIdx]
+              end
               else
+              begin
+                if palIdx <> TMItem.PalIdx then
+                  Continue;
                 pal := Frame^.KeyFrame^.PaletteRGB[palIdx];
+              end
             end;
 
             DrawTile(imgDest.Picture.Bitmap, sx, sy, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
@@ -2617,7 +2707,7 @@ begin
           if Assigned(Frame^.KeyFrame^.PaletteRGB[j]) then
             p^ := SwapRB(Frame^.KeyFrame^.PaletteRGB[j, i])
           else
-            p^ := $00ff00ff;
+            p^ := clFuchsia;
 
           Inc(p);
         end;
@@ -3672,14 +3762,14 @@ begin
     cbxStep.AddItem(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), TObject(PtrInt(Ord(es))));
   cbxStep.ItemIndex := Ord(es);
 
-  sr := (1 shl cBitsPerComp) - 1;
+  sr := (1 shl cRGBBitsPerComp) - 1;
 
-  for i := 0 to cTotalColors - 1 do
+  for i := 0 to cRGBColors - 1 do
   begin
     col :=
-       ((((i shr (cBitsPerComp * 0)) and sr) * 255 div sr) and $ff) or //R
-      (((((i shr (cBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
-      (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
+       ((((i shr (cRGBBitsPerComp * 0)) and sr) * 255 div sr) and $ff) or //R
+      (((((i shr (cRGBBitsPerComp * 1)) and sr) * 255 div sr) and $ff) shl 8) or //G
+      (((((i shr (cRGBBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
 
     FromRGB(col, FColorMap[i, 0], FColorMap[i, 1], FColorMap[i, 2]);
     RGBToHSV(col, FColorMap[i, 3], FColorMap[i, 4], FColorMap[i, 5]);
