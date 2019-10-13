@@ -25,6 +25,7 @@ var
   Frames: PPointer;
   Report: string;
 begin
+  Screen.Cursor := crDefault;
   Report := 'Program exception! ' + LineEnding +
     'Stacktrace:' + LineEnding + LineEnding;
   if E <> nil then begin
