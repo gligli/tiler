@@ -91,7 +91,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 15
     Top = 340
-    Width = 220
+    Width = 308
     AutoSize = False
     ParentColor = False
   end
@@ -159,18 +159,18 @@ object MainForm: TMainForm
     TabOrder = 14
   end
   object sePage: TSpinEdit
-    Left = 264
+    Left = 263
     Height = 21
-    Top = 336
+    Top = 266
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
     TabOrder = 17
   end
   object Label6: TLabel
-    Left = 232
+    Left = 228
     Height = 13
-    Top = 339
+    Top = 268
     Width = 25
     Caption = 'Page'
     ParentColor = False

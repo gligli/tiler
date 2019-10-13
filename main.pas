@@ -330,6 +330,7 @@ type
     FCS: TRTLCriticalSection;
 
     function ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+    function ComputeInterFrameCorrelation(a, b: PFrame): TFloat;
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
     procedure ClearAll;
@@ -624,6 +625,31 @@ begin
   Result := PearsonCorrelation(ya, yb, Length(a) * 3);
 end;
 
+function TMainForm.ComputeInterFrameCorrelation(a, b: PFrame): TFloat;
+var
+  sz, i: Integer;
+  ya, yb: TDoubleDynArray;
+begin
+  Assert(Length(a^.FSPixels) = Length(b^.FSPixels));
+  sz := Length(a^.FSPixels) div 3;
+
+  SetLength(ya, sz * 3);
+  SetLength(yb, sz * 3);
+
+  for i := 0 to sz - 1 do
+  begin
+    ya[i] := a^.FSPixels[i * 3 + 0];
+    ya[i + sz] := a^.FSPixels[i * 3 + 1];
+    ya[i + sz * 2] := a^.FSPixels[i * 3 + 2];
+
+    yb[i] := b^.FSPixels[i * 3 + 0];
+    yb[i + sz] := b^.FSPixels[i * 3 + 1];
+    yb[i + sz * 2] := b^.FSPixels[i * 3 + 2];
+  end;
+
+  Result := PearsonCorrelation(ya, yb, sz * 3);
+end;
+
 { TMainForm }
 
 procedure TMainForm.btnDoGlobalTilingClick(Sender: TObject);
@@ -745,6 +771,12 @@ begin
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
+const
+  CShotTransGracePeriod = 24;
+  CShotTransCorrelLookup = 6;
+  CShotTransSoftThres = 0.8;
+  CShotTransHardThres = 0.1;
+
 var
   inPath: String;
 
@@ -768,9 +800,10 @@ var
   end;
 
 var
-  i, j: Integer;
+  i, j, Cnt, LastKFIdx: Integer;
+  v, av: TFloat;
   fn: String;
-  kfCnt, frc, startFrame: Integer;
+  kfIdx, frc, StartFrame: Integer;
   isKf: Boolean;
   kfSL: TStringList;
   sfr, efr: Integer;
@@ -783,7 +816,7 @@ begin
   ProgressRedraw(-1, esLoad);
 
   inPath := edInput.Text;
-  startFrame := seStartFrame.Value;
+  StartFrame := seStartFrame.Value;
   frc := seFrameCount.Value;
 
   if frc <= 0 then
@@ -792,7 +825,7 @@ begin
     begin
       i := 0;
       repeat
-        fn := Format(inPath, [i + startFrame]);
+        fn := Format(inPath, [i + StartFrame]);
         Inc(i);
       until not FileExists(fn);
 
@@ -812,7 +845,7 @@ begin
 
   for i := 0 to High(FFrames) do
   begin
-    fn := Format(inPath, [i + startFrame]);
+    fn := Format(inPath, [i + StartFrame]);
     if not FileExists(fn) then
     begin
       SetLength(FFrames, 0);
@@ -824,14 +857,15 @@ begin
   bmp := TPicture.Create;
   try
     bmp.Bitmap.PixelFormat:=pf32bit;
-    bmp.LoadFromFile(Format(inPath, [startFrame]));
+    bmp.LoadFromFile(Format(inPath, [StartFrame]));
     ReframeUI(bmp.Width div cTileWidth, bmp.Height div cTileWidth);
   finally
     bmp.Free;
   end;
 
-  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(startFrame));
+  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(StartFrame));
 
+{$if false}
   kfSL := TStringList.Create;
   try
     fn := ChangeFileExt(Format(inPath, [0]), '.kf');
@@ -839,35 +873,71 @@ begin
     begin
       kfSL.LoadFromFile(fn);
       kfSL.Insert(0, 'I'); // fix format shifted 1 frame in the past
-      for i := 0 to startFrame - 1 do
+      for i := 0 to StartFrame - 1 do
         kfSL.Delete(0);
     end;
 
-    kfCnt := 0;
+    kfIdx := 0;
     for i := 0 to High(FFrames) do
     begin
-      fn := ChangeFileExt(Format(inPath, [i + startFrame]), '.kf');
+      fn := ChangeFileExt(Format(inPath, [i + StartFrame]), '.kf');
       isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
       if isKf then
       begin
-        WriteLn('KF: ', kfCnt, #9'Frame: ', i);
-        Inc(kfCnt);
+        WriteLn('KF: ', kfIdx, #9'Frame: ', i);
+        Inc(kfIdx);
       end;
     end;
 
-    SetLength(FKeyFrames, kfCnt);
-    kfCnt := -1;
+    SetLength(FKeyFrames, kfIdx);
+    kfIdx := -1;
     for i := 0 to High(FFrames) do
     begin
-      fn := ChangeFileExt(Format(inPath, [i + startFrame]), '.kf');
+      fn := ChangeFileExt(Format(inPath, [i + StartFrame]), '.kf');
       isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
       if isKf then
-        Inc(kfCnt);
-      FFrames[i].KeyFrame := @FKeyFrames[kfCnt];
+        Inc(kfIdx);
+      FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
     end;
   finally
     kfSL.Free;
   end;
+{$else}
+  kfIdx := 0;
+  SetLength(FKeyFrames, Length(FFrames));
+  FFrames[0].KeyFrame := @FKeyFrames[0];
+
+  av := -1.0;
+  LastKFIdx := 0;
+  for i := 1 to High(FFrames) do
+  begin
+    Cnt := 0;
+    v := ComputeInterFrameCorrelation(@FFrames[i - 1], @FFrames[i]);
+    if av = -1.0 then
+    begin
+      av := v
+    end
+    else
+    begin
+      av := av * (0.5 + 0.5 / CShotTransCorrelLookup) + v * (0.5 - 0.5 / CShotTransCorrelLookup);
+      Inc(Cnt);
+    end;
+
+    isKf := (v < CShotTransHardThres) or (av < CShotTransSoftThres) and ((i - LastKFIdx) > CShotTransGracePeriod);
+    if isKf then
+    begin
+      Inc(kfIdx);
+      av := -1.0;
+      LastKFIdx := i
+    end;
+
+    WriteLn('Frm: -> ', i, #9'KF: ', BoolToStr(isKf, True), #9'Corr: ', FloatToStr(av));
+
+    FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
+  end;
+
+  SetLength(FKeyFrames, kfIdx + 1);
+{$endif}
 
   for j := 0 to High(FKeyFrames) do
   begin
@@ -2615,7 +2685,7 @@ begin
   try
     if not playing then
     begin
-      lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + ' : ' + IntToStr(GetFrameTileCount(Frame));
+      lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
 
       imgTiles.Picture.Bitmap.BeginUpdate;
       try
@@ -3389,7 +3459,7 @@ var
   best: array[0 .. sqr(cTileWidth) - 1] of Integer;
   share, factor, accf: TFloat;
 begin
-  SetLength(Dataset, sqr(cTileWidth), Length(FTiles), cKModesFeatureCount);
+  SetLength(Dataset, sqr(cTileWidth), Length(FTiles) shr 4, cKModesFeatureCount);
   SetLength(Line, cKModesFeatureCount);
 
   for i := 0 to sqr(cTileWidth) - 1 do
@@ -3408,6 +3478,10 @@ begin
       Continue;
 
     WriteTileDatasetLine(FTiles[i]^, Line, signi);
+
+    if dis[signi] >= Length(Dataset[signi]) then
+      SetLength(Dataset[signi], Length(FTiles), cKModesFeatureCount);
+
     Move(Line[0], Dataset[signi, dis[signi], 0], cKModesFeatureCount);
 
     TileIndices[signi, dis[signi]] := i;
@@ -3695,7 +3769,7 @@ var
 
 var
   ZBuf: PByte;
-  StartPos, StreamSize, LastKF, KFCount, KFSize, kf, fri, x, y, err: Integer;
+  StartPos, StreamSize, LastKF, LastKFAvail, KFCount, KFSize, kf, fri, x, y, err: Integer;
   IsKF: Boolean;
   frm: PFrame;
   tmi: PTileMapItem;
@@ -3712,6 +3786,7 @@ begin
       raise Ecompressionerror.create(zerror(err));
 
     LastKF := 0;
+    LastKFAvail := ZStream.avail_out;
 
     for kf := 0 to High(FKeyFrames) do
     begin
@@ -3726,27 +3801,31 @@ begin
             DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
           end;
 
-        IsKF := (fri = FKeyFrames[kf].EndFrame) and ((FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (kf = High(FKeyFrames)) or (ZStream.avail_out < CMaxBufSize div 2));
+        IsKF := (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and ((kf = High(FKeyFrames)) or (ZStream.avail_out < CMaxBufSize div 2));
 
         DoCmd(gtmFrameEnd, Ord(IsKF));
 
         if IsKF then
         begin
-           ZStream.next_in := nil;
-           ZStream.avail_in := 0;
-           err := deflate(ZStream, Z_FULL_FLUSH);
-           if err <> Z_OK then
-             raise Ecompressionerror.create(zerror(err));
+          ZStream.next_in := nil;
+          ZStream.avail_in := 0;
+          err := deflate(ZStream, Z_FULL_FLUSH);
+          if err <> Z_OK then
+            raise Ecompressionerror.create(zerror(err));
 
-          KFSize := CMaxBufSize - ZStream.avail_out;
+          KFSize := LastKFAvail - ZStream.avail_out;
           KFCount := FKeyFrames[kf].EndFrame - LastKF + 1;
           LastKF := FKeyFrames[kf].EndFrame + 1;
 
           AStream.Write(ZBuf^, KFSize);
 
-          deflateReset(ZStream);
+          //deflateReset(ZStream);
+          ZStream.next_out := ZBuf;
+          ZStream.avail_out := CMaxBufSize;
 
-          WriteLn('KF: ', kf, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
+          LastKFAvail := ZStream.avail_out;
+
+          WriteLn('KF: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
         end;
       end;
     end;
