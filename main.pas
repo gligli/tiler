@@ -22,9 +22,9 @@ const
   cBitsPerComp = 8;
   cTilePaletteSize = 32;
 {$else}
-  cPaletteCount = 4;
-  cBitsPerComp = 3;
-  cTilePaletteSize = 15;
+  cPaletteCount = 32;
+  cBitsPerComp = 6;
+  cTilePaletteSize = 16;
 {$endif}
 
   cRandomKModesCount = 7;
@@ -632,22 +632,20 @@ var
 begin
   Assert(Length(a^.FSPixels) = Length(b^.FSPixels));
   sz := Length(a^.FSPixels) div 3;
-
   SetLength(ya, sz * 3);
   SetLength(yb, sz * 3);
 
   for i := 0 to sz - 1 do
   begin
-    ya[i] := a^.FSPixels[i * 3 + 0];
-    ya[i + sz] := a^.FSPixels[i * 3 + 1];
+    ya[i + sz * 0] := a^.FSPixels[i * 3 + 0];
+    ya[i + sz * 1] := a^.FSPixels[i * 3 + 1];
     ya[i + sz * 2] := a^.FSPixels[i * 3 + 2];
 
-    yb[i] := b^.FSPixels[i * 3 + 0];
-    yb[i + sz] := b^.FSPixels[i * 3 + 1];
+    yb[i + sz * 0] := b^.FSPixels[i * 3 + 0];
+    yb[i + sz * 1] := b^.FSPixels[i * 3 + 1];
     yb[i + sz * 2] := b^.FSPixels[i * 3 + 2];
   end;
-
-  Result := PearsonCorrelation(ya, yb, sz * 3);
+  Result := PearsonCorrelation(ya, yb, Length(ya));
 end;
 
 { TMainForm }
@@ -773,9 +771,9 @@ end;
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
   CShotTransGracePeriod = 24;
-  CShotTransCorrelLookup = 6;
+  CShotTransSAvgFrames = 6;
   CShotTransSoftThres = 0.8;
-  CShotTransHardThres = 0.1;
+  CShotTransHardThres = 0.4;
 
 var
   inPath: String;
@@ -801,7 +799,7 @@ var
 
 var
   i, j, Cnt, LastKFIdx: Integer;
-  v, av: TFloat;
+  v, av, ratio: TFloat;
   fn: String;
   kfIdx, frc, StartFrame: Integer;
   isKf: Boolean;
@@ -919,19 +917,20 @@ begin
     end
     else
     begin
-      av := av * (0.5 + 0.5 / CShotTransCorrelLookup) + v * (0.5 - 0.5 / CShotTransCorrelLookup);
+      av := av * (1.0 - 1.0 / CShotTransSAvgFrames) + v * (1.0 / CShotTransSAvgFrames);
       Inc(Cnt);
     end;
 
-    isKf := (v < CShotTransHardThres) or (av < CShotTransSoftThres) and ((i - LastKFIdx) > CShotTransGracePeriod);
+    ratio := max(0.01, v) / max(0.01, av);
+    isKf := (ratio < CShotTransHardThres) or (ratio < CShotTransSoftThres) and ((i - LastKFIdx) >= CShotTransGracePeriod);
     if isKf then
     begin
       Inc(kfIdx);
       av := -1.0;
-      LastKFIdx := i
+      LastKFIdx := i;
     end;
 
-    WriteLn('Frm: -> ', i, #9'KF: ', BoolToStr(isKf, True), #9'Corr: ', FloatToStr(av));
+    WriteLn('Frm: -> ', i, #9'KF: ', BoolToStr(isKf, True), #9'Ratio: ', FloatToStr(ratio));
 
     FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
   end;
@@ -1918,7 +1917,7 @@ begin
 
       Assert(dlPtr - dlInput = dlCnt * 3);
 
-      dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cPaletteCount * cTilePaletteSize, min(5, cBitsPerComp), @dlPal);
+      dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cPaletteCount * cTilePaletteSize, min(6, cBitsPerComp - 1), @dlPal);
 
       CMUsage.Count := cPaletteCount * cTilePaletteSize;
       for i := 0 to cPaletteCount * cTilePaletteSize - 1 do
@@ -3400,6 +3399,7 @@ var
   StartingPoint: array[0 .. sqr(cTileWidth) - 1] of Integer;
   ClusterCount: array[0 .. sqr(cTileWidth) - 1] of TFloat;
   Line: TByteDynArray;
+  MergeLock: TSpinlock;
 
   procedure DoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -3448,7 +3448,11 @@ var
 
       i := GetMinMatchingDissim(ToMerge, LocCentroids[j], di, dis);
       if di >= 2 then
+      begin
+        SpinEnter(@MergeLock);
         MergeTiles(ToMergeIdxs, di, ToMergeIdxs[i], nil);
+        SpinLeave(@MergeLock);
+      end;
     end;
   end;
 
@@ -3457,8 +3461,9 @@ var
   acc, i, j, irev, signi, ActiveTileCnt: Integer;
   dis: array[0 .. sqr(cTileWidth) - 1] of Integer;
   best: array[0 .. sqr(cTileWidth) - 1] of Integer;
-  share, factor, accf: TFloat;
+  share, accf: TFloat;
 begin
+  SpinLeave(@MergeLock);
   SetLength(Dataset, sqr(cTileWidth), Length(FTiles) shr 4, cKModesFeatureCount);
   SetLength(Line, cKModesFeatureCount);
 
@@ -3508,7 +3513,6 @@ begin
 
   FillQWord(ClusterCount[0], sqr(cTileWidth), 0);
   share := DesiredNbTiles / sqr(cTileWidth);
-  factor := DesiredNbTiles / ActiveTileCnt;
   for i := 0 to sqr(cTileWidth) div 2 - 1 do
   begin
     irev := sqr(cTileWidth) - 1 - i;
@@ -3825,7 +3829,7 @@ begin
 
           LastKFAvail := ZStream.avail_out;
 
-          WriteLn('KF: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
+          WriteLn('Frm: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
         end;
       end;
     end;
