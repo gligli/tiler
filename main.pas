@@ -114,17 +114,17 @@ const
 type
   // GliGli's TileMotion commands
 
-  TGTMCommand = ( // 32bit words; bit 31 (MSB) -> 1; bits 24-30 -> command #; bits 0-23 -> data
-    // single word commands (0-63)
-    gtmFrameEnd = 0, // data bit 0 -> keyframe end
+  TGTMCommand = ( // 32bit words; bits 0-3 -> $e (1110); bits 4-9 -> command #; bits 10-31 -> data
+    // single word commands (0-31)
+    gtmFrameEnd = 0, // data bit 31 -> keyframe end
     gtSkipBlock = 1, // data -> linear TMI skip count
-    gtSkipPattern = 2, // data -> skip (0) or no skip (1) for next 24 TMI, MSB first
+    gtSkipPattern = 2, // data -> skip (0) or no skip (1) for next 22 TMI, MSB first
     // ...
-    // multi word commands (64-127) (all commands data bits 16..23 -> payload word count; bits 0..15 -> MW arbitrary index)
-    gtLoadPaletteRGBA32 = 64, // data -> RGBA bytes, word aligned; MW arbitrary index = palette #
-    gtSetDimensions = 65, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (word)
+    // multi word commands (32-63) (all commands data bits 0-7 -> payload word count; bits 8-21 -> MW arbitrary index)
+    gtLoadPaletteRGBA32 = 32, // data -> RGBA bytes, word aligned; MW arbitrary index = palette #
+    gtSetDimensions = 33, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (word)
     // ...
-    gtExtendedMW = 127 // data -> custom commands, proprietary extensions, ...; MW arbitrary index = extended command #
+    gtExtendedMW = 63 // data -> custom commands, proprietary extensions, ...; MW arbitrary index = extended command #
   );
 
   TSpinlock = LongInt;
@@ -2697,7 +2697,7 @@ begin
           begin
             ti := FTileMapWidth * sy + sx + (FTileMapWidth div 2) * (ATilePage and 1) + FTileMapSize * (ATilePage shr 1);
 
-            if ti < Length(FTiles) then
+            if InRange(ti, 0, High(FTiles)) then
             begin
               tilePtr := FTiles[ti];
               pal := Frame^.KeyFrame^.PaletteRGB[Max(0, palIdx)];
@@ -2724,9 +2724,6 @@ begin
 
     imgDest.Picture.Bitmap.BeginUpdate;
     try
-      SetLength(oriCorr, FScreenHeight * FScreenWidth * 2);
-      SetLength(chgCorr, FScreenHeight * FScreenWidth * 2);
-
       imgDest.Picture.Bitmap.Canvas.Brush.Color := clFuchsia;
       imgDest.Picture.Bitmap.Canvas.Brush.Style := bsDiagCross;
       imgDest.Picture.Bitmap.Canvas.Clear;
@@ -2737,7 +2734,7 @@ begin
           TMItem := Frame^.TileMap[sy, sx];
           ti := TMItem.GlobalTileIndex;
 
-          if ti < Length(FTiles) then
+          if InRange(ti, 0, High(FTiles)) then
           begin
             tilePtr :=  @Frame^.Tiles[sy * FTileMapWidth + sx];
             pal := tilePtr^.PaletteRGB;
@@ -2787,6 +2784,9 @@ begin
 
     if not playing then
     begin
+      SetLength(oriCorr, FScreenHeight * FScreenWidth * 2);
+      SetLength(chgCorr, FScreenHeight * FScreenWidth * 2);
+
       for j := 0 to FScreenHeight - 1 do
       begin
         Move(PInteger(imgSource.Picture.Bitmap.ScanLine[j])^, oriCorr[j * FScreenWidth], FScreenWidth * SizeOf(Integer));
@@ -3740,6 +3740,41 @@ const
 var
   ZStream: z_stream;
 
+  procedure DoVarWord(v: Cardinal);
+  var
+    err: Integer;
+  begin
+    if v < (1 shl 7) then
+    begin
+      v := v shl 1;
+      ZStream.avail_in := 1;
+    end
+    else if v < (1 shl 14) then
+    begin
+      v := (v shl 2) or 2;
+      ZStream.avail_in := 2;
+    end
+    else if v < (1 shl 21) then
+    begin
+      v := (v shl 3) or 6;
+      ZStream.avail_in := 3;
+    end
+    //else if v < (1 shl 28) then
+    //begin
+    //  v := (v shl 4) or $e;
+    //  ZStream.avail_in := 4;
+    //end
+    else
+      Assert(False, 'payload too big!');
+
+    v := (v shl 2) or (ZStream.avail_in - 1);
+    ZStream.next_in := @v;
+
+    err := deflate(ZStream, Z_NO_FLUSH);
+    if err <> Z_OK then
+      raise Ecompressionerror.create(zerror(err));
+  end;
+
   procedure DoDWord(v: Cardinal);
   var
     err: Integer;
@@ -3751,23 +3786,32 @@ var
       raise Ecompressionerror.create(zerror(err));
   end;
 
-  procedure DoTMI(PalIdx: Integer; TileIdx: Integer; VMirror, HMirror: Boolean);
+  procedure DoByte(v: Byte);
   var
-    v: Cardinal;
+    err: Integer;
   begin
-    assert(TileIdx < (1 shl 22));
-    assert(PalIdx < (1 shl 7));
-    v := (TileIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror);
-    DoDWord(v);
+    ZStream.next_in := @v;
+    ZStream.avail_in := SizeOf(v);
+    err := deflate(ZStream, Z_NO_FLUSH);
+    if err <> Z_OK then
+      raise Ecompressionerror.create(zerror(err));
+  end;
+
+  procedure DoTMI(PalIdx: Integer; TileIdx: Integer; VMirror, HMirror: Boolean);
+  begin
+    assert(TileIdx < (1 shl 21));
+    assert(PalIdx < (1 shl 6));
+    DoVarWord(TileIdx);
+    DoByte((PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
   end;
 
   procedure DoCmd(Cmd: TGTMCommand; Data: Integer);
   var
     v: Cardinal;
   begin
-    assert(Data < (1 shl 24));
-    assert(Ord(Cmd) < (1 shl 7));
-    v := Data or (Ord(Cmd) shl 24) or (1 shl 31);
+    assert(Data < (1 shl 22));
+    assert(Ord(Cmd) < (1 shl 6));
+    v := (Data shl 10) or (Ord(Cmd) shl 4) or $e;
     DoDWord(v);
   end;
 
@@ -3807,7 +3851,7 @@ begin
 
         IsKF := (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and ((kf = High(FKeyFrames)) or (ZStream.avail_out < CMaxBufSize div 2));
 
-        DoCmd(gtmFrameEnd, Ord(IsKF));
+        DoCmd(gtmFrameEnd, Ord(IsKF) shl 21);
 
         if IsKF then
         begin
