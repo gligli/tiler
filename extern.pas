@@ -32,6 +32,8 @@ type
   TDLUserPal = array[0..2, 0..65535] of Byte;
   PDLUserPal = ^TDLUserPal;
 
+procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
+
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount: Integer; RestartCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
@@ -162,6 +164,44 @@ begin
      end;
   finally
     p.free;
+  end;
+end;
+
+procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
+var
+  Process: TProcess;
+  RetCode: Integer;
+  Output, ErrOut, SrcFN, DstFN: String;
+  SrcStream, DstStream: TFileStream;
+begin
+  Process := TProcess.Create(nil);
+  Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
+  Process.Executable := 'bzip2.exe';
+
+  SrcFN := GetTempFileName('', 'lz-' + IntToStr(GetCurrentThreadId) + '.dat');
+  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.bz2');
+
+  SrcStream := TFileStream.Create(SrcFN, fmCreate or fmShareDenyWrite);
+  try
+    ASourceStream.Seek(0, soBeginning);
+    SrcStream.CopyFrom(ASourceStream, ASourceStream.Size);
+  finally
+    SrcStream.Free;
+  end;
+
+  Process.Parameters.Add('-9');
+  Process.Parameters.Add(SrcFN);
+  Process.ShowWindow := swoHIDE;
+  Process.Priority := ppIdle;
+
+  RetCode := 0;
+  internalRuncommand(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
+
+  DstStream := TFileStream.Create(DstFN, fmOpenRead or fmShareDenyWrite);
+  try
+    ADestStream.CopyFrom(DstStream, DstStream.Size);
+  finally
+    DstStream.Free;
   end;
 end;
 

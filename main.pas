@@ -3738,74 +3738,59 @@ const
   CMinSkipCount = 1;
 
 var
-  ZStream: z_stream;
+  ZStream: TMemoryStream;
 
   procedure DoVarWord(v: Cardinal);
   var
-    err: Integer;
+    sz: Integer;
   begin
     if v < (1 shl 7) then
     begin
       v := v shl 1;
-      ZStream.avail_in := 1;
+      sz := 1;
     end
     else if v < (1 shl 14) then
     begin
       v := (v shl 2) or 2;
-      ZStream.avail_in := 2;
+      sz := 2;
     end
     else if v < (1 shl 21) then
     begin
       v := (v shl 3) or 6;
-      ZStream.avail_in := 3;
+      sz := 3;
     end
     //else if v < (1 shl 28) then
     //begin
     //  v := (v shl 4) or $e;
-    //  ZStream.avail_in := 4;
+    //  sz := 4;
     //end
     else
       Assert(False, 'payload too big!');
 
-    v := (v shl 2) or (ZStream.avail_in - 1);
-    ZStream.next_in := @v;
+    v := (v shl 2) or (sz - 1);
 
-    err := deflate(ZStream, Z_NO_FLUSH);
-    if err <> Z_OK then
-      raise Ecompressionerror.create(zerror(err));
+    ZStream.Write(v, sz);
   end;
 
   procedure DoDWord(v: Cardinal);
-  var
-    err: Integer;
   begin
-    ZStream.next_in := @v;
-    ZStream.avail_in := SizeOf(v);
-    err := deflate(ZStream, Z_NO_FLUSH);
-    if err <> Z_OK then
-      raise Ecompressionerror.create(zerror(err));
+    ZStream.WriteDWord(v);
   end;
 
   procedure DoByte(v: Byte);
-  var
-    err: Integer;
   begin
-    ZStream.next_in := @v;
-    ZStream.avail_in := SizeOf(v);
-    err := deflate(ZStream, Z_NO_FLUSH);
-    if err <> Z_OK then
-      raise Ecompressionerror.create(zerror(err));
+    ZStream.WriteByte(v);
   end;
 
   procedure DoTMI(PalIdx: Integer; TileIdx: Integer; VMirror, HMirror: Boolean);
   begin
-    assert(TileIdx < (1 shl 21));
-    assert(PalIdx < (1 shl 6));
+    assert((TileIdx >= 0) and (TileIdx < (1 shl 21)));
+    assert((PalIdx >= 0) and (PalIdx < (1 shl 6)));
     DoVarWord(TileIdx);
     DoByte((PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
   end;
 
-  procedure DoCmd(Cmd: TGTMCommand; Data: Integer);
+  procedure DoCmd(Cmd: TGTMCommand; Data: Cardinal);
   var
     v: Cardinal;
   begin
@@ -3816,25 +3801,16 @@ var
   end;
 
 var
-  ZBuf: PByte;
-  StartPos, StreamSize, LastKF, LastKFAvail, KFCount, KFSize, kf, fri, x, y, xs, err, cs, SkipCnt: Integer;
+  StartPos, StreamSize, LastKF, KFCount, KFSize, kf, fri, x, y, xs, cs, SkipCnt: Integer;
   IsKF: Boolean;
   frm: PFrame;
   tmi: PTileMapItem;
 begin
   StartPos := AStream.Position;
 
-  ZBuf := AllocMem(CMaxBufSize);
+  ZStream := TMemoryStream.Create;
   try
-    ZStream.next_out := ZBuf;
-    ZStream.avail_out := CMaxBufSize;
-
-    err:=deflateInit2(ZStream, Z_BEST_COMPRESSION, Z_DEFLATED, -MAX_WBITS, MAX_MEM_LEVEL, Z_FILTERED);
-    if err<>Z_OK then
-      raise Ecompressionerror.create(zerror(err));
-
     LastKF := 0;
-    LastKFAvail := ZStream.avail_out;
 
     for kf := 0 to High(FKeyFrames) do
     begin
@@ -3877,37 +3853,26 @@ begin
         end;
         assert(cs = FTileMapSize, 'incomplete TM');
 
-        IsKF := (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and ((kf = High(FKeyFrames)) or (ZStream.avail_out < CMaxBufSize div 2));
+        IsKF := (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and ((kf = High(FKeyFrames)) or (ZStream.Size >= CMaxBufSize div 2));
 
         DoCmd(gtmFrameEnd, Ord(IsKF) shl 21);
 
         if IsKF then
         begin
-          ZStream.next_in := nil;
-          ZStream.avail_in := 0;
-          err := deflate(ZStream, Z_FULL_FLUSH);
-          if err <> Z_OK then
-            raise Ecompressionerror.create(zerror(err));
-
-          KFSize := LastKFAvail - ZStream.avail_out;
           KFCount := FKeyFrames[kf].EndFrame - LastKF + 1;
           LastKF := FKeyFrames[kf].EndFrame + 1;
 
-          AStream.Write(ZBuf^, KFSize);
-
-          //deflateReset(ZStream);
-          ZStream.next_out := ZBuf;
-          ZStream.avail_out := CMaxBufSize;
-
-          LastKFAvail := ZStream.avail_out;
+          KFSize := AStream.Position;
+          LZCompress(ZStream, False, AStream);
+          ZStream.Clear;
+          KFSize := AStream.Position - KFSize;
 
           WriteLn('Frm: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
         end;
       end;
     end;
   finally
-    deflateEnd(ZStream);
-    Freemem(ZBuf);
+    ZStream.Free;
   end;
 
   StreamSize := AStream.Position - StartPos;
