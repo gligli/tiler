@@ -3732,10 +3732,10 @@ begin
 end;
 
 procedure TMainForm.SaveStream(AStream: TStream);
-
 const
   CMaxBufSize = 2 * 1024 * 1024;
   CMinKFFrameCount = 72;
+  CMinSkipCount = 1;
 
 var
   ZStream: z_stream;
@@ -3817,7 +3817,7 @@ var
 
 var
   ZBuf: PByte;
-  StartPos, StreamSize, LastKF, LastKFAvail, KFCount, KFSize, kf, fri, x, y, err: Integer;
+  StartPos, StreamSize, LastKF, LastKFAvail, KFCount, KFSize, kf, fri, x, y, xs, err, cs, SkipCnt: Integer;
   IsKF: Boolean;
   frm: PFrame;
   tmi: PTileMapItem;
@@ -3842,12 +3842,40 @@ begin
       begin
         frm := @FFrames[fri];
 
+        cs := 0;
         for y := 0 to FTileMapHeight - 1 do
+        begin
+          SkipCnt := 0;
           for x := 0 to FTileMapWidth - 1 do
           begin
-            tmi := @frm^.TileMap[y, x];
-            DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
+            if SkipCnt <= 0 then
+            begin
+              SkipCnt := 0;
+              for xs := x to FTileMapWidth - 1 do
+              begin
+                if not frm^.TileMap[y, xs].Smoothed then
+                  Break;
+                Inc(SkipCnt);
+              end;
+
+              if SkipCnt >= CMinSkipCount then
+              begin
+                DoCmd(gtSkipBlock, SkipCnt);
+                Inc(cs, SkipCnt);
+              end
+              else
+              begin
+                SkipCnt := 0;
+                tmi := @frm^.TileMap[y, x];
+                DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
+                Inc(cs);
+              end;
+            end;
+
+            Dec(SkipCnt);
           end;
+        end;
+        assert(cs = FTileMapSize, 'incomplete TM');
 
         IsKF := (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and ((kf = High(FKeyFrames)) or (ZStream.avail_out < CMaxBufSize div 2));
 
