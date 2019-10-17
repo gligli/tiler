@@ -928,9 +928,9 @@ begin
       Inc(kfIdx);
       av := -1.0;
       LastKFIdx := i;
-    end;
 
-    WriteLn('Frm: -> ', i, #9'KF: ', BoolToStr(isKf, True), #9'Ratio: ', FloatToStr(ratio));
+      WriteLn('Frm: -> ', i, #9'KF: ', BoolToStr(isKf, True), #9'Ratio: ', FloatToStr(ratio));
+    end;
 
     FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
   end;
@@ -3733,9 +3733,11 @@ end;
 
 procedure TMainForm.SaveStream(AStream: TStream);
 const
+  CPatternSkipBitCount = 22;
   CMaxBufSize = 2 * 1024 * 1024;
   CMinKFFrameCount = 72;
-  CMinSkipCount = 1;
+  CMinBlkSkipCount = 1;
+  CMinPatSkipCount = MaxInt; // x / CPatternSkipBitCount %
 
 var
   ZStream: TMemoryStream;
@@ -3744,6 +3746,8 @@ var
   var
     sz: Integer;
   begin
+    sz := 0;
+
     if v < (1 shl 7) then
     begin
       v := v shl 1;
@@ -3801,8 +3805,9 @@ var
   end;
 
 var
-  StartPos, StreamSize, LastKF, KFCount, KFSize, kf, fri, x, y, xs, cs, SkipCnt: Integer;
-  IsKF: Boolean;
+  StartPos, StreamSize, LastKF, KFCount, KFSize, kf, fri, yx, yxs, cs, BlkSkipCount, PatSkipCount: Integer;
+  SkipPattern: Cardinal;
+  IsKF, smoo: Boolean;
   frm: PFrame;
   tmi: PTileMapItem;
 begin
@@ -3819,39 +3824,103 @@ begin
         frm := @FFrames[fri];
 
         cs := 0;
-        for y := 0 to FTileMapHeight - 1 do
+        BlkSkipCount := 0;
+        PatSkipCount := 0;
+        SkipPattern := 0;
+        for yx := 0 to FTileMapSize - 1 do
         begin
-          SkipCnt := 0;
-          for x := 0 to FTileMapWidth - 1 do
+          if (SkipPattern <> 0) or (PatSkipCount > 0) then
           begin
-            if SkipCnt <= 0 then
-            begin
-              SkipCnt := 0;
-              for xs := x to FTileMapWidth - 1 do
-              begin
-                if not frm^.TileMap[y, xs].Smoothed then
-                  Break;
-                Inc(SkipCnt);
-              end;
+            // handle an ongoing pattern skip
 
-              if SkipCnt >= CMinSkipCount then
+            if SkipPattern and (1 shl (CPatternSkipBitCount - 1)) <> 0 then
+            begin
+              tmi := @frm^.TileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
+              DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
+              Inc(cs);
+            end
+            else
+            begin
+              Dec(PatSkipCount);
+            end;
+
+            SkipPattern := (SkipPattern shl 1) and not (1 shl CPatternSkipBitCount);
+          end
+          else if BlkSkipCount > 0 then
+          begin
+            // handle an ongoing block skip
+
+            Dec(BlkSkipCount);
+          end
+          else
+          begin
+            // find a potential new skip
+
+            BlkSkipCount := 0;
+            for yxs := yx to FTileMapSize - 1 do
+            begin
+              if not frm^.TileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
+                Break;
+              Inc(BlkSkipCount);
+            end;
+
+            PatSkipCount := 0;
+            SkipPattern := 0;
+            if yx + CPatternSkipBitCount <= FTileMapSize then
+            begin
+              for yxs := yx to yx + CPatternSkipBitCount - 1 do
               begin
-                DoCmd(gtSkipBlock, SkipCnt);
-                Inc(cs, SkipCnt);
+                smoo := frm^.TileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed;
+                SkipPattern := SkipPattern shl 1;
+                if smoo then
+                  Inc(PatSkipCount)
+                else
+                  SkipPattern := SkipPattern or 1;
+              end;
+              Assert(CPatternSkipBitCount - PatSkipCount = PopCnt(SkipPattern));
+            end;
+
+            // filter using heuristics to avoid unbeneficial skips
+
+            if BlkSkipCount >= CMinBlkSkipCount then
+            begin
+              if PatSkipCount >= CMinPatSkipCount then
+              begin
+                //writeln('pat ', PatSkipCount, #9, intToBin(SkipPattern, CPatternSkipBitCount));
+
+                DoCmd(gtSkipPattern, SkipPattern);
+                Inc(cs, PatSkipCount);
+                Dec(PatSkipCount);
+                SkipPattern := (SkipPattern shl 1) and not (1 shl CPatternSkipBitCount);
+                BlkSkipCount := 0;
               end
               else
               begin
-                SkipCnt := 0;
-                tmi := @frm^.TileMap[y, x];
-                DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
-                Inc(cs);
-              end;
-            end;
+                //writeln('blk ', BlkSkipCount);
 
-            Dec(SkipCnt);
+                DoCmd(gtSkipBlock, BlkSkipCount);
+                Inc(cs, BlkSkipCount);
+                Dec(BlkSkipCount);
+                PatSkipCount := 0;
+                SkipPattern := 0;
+              end;
+            end
+            else
+            begin
+              // standard case: emit tilemap item
+
+              BlkSkipCount := 0;
+              PatSkipCount := 0;
+              SkipPattern := 0;
+
+              tmi := @frm^.TileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
+              DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
+              Inc(cs);
+            end;
           end;
         end;
-        assert(cs = FTileMapSize, 'incomplete TM');
+        WriteLn(cs, #9, FTileMapSize);
+        Assert(cs = FTileMapSize, 'incomplete TM');
 
         IsKF := (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and ((kf = High(FKeyFrames)) or (ZStream.Size >= CMaxBufSize div 2));
 
