@@ -22,8 +22,8 @@ const
   cBitsPerComp = 8;
   cTilePaletteSize = 32;
 {$else}
-  cPaletteCount = 32;
-  cBitsPerComp = 6;
+  cPaletteCount = 4;
+  cBitsPerComp = 3;
   cTilePaletteSize = 16;
 {$endif}
 
@@ -1917,7 +1917,7 @@ begin
 
       Assert(dlPtr - dlInput = dlCnt * 3);
 
-      dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cPaletteCount * cTilePaletteSize, min(6, cBitsPerComp - 1), @dlPal);
+      dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cPaletteCount * cTilePaletteSize, EnsureRange(cBitsPerComp - 1, 2, 6), @dlPal);
 
       CMUsage.Count := cPaletteCount * cTilePaletteSize;
       for i := 0 to cPaletteCount * cTilePaletteSize - 1 do
@@ -2051,9 +2051,9 @@ begin
 
     // split most used colors into tile palettes
 
-    Assert(cPaletteCount = cTilePaletteSize * 2, 'non transposable');
+    //Assert(cPaletteCount = cTilePaletteSize * 2, 'non transposable');
 
-    for PalIdx := 0 to cTilePaletteSize - 1 do
+    for PalIdx := 0 to cPaletteCount div 2 - 1 do
     begin
       CMPal.Clear;
 
@@ -2063,12 +2063,12 @@ begin
       CMPal.Sort(@CompareCMULHS);
 
       SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
-      SetLength(AKeyFrame^.PaletteIndexes[PalIdx + cTilePaletteSize], cTilePaletteSize);
+      SetLength(AKeyFrame^.PaletteIndexes[PalIdx + cPaletteCount div 2], cTilePaletteSize);
       for i := 0 to cTilePaletteSize - 1 do
         AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
     end;
 
-    for PalIdx := 0 to cTilePaletteSize - 1 do
+    for PalIdx := 0 to cPaletteCount div 2 - 1 do
     begin
       CMPal.Clear;
 
@@ -2078,10 +2078,10 @@ begin
       CMPal.Sort(@CompareCMULHS);
 
       for i := 0 to cTilePaletteSize - 1 do
-        AKeyFrame^.PaletteIndexes[PalIdx + cTilePaletteSize, i] := PCountIndexArray(CMPal[i])^.Index;
+        AKeyFrame^.PaletteIndexes[PalIdx + cPaletteCount div 2, i] := PCountIndexArray(CMPal[i])^.Index;
     end;
 
-    QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cTilePaletteSize - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
+    QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cPaletteCount - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
 
     for PalIdx := 0 to cPaletteCount - 1 do
     begin
