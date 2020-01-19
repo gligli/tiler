@@ -111,7 +111,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 7
+    Value = 100
   end
   object Label3: TLabel
     Left = 8

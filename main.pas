@@ -20,10 +20,10 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1] of TFloat = (2.0, 0.1);
+  cGamma: array[0..1] of TFloat = (2.0, 0.9);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFFromPal = True;
+  cKFFromPal = False;
   cKFGamma = -1;
   cKFQWeighting = False;
 
@@ -2733,7 +2733,7 @@ begin
       for j := 0 to DctDsLen - 1 do
         if Clusters[j] = i then
         begin
-          diff := CompareEuclidean192(DS^.Dataset[j], CentroidDCTs[i]);
+          diff := CompareManhattan192(DS^.Dataset[j], CentroidDCTs[i]);
           if not IsNan(diff) and (diff < best) then
           begin
             best := diff;
@@ -2762,7 +2762,7 @@ begin
         best := MaxSingle;
         for j := 0 to ClusterCount - 1 do
         begin
-          diff := CompareEuclidean192(DS^.Dataset[CentroidsToTR[j]], DCT);
+          diff := CompareManhattan192(DS^.Dataset[CentroidsToTR[j]], DCT);
           if not IsNan(diff) and (diff < best) then
           begin
             best := diff;
@@ -2883,7 +2883,7 @@ begin
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
     if TestTMICount(Length(DS^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      if IsNan(GoldenRatioSearch(@TestTMICount, DesiredNbTiles, Max(3 * cTileMapSize, Length(DS^.Dataset) div 10), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD)) then
+      //if IsNan(GoldenRatioSearch(@TestTMICount, DesiredNbTiles, Max(3 * cTileMapSize, Length(DS^.Dataset) div 10), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD)) then
         GoldenRatioSearch(@TestTMICount, DesiredNbTiles, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
 
     // update tilemap
