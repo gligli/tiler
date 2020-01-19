@@ -1,6 +1,6 @@
 unit main;
 
-{$mode delphi}
+{$mode objfpc}{$H+}
 
 {$define ASM_DBMP}
 
@@ -20,9 +20,8 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1{YUV,LAB}] of TFloat = (1.0, 1.0);
+  cGamma: array[0..1] of TFloat = (2.0, 0.1);
   cInvertSpritePalette = False;
-  cDitheringGamma = -1;
   cGammaCorrectSmoothing = -1;
   cKFFromPal = True;
   cKFGamma = -1;
@@ -188,6 +187,7 @@ type
     Tiles: array[0..(cTileMapSize - 1)] of TTile;
     TilesIndexes: array of Integer;
     TileMap: array[0..(cTileMapHeight - 1),0..(cTileMapWidth - 1)] of TTileMapItem;
+    FSPixels: TByteDynArray;
     KeyFrame: PKeyFrame;
   end;
 
@@ -219,7 +219,6 @@ type
     TileDS: PTileDataset;
     MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
     FramesLeft: Integer;
-    CS: TRTLCriticalSection;
   end;
 
   PFrameTilingData = ^TFrameTilingData;
@@ -304,7 +303,7 @@ type
     procedure seMaxTilesEditingDone(Sender: TObject);
     procedure tbFrameChange(Sender: TObject);
   private
-    FKeyFrames: array of TKeyFrame;
+    FKeyFrames: array of PKeyFrame;
     FFrames: array of TFrame;
     FColorMap: array[0..cTotalColors - 1] of Integer;
     FColorMapLuma: array[0..cTotalColors - 1] of Integer;
@@ -321,11 +320,11 @@ type
 
     FCS: TRTLCriticalSection;
 
-    function ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+    function ComputeCorrelation(const a, b: TIntegerDynArray): TFloat;
+    function ComputeInterFrameCorrelation(a, b: PFrame): TFloat;
+    procedure DitherFloydSteinberg(var AScreen: TByteDynArray);
     procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-    procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-    procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoPre(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
@@ -343,7 +342,7 @@ type
     function ColorCompareTK(r1, g1, b1, r2, g2, b2: Int64): Int64;
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure TerminatePlan(var Plan: TMixingPlan);
-    function DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
+    function DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; const List: TByteDynArray): Integer;
     procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
     procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
@@ -368,7 +367,7 @@ type
     function GetMaxTPF(AKF: PKeyFrame): Integer;
     function TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
     procedure DoKeyFrameTiling(AKF: PKeyFrame);
-    procedure DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
+    procedure DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -543,6 +542,26 @@ begin
   Result := (alpha - x) / (y - x);
 end;
 
+const
+  CvtPre =  (1 shl cBitsPerComp) - 1;
+  CvtPost = 256 div CvtPre;
+
+function Posterize(v: Byte): Byte; inline;
+begin
+  Result := ((v * CvtPre) div 255) * CvtPost;
+end;
+
+function Decimate(col: Integer): Integer; inline;
+var
+  r, g, b: Byte;
+begin
+  FromRGB(col, r, g, b);
+  r := r shr (8 - cBitsPerComp);
+  g := g shr (8 - cBitsPerComp);
+  b := b shr (8 - cBitsPerComp);
+  Result := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
+end;
+
 Const
   READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
 
@@ -706,7 +725,7 @@ begin
   Result := sqr(r1 - r2) + sqr(g1 - g2) + sqr(b1 - b2);
 end;
 
-function TMainForm.ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+function TMainForm.ComputeCorrelation(const a, b: TIntegerDynArray): TFloat;
 var
   i: Integer;
   ya, yb: TDoubleDynArray;
@@ -725,6 +744,29 @@ begin
   end;
 
   Result := PearsonCorrelation(ya, yb, Length(a) * 3);
+end;
+
+function TMainForm.ComputeInterFrameCorrelation(a, b: PFrame): TFloat;
+var
+  sz, i: Integer;
+  ya, yb: TDoubleDynArray;
+begin
+  Assert(Length(a^.FSPixels) = Length(b^.FSPixels));
+  sz := Length(a^.FSPixels) div 3;
+  SetLength(ya, sz * 3);
+  SetLength(yb, sz * 3);
+
+  for i := 0 to sz - 1 do
+  begin
+    ya[i + sz * 0] := a^.FSPixels[i * 3 + 0];
+    ya[i + sz * 1] := a^.FSPixels[i * 3 + 1];
+    ya[i + sz * 2] := a^.FSPixels[i * 3 + 2];
+
+    yb[i + sz * 0] := b^.FSPixels[i * 3 + 0];
+    yb[i + sz * 1] := b^.FSPixels[i * 3 + 1];
+    yb[i + sz * 2] := b^.FSPixels[i * 3 + 2];
+  end;
+  Result := PearsonCorrelation(ya, yb, Length(ya));
 end;
 
 { TMainForm }
@@ -753,7 +795,7 @@ end;
 
 procedure TMainForm.DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 begin
-  FindBestKeyframePalette(@FKeyFrames[AIndex]);
+  FindBestKeyframePalette(FKeyFrames[AIndex]);
 end;
 
 procedure TMainForm.DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -767,11 +809,11 @@ begin
     Exit;
 
   ProgressRedraw(-1, esDither);
-  ProcThreadPool.DoParallel(DoPre, 0, High(FFrames));
+  ProcThreadPool.DoParallel(@DoPre, 0, High(FFrames));
   ProgressRedraw(1);
-  ProcThreadPool.DoParallel(DoFindBest, 0, High(FKeyFrames));
+  ProcThreadPool.DoParallel(@DoFindBest, 0, High(FKeyFrames));
   ProgressRedraw(2);
-  ProcThreadPool.DoParallel(DoFinal, 0, High(FFrames));
+  ProcThreadPool.DoParallel(@DoFinal, 0, High(FFrames));
   ProgressRedraw(3);
 
   tbFrameChange(nil);
@@ -782,19 +824,18 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TMainForm.DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-begin
-  if FFrames[AIndex].KeyFrame^.StartFrame <> AIndex then
-    Exit;
-  DoFrameTiling(@FFrames[AIndex], seMaxTPF.Value);
-end;
-
-procedure TMainForm.DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-begin
-  DoKeyFrameTiling(@FKeyFrames[AIndex]);
-end;
-
 procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
+
+  procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    DoFrameTiling(FKeyFrames[AIndex], seMaxTPF.Value)
+  end;
+
+  procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    DoKeyFrameTiling(FKeyFrames[AIndex]);
+  end;
+
 var
   i: Integer;
 begin
@@ -802,15 +843,15 @@ begin
     Exit;
 
   ProgressRedraw(-1, esFrameTiling);
-  ProcThreadPool.DoParallel(DoKF, 0, High(FKeyFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoKF, 0, High(FKeyFrames));
   ProgressRedraw(1);
-  ProcThreadPool.DoParallel(DoFrm, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames));
   ProgressRedraw(2);
 
   for i := 0 to High(FKeyFrames) do
   begin
-    Dispose(FKeyFrames[i].TileDS);
-    FKeyFrames[i].TileDS := nil;
+    Dispose(FKeyFrames[i]^.TileDS);
+    FKeyFrames[i]^.TileDS := nil;
   end;
 
   tbFrameChange(nil);
@@ -827,8 +868,11 @@ begin
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
-var
-  inPath: String;
+const
+  CShotTransGracePeriod = 12;
+  CShotTransSAvgFrames = 3;
+  CShotTransSoftThres = 0.8;
+  CShotTransHardThres = 0.4;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -837,7 +881,8 @@ var
     bmp := TPicture.Create;
     try
       EnterCriticalSection(FCS);
-      bmp.LoadFromFile(Format(inPath, [AIndex]));
+      bmp.Bitmap.PixelFormat:=pf32bit;
+      bmp.LoadFromFile(Format(PChar(AData), [AIndex]));
       LeaveCriticalSection(FCS);
 
       LoadFrame(@FFrames[AIndex], bmp.Bitmap);
@@ -849,7 +894,9 @@ var
   end;
 
 var
-  i, j: Integer;
+  inPath: String;
+  i, j, Cnt, LastKFIdx: Integer;
+  v, av, ratio: TFloat;
   fn: String;
   kfIdx, frc: Integer;
   isKf: Boolean;
@@ -862,6 +909,10 @@ begin
     Dispose(FTiles[i]);
 
   SetLength(FFrames, 0);
+
+  for i := 0 to High(FKeyFrames) do
+    Dispose(FKeyFrames[i]);
+
   SetLength(FKeyFrames, 0);
   SetLength(FTiles, 0);
 
@@ -905,28 +956,9 @@ begin
     end;
   end;
 
-  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), PChar(inPath));
 
-  //kfCnt := 0;
-  //for i := 0 to High(FFrames) do
-  //begin
-  //  fn := Format(inPath, [i]);
-  //  isKf := FileExists(ChangeFileExt(fn, '.kf')) or (i = 0);
-  //  if isKf then
-  //    Inc(kfCnt);
-  //end;
-  //
-  //SetLength(FKeyFrames, kfCnt);
-  //kfCnt := -1;
-  //for i := 0 to High(FFrames) do
-  //begin
-  //  fn := Format(inPath, [i]);
-  //  isKf := FileExists(ChangeFileExt(fn, '.kf')) or (i = 0);
-  //  if isKf then
-  //    Inc(kfCnt);
-  //  FFrames[i].KeyFrame := @FKeyFrames[kfCnt];
-  //end;
-
+{$if false}
   kfSL := TStringList.Create;
   try
     fn := ChangeFileExt(Format(inPath, [0]), '.kf');
@@ -956,11 +988,49 @@ begin
       isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
       if isKf then
         Inc(kfIdx);
-      FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
+      FFrames[i].KeyFrame := FKeyFrames[kfIdx];
     end;
   finally
     kfSL.Free;
   end;
+{$else}
+  kfIdx := 0;
+  SetLength(FKeyFrames, 1);
+  New(FKeyFrames[0]);
+  FFrames[0].KeyFrame := FKeyFrames[0];
+
+  av := -1.0;
+  LastKFIdx := 0;
+  for i := 1 to High(FFrames) do
+  begin
+    Cnt := 0;
+    v := ComputeInterFrameCorrelation(@FFrames[i - 1], @FFrames[i]);
+    if av = -1.0 then
+    begin
+      av := v
+    end
+    else
+    begin
+      av := av * (1.0 - 1.0 / CShotTransSAvgFrames) + v * (1.0 / CShotTransSAvgFrames);
+      Inc(Cnt);
+    end;
+
+    ratio := max(0.01, v) / max(0.01, av);
+    isKf := (ratio < CShotTransHardThres) or (ratio < CShotTransSoftThres) and ((i - LastKFIdx) >= CShotTransGracePeriod);
+    if isKf then
+    begin
+      Inc(kfIdx);
+      SetLength(FKeyFrames, kfIdx + 1);
+      New(FKeyFrames[kfIdx]);
+      av := -1.0;
+      LastKFIdx := i;
+
+      WriteLn('Frm: -> ', i, #9'KF: ', BoolToStr(isKf, True), #9'Ratio: ', FloatToStr(ratio));
+    end;
+
+    FFrames[i].KeyFrame := FKeyFrames[kfIdx];
+  end;
+{$endif}
 
   for j := 0 to High(FKeyFrames) do
   begin
@@ -968,17 +1038,17 @@ begin
     efr := Low(Integer);
 
     for i := 0 to High(FFrames) do
-      if FFrames[i].KeyFrame = @FKeyFrames[j] then
+      if FFrames[i].KeyFrame = FKeyFrames[j] then
       begin
         sfr := Min(sfr, i);
         efr := Max(efr, i);
       end;
 
-    FKeyFrames[j].StartFrame := sfr;
-    FKeyFrames[j].EndFrame := efr;
-    FKeyFrames[j].FrameCount := efr - sfr + 1;
-    FKeyFrames[j].FramesLeft := -1;
-    InitializeCriticalSection(FKeyFrames[j].CS);
+    FKeyFrames[j]^.StartFrame := sfr;
+    FKeyFrames[j]^.EndFrame := efr;
+    FKeyFrames[j]^.FrameCount := efr - sfr + 1;
+    FKeyFrames[j]^.FramesLeft := -1;
+    FKeyFrames[j]^.TileDS := nil;
   end;
 
   ProgressRedraw(1);
@@ -1192,7 +1262,7 @@ begin
   Result += lumadiff * lumadiff;
 end;
 
-function TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
+function TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; const List: TByteDynArray): Integer;
 label
   pal_loop, inner_loop, worst;
 var
@@ -1597,7 +1667,7 @@ begin
       for c := 0 to 2 do
       begin
         OldPixel := Pixels[y, x, c];
-        NewPixel := ((OldPixel * ((1 shl cBitsPerComp) - 1)) div 255) shl (8 - cBitsPerComp);
+        NewPixel := Posterize(OldPixel);
         QuantError := OldPixel - NewPixel;
 
         yp := y + 1;
@@ -1615,6 +1685,38 @@ begin
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
       RGBPixels[y, x] := ToRGB(min(255, Pixels[y, x, 0]), min(255, Pixels[y, x, 1]), min(255, Pixels[y, x, 2]));
+end;
+
+procedure TMainForm.DitherFloydSteinberg(var AScreen: TByteDynArray);
+var
+  x, y, c, yp, xm, xp: Integer;
+  OldPixel, NewPixel, QuantError: Integer;
+  ppx: PByte;
+begin
+  ppx := @AScreen[0];
+  for y := 0 to CScreenHeight - 1 do
+    for x := 0 to CScreenWidth - 1 do
+    begin
+      yp := IfThen(y < CScreenHeight - 1, cScreenWidth * 3, 0);
+      xp := IfThen(x < CScreenWidth - 1, 3, 0);
+      xm := IfThen(x > 0, -3, 0);
+
+      for c := 0 to 2 do
+      begin
+        OldPixel := ppx^;
+        NewPixel := Posterize(OldPixel);
+        QuantError := OldPixel - NewPixel;
+
+        ppx^ := NewPixel;
+
+        ppx[xp] := EnsureRange(ppx[xp] + (QuantError * 7) shr 4, 0, 255);
+        ppx[yp + xm] := EnsureRange(ppx[yp + xm] + (QuantError * 3) shr 4, 0, 255);
+        ppx[yp] := EnsureRange(ppx[yp] + (QuantError * 5) shr 4, 0, 255);
+        ppx[yp + xp] := EnsureRange(ppx[yp + xp] + (QuantError * 1) shr 4, 0, 255);
+
+        Inc(ppx);
+      end;
+    end;
 end;
 
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
@@ -1690,30 +1792,33 @@ begin
 end;
 
 type
-  TCountIndex = (ciCount, ciIndex, ciImportance, ciLuma, ciHue);
-  TCountIndexArray = array[Low(TCountIndex)..High(TCountIndex)] of Integer;
+  TCountIndexArray = packed record
+    Count, Index, Luma: Integer;
+    Hue, Sat, Val, Importance: Byte;
+  end;
+
   PCountIndexArray = ^TCountIndexArray;
 
 
 function CompareCMUCntImp(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item2)^[ciCount], PCountIndexArray(Item1)^[ciCount]);
+  Result := CompareValue(PCountIndexArray(Item2)^.Count, PCountIndexArray(Item1)^.Count);
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item2)^[ciImportance], PCountIndexArray(Item1)^[ciImportance]);
+    Result := CompareValue(PCountIndexArray(Item2)^.Importance, PCountIndexArray(Item1)^.Importance);
 end;
 
 function CompareCMUHueLuma(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item1)^[ciHue], PCountIndexArray(Item2)^[ciHue]);
+  Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^[ciLuma], PCountIndexArray(Item2)^[ciLuma]);
+    Result := CompareValue(PCountIndexArray(Item1)^.Luma, PCountIndexArray(Item2)^.Luma);
 end;
 
 function CompareCMULumaHueInv(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item2)^[ciLuma], PCountIndexArray(Item1)^[ciLuma]);
+  Result := CompareValue(PCountIndexArray(Item2)^.Luma, PCountIndexArray(Item1)^.Luma);
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item2)^[ciHue], PCountIndexArray(Item1)^[ciHue]);
+    Result := CompareValue(PCountIndexArray(Item2)^.Hue, PCountIndexArray(Item1)^.Hue);
 end;
 
 procedure TMainForm.PreDitherTiles(AFrame: PFrame);
@@ -1744,18 +1849,18 @@ begin
 
       for i := 0 to High(CMUsage) do
       begin
-        CMUsage[i][ciCount] := 0;
-        CMUsage[i][ciIndex] := i;
-        CMUsage[i][ciImportance] := FColorMapImportance[i];
-        CMUsage[i][ciLuma] := FColorMapLuma[i];
-        CMUsage[i][ciHue] := FColorMapHue[i];
+        CMUsage[i].Count := 0;
+        CMUsage[i].Index := i;
+        CMUsage[i].Importance := FColorMapImportance[i];
+        CMUsage[i].Luma := FColorMapLuma[i];
+        CMUsage[i].Hue := FColorMapHue[i];
       end;
 
       // keep the 16 most used color
 
       for ty := 0 to (cTileWidth - 1) do
         for tx := 0 to (cTileWidth - 1) do
-          Inc(CMUsage[FullPalTile.PalPixels[ty, tx]][ciCount], FullPalTile.AveragedCount);
+          Inc(CMUsage[FullPalTile.PalPixels[ty, tx]].Count);
 
       QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
 
@@ -1766,7 +1871,7 @@ begin
       SetLength(Tile_^.PaletteRGB, cTilePaletteSize);
       for i := 0 to cTilePaletteSize - 1 do
       begin
-        Tile_^.PaletteIndexes[i] := CMUsage[cTilePaletteSize - 1 - i][ciIndex];
+        Tile_^.PaletteIndexes[i] := CMUsage[cTilePaletteSize - 1 - i].Index;
         Tile_^.PaletteRGB[i] := FColorMap[Tile_^.PaletteIndexes[i]];
       end;
 
@@ -1802,11 +1907,11 @@ begin
 
   for i := 0 to High(CMUsage) do
   begin
-    CMUsage[i][ciCount] := 0;
-    CMUsage[i][ciIndex] := i;
-    CMUsage[i][ciImportance] := FColorMapImportance[i];
-    CMUsage[i][ciLuma] := FColorMapLuma[i];
-    CMUsage[i][ciHue] := FColorMapHue[i];
+    CMUsage[i].Count := 0;
+    CMUsage[i].Index := i;
+    CMUsage[i].Importance := FColorMapImportance[i];
+    CMUsage[i].Luma := FColorMapLuma[i];
+    CMUsage[i].Hue := FColorMapHue[i];
   end;
 
   // get color usage stats
@@ -1826,7 +1931,7 @@ begin
 
           for ty := 0 to cTileWidth - 1 do
             for tx := 0 to cTileWidth - 1 do
-              Inc(CMUsage[GTile^.PaletteIndexes[GTile^.PalPixels[ty, tx]]][ciCount]);
+              Inc(CMUsage[GTile^.PaletteIndexes[GTile^.PalPixels[ty, tx]]].Count);
         end;
     end;
 
@@ -1850,8 +1955,8 @@ begin
 
   for i := 0 to cTilePaletteSize - 1 do
   begin
-    AKeyFrame^.PaletteIndexes[False, i] := CMUsage[cPalettePattern[False, i]][ciIndex];
-    AKeyFrame^.PaletteIndexes[True, i] := CMUsage[cPalettePattern[True, i]][ciIndex];
+    AKeyFrame^.PaletteIndexes[False, i] := CMUsage[cPalettePattern[False, i]].Index;
+    AKeyFrame^.PaletteIndexes[True, i] := CMUsage[cPalettePattern[True, i]].Index;
   end;
 
 {$if cInvertSpritePalette}
@@ -2182,9 +2287,12 @@ end;
 
 procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
 var
-  i, j, px, r, g, b, ti, tx, ty: Integer;
+  i, j, col, ti, tx, ty: Integer;
   pcol: PInteger;
+  pfs: PByte;
 begin
+  FillChar(AFrame^, SizeOf(TFrame), 0);
+
   for j := 0 to (cTileMapHeight - 1) do
     for i := 0 to (cTileMapWidth - 1) do
     begin
@@ -2198,25 +2306,30 @@ begin
 
   ABitmap.BeginUpdate;
   try
-    for j := 0 to (cScreenHeight - 1) do
+    SetLength(AFrame^.FSPixels, CScreenHeight * CScreenWidth * 3);
+
+    pfs := @AFrame^.FSPixels[0];
+    for j := 0 to (CScreenHeight - 1) do
     begin
       pcol := ABitmap.ScanLine[j];
-      for i := 0 to (cScreenWidth - 1) do
+      for i := 0 to (CScreenWidth - 1) do
         begin
-          px := pcol^;
+          col := pcol^;
           Inc(pcol);
 
-          b := px and $ff;
-          g := (px shr 8) and $ff;
-          r := (px shr 16) and $ff;
-
-          ti := cTileMapWidth * (j shr 3) + (i shr 3);
+          ti := CTileMapWidth * (j shr 3) + (i shr 3);
           tx := i and (cTileWidth - 1);
           ty := j and (cTileWidth - 1);
 
-          AFrame^.Tiles[ti].RGBPixels[ty, tx] := ToRGB(r, g, b);
+          col := SwapRB(col);
+          AFrame^.Tiles[ti].RGBPixels[ty, tx] := col;
+
+          FromRGB(col, pfs[0], pfs[1], pfs[2]);
+          Inc(pfs, 3);
         end;
     end;
+
+    DitherFloydSteinberg(AFrame^.FSPixels);
 
     for i := 0 to (cTileMapSize - 1) do
     begin
@@ -2257,7 +2370,7 @@ begin
   if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
     Exit;
 
-  lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame: ' + IntToStr(GetFrameTileCount(Frame));
+  lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
 
   imgTiles.Picture.Bitmap.BeginUpdate;
   imgDest.Picture.Bitmap.BeginUpdate;
@@ -2695,14 +2808,14 @@ var
   frm: PFrame;
   T: PTile;
   DS: PTileDataset;
-  used: TByteDynArray;
+  used: TBooleanDynArray;
   spal, vmir, hmir: Boolean;
 begin
   DS := New(PTileDataset);
   AKF^.TileDS := DS;
 
   // make a list of all used tiles
-  SetLength(DS^.FrameDataset, AKF^.FrameCount * cTileMapSize);
+  SetLength(DS^.FrameDataset, AKF^.FrameCount * cTileMapSize, cTileDCTSize);
 
   SetLength(used, Length(FTiles));
   FillByte(used[0], Length(FTiles), 0);
@@ -2714,11 +2827,10 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        SetLength(DS^.FrameDataset[di], cTileDCTSize);
         ComputeTileDCT(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^, cKFFromPal, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DS^.FrameDataset[di]);
         Inc(di);
 
-        used[frm^.TileMap[sy, sx].GlobalTileIndex] := used[frm^.TileMap[sy, sx].GlobalTileIndex] or (1 shl Ord(frm^.TileMap[sy, sx].SpritePal));
+        used[frm^.TileMap[sy, sx].GlobalTileIndex] := True;
       end;
   end;
 
@@ -2726,14 +2838,14 @@ begin
 
   TRSize := 0;
   for i := 0 to High(used) do
-    TRSize += Ord(used[i] <> 0);
+    TRSize += Ord(used[i]);
 
   SetLength(DS^.TRToTileIdx, TRSize);
   SetLength(DS^.Dataset, TRSize * 8, cTileDCTSize);
 
   di := 0;
   for i := 0 to High(FTiles) do
-    if used[i] <> 0 then
+    if used[i] then
     begin
       DS^.TRToTileIdx[di shr 3] := i;
       T := FTiles[i];
@@ -2750,9 +2862,9 @@ begin
   Assert(di = TRSize * 8);
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
+procedure TMainForm.DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 const
-  cNBTilesEpsilon = 1;
+  cNBTilesEpsilon = 3;
 var
   frame, sy, sx: Integer;
   FTD: PFrameTilingData;
@@ -2761,26 +2873,26 @@ var
 begin
   FTD := New(PFrameTilingData);
   try
-    FTD^.Frame := AFrame;
+    FTD^.Frame := @FFrames[AKF^.StartFrame];
     FTD^.DesiredNbTiles := DesiredNbTiles;
     FTD^.Iteration := 0;
-    SetLength(FTD^.OutputTMIs, AFrame^.KeyFrame^.FrameCount * cTileMapSize);
+    SetLength(FTD^.OutputTMIs, AKF^.FrameCount * cTileMapSize);
 
-    DS := AFrame^.KeyFrame^.TileDS;
+    DS := AKF^.TileDS;
 
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
     if TestTMICount(Length(DS^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      if IsNan(GoldenRatioSearch(TestTMICount, DesiredNbTiles, Max(3 * cTileMapSize, Length(DS^.Dataset) div 10), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD)) then
-        GoldenRatioSearch(TestTMICount, DesiredNbTiles, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+      if IsNan(GoldenRatioSearch(@TestTMICount, DesiredNbTiles, Max(3 * cTileMapSize, Length(DS^.Dataset) div 10), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD)) then
+        GoldenRatioSearch(@TestTMICount, DesiredNbTiles, Length(DS^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
 
     // update tilemap
 
-    for frame := 0 to AFrame^.KeyFrame^.FrameCount - 1 do
+    for frame := 0 to AKF^.FrameCount - 1 do
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
-          tmiO := @FFrames[AFrame^.Index + frame].TileMap[sy, sx];
+          tmiO := @FFrames[AKF^.StartFrame + frame].TileMap[sy, sx];
           tmiI := @FTD^.OutputTMIs[frame * cTileMapSize + sy * cTileMapWidth + sx];
 
           tmiO^.GlobalTileIndex := tmiI^.GlobalTileIndex;
@@ -3635,7 +3747,7 @@ begin
     g := (col shr 8) and $ff;
     b := col shr 16;
 
-    FColorMapLuma[i] := ((r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier) shl 7) div cLumaMultiplier;
+    FColorMapLuma[i] := (r*cRedMultiplier + g*cGreenMultiplier + b*cBlueMultiplier) div cLumaMultiplier;
 
     mx := MaxIntValue([r, g, b]);
     mn := MinIntValue([r, g, b]);

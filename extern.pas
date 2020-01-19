@@ -1,6 +1,6 @@
 unit extern;
 
-{$mode delphi}
+{$mode objfpc}{$H+}
 
 interface
 
@@ -12,6 +12,27 @@ type
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
   PFloat = ^TFloat;
+  PPFloat = ^PFloat;
+  PFloatDynArray = ^TFloatDynArray;
+
+  TANNsplitRule = (
+  		ANN_KD_STD = 0,      // the optimized kd-splitting rule
+  		ANN_KD_MIDPT = 1,    // midpoint split
+  		ANN_KD_FAIR	= 2,     // fair split
+  		ANN_KD_SL_MIDPT = 3, // sliding midpoint splitting method
+  		ANN_KD_SL_FAIR = 4,  // sliding fair split method
+  		ANN_KD_SUGGEST = 5 // the authors' suggestion for best
+  );
+
+  TANNkdtree = record
+  end;
+
+  PANNkdtree = ^TANNkdtree;
+
+  TDLUserPal = array[0..2, 0..65535] of Byte;
+  PDLUserPal = ^TDLUserPal;
+
+procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount: Integer; RestartCount: Integer;
@@ -21,6 +42,14 @@ procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; He
 function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
 function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
+
+function ann_kdtree_create(pa: PPFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; cdecl; external 'ANN.dll';
+procedure ann_kdtree_destroy(akd: PANNkdtree); cdecl; external 'ANN.dll';
+function ann_kdtree_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_pri_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
+
+function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
+function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 
 implementation
 
@@ -135,6 +164,44 @@ begin
      end;
   finally
     p.free;
+  end;
+end;
+
+procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
+var
+  Process: TProcess;
+  RetCode: Integer;
+  Output, ErrOut, SrcFN, DstFN: String;
+  SrcStream, DstStream: TFileStream;
+begin
+  Process := TProcess.Create(nil);
+  Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
+  Process.Executable := 'bzip2.exe';
+
+  SrcFN := GetTempFileName('', 'lz-' + IntToStr(GetCurrentThreadId) + '.dat');
+  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.bz2');
+
+  SrcStream := TFileStream.Create(SrcFN, fmCreate or fmShareDenyWrite);
+  try
+    ASourceStream.Seek(0, soBeginning);
+    SrcStream.CopyFrom(ASourceStream, ASourceStream.Size);
+  finally
+    SrcStream.Free;
+  end;
+
+  Process.Parameters.Add('-9');
+  Process.Parameters.Add(SrcFN);
+  Process.ShowWindow := swoHIDE;
+  Process.Priority := ppIdle;
+
+  RetCode := 0;
+  internalRuncommand(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
+
+  DstStream := TFileStream.Create(DstFN, fmOpenRead or fmShareDenyWrite);
+  try
+    ADestStream.CopyFrom(DstStream, DstStream.Size);
+  finally
+    DstStream.Free;
   end;
 end;
 

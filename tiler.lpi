@@ -43,7 +43,7 @@
           </CodeGeneration>
           <Linking>
             <Debugging>
-              <DebugInfoType Value="dsStabs"/>
+              <UseExternalDbgSyms Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
           </Linking>
@@ -178,7 +178,7 @@
       <Debugging>
         <UseHeaptrc Value="True"/>
         <TrashVariables Value="True"/>
-        <UseValgrind Value="True"/>
+        <UseExternalDbgSyms Value="True"/>
       </Debugging>
     </Linking>
     <Other>

@@ -80,7 +80,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 15
     Top = 788
-    Width = 157
+    Width = 256
     AutoSize = False
     ParentColor = False
   end
@@ -111,7 +111,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 4
+    Value = 7
   end
   object Label3: TLabel
     Left = 8
@@ -349,7 +349,7 @@ object MainForm: TMainForm
     Top = 119
     Width = 56
     ItemHeight = 15
-    ItemIndex = 3
+    ItemIndex = 2
     Items.Strings = (
       '1'
       '2'
@@ -359,7 +359,7 @@ object MainForm: TMainForm
     )
     OnChange = cbxYilMixChange
     TabOrder = 4
-    Text = '8'
+    Text = '4'
   end
   object Label11: TLabel
     Left = 8
