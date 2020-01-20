@@ -21,10 +21,10 @@ object MainForm: TMainForm
   object pbProgress: TProgressBar
     Left = 8
     Height = 16
-    Top = 288
+    Top = 336
     Width = 224
     Smooth = True
-    TabOrder = 12
+    TabOrder = 13
   end
   object imgSource: TImage
     Left = 272
@@ -65,7 +65,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 20
+    TabOrder = 21
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -74,7 +74,7 @@ object MainForm: TMainForm
     Width = 42
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 14
+    TabOrder = 15
   end
   object lblTileCount: TLabel
     Left = 8
@@ -94,7 +94,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 15
+    TabOrder = 16
   end
   object Label2: TLabel
     Left = 8
@@ -140,12 +140,12 @@ object MainForm: TMainForm
   object btnRunAll: TButton
     Left = 8
     Height = 25
-    Top = 256
+    Top = 304
     Width = 69
     Caption = 'Run all (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 10
+    TabOrder = 11
   end
   object sePage: TSpinEdit
     Left = 208
@@ -154,7 +154,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 13
+    TabOrder = 14
   end
   object Label6: TLabel
     Left = 8
@@ -249,11 +249,11 @@ object MainForm: TMainForm
   object btnDebug: TButton
     Left = 80
     Height = 25
-    Top = 256
+    Top = 304
     Width = 69
     Caption = 'Test debug'
     OnClick = btnDebugClick
-    TabOrder = 11
+    TabOrder = 12
     Visible = False
   end
   object chkMirrored: TCheckBox
@@ -266,12 +266,12 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 17
+    TabOrder = 18
   end
   object lblPct: TLabel
     Left = 232
     Height = 15
-    Top = 289
+    Top = 337
     Width = 32
     Alignment = taRightJustify
     AutoSize = False
@@ -288,7 +288,7 @@ object MainForm: TMainForm
     Caption = 'Sprite palette'
     OnChange = tbFrameChange
     State = cbGrayed
-    TabOrder = 18
+    TabOrder = 19
   end
   object chkGamma: TCheckBox
     Left = 632
@@ -299,7 +299,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 19
+    TabOrder = 20
   end
   object seMaxTiles: TSpinEdit
     Left = 145
@@ -321,7 +321,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 16
+    TabOrder = 17
   end
   object lblCorrel: TLabel
     Left = 744
@@ -377,6 +377,15 @@ object MainForm: TMainForm
     Caption = 'Use Thomas Knoll dithering'
     OnChange = chkUseTKChange
     TabOrder = 5
+  end
+  object chkUsePython: TCheckBox
+    Left = 8
+    Height = 19
+    Top = 248
+    Width = 184
+    Caption = 'Use Python script for reduction'
+    OnChange = chkUsePythonChange
+    TabOrder = 10
   end
   object IdleTimer: TIdleTimer
     Interval = 80
