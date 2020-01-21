@@ -8,7 +8,7 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
-  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, extern;
+  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, extern, typinfo;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -140,7 +140,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 3, 2, 3, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 4, 2, 3, 1, 2);
 
 type
   TSpinlock = LongInt;
@@ -151,14 +151,9 @@ type
   PTile = ^TTile;
   PPTile = ^PTile;
 
-{$if cTotalColors <= 256}
-  TPalPixel = Byte;
-{$else}
-  TPalPixel = Integer;
-{$endif}
-  PPalPixel = ^TPalPixel;
-  TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of TPalPixel;
+  TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
   TRGBPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
+  PPalPixels = ^TPalPixels;
 
   TTile = record
     RGBPixels: TRGBPixels;
@@ -319,7 +314,7 @@ type
     FLowMem: Boolean;
 
     FProgressStep: TEncoderStep;
-    FProgressPosition, FOldProgressPosition: Integer;
+    FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
 
     FCS: TRTLCriticalSection;
 
@@ -360,7 +355,9 @@ type
     procedure FinalDitherTiles(AFrame: PFrame);
 
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
+
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: TPalPixels);
+
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
@@ -384,6 +381,7 @@ type
 
     procedure Save(ADataStream, ASoundStream: TStream);
 
+    procedure ClearAll;
   public
     { public declarations }
   end;
@@ -664,23 +662,48 @@ begin
   end;
 end;
 
-function CompareEuclidean192Ptr(pa, pb: PFloat): TFloat;
-var
-  i: Integer;
-begin
-  Result := 0;
-  for i := 192 div 8 - 1 downto 0 do
-  begin
-    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
-  end;
-end;
+function Compareeuclidean32Asm(a_rcx: PFloat; b_rdx: PFloat): TFloat; register; assembler; nostackframe;
+asm
+  movdqu xmm0, oword ptr [rcx + $00]
+  movdqu xmm1, oword ptr [rcx + $10]
+  movdqu xmm2, oword ptr [rcx + $20]
+  movdqu xmm3, oword ptr [rcx + $30]
+  movdqu xmm4, oword ptr [rcx + $40]
+  movdqu xmm5, oword ptr [rcx + $50]
+  movdqu xmm6, oword ptr [rcx + $60]
+  movdqu xmm7, oword ptr [rcx + $70]
+
+  subps xmm0, oword ptr [rdx + $00]
+  subps xmm1, oword ptr [rdx + $10]
+  subps xmm2, oword ptr [rdx + $20]
+  subps xmm3, oword ptr [rdx + $30]
+  subps xmm4, oword ptr [rdx + $40]
+  subps xmm5, oword ptr [rdx + $50]
+  subps xmm6, oword ptr [rdx + $60]
+  subps xmm7, oword ptr [rdx + $70]
+
+  mulps xmm0, xmm0
+  mulps xmm1, xmm1
+  mulps xmm2, xmm2
+  mulps xmm3, xmm3
+  mulps xmm4, xmm4
+  mulps xmm5, xmm5
+  mulps xmm6, xmm6
+  mulps xmm7, xmm7
+
+  addps xmm0, xmm1
+  addps xmm2, xmm3
+  addps xmm4, xmm5
+  addps xmm6, xmm7
+
+  addps xmm0, xmm2
+  addps xmm4, xmm6
+
+  addps xmm0, xmm4
+
+  haddps xmm0, xmm0
+  haddps xmm0, xmm0
+end ['xmm0', 'xmm1', 'xmm2', 'xmm3', 'xmm4', 'xmm5', 'xmm6', 'xmm7'];
 
 function CompareManhattan192Ptr(pa, pb: PFloat): TFloat;
 var
@@ -700,9 +723,36 @@ begin
   end;
 end;
 
+function CompareEuclidean192Ptr(pa, pb: PFloat): TFloat;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 192 div 8 - 1 downto 0 do
+  begin
+    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+    Result += sqr(pa^ - pb^); Inc(pa); Inc(pb);
+  end;
+end;
+
 function CompareEuclidean192(const a, b: TFloatDynArray): TFloat; inline;
 begin
-  Result := CompareEuclidean192Ptr(@a[0], @b[0]);
+{$ifdef DOUBLE_PREC}
+  Result := CompareEuclidean192PtrDbl(@a[0], @b[0]);
+{$else}
+  Result := Compareeuclidean32Asm(@a[0 ], @b[0 ]) +
+            Compareeuclidean32Asm(@a[32], @b[32]) +
+            Compareeuclidean32Asm(@a[64], @b[64]) +
+            Compareeuclidean32Asm(@a[96], @b[96]) +
+            Compareeuclidean32Asm(@a[128], @b[128]) +
+            Compareeuclidean32Asm(@a[160], @b[160]);
+{$endif}
 end;
 
 function CompareManhattan192(const a, b: TFloatDynArray): TFloat; inline;
@@ -717,8 +767,8 @@ begin
   pi1 := PInteger(UserParameter);
   pi2 := PInteger(UserParameter);
 
-  Inc(pi1, PPalPixel(Item1)^);
-  Inc(pi2, PPalPixel(Item2)^);
+  Inc(pi1, PByte(Item1)^);
+  Inc(pi2, PByte(Item2)^);
 
   Result := CompareValue(pi1^, pi2^);
 end;
@@ -1187,7 +1237,8 @@ begin
     VK_F5: btnReindexClick(nil);
     VK_F6: btnSmoothClick(nil);
     VK_F7: btnSaveClick(nil);
-    VK_F8: btnRunAllClick(nil);
+    VK_F10: btnRunAllClick(nil);
+    VK_F11: chkPlay.Checked := not chkPlay.Checked;
   end;
 end;
 
@@ -2055,7 +2106,10 @@ begin
 
   // allocate tiles
   for i := 0 to High(FTiles) do
+  begin
     FTiles[i] := New(PTile);
+    FillChar(FTiles[i]^, SizeOf(TTile), 0);
+  end;
 
   // copy frame tiles to global tiles, point tilemap on proper global tiles
   for i := 0 to High(FFrames) do
@@ -2355,6 +2409,30 @@ begin
   end;
 end;
 
+procedure TMainForm.ClearAll;
+var
+  i: Integer;
+begin
+  for i := 0 to High(FTiles) do
+    Dispose(FTiles[i]);
+
+  for i := 0 to High(FFrames) do
+  begin
+    SetLength(FFrames[i].TilesIndexes, 0);
+    SetLength(FFrames[i].FSPixels, 0);
+  end;
+
+  SetLength(FFrames, 0);
+
+  for i := 0 to High(FKeyFrames) do
+  begin
+    Dispose(FKeyFrames[i]);
+  end;
+
+  SetLength(FKeyFrames, 0);
+  SetLength(FTiles, 0);
+end;
+
 procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer;
   ATilePage: Integer);
 var
@@ -2555,6 +2633,7 @@ const
   cProgressMul = 100;
 var
   esLen: Integer;
+  t: Integer;
 begin
   pbProgress.Max := (Ord(High(TEncoderStep)) + 1) * cProgressMul;
 
@@ -2571,6 +2650,8 @@ begin
     FProgressStep := ProgressStep;
     pbProgress.Position := Ord(FProgressStep) * cProgressMul;
     Screen.Cursor := crHourGlass;
+    FProgressPrevTime := GetTickCount;
+    FProgressStartTime := FProgressPrevTime;
   end;
 
   if (CurFrameIdx < 0) and (ProgressStep = esNone) then
@@ -2578,6 +2659,9 @@ begin
     FProgressPosition := 0;
     FOldProgressPosition := 0;
     FProgressStep := esNone;
+    FProgressPosition := 0;
+    FProgressPrevTime := GetTickCount;
+    FProgressStartTime := FProgressPrevTime;
   end;
 
   pbProgress.Position := pbProgress.Position + (FProgressPosition - FOldProgressPosition);
@@ -2585,6 +2669,14 @@ begin
   lblPct.Caption := IntToStr(pbProgress.Position * 100 div pbProgress.Max) + '%';
   lblPct.Invalidate;
   Application.ProcessMessages;
+
+  t := GetTickCount;
+  if CurFrameIdx >= 0 then
+  begin
+    WriteLn('Step: ', GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), ' / ', FProgressPosition,
+      #9'Time: ', FormatFloat('0.000', (t - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (t - FProgressStartTime) / 1000));
+  end;
+  FProgressPrevTime := t;
 
   FOldProgressPosition := FProgressPosition;
 end;
@@ -2623,8 +2715,8 @@ procedure TMainForm.CopyTile(const Src: TTile; var Dest: TTile);
 var x,y: Integer;
 begin
   Dest.Active := Src.Active;
-  Dest.AveragedCount := Src.AveragedCount;
   Dest.TmpIndex := Src.TmpIndex;
+  Dest.AveragedCount := Src.AveragedCount;
   Dest.UseCount := Src.UseCount;
 
   SetLength(Dest.PaletteIndexes, Length(Src.PaletteIndexes));
@@ -2727,17 +2819,17 @@ begin
 
   for tmi := 0 to cTileMapSize - 1 do
   begin
-    DCT := DS^.FrameDataset[FTD^.Frame^.Index * cTileMapSize + tmi];
+    DCT := DS^.FrameDataset[(FTD^.Frame^.Index - FTD^.Frame^.KeyFrame^.StartFrame) * cTileMapSize + tmi];
 
-    //tmiI := FFrames[FTD^.Frame^.Index].TileMap[tmi div cTileMapWidth, tmi mod cTileMapWidth];
+    tmiI := FFrames[FTD^.Frame^.Index].TileMap[tmi div cTileMapWidth, tmi mod cTileMapWidth];
 
     tri := -1;
     best := MaxSingle;
     for j := 0 to ClusterCount - 1 do
       for l := 0 to DctDsLen - 1 do
         if Clusters[j] = l then
-          //for k := Ord(tmiI.SpritePal) * 4 to Ord(tmiI.SpritePal) * 4 + 3 do
-          for k := 0 to 7 do
+          for k := Ord(tmiI.SpritePal) * 4 to Ord(tmiI.SpritePal) * 4 + 3 do
+          //for k := 0 to 7 do
           begin
             diff := CompareEuclidean192Ptr(@DS^.Dataset[l, k * cTileDCTSize], @DCT[0]);
             if not IsNan(diff) and (diff < best) then
@@ -2764,7 +2856,7 @@ begin
   MaxTPF := max(MaxTPF, TPF);
 
   EnterCriticalSection(FCS);
-  WriteLn('FrmIdx: ', FTD^.Frame^.Index, #9'Iter: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount, #9, ClusterCount);
+  WriteLn('FrmIdx: ', FTD^.Frame^.Index, #9'Iter: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount);
   LeaveCriticalSection(FCS);
 
   Inc(FTD^.Iteration);
@@ -2886,6 +2978,9 @@ var
   Tile_, PrevTile: TTile;
   TileDCT, PrevTileDCT: TFloatDynArray;
 begin
+  if AFrame^.KeyFrame <> APrevFrame^.KeyFrame then
+    Exit;
+
   SetLength(PrevTileDCT, cTileDCTSize);
   SetLength(TileDCT, cTileDCTSize);
 
@@ -2902,13 +2997,8 @@ begin
     PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]]^;
     Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]]^;
 
-    if PrevTMI^.HMirror then HMirrorPalTile(PrevTile);
-    if PrevTMI^.VMirror then VMirrorPalTile(PrevTile);
-    if TMI^.HMirror then HMirrorPalTile(Tile_);
-    if TMI^.VMirror then VMirrorPalTile(Tile_);
-
-    ComputeTileDCT(PrevTile, True, True, False, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
-    ComputeTileDCT(Tile_, True, True, False, False, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
+    ComputeTileDCT(PrevTile, True, True, PrevTMI^.HMirror, PrevTMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
+    ComputeTileDCT(Tile_, True, True, TMI^.HMirror, TMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
 
     cmp := CompareEuclidean192(TileDCT, PrevTileDCT);
     cmp := sqrt(cmp * cSqrtFactor);
@@ -2917,11 +3007,22 @@ begin
 
     if Abs(cmp) <= Strength then
     begin
-      TMI^.GlobalTileIndex := AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex];
-      TMI^.FrameTileIndex := PrevTMI^.FrameTileIndex;
-      TMI^.HMirror := PrevTMI^.HMirror;
-      TMI^.VMirror := PrevTMI^.VMirror;
-      TMI^.SpritePal := PrevTMI^.SpritePal;
+      if TMI^.GlobalTileIndex >= PrevTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
+      begin
+        TMI^.GlobalTileIndex := AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex];
+        TMI^.FrameTileIndex := PrevTMI^.FrameTileIndex;
+        TMI^.HMirror := PrevTMI^.HMirror;
+        TMI^.VMirror := PrevTMI^.VMirror;
+        TMI^.SpritePal := PrevTMI^.SpritePal;
+      end
+      else
+      begin
+        PrevTMI^.GlobalTileIndex := TMI^.GlobalTileIndex;
+        PrevTMI^.FrameTileIndex := TMI^.FrameTileIndex;
+        PrevTMI^.HMirror := TMI^.HMirror;
+        PrevTMI^.VMirror := TMI^.VMirror;
+        PrevTMI^.SpritePal := TMI^.SpritePal;
+      end;
       TMI^.Smoothed := True;
     end
     else
@@ -3668,7 +3769,7 @@ begin
   FormatSettings.DecimalSeparator := '.';
 
 {$ifdef DEBUG}
-  //ProcThreadPool.MaxThreadCount := 1;
+  ProcThreadPool.MaxThreadCount := 1;
   btnDebug.Visible := True;
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
@@ -3730,13 +3831,10 @@ begin
 end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
-var
-  i: Integer;
 begin
   DeleteCriticalSection(FCS);
 
-  for i := 0 to High(FTiles) do
-    Dispose(FTiles[i]);
+  ClearAll;
 end;
 
 initialization

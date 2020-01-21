@@ -8,7 +8,12 @@ uses
   LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
+{$IFDEF DOUBLE_PREC}
   TFloat = Double;
+{$else}
+  TFloat = Single;
+{$endif}
+
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
   PFloat = ^TFloat;
