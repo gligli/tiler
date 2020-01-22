@@ -58,7 +58,10 @@ function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; us
 
 implementation
 
-Const
+var
+  GTempAutoInc : Integer = 0;
+
+const
   READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
 
 // helperfunction that does the bulk of the work.
@@ -183,7 +186,7 @@ begin
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'bzip2.exe';
 
-  SrcFN := GetTempFileName('', 'lz-' + IntToStr(GetCurrentThreadId) + '.dat');
+  SrcFN := GetTempFileName('', 'lz-' + IntToStr(InterLockedIncrement(GTempAutoInc)) + '.dat');
   DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.bz2');
 
   SrcStream := TFileStream.Create(SrcFN, fmCreate or fmShareDenyWrite);
@@ -232,7 +235,7 @@ begin
       SL.Add(Line);
     end;
 
-    InFN := GetTempFileName('', 'dataset-'+IntToStr(GetCurrentThreadId)+'.txt');
+    InFN := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
     SL.SaveToFile(InFN);
     SL.Clear;
 
@@ -286,7 +289,7 @@ var
   SL: TStringList;
   Process: TProcess;
 begin
-  if ClusterCount >= Length(TrainDS) then
+  if Assigned(TrainDS) and (ClusterCount >= Length(TrainDS)) then
   begin
     // force a valid dataset by duplicating some lines
     PrevLen := Length(TrainDS);
@@ -298,26 +301,34 @@ begin
   Process := TProcess.Create(nil);
   SL := TStringList.Create;
   try
-    TrainFN := GenerateSVMLightFile(TrainDS, False);
+    if Assigned(TrainDS) then
+      TrainFN := GenerateSVMLightFile(TrainDS, False);
 
     if Assigned(TestDS) then
       TestFN := GenerateSVMLightFile(TestDS, False);
 
     if Assigned(Centroids) then
-      CrFN := GetTempFileName('', 'centroids-'+IntToStr(GetCurrentThreadId)+'.txt');
+    begin
+      CrFN := GetTempFileName('', 'centroids-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
+      if not Assigned(TrainDS) then
+        Centroids.SaveToFile(CrFN)
+    end;
 
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
     Process.Executable := IfThen(SizeOf(TFloat) = SizeOf(Double), 'yakmo.exe', 'yakmo_single.exe');
 
-    CmdLine := IfThen(OutputClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
-    CmdLine += ' --num-result=' + IntToStr(RestartCount);
+    CmdLine := IfThen(OutputClusters, ' --output=2 ');
+    CmdLine += IfThen((ClusterCount >= 0) and Assigned(TrainDS), ' --num-cluster=' + IntToStr(ClusterCount) + ' ');
+    CmdLine += IfThen(RestartCount >= 0, '--num-result=' + IntToStr(RestartCount) + ' ');
+
+    TrainFN := IfThen(TrainFN = '', '-', '"' + TrainFN + '"');
 
     if Assigned(TestDS) then
-      CmdLine := '"' + TrainFN + '" "' + CrFN + '" "' + TestFN + '" ' + CmdLine
+      CmdLine := TrainFN + ' "' + CrFN + '" "' + TestFN + '" ' + CmdLine
     else if Assigned(Centroids) then
-      CmdLine := '"' + TrainFN + '" "' + CrFN + '" - ' + CmdLine
+      CmdLine := TrainFN + ' "' + CrFN + '" - ' + CmdLine
     else
-      CmdLine := '"' + TrainFN + '" - - ' + CmdLine;
+      CmdLine := TrainFN + ' - - ' + CmdLine;
 
     Process.Parameters.Add(CmdLine);
     Process.ShowWindow := swoHIDE;
@@ -329,17 +340,21 @@ begin
     if RetCode <> 0 then
       DebugLn('Yakmo failed! RetCode: ' + IntToStr(RetCode) + sLineBreak + 'Msg: ' + ErrOut + sLineBreak + 'CmdLine: ' + CmdLine);
 
-    DeleteFile(PChar(TrainFN));
+    if Assigned(TrainDS) then
+      DeleteFile(PChar(TrainFN));
 
     if Assigned(TestDS) then
       DeleteFile(PChar(TestDS));
 
     if Assigned(Centroids) then
     begin
-      if FileExists(CrFN) then
-        Centroids.LoadFromFile(CrFN)
-      else
-        GenerateSVMLightData(TrainDS, Centroids, True);
+      if Assigned(TrainDS) then
+      begin
+        if FileExists(CrFN) then
+          Centroids.LoadFromFile(CrFN)
+        else
+          GenerateSVMLightData(TrainDS, Centroids, True);
+      end;
 
       DeleteFile(PChar(CrFN));
     end;
@@ -399,7 +414,7 @@ begin
   try
     GenerateSVMLightData(Dataset, SL, Header);
 
-    Result := GetTempFileName('', 'dataset-'+IntToStr(GetCurrentThreadId)+'.txt');
+    Result := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
 
     SL.SaveToFile(Result);
   finally

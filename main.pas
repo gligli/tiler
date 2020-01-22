@@ -190,8 +190,8 @@ type
 
   TTileDataset = record
     Dataset: TFloatDynArray2;
-    FrameDataset: array of TFloatDynArray;
-    TRToTileIdx: TIntegerDynArray;
+    FrameDataset: TFloatDynArray2;
+    TRTMItem: array of TTileMapItem;
   end;
 
   PTileDataset = ^TTileDataset;
@@ -237,7 +237,6 @@ type
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
     chkUseTK: TCheckBox;
-    chkUsePython: TCheckBox;
     edInput: TEdit;
     edOutputDir: TEdit;
     edWAV: TEdit;
@@ -277,7 +276,6 @@ type
     seFrameCount: TSpinEdit;
     tbFrame: TTrackBar;
 
-    procedure chkUsePythonChange(Sender: TObject);
     procedure chkUseTKChange(Sender: TObject);
     function testGR(x: TFloat; Data: Pointer): TFloat;
 
@@ -309,7 +307,6 @@ type
     FTiles: array of PTile;
 
     FUseThomasKnoll: Boolean;
-    FUsePython: Boolean;
     FY2MixedColors: Integer;
     FLowMem: Boolean;
 
@@ -744,7 +741,7 @@ end;
 function CompareEuclidean192(const a, b: TFloatDynArray): TFloat; inline;
 begin
 {$ifdef DOUBLE_PREC}
-  Result := CompareEuclidean192PtrDbl(@a[0], @b[0]);
+  Result := CompareEuclidean192Ptr(@a[0], @b[0]);
 {$else}
   Result := Compareeuclidean32Asm(@a[0 ], @b[0 ]) +
             Compareeuclidean32Asm(@a[32], @b[32]) +
@@ -918,11 +915,6 @@ end;
 procedure TMainForm.chkUseTKChange(Sender: TObject);
 begin
   FUseThomasKnoll := chkUseTK.Checked;
-end;
-
-procedure TMainForm.chkUsePythonChange(Sender: TObject);
-begin
-  FUsePython := chkUsePython.Checked;
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
@@ -2414,7 +2406,13 @@ var
   i: Integer;
 begin
   for i := 0 to High(FTiles) do
+  begin
+    SetLength(FTiles[i]^.PaletteIndexes, 0);
+    SetLength(FTiles[i]^.PaletteRGB, 0);
     Dispose(FTiles[i]);
+  end;
+
+  SetLength(FTiles, 0);
 
   for i := 0 to High(FFrames) do
   begin
@@ -2430,7 +2428,6 @@ begin
   end;
 
   SetLength(FKeyFrames, 0);
-  SetLength(FTiles, 0);
 end;
 
 procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer;
@@ -2780,88 +2777,99 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  DctDsLen, PassTileCount, ClusterCount, TPF, MaxTPF, i, j, k, l, tmi, tri: Integer;
-  tmiO, tmiI: TTileMapItem;
-  Clusters: TIntegerDynArray;
+  PassTileCount, TPF, i, j, tmi, bestIdx, TrIdx, FrmIdx: Integer;
+  best, cur: TFloat;
+  tmiO: TTileMapItem;
   Used: TBooleanDynArray;
   FTD: PFrameTilingData;
   DS: PTileDataset;
-  best, diff: TFloat;
-  DCT: TFloatDynArray;
+  Centroid, DCT: TFloatDynArray;
+  ReducedDS: TFloatDynArray2;
+  CentroidSL: TStringList;
+  Clusters, ReducedIdxToDS: TIntegerDynArray;
+  KDT: PANNkdtree;
 begin
   PassTileCount := round(PassX);
   FTD := PFrameTilingData(Data);
   DS := FTD^.Frame^.KeyFrame^.TileDS;
-  DctDsLen := Length(DS^.Dataset);
 
-  // cluster all tiles
-
-  ClusterCount := PassTileCount;
-  if PassTileCount >= Length(DS^.Dataset) then
-  begin
-    SetLength(Clusters, ClusterCount);
-    for i := 0 to ClusterCount - 1 do
-      Clusters[i] := i;
-  end
-  else
-  begin
-    if FUsePython then
-      DoExternalSKLearn(DS^.Dataset, PassTileCount, 1, True, Clusters)
-    else
-      DoExternalYakmo(DS^.Dataset, nil, PassTileCount, 1, True, False, nil, Clusters);
-    ClusterCount := MaxIntValue(Clusters) + 1;
-  end;
+  FrmIdx := FTD^.Frame^.Index;
 
   SetLength(Used, Length(FTiles));
-
-  MaxTPF := 0;
   FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+
+  CentroidSL := TStringList.Create;
+
+  Clusters := nil;
+  DoExternalYakmo(DS^.Dataset, nil, PassTileCount, 1, True, False, CentroidSL, Clusters);
+
+  FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+
+  SetLength(ReducedDS, PassTileCount);
+  SetLength(ReducedIdxToDS, PassTileCount);
+  for i := 0 to PassTileCount - 1 do
+  begin
+    Centroid := GetSVMLightLine(i, CentroidSL);
+
+    bestIdx := -1;
+    best := MaxSingle;
+    for j := 0 to High(DS^.Dataset) do
+      if Clusters[j] = i then
+      begin
+        cur := CompareEuclidean192(Centroid, DS^.Dataset[j]);
+        if cur < best then
+        begin
+          best := cur;
+          bestIdx := j;
+        end;
+      end;
+
+    if bestIdx < 0 then
+    begin
+      SetLength(ReducedDS[i], cTileDCTSize);
+      for j := 0 to cTileDCTSize - 1 do
+        ReducedDS[i, j] := MaxSingle;
+      ReducedIdxToDS[i] := -1;
+    end
+    else
+    begin
+      ReducedDS[i] := DS^.Dataset[bestIdx];
+      ReducedIdxToDS[i] := bestIdx;
+    end;
+  end;
+
+  KDT := ann_kdtree_create(PPFloat(ReducedDS), Length(ReducedDS), cTileDCTSize, 1, ANN_KD_STD);
 
   for tmi := 0 to cTileMapSize - 1 do
   begin
-    DCT := DS^.FrameDataset[(FTD^.Frame^.Index - FTD^.Frame^.KeyFrame^.StartFrame) * cTileMapSize + tmi];
+    DCT := DS^.FrameDataset[(FrmIdx - FTD^.Frame^.KeyFrame^.StartFrame) * cTileMapSize + tmi];
 
-    tmiI := FFrames[FTD^.Frame^.Index].TileMap[tmi div cTileMapWidth, tmi mod cTileMapWidth];
+    TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PFloat(DCT), 0.0)];
 
-    tri := -1;
-    best := MaxSingle;
-    for j := 0 to ClusterCount - 1 do
-      for l := 0 to DctDsLen - 1 do
-        if Clusters[j] = l then
-          for k := Ord(tmiI.SpritePal) * 4 to Ord(tmiI.SpritePal) * 4 + 3 do
-          //for k := 0 to 7 do
-          begin
-            diff := CompareEuclidean192Ptr(@DS^.Dataset[l, k * cTileDCTSize], @DCT[0]);
-            if not IsNan(diff) and (diff < best) then
-            begin
-              best := diff;
-              tri := (l shl 3) or k;
-            end;
-          end;
+    Assert(TrIdx >= 0);
 
-    tmiO.GlobalTileIndex := DS^.TRToTileIdx[tri shr 3];
-    tmiO.HMirror := (tri and 1) <> 0;
-    tmiO.VMirror := (tri and 2) <> 0;
-    tmiO.SpritePal := (tri and 4) <> 0;
-
-    Used[tmiO.GlobalTileIndex] := True;
+    tmiO.GlobalTileIndex := DS^.TRTMItem[TrIdx].GlobalTileIndex;
+    tmiO.HMirror := DS^.TRTMItem[TrIdx].HMirror;
+    tmiO.VMirror := DS^.TRTMItem[TrIdx].VMirror;
+    tmiO.SpritePal := DS^.TRTMItem[TrIdx].SpritePal;
 
     FTD^.OutputTMIs[tmi] := tmiO;
+    Used[tmiO.GlobalTileIndex] := True;
   end;
+
+  ann_kdtree_destroy(KDT);
 
   TPF := 0;
   for i := 0 to High(Used) do
     Inc(TPF, Ord(Used[i]));
 
-  MaxTPF := max(MaxTPF, TPF);
-
   EnterCriticalSection(FCS);
-  WriteLn('FrmIdx: ', FTD^.Frame^.Index, #9'Iter: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', PassTileCount);
+  WriteLn('FrmIdx: ', FrmIdx, #9'Itr: ', FTD^.Iteration, #9'TPF: ', TPF, #9'TileCnt: ', PassTileCount);
   LeaveCriticalSection(FCS);
 
   Inc(FTD^.Iteration);
 
-  Result := MaxTPF;
+  Result := TPF;
 end;
 
 procedure TMainForm.DoKeyFrameTiling(AKF: PKeyFrame);
@@ -2872,7 +2880,6 @@ var
   DS: PTileDataset;
   used: TBooleanDynArray;
   spal, vmir, hmir: Boolean;
-  DCT: TFloatDynArray;
 begin
   DS := New(PTileDataset);
   AKF^.TileDS := DS;
@@ -2900,31 +2907,41 @@ begin
   Assert(di = AKF^.FrameCount * cTileMapSize);
 
   TRSize := 0;
-  for i := 0 to High(used) do
+  for i := 0 to High(FTiles) do
     TRSize += Ord(used[i]);
 
-  SetLength(DS^.TRToTileIdx, TRSize);
-  SetLength(DS^.Dataset, TRSize, 8 * cTileDCTSize);
-  SetLength(DCT, cTileDCTSize);
+  SetLength(DS^.TRTMItem, TRSize * 8);
+  SetLength(DS^.Dataset, TRSize * 8, cTileDCTSize);
 
   di := 0;
   for i := 0 to High(FTiles) do
-    if used[i] then
-    begin
-      DS^.TRToTileIdx[di shr 3] := i;
-      T := FTiles[i];
+      if used[i] then
+      begin
+        T := FTiles[i];
 
-      for spal := False to True do
-        for vmir := False to True do
+        for spal := False to True do
           for hmir := False to True do
-          begin
-            ComputeTileDCT(T^, True, cKFQWeighting, hmir, vmir, cKFGamma, AKF^.PaletteRGB[spal], DCT);
-            Move(DCT[0], DS^.Dataset[di shr 3, (di and 7) * cTileDCTSize], cTileDCTSize * SizeOf(TFloat));
-            Inc(di);
-          end;
-    end;
+            for vmir := False to True do
+            begin
+              ComputeTileDCT(T^, True, cKFQWeighting, hmir, vmir, cKFGamma, AKF^.PaletteRGB[spal], DS^.Dataset[di]);
+
+              DS^.TRTMItem[di].GlobalTileIndex := i;
+              DS^.TRTMItem[di].VMirror := vmir;
+              DS^.TRTMItem[di].HMirror := hmir;
+              DS^.TRTMItem[di].SpritePal := spal;
+
+              Inc(di);
+            end;
+      end;
 
   Assert(di = TRSize * 8);
+
+  SetLength(DS^.TRTMItem, di);
+  SetLength(DS^.Dataset, di);
+
+  EnterCriticalSection(FCS);
+  WriteLn('KF FrmIdx: ',AKF^.StartFrame, #9'FullRepo: ', TRSize * 8, #9'ActiveRepo: ', Length(DS^.Dataset));
+  LeaveCriticalSection(FCS);
 end;
 
 procedure TMainForm.DoFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
