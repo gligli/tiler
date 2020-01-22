@@ -191,7 +191,7 @@ type
   TTileDataset = record
     Dataset: TFloatDynArray2;
     FrameDataset: TFloatDynArray2;
-    TRTMItem: array of TTileMapItem;
+    DsTMItem: array of TTileMapItem;
   end;
 
   PTileDataset = ^TTileDataset;
@@ -2848,10 +2848,10 @@ begin
 
     Assert(TrIdx >= 0);
 
-    tmiO.GlobalTileIndex := DS^.TRTMItem[TrIdx].GlobalTileIndex;
-    tmiO.HMirror := DS^.TRTMItem[TrIdx].HMirror;
-    tmiO.VMirror := DS^.TRTMItem[TrIdx].VMirror;
-    tmiO.SpritePal := DS^.TRTMItem[TrIdx].SpritePal;
+    tmiO.GlobalTileIndex := DS^.DsTMItem[TrIdx].GlobalTileIndex;
+    tmiO.HMirror := DS^.DsTMItem[TrIdx].HMirror;
+    tmiO.VMirror := DS^.DsTMItem[TrIdx].VMirror;
+    tmiO.SpritePal := DS^.DsTMItem[TrIdx].SpritePal;
 
     FTD^.OutputTMIs[tmi] := tmiO;
     Used[tmiO.GlobalTileIndex] := True;
@@ -2910,7 +2910,7 @@ begin
   for i := 0 to High(FTiles) do
     TRSize += Ord(used[i]);
 
-  SetLength(DS^.TRTMItem, TRSize * 8);
+  SetLength(DS^.DsTMItem, TRSize * 8);
   SetLength(DS^.Dataset, TRSize * 8, cTileDCTSize);
 
   di := 0;
@@ -2925,10 +2925,10 @@ begin
             begin
               ComputeTileDCT(T^, True, cKFQWeighting, hmir, vmir, cKFGamma, AKF^.PaletteRGB[spal], DS^.Dataset[di]);
 
-              DS^.TRTMItem[di].GlobalTileIndex := i;
-              DS^.TRTMItem[di].VMirror := vmir;
-              DS^.TRTMItem[di].HMirror := hmir;
-              DS^.TRTMItem[di].SpritePal := spal;
+              DS^.DsTMItem[di].GlobalTileIndex := i;
+              DS^.DsTMItem[di].VMirror := vmir;
+              DS^.DsTMItem[di].HMirror := hmir;
+              DS^.DsTMItem[di].SpritePal := spal;
 
               Inc(di);
             end;
@@ -2936,7 +2936,7 @@ begin
 
   Assert(di = TRSize * 8);
 
-  SetLength(DS^.TRTMItem, di);
+  SetLength(DS^.DsTMItem, di);
   SetLength(DS^.Dataset, di);
 
   EnterCriticalSection(FCS);
