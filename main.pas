@@ -740,16 +740,16 @@ end;
 
 function CompareEuclidean192(const a, b: TFloatDynArray): TFloat; inline;
 begin
-{$ifdef DOUBLE_PREC}
+//{$if SizeOf(TFloat) <> 4}
   Result := CompareEuclidean192Ptr(@a[0], @b[0]);
-{$else}
-  Result := Compareeuclidean32Asm(@a[0 ], @b[0 ]) +
-            Compareeuclidean32Asm(@a[32], @b[32]) +
-            Compareeuclidean32Asm(@a[64], @b[64]) +
-            Compareeuclidean32Asm(@a[96], @b[96]) +
-            Compareeuclidean32Asm(@a[128], @b[128]) +
-            Compareeuclidean32Asm(@a[160], @b[160]);
-{$endif}
+//{$else}
+//  Result := Compareeuclidean32Asm(@a[0 ], @b[0 ]) +
+//            Compareeuclidean32Asm(@a[32], @b[32]) +
+//            Compareeuclidean32Asm(@a[64], @b[64]) +
+//            Compareeuclidean32Asm(@a[96], @b[96]) +
+//            Compareeuclidean32Asm(@a[128], @b[128]) +
+//            Compareeuclidean32Asm(@a[160], @b[160]);
+//{$endif}
 end;
 
 function CompareManhattan192(const a, b: TFloatDynArray): TFloat; inline;
@@ -2783,11 +2783,12 @@ var
   Used: TBooleanDynArray;
   FTD: PFrameTilingData;
   DS: PTileDataset;
-  Centroid, DCT: TFloatDynArray;
-  ReducedDS: TFloatDynArray2;
+  Centroid: TFloatDynArray;
   CentroidSL: TStringList;
   Clusters, ReducedIdxToDS: TIntegerDynArray;
   KDT: PANNkdtree;
+  DCT: TDoubleDynArray;
+  ReducedDS: TDoubleDynArray2;
 begin
   PassTileCount := round(PassX);
   FTD := PFrameTilingData(Data);
@@ -2805,7 +2806,7 @@ begin
 
   FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
 
-  SetLength(ReducedDS, PassTileCount);
+  SetLength(ReducedDS, PassTileCount, cTileDCTSize);
   SetLength(ReducedIdxToDS, PassTileCount);
   for i := 0 to PassTileCount - 1 do
   begin
@@ -2833,18 +2834,22 @@ begin
     end
     else
     begin
-      ReducedDS[i] := DS^.Dataset[bestIdx];
+      for j := 0 to cTileDCTSize - 1 do
+        ReducedDS[i, j] := DS^.Dataset[bestIdx, j];
       ReducedIdxToDS[i] := bestIdx;
     end;
   end;
 
-  KDT := ann_kdtree_create(PPFloat(ReducedDS), Length(ReducedDS), cTileDCTSize, 1, ANN_KD_STD);
+  KDT := ann_kdtree_create(PPDouble(ReducedDS), Length(ReducedDS), cTileDCTSize, 1, ANN_KD_STD);
+
+  SetLength(DCT, cTileDCTSize);
 
   for tmi := 0 to cTileMapSize - 1 do
   begin
-    DCT := DS^.FrameDataset[(FrmIdx - FTD^.Frame^.KeyFrame^.StartFrame) * cTileMapSize + tmi];
+    for i := 0 to cTileDCTSize - 1 do
+      DCT[i] := DS^.FrameDataset[(FrmIdx - FTD^.Frame^.KeyFrame^.StartFrame) * cTileMapSize + tmi, i];
 
-    TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PFloat(DCT), 0.0)];
+    TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PDouble(DCT), 0.0)];
 
     Assert(TrIdx >= 0);
 
@@ -2897,7 +2902,8 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        ComputeTileDCT(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^, cKFFromPal, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DS^.FrameDataset[di]);
+        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], False, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DS^.FrameDataset[di]);
+        //ComputeTileDCT(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^, cKFFromPal, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DS^.FrameDataset[di]);
         Inc(di);
 
         used[frm^.TileMap[sy, sx].GlobalTileIndex] := True;

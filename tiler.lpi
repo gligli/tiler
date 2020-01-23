@@ -51,7 +51,6 @@
             <CompilerMessages>
               <IgnoredMessages idx5044="True" idx5024="True"/>
             </CompilerMessages>
-            <CustomOptions Value="-dDOUBLE_PREC"/>
           </Other>
         </CompilerOptions>
       </Item2>
@@ -101,8 +100,7 @@
             </CompilerMessages>
             <CustomOptions Value="-Xs-
 -FWlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo
--OWALL
--dDOUBLE_PREC"/>
+-OWALL"/>
           </Other>
         </CompilerOptions>
       </Item3>
@@ -188,8 +186,7 @@
         <IgnoredMessages idx5044="True" idx5024="True"/>
       </CompilerMessages>
       <CustomOptions Value="-Si-
--dDEBUG
--dDOUBLE_PREC"/>
+-dDEBUG"/>
     </Other>
   </CompilerOptions>
   <Debugging>

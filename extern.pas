@@ -8,14 +8,11 @@ uses
   LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
-{$IFDEF DOUBLE_PREC}
-  TFloat = Double;
-{$else}
   TFloat = Single;
-{$endif}
 
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
+  TDoubleDynArray2 = array of TDoubleDynArray;
   PFloat = ^TFloat;
   PPFloat = ^PFloat;
   PFloatDynArray = ^TFloatDynArray;
@@ -48,10 +45,11 @@ function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String
 function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
 
-function ann_kdtree_create(pa: PPFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; cdecl; external 'ANN.dll';
+function ann_kdtree_create(pa: PPDouble; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; cdecl; external 'ANN.dll';
 procedure ann_kdtree_destroy(akd: PANNkdtree); cdecl; external 'ANN.dll';
-function ann_kdtree_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
-function ann_kdtree_pri_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_search(akd: PANNkdtree; q: PDouble; eps: Double): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_pri_search(akd: PANNkdtree; q: PDouble; eps: Double): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; cnt: Integer; q: PDouble; eps: Double): Integer; cdecl; external 'ANN.dll';
 
 function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';

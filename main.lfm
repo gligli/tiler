@@ -111,7 +111,6 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 100
   end
   object Label3: TLabel
     Left = 8
@@ -127,7 +126,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 176
     TabOrder = 0
-    Text = 'C:\tiler_misc\slayers_sms\%.4d.png'
+    Text = 'C:\tiler_misc\slayers_sms_\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
