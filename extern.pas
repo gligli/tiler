@@ -8,7 +8,7 @@ uses
   LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
-  TFloat = Single;
+  TFloat = Double;
 
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
@@ -410,6 +410,8 @@ var
 begin
   SL := TStringList.Create;
   try
+    SL.LineBreak := #10;
+
     GenerateSVMLightData(Dataset, SL, Header);
 
     Result := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');

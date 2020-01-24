@@ -126,7 +126,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 176
     TabOrder = 0
-    Text = 'C:\tiler_misc\slayers_sms_\%.4d.png'
+    Text = 'C:\tiler_misc\slayers_sms\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -374,7 +374,9 @@ object MainForm: TMainForm
     Top = 144
     Width = 166
     Caption = 'Use Thomas Knoll dithering'
+    Checked = True
     OnChange = chkUseTKChange
+    State = cbChecked
     TabOrder = 5
   end
   object IdleTimer: TIdleTimer
