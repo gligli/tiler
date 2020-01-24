@@ -384,7 +384,7 @@ var
   Line: String;
 begin
   Output.Clear;
-  Output.LineBreak := sLineBreak;
+  Output.LineBreak := #10;
 
   if Header then
   begin
@@ -410,8 +410,6 @@ var
 begin
   SL := TStringList.Create;
   try
-    SL.LineBreak := #10;
-
     GenerateSVMLightData(Dataset, SL, Header);
 
     Result := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
