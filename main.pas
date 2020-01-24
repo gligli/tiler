@@ -2032,22 +2032,26 @@ var
   sx, sy: Integer;
   KF: PKeyFrame;
   SpritePal: Boolean;
-  cmp: array[Boolean] of TFloat;
   OrigTile: TTile;
-  Tile_: array[Boolean] of TTile;
   OrigTileDCT: TFloatDynArray;
   TileDCT: array[Boolean] of TFloatDynArray;
-  Plan: TMixingPlan;
+  cmp: array[Boolean] of TFloat;
+  Tile_: array[Boolean] of TTile;
+  Plan: array[Boolean] of TMixingPlan;
 begin
   SetLength(OrigTileDCT, cTileDCTSize);
   SetLength(TileDCT[False], cTileDCTSize);
   SetLength(TileDCT[True], cTileDCTSize);
 
+  KF := AFrame^.KeyFrame;
+  PreparePlan(Plan[False], FY2MixedColors, KF^.PaletteRGB[False]);
+  PreparePlan(Plan[True], FY2MixedColors, KF^.PaletteRGB[True]);
+
   for sy := 0 to cTileMapHeight - 1 do
     for sx := 0 to cTileMapWidth - 1 do
     begin
       if not FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^.Active then
-        Exit;
+        Continue;
 
       CopyTile(FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^, Tile_[False]);
       CopyTile(FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^, Tile_[True]);
@@ -2057,12 +2061,9 @@ begin
 
       ComputeTileDCT(OrigTile, False, True, False, False, 0, OrigTile.PaletteRGB, OrigTileDCT);
 
-      KF := AFrame^.KeyFrame;
-
       for SpritePal := False to True do
       begin
-        PreparePlan(Plan, FY2MixedColors, KF^.PaletteRGB[SpritePal]);
-        DitherTile(Tile_[SpritePal], Plan);
+        DitherTile(Tile_[SpritePal], Plan[SpritePal]);
 
         ComputeTileDCT(Tile_[SpritePal], True, True, False, False, 0, KF^.PaletteRGB[SpritePal], TileDCT[SpritePal]);
         cmp[SpritePal] := CompareEuclidean192(TileDCT[SpritePal], OrigTileDCT);
@@ -2083,6 +2084,9 @@ begin
       SetLength(Tile_[SpritePal].PaletteRGB, 0);
       CopyTile(Tile_[SpritePal], FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex]^);
     end;
+
+  TerminatePlan(Plan[False]);
+  TerminatePlan(Plan[True]);
 end;
 
 procedure TMainForm.LoadTiles;
@@ -2871,7 +2875,7 @@ begin
   MaxTPF := 0;
   for FrmIdx := 0 to FTD^.KF^.FrameCount - 1 do
   begin
-    FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+    FillChar(Used[0], Length(FTiles), 0);
 
     for tmi := 0 to cTileMapSize - 1 do
     begin
@@ -2913,7 +2917,6 @@ procedure TMainForm.DoKeyFrameTiling(AKF: PKeyFrame);
 var
   TRSize, di, i, frame, sy, sx: Integer;
   frm: PFrame;
-  T: PTile;
   DS: PTileDataset;
   used: TBooleanDynArray;
   spal, vmir, hmir: Boolean;
@@ -2924,8 +2927,8 @@ begin
   // make a list of all used tiles
   SetLength(DS^.FrameDataset, AKF^.FrameCount * cTileMapSize, cTileDCTSize);
 
-  SetLength(used, Length(FTiles));
-  FillByte(used[0], Length(FTiles), 0);
+  SetLength(used, Length(FTiles) * 2);
+  FillByte(used[0], Length(FTiles) * 2, 0);
 
   di := 0;
   for frame := 0 to AKF^.FrameCount - 1 do
@@ -2938,30 +2941,30 @@ begin
         //ComputeTileDCT(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^, cKFFromPal, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DS^.FrameDataset[di]);
         Inc(di);
 
-        used[frm^.TileMap[sy, sx].GlobalTileIndex] := True;
+        used[(frm^.TileMap[sy, sx].GlobalTileIndex shl 1) or Ord(frm^.TileMap[sy, sx].SpritePal)] := True;
       end;
   end;
 
   Assert(di = AKF^.FrameCount * cTileMapSize);
 
   TRSize := 0;
-  for i := 0 to High(FTiles) do
+  for i := 0 to High(used) do
     TRSize += Ord(used[i]);
 
-  SetLength(DS^.DsTMItem, TRSize * 8);
-  SetLength(DS^.Dataset, TRSize * 8, cTileDCTSize);
+  SetLength(DS^.DsTMItem, TRSize * 4);
+  SetLength(DS^.Dataset, TRSize * 4, cTileDCTSize);
 
   di := 0;
   for i := 0 to High(FTiles) do
-    if used[i] then
-    begin
-      T := FTiles[i];
-
-      for spal := False to True do
+    for spal := False to True do
+      if used[(i shl 1) or Ord(spal)] then
         for hmir := False to True do
           for vmir := False to True do
           begin
-            ComputeTileDCT(T^, True, cKFQWeighting, hmir, vmir, cKFGamma, AKF^.PaletteRGB[spal], DS^.Dataset[di]);
+            ComputeTileDCT(FTiles[i]^, True, cKFQWeighting, hmir, vmir, cKFGamma, AKF^.PaletteRGB[spal], DS^.Dataset[di]);
+
+            if (di > 0) and (CompareEuclidean192(DS^.Dataset[di], DS^.Dataset[di - 1]) = 0.0) then
+              Continue;
 
             DS^.DsTMItem[di].GlobalTileIndex := i;
             DS^.DsTMItem[di].VMirror := vmir;
@@ -2970,12 +2973,12 @@ begin
 
             Inc(di);
           end;
-    end;
 
-  Assert(di = TRSize * 8);
+  SetLength(DS^.DsTMItem, di);
+  SetLength(DS^.Dataset, di);
 
   EnterCriticalSection(FCS);
-  WriteLn('KF FrmIdx: ',AKF^.StartFrame, #9'FullRepo: ', TRSize * 8, #9'ActiveRepo: ', Length(DS^.Dataset));
+  WriteLn('KF FrmIdx: ',AKF^.StartFrame, #9'FullRepo: ', TRSize * 4, #9'ActiveRepo: ', Length(DS^.Dataset));
   LeaveCriticalSection(FCS);
 end;
 
@@ -3028,7 +3031,7 @@ var
   sx: Integer;
   cmp: TFloat;
   TMI, PrevTMI: PTileMapItem;
-  Tile_, PrevTile: TTile;
+  Tile_, PrevTile: PTile;
   TileDCT, PrevTileDCT: TFloatDynArray;
 begin
   if AFrame^.KeyFrame <> APrevFrame^.KeyFrame then
@@ -3047,11 +3050,11 @@ begin
 
     // compare DCT of current tile with tile from prev frame tilemap
 
-    PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]]^;
-    Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]]^;
+    PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]];
+    Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]];
 
-    ComputeTileDCT(PrevTile, True, True, PrevTMI^.HMirror, PrevTMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
-    ComputeTileDCT(Tile_, True, True, TMI^.HMirror, TMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
+    ComputeTileDCT(PrevTile^, True, True, PrevTMI^.HMirror, PrevTMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
+    ComputeTileDCT(Tile_^, True, True, TMI^.HMirror, TMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
 
     cmp := CompareEuclidean192(TileDCT, PrevTileDCT);
     cmp := sqrt(cmp * cSqrtFactor);
@@ -3060,22 +3063,11 @@ begin
 
     if Abs(cmp) <= Strength then
     begin
-      if TMI^.GlobalTileIndex >= PrevTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
-      begin
-        TMI^.GlobalTileIndex := AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex];
-        TMI^.FrameTileIndex := PrevTMI^.FrameTileIndex;
-        TMI^.HMirror := PrevTMI^.HMirror;
-        TMI^.VMirror := PrevTMI^.VMirror;
-        TMI^.SpritePal := PrevTMI^.SpritePal;
-      end
-      else
-      begin
-        PrevTMI^.GlobalTileIndex := TMI^.GlobalTileIndex;
-        PrevTMI^.FrameTileIndex := TMI^.FrameTileIndex;
-        PrevTMI^.HMirror := TMI^.HMirror;
-        PrevTMI^.VMirror := TMI^.VMirror;
-        PrevTMI^.SpritePal := TMI^.SpritePal;
-      end;
+      TMI^.GlobalTileIndex := AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex];
+      TMI^.FrameTileIndex := PrevTMI^.FrameTileIndex;
+      TMI^.HMirror := PrevTMI^.HMirror;
+      TMI^.VMirror := PrevTMI^.VMirror;
+      TMI^.SpritePal := PrevTMI^.SpritePal;
       TMI^.Smoothed := True;
     end
     else

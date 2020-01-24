@@ -126,7 +126,7 @@ object MainForm: TMainForm
     Top = 8
     Width = 176
     TabOrder = 0
-    Text = 'C:\smsdev\_old\nggyu\vidpics4\nggyu%.4d.png'
+    Text = 'C:\tiler_misc\slayers_sms\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -204,7 +204,7 @@ object MainForm: TMainForm
     Top = 64
     Width = 176
     TabOrder = 2
-    Text = 'C:\smsdev\_old\nggyu\nggyu_lim.wav'
+    Text = 'C:\tiler_misc\slayers_sms.wav'
   end
   object Label1: TLabel
     Left = 8
