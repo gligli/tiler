@@ -73,6 +73,18 @@ banks 1
     out (VDPControl),a
 .endm
 
+.macro CopyToVDP
+; copies data to the VDP
+; parameters: hl = data address, de = data length
+; affects: a, hl, bc, de
+    ld c, VDPData
+-:  outi
+    dec de
+    ld a,d
+    or e
+    jp nz,-
+.endm
+
 .macro PlaySample
     exx
     outd
@@ -534,6 +546,9 @@ main:
     ld hl,PSGInit
     ld bc,(PSGInitEnd-PSGInit)<<8 + PSGPort
     otir
+
+    ; 50Hz only
+    call EnsureFifty
 
     ; clear PCM buffers
     ld hl, PSGBufferA
@@ -1007,6 +1022,60 @@ p4: ; Advance to next frame
     ex de, hl
     jp NextFrameLoad
  ; c85
+ 
+DetectTVType:
+; Returns a=0 for NTSC, a=1 for PAL
+-:
+    in a, (VDPScanline)
+    cp 192
+    jp nz, -
+    
+    ld b, 0
+    ld c, a
+-:
+    in a, (VDPScanline)
+    cp c
+    jp z, -
+    inc b
+    ld c, a
+    cp 0
+    jp nz, -    
+
+    ld a, b
+    cp 100
+    ld a, 0
+    jr c, +
+    inc a
++:
+
+    ret
+
+EnsureFifty:
+    call DetectTVType
+    or a
+    ret nz
+
+    ; load tiles (Background)
+    SetVDPAddress $2000 | VRAMWrite
+    ld hl, FiftyTiles
+    ld de, 96
+    CopyToVDP
+    
+    ; load tilemap (Background)
+    SetVDPAddress $2dc | VRAMWrite
+    ld hl, FiftyTileMap
+    ld de, 6
+    CopyToVDP
+    
+    ; load palette (Background)
+    SetVDPAddress $0000 | CRAMWrite
+    ld hl, FiftyPalette
+    ld de, 2
+    CopyToVDP
+    
+-:
+    jp -
+
 
 ;==============================================================
 ; Data
@@ -1068,6 +1137,15 @@ TUDoVBlankSwitch:
     ld ixh, 1
     PlaySampleSkew 86
     TilesUploadUnpack 1
+    
+FiftyTiles:
+.db $F3 $00 $00 $00 $84 $00 $00 $00 $85 $00 $00 $00 $F7 $00 $00 $00 $16 $00 $00 $00 $14 $00 $00 $00 $E3 $00 $00 $00 $00 $00 $00 $00
+.db $12 $00 $00 $00 $92 $00 $00 $00 $92 $00 $00 $00 $9E $00 $00 $00 $92 $00 $00 $00 $92 $00 $00 $00 $12 $00 $00 $00 $00 $00 $00 $00
+.db $F9 $00 $00 $00 $09 $00 $00 $00 $11 $00 $00 $00 $21 $00 $00 $00 $41 $00 $00 $00 $80 $00 $00 $00 $F9 $00 $00 $00 $00 $00 $00 $00
+FiftyTileMap:
+.dw $0100 $0101 $0102
+FiftyPalette:
+.db $00 $3F
 
 .org $0900
 TUDoStandardSlow:
