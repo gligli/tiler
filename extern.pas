@@ -58,6 +58,7 @@ implementation
 
 var
   GTempAutoInc : Integer = 0;
+  GInvariantFormatSettings: TFormatSettings;
 
 const
   READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
@@ -384,7 +385,7 @@ var
   Line: String;
 begin
   Output.Clear;
-  Output.LineBreak := #10;
+  Output.LineBreak := sLineBreak;
 
   if Header then
   begin
@@ -395,10 +396,10 @@ begin
 
   for i := 0 to High(Dataset) do
   begin
-    Line := Format('%d 1:%e', [i, Dataset[i, 0]]);
+    Line := Format('%d 1:%e', [i, Dataset[i, 0]], GInvariantFormatSettings);
 
     for j := 1 to High(Dataset[0]) do
-      Line := Format('%s %d:%e', [Line, j + 1, Dataset[i, j]]);
+      Line := Format('%s %d:%e', [Line, j + 1, Dataset[i, j]], GInvariantFormatSettings);
 
     Output.Add(Line);
   end;
@@ -461,7 +462,7 @@ begin
       //writeln(i, #9 ,index,#9,p,#9,np,#9, val);
 
       if Pos('nan', val) = 0 then
-        Result[i] := StrToFloat(val)
+        Result[i] := StrToFloat(val, GInvariantFormatSettings)
       else
         Result[i] := abs(NaN); // Quiet NaN
     end;
@@ -473,5 +474,7 @@ begin
   Result := GetLineInt(lines[1]);
 end;
 
+initialization
+  GetLocaleFormatSettings(LOCALE_INVARIANT, GInvariantFormatSettings);
 end.
 
