@@ -343,7 +343,7 @@ begin
       DeleteFile(PChar(TrainFN));
 
     if Assigned(TestDS) then
-      DeleteFile(PChar(TestDS));
+      DeleteFile(PChar(TestFN));
 
     if Assigned(Centroids) then
     begin
