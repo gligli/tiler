@@ -305,7 +305,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 168
     Width = 56
-    MaxValue = 65536
+    MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
     TabOrder = 6
   end
