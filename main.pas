@@ -922,9 +922,9 @@ end;
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
   CShotTransGracePeriod = 12;
-  CShotTransSAvgFrames = 3;
-  CShotTransSoftThres = 0.8;
-  CShotTransHardThres = 0.4;
+  CShotTransSAvgFrames = 6;
+  CShotTransSoftThres = 0.9;
+  CShotTransHardThres = 0.5;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -1077,7 +1077,7 @@ begin
       av := -1.0;
       LastKFIdx := i;
 
-      WriteLn('Frm: -> ', i, #9'KF: ', BoolToStr(isKf, True), #9'Ratio: ', FloatToStr(ratio));
+      WriteLn('Frm: -> ', i, #9'KF: ', kfIdx, #9'Ratio: ', FloatToStr(ratio));
     end;
 
     FFrames[i].KeyFrame := FKeyFrames[kfIdx];
