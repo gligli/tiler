@@ -1179,7 +1179,7 @@ begin
   dataFS := TFileStream.Create(IncludeTrailingPathDelimiter(edOutputDir.Text) + 'data.bin', fmCreate);
   soundFS := nil;
   if Trim(edWAV.Text) <> '' then
-    soundFS := TFileStream.Create(DoExternalPCMEnc(edWAV.Text, 100), fmOpenRead or fmShareDenyWrite);
+    soundFS := TFileStream.Create(DoExternalPCMEnc(edWAV.Text, 115), fmOpenRead or fmShareDenyWrite);
 
   ProgressRedraw(1);
 
@@ -3363,7 +3363,7 @@ begin
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'pcmenc.exe';
   Process.Parameters.Add('-p 4 -dt1 ' + IntToStr(cClocksPerSample) + ' -dt2 ' + IntToStr(cClocksPerSample) + ' -dt3 ' +
-    IntToStr(cClocksPerSample) + ' -cpuf ' + IntToStr(cZ80Clock) + ' -rto 3 -a ' + IntToStr(Volume) + ' -r 4096 -precision 8 "' + AFN + '"');
+    IntToStr(cClocksPerSample) + ' -cpuf ' + IntToStr(cZ80Clock) + ' -rto 3 -a ' + IntToStr(Volume) + ' -r 4096 -precision 8 -smooth 10 "' + AFN + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
