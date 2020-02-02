@@ -3730,7 +3730,7 @@ begin
     end;
   end;
 
-  DebugLn(['Total tiles size: ', ADataStream.Position]);
+  DebugLn(['Total tiles size:'#9, ADataStream.Position]);
   pp2 := ADataStream.Position;
 
   // index
@@ -3764,7 +3764,7 @@ begin
 
     pp := ADataStream.Position;
     SaveTileIndexes(ADataStream, @FFrames[i]);
-    DebugLn(['TileIndexes size: ', ADataStream.Position - pp]);
+    //DebugLn(['TileIndexes size: ', ADataStream.Position - pp]);
 
     // tilemap
 
@@ -3772,7 +3772,7 @@ begin
     begin
       TMStream[SkipFirst] := TMemoryStream.Create;
       SaveTileMap(TMStream[SkipFirst], @FFrames[i], i, SkipFirst);
-      DebugLn(['TM size: ', TMStream[SkipFirst].Size, ' ', SkipFirst]);
+      //DebugLn(['TM size: ', TMStream[SkipFirst].Size, ' ', SkipFirst]);
     end;
 
     SkipFirst := True;
@@ -3796,7 +3796,14 @@ begin
     prevKF := FFrames[i].KeyFrame;
   end;
 
-  DebugLn(['Total frames size: ', ADataStream.Position - pp2]);
+  DebugLn(['Total frames size:'#9, ADataStream.Position - pp2]);
+
+  DebugLn(['Total unpadded size:'#9, ADataStream.Position]);
+
+  while (ADataStream.Position + cBankSize) mod (cBankSize * 4) <> 0 do
+    ADataStream.WriteByte($ff);
+
+  DebugLn(['Total padded size:'#9, ADataStream.Position]);
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
