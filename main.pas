@@ -1855,7 +1855,7 @@ type
 
 function CompareCMUCntImp(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item2)^.Count, PCountIndexArray(Item1)^.Count);
+  Result := CompareValue(PCountIndexArray(Item2)^.Count shr 3, PCountIndexArray(Item1)^.Count shr 3);
   if Result = 0 then
     Result := CompareValue(PCountIndexArray(Item2)^.Importance, PCountIndexArray(Item1)^.Importance);
 end;
@@ -2984,7 +2984,7 @@ end;
 
 procedure TMainForm.DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 const
-  cNBTilesEpsilon = 3;
+  cNBTilesEpsilon = 1;
 var
   FrmIdx, sy, sx: Integer;
   FTD: PFrameTilingData;
@@ -3125,7 +3125,7 @@ begin
       Inc(Result);
     end;
 
-  PalSigni := GetTilePalZoneThres(ATile, 16, @DataLine[Result]);
+  PalSigni := GetTilePalZoneThres(ATile, 8, @DataLine[Result]);
   Inc(Result, 16);
 
   Assert(Result = cKModesFeatureCount);
@@ -3852,9 +3852,9 @@ begin
       (((((i shr (cBitsPerComp * 2)) and sr) * 255 div sr) and $ff) shl 16);  //B
 
     prim_col :=
-      ((i and 1) * 255) or //R
-      ((((i shr 2) and 1) * 255) shl 8) or //G
-      ((((i shr 4) and 1) * 255) shl 16);  //B
+      (((i shr 1) and 1) * 255) or //R
+      ((((i shr 3) and 1) * 255) shl 8) or //G
+      ((((i shr 5) and 1) * 255) shl 16);  //B
 
     FColorMap[i] := col;
     FColorMapImportance[i] := Ord(col = prim_col);

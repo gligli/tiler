@@ -188,7 +188,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 7
-    Value = 100
+    Value = 50
   end
   object Label10: TLabel
     Left = 8
@@ -348,7 +348,7 @@ object MainForm: TMainForm
     Top = 119
     Width = 56
     ItemHeight = 15
-    ItemIndex = 2
+    ItemIndex = 3
     Items.Strings = (
       '1'
       '2'
@@ -358,7 +358,7 @@ object MainForm: TMainForm
     )
     OnChange = cbxYilMixChange
     TabOrder = 4
-    Text = '4'
+    Text = '8'
   end
   object Label11: TLabel
     Left = 8
