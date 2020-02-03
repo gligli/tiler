@@ -2936,7 +2936,6 @@ begin
 
             pdis := @AFTD^.TileBestDissim[(frm^.TileMap[sy, sx].GlobalTileIndex shl 2) or (Ord(hmir) shl 1) or (Ord(vmir) shl 0)];
 
-            dis += 1 shl (cKModesDissimSubMatchingSize - 1);
             pdis^ += dis;
             if pdis^ > AFTD^.MaxDissim then
               AFTD^.MaxDissim := pdis^;
