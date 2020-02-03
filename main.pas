@@ -224,6 +224,7 @@ type
   TFrameTilingData = record
     OutputTMIs: array of TTileMapItem;
     KF: PKeyFrame;
+    KFFrmIdx: Integer;
     Iteration, DesiredNbTiles: Integer;
   end;
 
@@ -2815,7 +2816,7 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  PassDissim, MaxTPF, TPF, i, k, j, di, tmi, TrIdx, FrmIdx: Integer;
+  PassDissim, MaxTPF, TPF, i, di, tmi, TrIdx, FrmIdx: Integer;
   ReducedIdxToDS: TIntegerDynArray;
   tmiO: TTileMapItem;
   Used: TBooleanDynArray;
@@ -2833,15 +2834,14 @@ begin
 
   if PassDissim < DS^.MaxDissim then
   begin
-    SetLength(ReducedDS, Length(DS^.Dataset), cTileDCTSize);
+    SetLength(ReducedDS, Length(DS^.Dataset));
     SetLength(ReducedIdxToDS, Length(DS^.Dataset));
 
     di := 0;
     for i := 0 to High(DS^.Dataset) do
       if DS^.TileBestDissim[i shr 1] >= PassDissim then
       begin
-        for k := 0 to cTileDCTSize - 1 do
-          ReducedDS[di, k] := DS^.Dataset[i, k];
+        ReducedDS[di] := DS^.Dataset[i];
         ReducedIdxToDS[di] := i;
         Inc(di);
       end;
@@ -2863,38 +2863,39 @@ begin
 
   MaxTPF := 0;
   for FrmIdx := 0 to FTD^.KF^.FrameCount - 1 do
-  begin
-    FillChar(Used[0], Length(FTiles), 0);
-
-    for tmi := 0 to cTileMapSize - 1 do
+    if (FrmIdx = FTD^.KFFrmIdx) or (FTD^.KFFrmIdx < 0) then
     begin
-      for i := 0 to cTileDCTSize - 1 do
-        DCT[i] := DS^.FrameDataset[FrmIdx * cTileMapSize + tmi, i];
+      FillChar(Used[0], Length(FTiles), 0);
 
-      TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PDouble(DCT), 0.0)];
+      for tmi := 0 to cTileMapSize - 1 do
+      begin
+        for i := 0 to cTileDCTSize - 1 do
+          DCT[i] := DS^.FrameDataset[FrmIdx * cTileMapSize + tmi, i];
 
-      Assert(TrIdx >= 0);
+        TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PDouble(DCT), 0.0)];
 
-      tmiO.GlobalTileIndex := DS^.DsTMItem[TrIdx].GlobalTileIndex;
-      tmiO.HMirror := DS^.DsTMItem[TrIdx].HMirror;
-      tmiO.VMirror := DS^.DsTMItem[TrIdx].VMirror;
-      tmiO.SpritePal := DS^.DsTMItem[TrIdx].SpritePal;
+        Assert(TrIdx >= 0);
 
-      FTD^.OutputTMIs[FrmIdx * cTileMapSize + tmi] := tmiO;
-      Used[tmiO.GlobalTileIndex] := True;
+        tmiO.GlobalTileIndex := DS^.DsTMItem[TrIdx].GlobalTileIndex;
+        tmiO.HMirror := DS^.DsTMItem[TrIdx].HMirror;
+        tmiO.VMirror := DS^.DsTMItem[TrIdx].VMirror;
+        tmiO.SpritePal := DS^.DsTMItem[TrIdx].SpritePal;
+
+        FTD^.OutputTMIs[FrmIdx * cTileMapSize + tmi] := tmiO;
+        Used[tmiO.GlobalTileIndex] := True;
+      end;
+
+      TPF := 0;
+      for i := 0 to High(Used) do
+        Inc(TPF, Ord(Used[i]));
+
+      MaxTPF := max(MaxTPF, TPF);
     end;
-
-    TPF := 0;
-    for i := 0 to High(Used) do
-      Inc(TPF, Ord(Used[i]));
-
-    MaxTPF := max(MaxTPF, TPF);
-  end;
 
   ann_kdtree_destroy(KDT);
 
   EnterCriticalSection(FCS);
-  WriteLn('KF FrmIdx: ', FTD^.KF^.StartFrame, #9'Itr: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(ReducedDS));
+  WriteLn('KF FrmIdx: ', FTD^.KF^.StartFrame + max(0, FTD^.KFFrmIdx), #9'Itr: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(ReducedDS));
   LeaveCriticalSection(FCS);
 
   Inc(FTD^.Iteration);
@@ -3030,7 +3031,7 @@ procedure TMainForm.DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
 const
   cNBTilesEpsilon = 1;
 var
-  FrmIdx, sy, sx: Integer;
+  FrmIdx, sy, sx, i: Integer;
   FTD: PFrameTilingData;
   DS: PTileDataset;
   tmiO, tmiI: PTileMapItem;
@@ -3038,16 +3039,30 @@ begin
   FTD := New(PFrameTilingData);
   try
     FTD^.KF := AKF;
-    FTD^.DesiredNbTiles := DesiredNbTiles;
+    FTD^.KFFrmIdx := -1;
     FTD^.Iteration := 0;
+    FTD^.DesiredNbTiles := DesiredNbTiles;
     SetLength(FTD^.OutputTMIs, AKF^.FrameCount * cTileMapSize);
 
     DS := AKF^.TileDS;
 
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
-    if TestTMICount(DS^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      GoldenRatioSearch(@TestTMICount, DS^.MaxDissim, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+    if FExtendedFrmTiling then
+    begin
+      for i := 0 to AKF^.FrameCount - 1 do
+      begin
+        FTD^.Iteration := 0;
+        FTD^.KFFrmIdx := i;
+        if TestTMICount(DS^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
+          GoldenRatioSearch(@TestTMICount, DS^.MaxDissim, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+      end;
+    end
+    else
+    begin
+      if TestTMICount(DS^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
+        GoldenRatioSearch(@TestTMICount, DS^.MaxDissim, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+    end;
 
     // update tilemap
 

@@ -111,7 +111,6 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 3
-    Value = 10
   end
   object Label3: TLabel
     Left = 8
@@ -205,6 +204,7 @@ object MainForm: TMainForm
     Top = 64
     Width = 176
     TabOrder = 2
+    Text = 'C:\tiler_misc\slayers_sms.wav'
   end
   object Label1: TLabel
     Left = 8
@@ -372,8 +372,8 @@ object MainForm: TMainForm
     Left = 8
     Height = 19
     Top = 144
-    Width = 166
-    Caption = 'Use Thomas Knoll dithering'
+    Width = 251
+    Caption = 'Use Thomas Knoll dithering (not Yiluoma 2)'
     Checked = True
     OnChange = chkUseTKChange
     State = cbChecked
@@ -383,8 +383,8 @@ object MainForm: TMainForm
     Left = 8
     Height = 19
     Top = 224
-    Width = 170
-    Caption = 'Extended frame tiling (slow!)'
+    Width = 177
+    Caption = 'Extended frame tiling (slower)'
     Checked = True
     OnChange = chkExtFTChange
     State = cbChecked
