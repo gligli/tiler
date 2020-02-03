@@ -12,6 +12,7 @@ uses
   Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows;
 
 const
+  cKModesDissimSubMatchingSize = 11;
   cKModesFeatureCount = 80;
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
@@ -221,9 +222,6 @@ begin
   Result := Cnt;
 end;
 
-const
-  cDissimSubMatchingSize = 11;
-
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
@@ -362,7 +360,7 @@ asm
     popcnt di, di
     add rsi, rdi
 
-    shl rsi, cDissimSubMatchingSize
+    shl rsi, cKModesDissimSubMatchingSize
     pextrw r10d, xmm11, 0
     add rsi, r10
     pextrw r10d, xmm11, 4
@@ -503,7 +501,7 @@ asm
     popcnt di, di
     add rsi, rdi
 
-    shl rsi, cDissimSubMatchingSize
+    shl rsi, cKModesDissimSubMatchingSize
     pextrw r10d, xmm11, 0
     add rsi, r10
     pextrw r10d, xmm11, 4
