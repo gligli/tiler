@@ -2437,7 +2437,7 @@ end;
 procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer;
   ATilePage: Integer);
 var
-  i, j, r, g, b, ti, tx, ty, col: Integer;
+  i, j, r, g, b, ti, tx, ty, col, ftc: Integer;
   pTiles, pDest, pDest2, p: PInteger;
   tilePtr: PTile;
   TMItem: TTileMapItem;
@@ -2457,7 +2457,12 @@ begin
   if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
     Exit;
 
-  lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
+  ftc := GetFrameTileCount(Frame);
+  lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(ftc);
+  if ftc > seMaxTPF.Value then
+    lblTileCount.Font.Color := clDefault
+  else
+    lblTileCount.Font.Color := clGreen;
 
   imgTiles.Picture.Bitmap.BeginUpdate;
   imgDest.Picture.Bitmap.BeginUpdate;
@@ -3028,13 +3033,13 @@ begin
         FTD^.Iteration := 0;
         FTD^.KFFrmIdx := i;
         if TestTMICount(FTD^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-          GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+          GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 1, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
       end;
     end
     else
     begin
       if TestTMICount(FTD^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-        GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+        GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 1, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
     end;
 
     // update tilemap

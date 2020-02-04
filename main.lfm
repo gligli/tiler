@@ -188,7 +188,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 7
-    Value = 50
+    Value = 25
   end
   object Label10: TLabel
     Left = 8
