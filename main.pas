@@ -140,7 +140,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 5, 1, 3, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 5, 1, 3, 1, 2);
 
 type
   TSpinlock = LongInt;
@@ -226,6 +226,7 @@ type
   { TMainForm }
 
   TMainForm = class(TForm)
+    btChooseFile: TButton;
     btnRunAll: TButton;
     btnDebug: TButton;
     cbxYilMix: TComboBox;
@@ -261,6 +262,7 @@ type
     MenuItem6: TMenuItem;
     miLoad: TMenuItem;
     MenuItem1: TMenuItem;
+    odInput: TOpenDialog;
     pmProcesses: TPopupMenu;
     PopupMenu1: TPopupMenu;
     pbProgress: TProgressBar;
@@ -276,6 +278,7 @@ type
     seFrameCount: TSpinEdit;
     tbFrame: TTrackBar;
 
+    procedure btChooseFileClick(Sender: TObject);
     procedure chkExtFTChange(Sender: TObject);
     procedure chkUseTKChange(Sender: TObject);
     function testGR(x: TFloat; Data: Pointer): TFloat;
@@ -307,6 +310,7 @@ type
     FColorMapImportance: array[0..cTotalColors - 1] of Integer;
     FTiles: array of PTile;
 
+    FInputPath, FWAVFile: String;
     FUseThomasKnoll: Boolean;
     FExtendedFrmTiling: Boolean;
     FY2MixedColors: Integer;
@@ -376,6 +380,7 @@ type
     procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
 
     function DoExternalPCMEnc(AFN: String; Volume: Integer): String;
+    function DoExternalFFMpeg(AFN: String; var AVidPath: String; var AAudioFile: String): String;
 
     procedure SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
     procedure SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
@@ -913,6 +918,12 @@ begin
   FExtendedFrmTiling := chkExtFT.Checked;
 end;
 
+procedure TMainForm.btChooseFileClick(Sender: TObject);
+begin
+  if odInput.Execute then
+    edInput.Text := odInput.FileName;
+end;
+
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
   CShotTransGracePeriod = 12;
@@ -940,7 +951,6 @@ const
   end;
 
 var
-  inPath: String;
   i, j, Cnt, LastKFIdx: Integer;
   v, av, ratio: TFloat;
   fn: String;
@@ -964,16 +974,25 @@ begin
 
   ProgressRedraw(-1, esLoad);
 
-  inPath := edInput.Text;
+  if FileExists(edInput.Text) then
+  begin
+    DoExternalFFMpeg(edInput.Text, FInputPath, FWAVFile);
+  end
+  else
+  begin
+    FInputPath := edInput.Text;
+    FWAVFile := edWAV.Text;
+  end;
+
   frc := seFrameCount.Value;
 
   if frc <= 0 then
   begin
-    if Pos('%', inPath) > 0 then
+    if Pos('%', FInputPath) > 0 then
     begin
       i := 0;
       repeat
-        fn := Format(inPath, [i]);
+        fn := Format(FInputPath, [i]);
         Inc(i);
       until not FileExists(fn);
 
@@ -993,7 +1012,7 @@ begin
 
   for i := 0 to High(FFrames) do
   begin
-    fn := Format(inPath, [i]);
+    fn := Format(FInputPath, [i]);
     if not FileExists(fn) then
     begin
       SetLength(FFrames, 0);
@@ -1002,7 +1021,9 @@ begin
     end;
   end;
 
-  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), PChar(inPath));
+  ProgressRedraw(1);
+
+  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), PChar(FInputPath));
 
 {$if false}
   kfSL := TStringList.Create;
@@ -1096,11 +1117,11 @@ begin
     FKeyFrames[j]^.FramesLeft := -1;
   end;
 
-  ProgressRedraw(1);
+  ProgressRedraw(2);
 
   LoadTiles;
 
-  ProgressRedraw(2);
+  ProgressRedraw(3);
 
   tbFrameChange(nil);
 end;
@@ -1170,18 +1191,21 @@ begin
   ProgressRedraw(-1, esSave);
 
   dataFS := TFileStream.Create(IncludeTrailingPathDelimiter(edOutputDir.Text) + 'data.bin', fmCreate);
-  soundFS := nil;
-  if Trim(edWAV.Text) <> '' then
-    soundFS := TFileStream.Create(DoExternalPCMEnc(edWAV.Text, 115), fmOpenRead or fmShareDenyWrite);
-
-  ProgressRedraw(1);
-
   try
-    Save(dataFS, soundFS);
+    soundFS := nil;
+    if FWAVFile <> '' then
+      soundFS := TFileStream.Create(DoExternalPCMEnc(FWAVFile, 115), fmOpenRead or fmShareDenyWrite);
+
+    ProgressRedraw(1);
+
+    try
+      Save(dataFS, soundFS);
+    finally
+      if Assigned(soundFS) then
+        soundFS.Free;
+    end;
   finally
     dataFS.Free;
-    if Assigned(soundFS) then
-      soundFS.Free;
   end;
 
   ProgressRedraw(2);
@@ -2624,7 +2648,7 @@ begin
     imgPalette.Picture.Bitmap.EndUpdate;
   end;
 
-  fn := Format(edInput.Text, [AFrameIndex]);
+  fn := Format(FInputPath, [AFrameIndex]);
   if FileExists(fn) then
     imgSource.Picture.LoadFromFile(fn);
 
@@ -3033,13 +3057,13 @@ begin
         FTD^.Iteration := 0;
         FTD^.KFFrmIdx := i;
         if TestTMICount(FTD^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-          GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 1, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+          GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 1 shl (cKModesDissimSubMatchingSize - 1), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
       end;
     end
     else
     begin
       if TestTMICount(FTD^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-        GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 1, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+        GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 1 shl (cKModesDissimSubMatchingSize - 1), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
     end;
 
     // update tilemap
@@ -3408,6 +3432,32 @@ begin
   internalRuncommand(Process, Output, ErrOut, i); // destroys Process
 
   Result := AFN + '.pcmenc';
+end;
+
+function TMainForm.DoExternalFFMpeg(AFN: String; var AVidPath: String; var AAudioFile: String): String;
+var
+  i: Integer;
+  Output, ErrOut: String;
+  Process: TProcess;
+begin
+  Process := TProcess.Create(nil);
+
+  Result := IncludeTrailingPathDelimiter(sysutils.GetTempDir) + 'tiler_png\';
+  ForceDirectories(Result);
+
+  DeleteDirectory(Result, True);
+
+  AVidPath := Result + '%.4d.png';
+  AAudioFile := Result + 'audio.wav';
+
+  Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
+  Process.Executable := 'ffmpeg.exe';
+  Process.Parameters.Add('-y -i "' + AFN + '" -r 12.5 -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-10:TP=-1.5:LRA=11 -ar 44100 "' + AAudioFile + '"');
+  Process.ShowWindow := swoHIDE;
+  Process.Priority := ppIdle;
+
+  i := 0;
+  internalRuncommand(Process, Output, ErrOut, i); // destroys Process
 end;
 
 procedure TMainForm.SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);

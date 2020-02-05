@@ -24,7 +24,7 @@ object MainForm: TMainForm
     Top = 336
     Width = 224
     Smooth = True
-    TabOrder = 13
+    TabOrder = 14
   end
   object imgSource: TImage
     Left = 272
@@ -65,7 +65,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 21
+    TabOrder = 22
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -74,7 +74,7 @@ object MainForm: TMainForm
     Width = 42
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 15
+    TabOrder = 16
   end
   object lblTileCount: TLabel
     Left = 8
@@ -94,7 +94,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 16
+    TabOrder = 17
   end
   object Label2: TLabel
     Left = 8
@@ -110,7 +110,7 @@ object MainForm: TMainForm
     Top = 92
     Width = 56
     MaxValue = 10000
-    TabOrder = 3
+    TabOrder = 4
   end
   object Label3: TLabel
     Left = 8
@@ -124,9 +124,8 @@ object MainForm: TMainForm
     Left = 88
     Height = 23
     Top = 8
-    Width = 176
+    Width = 152
     TabOrder = 0
-    Text = 'C:\tiler_misc\slayers_sms\%.4d.png'
   end
   object Label4: TLabel
     Left = 8
@@ -144,7 +143,7 @@ object MainForm: TMainForm
     Caption = 'Run all (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 11
+    TabOrder = 12
   end
   object sePage: TSpinEdit
     Left = 208
@@ -153,7 +152,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 14
+    TabOrder = 15
   end
   object Label6: TLabel
     Left = 8
@@ -177,7 +176,7 @@ object MainForm: TMainForm
     Top = 196
     Width = 56
     MaxValue = 0
-    TabOrder = 8
+    TabOrder = 9
     Value = 207
   end
   object seAvgTPF: TSpinEdit
@@ -187,7 +186,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
-    TabOrder = 7
+    TabOrder = 8
     Value = 25
   end
   object Label10: TLabel
@@ -203,8 +202,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 64
     Width = 176
-    TabOrder = 2
-    Text = 'C:\tiler_misc\slayers_sms.wav'
+    TabOrder = 3
   end
   object Label1: TLabel
     Left = 8
@@ -219,7 +217,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 36
     Width = 176
-    TabOrder = 1
+    TabOrder = 2
     Text = '.\sms\tiled'
   end
   object Label9: TLabel
@@ -235,7 +233,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 248
     Width = 56
-    TabOrder = 10
+    TabOrder = 11
   end
   object imgPalette: TImage
     Left = 8
@@ -252,7 +250,7 @@ object MainForm: TMainForm
     Width = 69
     Caption = 'Test debug'
     OnClick = btnDebugClick
-    TabOrder = 12
+    TabOrder = 13
     Visible = False
   end
   object chkMirrored: TCheckBox
@@ -265,7 +263,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 18
+    TabOrder = 19
   end
   object lblPct: TLabel
     Left = 232
@@ -287,7 +285,7 @@ object MainForm: TMainForm
     Caption = 'Sprite palette'
     OnChange = tbFrameChange
     State = cbGrayed
-    TabOrder = 19
+    TabOrder = 20
   end
   object chkGamma: TCheckBox
     Left = 632
@@ -298,7 +296,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 20
+    TabOrder = 21
   end
   object seMaxTiles: TSpinEdit
     Left = 145
@@ -307,7 +305,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
-    TabOrder = 6
+    TabOrder = 7
   end
   object chkReduced: TCheckBox
     Left = 392
@@ -320,7 +318,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 17
+    TabOrder = 18
   end
   object lblCorrel: TLabel
     Left = 744
@@ -357,7 +355,7 @@ object MainForm: TMainForm
       '16'
     )
     OnChange = cbxYilMixChange
-    TabOrder = 4
+    TabOrder = 5
     Text = '8'
   end
   object Label11: TLabel
@@ -377,7 +375,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = chkUseTKChange
     State = cbChecked
-    TabOrder = 5
+    TabOrder = 6
   end
   object chkExtFT: TCheckBox
     Left = 8
@@ -388,7 +386,16 @@ object MainForm: TMainForm
     Checked = True
     OnChange = chkExtFTChange
     State = cbChecked
-    TabOrder = 9
+    TabOrder = 10
+  end
+  object btChooseFile: TButton
+    Left = 240
+    Height = 23
+    Top = 8
+    Width = 24
+    Caption = '...'
+    OnClick = btChooseFileClick
+    TabOrder = 1
   end
   object IdleTimer: TIdleTimer
     Interval = 80
@@ -434,5 +441,9 @@ object MainForm: TMainForm
       ShortCut = 118
       OnClick = btnSaveClick
     end
+  end
+  object odInput: TOpenDialog
+    left = 744
+    top = 640
   end
 end
