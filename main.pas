@@ -23,7 +23,6 @@ const
   cGamma: array[0..1] of TFloat = (2.0, 0.9);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFFromPal = True;
   cKFGamma = 0;
   cKFQWeighting = False;
 
@@ -230,6 +229,7 @@ type
     btnRunAll: TButton;
     btnDebug: TButton;
     cbxYilMix: TComboBox;
+    chkPalFT: TCheckBox;
     chkGamma: TCheckBox;
     chkReduced: TCheckBox;
     chkSprite: TCheckBox;
@@ -313,6 +313,7 @@ type
     FInputPath, FWAVFile: String;
     FUseThomasKnoll: Boolean;
     FExtendedFrmTiling: Boolean;
+    FPalBasedFrmTiling: Boolean;
     FY2MixedColors: Integer;
     FLowMem: Boolean;
 
@@ -916,6 +917,7 @@ end;
 procedure TMainForm.chkExtFTChange(Sender: TObject);
 begin
   FExtendedFrmTiling := chkExtFT.Checked;
+  FPalBasedFrmTiling := chkPalFT.Checked;
 end;
 
 procedure TMainForm.btChooseFileClick(Sender: TObject);
@@ -2986,7 +2988,7 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
+        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
         Inc(di);
       end;
   end;
