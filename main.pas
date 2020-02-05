@@ -3440,7 +3440,7 @@ begin
 
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'ffmpeg.exe';
-  Process.Parameters.Add('-y -i "' + AFN + '" -r 12.5 -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 ' + vfl + ' -pix_fmt rgb24 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-10:TP=-1.5:LRA=11 -ar 44100 ' + afl + ' "' + AAudioFile + '"');
+  Process.Parameters.Add('-y -i "' + AFN + '" -r 12.5 -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 ' + vfl + ' -pix_fmt rgb24 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-16:TP=-1:LRA=11 -ar 44100 ' + afl + ' "' + AAudioFile + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
