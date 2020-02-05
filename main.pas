@@ -23,7 +23,7 @@ const
   cGamma: array[0..1] of TFloat = (2.0, 0.9);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFFromPal = False;
+  cKFFromPal = True;
   cKFGamma = 0;
   cKFQWeighting = False;
 
@@ -380,7 +380,7 @@ type
     procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
 
     function DoExternalPCMEnc(AFN: String; Volume: Integer): String;
-    function DoExternalFFMpeg(AFN: String; var AVidPath: String; var AAudioFile: String): String;
+    function DoExternalFFMpeg(AFN: String; var AVidPath: String; var AAudioFile: String; AFrameCount: Integer): String;
 
     procedure SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
     procedure SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
@@ -976,7 +976,7 @@ begin
 
   if FileExists(edInput.Text) then
   begin
-    DoExternalFFMpeg(edInput.Text, FInputPath, FWAVFile);
+    DoExternalFFMpeg(edInput.Text, FInputPath, FWAVFile, seFrameCount.Value);
   end
   else
   begin
@@ -2986,11 +2986,7 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-{$if cKFFromPal}
-        ComputeTileDCT(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^, cKFFromPal, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
-{$else}
-        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], False, cKFQWeighting, False, False, cKFGamma, nil, AFTD^.FrameDataset[di]);
-{$endif}
+        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], cKFFromPal, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
         Inc(di);
       end;
   end;
@@ -3434,10 +3430,10 @@ begin
   Result := AFN + '.pcmenc';
 end;
 
-function TMainForm.DoExternalFFMpeg(AFN: String; var AVidPath: String; var AAudioFile: String): String;
+function TMainForm.DoExternalFFMpeg(AFN: String; var AVidPath: String; var AAudioFile: String; AFrameCount: Integer): String;
 var
   i: Integer;
-  Output, ErrOut: String;
+  Output, ErrOut, vfl, afl: String;
   Process: TProcess;
 begin
   Process := TProcess.Create(nil);
@@ -3450,9 +3446,17 @@ begin
   AVidPath := Result + '%.4d.png';
   AAudioFile := Result + 'audio.wav';
 
+  vfl := '';
+  afl := '';
+  if AFrameCount > 0 then
+  begin
+    vfl := ' -frames:v ' + IntToStr(AFrameCount);
+    afl := ' -t ' + FloatToStr(AFrameCount / 12.5);
+  end;
+
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'ffmpeg.exe';
-  Process.Parameters.Add('-y -i "' + AFN + '" -r 12.5 -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-10:TP=-1.5:LRA=11 -ar 44100 "' + AAudioFile + '"');
+  Process.Parameters.Add('-y -i "' + AFN + '" -r 12.5 -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 ' + vfl + ' -pix_fmt rgb24 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-10:TP=-1.5:LRA=11 -ar 44100 ' + afl + ' "' + AAudioFile + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
