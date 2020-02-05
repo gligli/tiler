@@ -20,7 +20,7 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1] of TFloat = (2.0, 0.9);
+  cGamma: array[0..1] of TFloat = (1.8, 0.9);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
   cKFGamma = 0;
@@ -279,6 +279,8 @@ type
     procedure btChooseFileClick(Sender: TObject);
     procedure chkExtFTChange(Sender: TObject);
     procedure chkUseTKChange(Sender: TObject);
+    procedure edInputChange(Sender: TObject);
+    procedure edWAVChange(Sender: TObject);
     function testGR(x: TFloat; Data: Pointer): TFloat;
 
     procedure btnLoadClick(Sender: TObject);
@@ -910,6 +912,16 @@ end;
 procedure TMainForm.chkUseTKChange(Sender: TObject);
 begin
   FUseThomasKnoll := chkUseTK.Checked;
+end;
+
+procedure TMainForm.edInputChange(Sender: TObject);
+begin
+  FInputPath := edInput.Text;
+end;
+
+procedure TMainForm.edWAVChange(Sender: TObject);
+begin
+  FWAVFile := edWAV.Text;
 end;
 
 procedure TMainForm.chkExtFTChange(Sender: TObject);
@@ -2918,7 +2930,7 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, FPalBasedFrmTiling, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
+        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, False, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
         Inc(di);
       end;
   end;
@@ -2939,7 +2951,7 @@ begin
       for vmir := False to True do
         for spal := False to True do
         begin
-          ComputeTileDCT(FTiles[i]^, True, FPalBasedFrmTiling, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[di]);
+          ComputeTileDCT(FTiles[i]^, True, False, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[di]);
 
           AFTD^.DsTMItem[di].GlobalTileIndex := i;
           AFTD^.DsTMItem[di].VMirror := vmir;

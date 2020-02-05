@@ -125,6 +125,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 8
     Width = 152
+    OnChange = edInputChange
     TabOrder = 0
   end
   object Label4: TLabel
@@ -202,6 +203,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 64
     Width = 176
+    OnChange = edWAVChange
     TabOrder = 3
   end
   object Label1: TLabel
@@ -403,9 +405,7 @@ object MainForm: TMainForm
     Top = 248
     Width = 154
     Caption = 'Palette based frame tiling'
-    Checked = True
     OnChange = chkExtFTChange
-    State = cbChecked
     TabOrder = 11
   end
   object IdleTimer: TIdleTimer
