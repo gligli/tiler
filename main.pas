@@ -2919,6 +2919,7 @@ var
   spal, vmir, hmir: Boolean;
   pdis: PFloat;
   diff, best: TFloat;
+  BestCache: TFloatDynArray;
 begin
   // make a list of all used tiles
   SetLength(AFTD^.FrameDataset, AFTD^.KF^.FrameCount * cTileMapSize, cTileDCTSize);
@@ -2969,6 +2970,9 @@ begin
   SetLength(AFTD^.TileBestDist, Length(FTiles));
   FillQWord(AFTD^.TileBestDist[0], Length(AFTD^.TileBestDist), 0);  // TFloat = Double => FillQWord
 
+  SetLength(BestCache, Length(FTiles));
+  FillQWord(BestCache[0], Length(BestCache), 0);  // TFloat = Double => FillQWord
+
   di := 0;
   for frame := 0 to AFTD^.KF^.FrameCount - 1 do
   begin
@@ -2976,12 +2980,20 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        best := MaxSingle;
-        for j := 0 to High(AFTD^.Dataset) do
+        if BestCache[frm^.TileMap[sy, sx].GlobalTileIndex] = 0.0 then
         begin
-          diff := CompareEuclidean192(AFTD^.Dataset[j], AFTD^.FrameDataset[di]);
-          if diff < best then
-            best := diff;
+          best := MaxSingle;
+          for j := 0 to High(AFTD^.Dataset) do
+          begin
+            diff := CompareEuclidean192(AFTD^.Dataset[j], AFTD^.FrameDataset[di]);
+            if diff < best then
+              best := diff;
+          end;
+          BestCache[frm^.TileMap[sy, sx].GlobalTileIndex] := best;
+        end
+        else
+        begin
+          best := BestCache[frm^.TileMap[sy, sx].GlobalTileIndex];
         end;
 
         pdis := @AFTD^.TileBestDist[frm^.TileMap[sy, sx].GlobalTileIndex];
