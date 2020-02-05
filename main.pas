@@ -24,7 +24,6 @@ const
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
   cKFGamma = 0;
-  cKFQWeighting = False;
 
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
@@ -217,9 +216,8 @@ type
     Dataset: TFloatDynArray2;
     FrameDataset: TFloatDynArray2;
     DsTMItem: array of TTileMapItem;
-    TileBestDissim: TUInt64DynArray;
-    TileUseCount: TIntegerDynArray;
-    MaxDissim: UInt64;
+    TileBestDist: TFloatDynArray;
+    MaxDist: TFloat;
   end;
 
   { TMainForm }
@@ -2828,7 +2826,7 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  PassDissim, MaxTPF, TPF, i, di, tmi, TrIdx, FrmIdx: Integer;
+  MaxTPF, TPF, i, di, tmi, TrIdx, FrmIdx: Integer;
   ReducedIdxToDS: TIntegerDynArray;
   tmiO: TTileMapItem;
   Used: TBooleanDynArray;
@@ -2837,35 +2835,24 @@ var
   DCT: TDoubleDynArray;
   ReducedDS: TDoubleDynArray2;
 begin
-  PassDissim := floor(PassX);
   FTD := PFrameTilingData(Data);
 
   SetLength(Used, Length(FTiles));
 
-  if PassDissim < FTD^.MaxDissim then
-  begin
-    SetLength(ReducedDS, Length(FTD^.Dataset));
-    SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
+  SetLength(ReducedDS, Length(FTD^.Dataset));
+  SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
 
-    di := 0;
-    for i := 0 to High(FTD^.Dataset) do
-      if FTD^.TileBestDissim[i shr 1] >= PassDissim then
-      begin
-        ReducedDS[di] := FTD^.Dataset[i];
-        ReducedIdxToDS[di] := i;
-        Inc(di);
-      end;
+  di := 0;
+  for i := 0 to High(FTD^.Dataset) do
+    if FTD^.TileBestDist[i shr 3] < PassX then
+    begin
+      ReducedDS[di] := FTD^.Dataset[i];
+      ReducedIdxToDS[di] := i;
+      Inc(di);
+    end;
 
-    SetLength(ReducedDS, di);
-    SetLength(ReducedIdxToDS, di);
-  end
-  else
-  begin
-    ReducedDS := FTD^.Dataset;
-    SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
-    for i := 0 to High(FTD^.Dataset) do
-      ReducedIdxToDS[i] := i;
-  end;
+  SetLength(ReducedDS, di);
+  SetLength(ReducedIdxToDS, di);
 
   KDT := ann_kdtree_create(PPDouble(ReducedDS), Length(ReducedDS), cTileDCTSize, 1, ANN_KD_STD);
 
@@ -2915,69 +2902,12 @@ end;
 
 procedure TMainForm.DoKeyFrameTiling(AFTD: PFrameTilingData);
 var
-  TRSize, di, i, frame, sy, sx, signi: Integer;
+  TRSize, di, i, j, frame, sy, sx: Integer;
   frm: PFrame;
   spal, vmir, hmir: Boolean;
-  dis: UInt64;
-  pdis: PUInt64;
-
-  Line: TByteDynArray;
-  Dataset: TByteDynArray2;
-  TileIndices: TIntegerDynArray;
+  pdis: PFloat;
+  diff, best: TFloat;
 begin
-  AFTD^.MaxDissim := 0;
-  SetLength(AFTD^.TileBestDissim, Length(FTiles) * 4);
-  FillQWord(AFTD^.TileBestDissim[0], Length(AFTD^.TileBestDissim), 0);
-
-  SetLength(AFTD^.TileUseCount, Length(FTiles));
-  FillDWord(AFTD^.TileUseCount[0], Length(FTiles), 0);
-
-  SetLength(Line, cKModesFeatureCount);
-  SetLength(Dataset, Length(FTiles), cKModesFeatureCount);
-  SetLength(TileIndices, Length(FTiles));
-  di := 0;
-  for i := 0 to High(FTiles) do
-  begin
-    if not FTiles[i]^.Active then
-      Continue;
-
-    WriteTileDatasetLine(FTiles[i]^, Dataset[di], signi);
-    TileIndices[di] := i;
-    Inc(di);
-  end;
-  SetLength(Dataset, di);
-  SetLength(TileIndices, di);
-
-  for frame := 0 to AFTD^.KF^.FrameCount - 1 do
-  begin
-    frm := @FFrames[AFTD^.KF^.StartFrame + frame];
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
-        for hmir := False to True do
-        begin
-          if hmir then HMirrorPalTile(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^);
-
-          for vmir := False to True do
-          begin
-            if vmir then VMirrorPalTile(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^);
-            WriteTileDatasetLine(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^, Line, signi);
-            if vmir then VMirrorPalTile(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^);
-
-            GetMinMatchingDissim(Dataset, Line, Length(Dataset), dis);
-
-            pdis := @AFTD^.TileBestDissim[(frm^.TileMap[sy, sx].GlobalTileIndex shl 2) or (Ord(hmir) shl 1) or (Ord(vmir) shl 0)];
-
-            pdis^ += dis;
-            if pdis^ > AFTD^.MaxDissim then
-              AFTD^.MaxDissim := pdis^;
-
-            Inc(AFTD^.TileUseCount[frm^.TileMap[sy, sx].GlobalTileIndex]);
-          end;
-
-          if hmir then HMirrorPalTile(FTiles[frm^.TileMap[sy, sx].GlobalTileIndex]^);
-        end;
-  end;
-
   // make a list of all used tiles
   SetLength(AFTD^.FrameDataset, AFTD^.KF^.FrameCount * cTileMapSize, cTileDCTSize);
 
@@ -2988,7 +2918,7 @@ begin
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
+        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, FPalBasedFrmTiling, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
         Inc(di);
       end;
   end;
@@ -3009,7 +2939,7 @@ begin
       for vmir := False to True do
         for spal := False to True do
         begin
-          ComputeTileDCT(FTiles[i]^, True, cKFQWeighting, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[di]);
+          ComputeTileDCT(FTiles[i]^, True, FPalBasedFrmTiling, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[di]);
 
           AFTD^.DsTMItem[di].GlobalTileIndex := i;
           AFTD^.DsTMItem[di].VMirror := vmir;
@@ -3023,8 +2953,36 @@ begin
   SetLength(AFTD^.DsTMItem, di);
   SetLength(AFTD^.Dataset, di);
 
+  AFTD^.MaxDist := 0;
+  SetLength(AFTD^.TileBestDist, Length(FTiles));
+  FillQWord(AFTD^.TileBestDist[0], Length(AFTD^.TileBestDist), 0);  // TFloat = Double => FillQWord
+
+  di := 0;
+  for frame := 0 to AFTD^.KF^.FrameCount - 1 do
+  begin
+    frm := @FFrames[AFTD^.KF^.StartFrame + frame];
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
+      begin
+        best := MaxSingle;
+        for j := 0 to High(AFTD^.Dataset) do
+        begin
+          diff := CompareEuclidean192(AFTD^.Dataset[j], AFTD^.FrameDataset[di]);
+          if diff < best then
+            best := diff;
+        end;
+
+        pdis := @AFTD^.TileBestDist[frm^.TileMap[sy, sx].GlobalTileIndex];
+        pdis^ -= best;
+        if -pdis^ > AFTD^.MaxDist then
+          AFTD^.MaxDist := -pdis^;
+
+        Inc(di);
+      end;
+  end;
+
   EnterCriticalSection(FCS);
-  WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize, #9'ActiveRepo: ', Length(AFTD^.Dataset), #9'MaxDissim: ', AFTD^.MaxDissim);
+  WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize, #9'ActiveRepo: ', Length(AFTD^.Dataset), #9'MaxDist: ', FormatFloat('0.000', AFTD^.MaxDist));
   LeaveCriticalSection(FCS);
 end;
 
@@ -3054,14 +3012,14 @@ begin
       begin
         FTD^.Iteration := 0;
         FTD^.KFFrmIdx := i;
-        if TestTMICount(FTD^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-          GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 1 shl (cKModesDissimSubMatchingSize - 1), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+        if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
+          GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
       end;
     end
     else
     begin
-      if TestTMICount(FTD^.MaxDissim, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-        GoldenRatioSearch(@TestTMICount, FTD^.MaxDissim, 1 shl (cKModesDissimSubMatchingSize - 1), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+      if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
+        GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
     end;
 
     // update tilemap
