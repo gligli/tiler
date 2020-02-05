@@ -1269,7 +1269,7 @@ var
 begin
   if SameValue(Mini, Maxi, Epsilon) then
   begin
-    DebugLn('GoldenRatioSearch failed!');
+    WriteLn('GoldenRatioSearch failed!');
     Result := NaN;
     Exit;
   end;
@@ -3556,7 +3556,7 @@ begin
       ADataStream.WriteByte(1);
       while ADataStream.Size mod cBankSize <> 0 do
         ADataStream.WriteByte(0);
-      DebugLn('Crossed bank limit!');
+      WriteLn('Crossed bank limit!');
     end
     else
     begin
@@ -3736,7 +3736,7 @@ end;
 
 procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
 var pp, pp2, i, j, x, y, frameStart: Integer;
-    palpx: Byte;
+    palpx, sb: Byte;
     prevKF: PKeyFrame;
     SkipFirst, b: Boolean;
     tilesPlanes: array[0..cTileWidth - 1, 0..3] of Byte;
@@ -3767,7 +3767,7 @@ begin
     end;
   end;
 
-  DebugLn(['Total tiles size:'#9, ADataStream.Position]);
+  WriteLn('Total tiles size:'#9, ADataStream.Position);
   pp2 := ADataStream.Position;
 
   // index
@@ -3781,6 +3781,7 @@ begin
   ADataStream.Position := i;
 
   prevKF := nil;
+  sb := 0;
   for i := 0 to High(FFrames) do
   begin
     // palette
@@ -3801,7 +3802,7 @@ begin
 
     pp := ADataStream.Position;
     SaveTileIndexes(ADataStream, @FFrames[i]);
-    //DebugLn(['TileIndexes size: ', ADataStream.Position - pp]);
+    //WriteLn('TileIndexes size: ', ADataStream.Position - pp);
 
     // tilemap
 
@@ -3809,7 +3810,7 @@ begin
     begin
       TMStream[SkipFirst] := TMemoryStream.Create;
       SaveTileMap(TMStream[SkipFirst], @FFrames[i], i, SkipFirst);
-      //DebugLn(['TM size: ', TMStream[SkipFirst].Size, ' ', SkipFirst]);
+      //WriteLn('TM size: ', TMStream[SkipFirst].Size, ' ', SkipFirst);
     end;
 
     SkipFirst := True;
@@ -3827,20 +3828,25 @@ begin
     if Assigned(ASoundStream) then
     begin
       ASoundStream.Position := 2 + Floor(cFrameSoundSize * i);
-      ADataStream.CopyFrom(ASoundStream, Ceil(cFrameSoundSize));
+
+      for j := 0 to ceil(cFrameSoundSize) - 1 do
+        if ASoundStream.Read(sb, 1) = 1 then
+          ADataStream.WriteByte(sb)
+        else
+          ADataStream.WriteByte($ff);
     end;
 
     prevKF := FFrames[i].KeyFrame;
   end;
 
-  DebugLn(['Total frames size:'#9, ADataStream.Position - pp2]);
+  WriteLn('Total frames size:'#9, ADataStream.Position - pp2);
 
-  DebugLn(['Total unpadded size:'#9, ADataStream.Position]);
+  WriteLn('Total unpadded size:'#9, ADataStream.Position);
 
   while (ADataStream.Position + cBankSize) mod (cBankSize * 4) <> 0 do
     ADataStream.WriteByte($ff);
 
-  DebugLn(['Total padded size:'#9, ADataStream.Position]);
+  WriteLn('Total padded size:'#9, ADataStream.Position);
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
