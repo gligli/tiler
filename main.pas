@@ -7,7 +7,7 @@ unit main;
 interface
 
 uses
-  LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls,
+  LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, FPimage, FPReadPNG,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, extern, typinfo;
 
 type
@@ -138,7 +138,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 5, 1, 3, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 3, 1, 5, 1, 3, 1, 2);
 
 type
   TSpinlock = LongInt;
@@ -329,7 +329,7 @@ type
     procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoPre(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 
-    procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
+    procedure LoadFrame(AFrame: PFrame; ABitmap: TCustomBitmap);
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     procedure Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer; ATilePage: Integer);
 
@@ -1037,6 +1037,8 @@ begin
 
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), PChar(FInputPath));
 
+  ProgressRedraw(2);
+
 {$if false}
   kfSL := TStringList.Create;
   try
@@ -1129,11 +1131,11 @@ begin
     FKeyFrames[j]^.FramesLeft := -1;
   end;
 
-  ProgressRedraw(2);
+  ProgressRedraw(3);
 
   LoadTiles;
 
-  ProgressRedraw(3);
+  ProgressRedraw(4);
 
   tbFrameChange(nil);
 end;
@@ -2378,7 +2380,7 @@ begin
     end;
 end;
 
-procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
+procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TCustomBitmap);
 var
   i, j, col, ti, tx, ty: Integer;
   pcol: PInteger;
@@ -3440,7 +3442,7 @@ begin
 
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'ffmpeg.exe';
-  Process.Parameters.Add('-y -i "' + AFN + '" -r 12.5 -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 ' + vfl + ' -pix_fmt rgb24 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-16:TP=-1:LRA=11 -ar 44100 ' + afl + ' "' + AAudioFile + '"');
+  Process.Parameters.Add('-y -i "' + AFN + '" -r 12.5 -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 ' + vfl + ' -compression_level 0 -pix_fmt rgb24 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-16:TP=-1:LRA=11 -ar 44100 ' + afl + ' "' + AAudioFile + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
