@@ -20,7 +20,7 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1] of TFloat = (1.8, 0.9);
+  cGamma: array[0..1] of TFloat = (1.5, 0.9);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
   cKFGamma = 0;
