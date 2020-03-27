@@ -2849,10 +2849,10 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  MaxTPF, TPF, i, di, tmi, TrIdx, FrmIdx: Integer;
+  MaxTPF, TPF, i, di, tmi, TrIdx, FrmIdx, UsedIdx: Integer;
   ReducedIdxToDS: TIntegerDynArray;
   tmiO: TTileMapItem;
-  Used: TBooleanDynArray;
+  Used: TBooleanDynArray2;
   FTD: PFrameTilingData;
   KDT: PANNkdtree;
   DCT: TDoubleDynArray;
@@ -2860,7 +2860,8 @@ var
 begin
   FTD := PFrameTilingData(Data);
 
-  SetLength(Used, Length(FTiles));
+  UsedIdx := 0;
+  SetLength(Used, 2, Length(FTiles));
 
   SetLength(ReducedDS, Length(FTD^.Dataset));
   SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
@@ -2883,9 +2884,9 @@ begin
 
   MaxTPF := 0;
   for FrmIdx := 0 to FTD^.KF^.FrameCount - 1 do
-    if (FrmIdx = FTD^.KFFrmIdx) or (FTD^.KFFrmIdx < 0) then
+    if (FrmIdx = FTD^.KFFrmIdx) or (FrmIdx = FTD^.KFFrmIdx - 1) or (FTD^.KFFrmIdx < 0) then
     begin
-      FillChar(Used[0], Length(FTiles), 0);
+      FillChar(Used[UsedIdx, 0], Length(FTiles), 0);
 
       for tmi := 0 to cTileMapSize - 1 do
       begin
@@ -2902,14 +2903,17 @@ begin
         tmiO.SpritePal := FTD^.DsTMItem[TrIdx].SpritePal;
 
         FTD^.OutputTMIs[FrmIdx * cTileMapSize + tmi] := tmiO;
-        Used[tmiO.GlobalTileIndex] := True;
+        Used[UsedIdx, tmiO.GlobalTileIndex] := True;
       end;
 
       TPF := 0;
-      for i := 0 to High(Used) do
-        Inc(TPF, Ord(Used[i]));
+      for i := 0 to High(Used[UsedIdx]) do
+        if Used[UsedIdx, i] or Used[1 - UsedIdx, i] then
+          Inc(TPF);
 
       MaxTPF := max(MaxTPF, TPF);
+
+      UsedIdx := 1 - UsedIdx;
     end;
 
   ann_kdtree_destroy(KDT);
@@ -3803,8 +3807,7 @@ function TMainForm.PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCa
 
   function EnsureTileInCache(ATileIdx: Integer; out ANeedsUpload: Boolean): Integer;
   var
-    frm, i, x, y, bestIdx, best, cur, curTileIdx, foundCnt: Integer;
-    tmi: PTileMapItem;
+    i, bestIdx, best, cur: Integer;
   begin
     Result := -1;
     ANeedsUpload := False;
@@ -3846,7 +3849,7 @@ function TMainForm.PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCa
         best := cur;
         bestIdx := i;
         if best = MaxInt then // can't find better
-          break;
+          Break;
       end;
     end;
 
@@ -3888,6 +3891,8 @@ var pp, pp2, i, j, k, x, y, frameStart, nuCnt: Integer;
     TileCache: TTileCache;
     TileCacheLUT: TIntegerDynArray2;
 begin
+  // prepare belady cache
+
   SetLength(TileCacheLUT, Length(FFrames), Length(FTiles));
   for i := 0 to High(FFrames) do
     FillDWord(TileCacheLUT[i, 0], Length(FTiles), DWORD(MaxInt));
@@ -3960,9 +3965,9 @@ begin
       ADataStream.WriteByte(0);
     end;
 
-    nuCnt += PrepareVRAMTileIndexes(@FFrames[i], TileCache, TileCacheLUT);
-
     // tiles indexes
+
+    nuCnt += PrepareVRAMTileIndexes(@FFrames[i], TileCache, TileCacheLUT);
 
     pp := ADataStream.Position;
     SaveTileIndexes(ADataStream, @FFrames[i]);
