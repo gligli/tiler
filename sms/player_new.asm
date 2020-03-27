@@ -380,20 +380,7 @@ banks 1
         .endif
 
         inc ix
-        .ifeq idx 0
-                ; high byte of tilemap item from command
-            .ifeq half 0
-                .ifeq step 0
-                    dec a
-                .else
-                    dec e
-                .endif
-            .else
-                nop ; timing
-            .endif
-        .else
-            nop ; timing
-        .endif
+	nop ; timing
 
             ; high byte of tilemap item
         .ifeq step 0
@@ -1186,6 +1173,14 @@ TUDoStandardFast:
 
 .org $0d00
 TUDoDirectValueFast:
+    pop hl
+    ld a, l
+    out (VDPControl), a
+    ld a, h
+    out (VDPControl), a
+    
+    PlaySampleSkew 40
+
         ; direct value, load tile index from frame data pointer
 
     pop hl
@@ -1203,6 +1198,14 @@ TUDoDirectValueFast:
 
 .org $0e00
 TUDoDirectValueSlow:
+    pop hl
+    ld a, l
+    out (VDPControl), a
+    ld a, h
+    out (VDPControl), a
+
+    PlaySampleSkew 20
+
         ; direct value, load tile index from frame data pointer
 
     pop hl
@@ -1212,9 +1215,6 @@ TUDoDirectValueSlow:
 
         ; upload tile
     TilesUploadTileToVRAMSlow
-
-    inc iyl ; timing
-    inc iyl ; timing
 
 ; c319
     PlaySample
@@ -1310,17 +1310,17 @@ TMCommandsJumpTable:
         .db (>TMCacheRepeat + 2), (>TMCacheRepeat + 3)
     .endr
     ; $C0
-    .repeat 8
-        .db (>TMCacheRepeat + 4), >TMRaw
+    .repeat 16
+        .db >TMRaw
     .endr
-    .repeat 8
-        .db (>TMCacheRepeat + 4), (>TMRaw + 1)
+    .repeat 16
+        .db (>TMRaw + 1)
     .endr
-    .repeat 8
-        .db (>TMCacheRepeat + 4), (>TMRaw + 2)
+    .repeat 16
+        .db (>TMRaw + 2)
     .endr
-    .repeat 8
-        .db (>TMCacheRepeat + 4), (>TMRaw + 3)
+    .repeat 16
+        .db (>TMRaw + 3)
     .endr
 
 .org $1400

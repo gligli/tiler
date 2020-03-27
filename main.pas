@@ -43,6 +43,7 @@ const
   cTileMapSize = cTileMapWidth * cTileMapHeight;
   cScreenWidth = cTileMapWidth * cTileWidth;
   cScreenHeight = cTileMapHeight * cTileWidth;
+  cVRAMWriteCmd = $4000;
   cBankSize = 16384;
   cTileSize = cTileWidth * cTileWidth div 2;
   cTilesPerBank = cBankSize div cTileSize;
@@ -68,19 +69,19 @@ const
   cTileMapIndicesOffset : array[0..1] of Integer = (49, 256 + 49);
   cTileMapCacheBits = 5;
   cTileMapCacheSize = 1 shl cTileMapCacheBits;
-  cTileMapMaxRepeat : array[Boolean{Raw?}] of Integer = (6, 4);
+  cTileMapMaxRepeat : array[Boolean{Raw?}] of Integer = (5, 4);
   cTileMapMaxSkip = 31;
-  cTileMapCommandCache : array[1..6{Rpt}] of Byte = ($01, $40, $41, $80, $81, $c0);
+  cTileMapCommandCache : array[1..5{Rpt}] of Byte = ($01, $40, $41, $80, $81);
   cTileMapCommandSkip = $00;
-  cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c1, $d1, $e1, $f1);
+  cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c0, $d0, $e0, $f0);
   cTileMapTerminator = $00; // skip 0
   cClocksPerSample = 344;
   cFrameSoundSize = cZ80Clock / cClocksPerSample / 2 / (cRefreshRate / 4);
 
   // number of Z80 cycles to execute a function
   cTileIndexesTimings : array[Boolean{VBlank?}, 0..4 {Direct/Std/RptFix/RptVar/VBlankSwitch}] of Integer = (
-    (343 + 688, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
-    (347 + 344, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
+    (343 + 688 + 40 - 20, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
+    (347 + 344 + 40, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
   );
   cLineJitterCompensation = 4;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
@@ -178,7 +179,7 @@ type
   TFrame = record
     Index: Integer;
     Tiles: array[0..(cTileMapSize - 1)] of TTile;
-    TilesIndexes: array of Integer;
+    TilesIndexes: array of array [0..1] of Integer; // ROM addr / VRAM addr
     TileMap: array[0..(cTileMapHeight - 1),0..(cTileMapWidth - 1)] of TTileMapItem;
     FSPixels: TByteDynArray;
     KeyFrame: PKeyFrame;
@@ -218,6 +219,11 @@ type
     DsTMItem: array of TTileMapItem;
     TileBestDist: TFloatDynArray;
     MaxDist: TFloat;
+  end;
+
+  TTileCache = array[0 .. cTilesPerBank - 1] of record
+    Frame: Integer;
+    TileIdx: Integer;
   end;
 
   { TMainForm }
@@ -385,6 +391,8 @@ type
 
     procedure SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
     procedure SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
+
+    function PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCache; const TileCacheLUT: TIntegerDynArray2): Integer;
 
     procedure Save(ADataStream, ASoundStream: TStream);
 
@@ -1185,6 +1193,7 @@ begin
   btnDoKeyFrameTilingClick(nil);
   btnReindexClick(nil);
   btnSmoothClick(nil);
+  btnReindexClick(nil);
   btnSaveClick(nil);
 
   ProgressRedraw;
@@ -1262,8 +1271,9 @@ begin
     VK_F5: btnReindexClick(nil);
     VK_F6: btnSmoothClick(nil);
     VK_F7: btnSaveClick(nil);
-    VK_F10: btnRunAllClick(nil);
-    VK_F11: chkPlay.Checked := not chkPlay.Checked;
+    VK_F9: btnRunAllClick(nil);
+    VK_F12: chkPlay.Checked := not chkPlay.Checked;
+    VK_ESCAPE: TerminateProcess(GetCurrentProcess, 0);
   end;
 end;
 
@@ -2578,7 +2588,6 @@ begin
         begin
           // emulate smoothing (use previous frame tilemap item)
           TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 3, i shr 3];
-          TMItem.GlobalTileIndex := Frame^.TilesIndexes[TMItem.FrameTileIndex];
         end;
         ti := TMItem.GlobalTileIndex;
 
@@ -3093,8 +3102,8 @@ begin
 
     // compare DCT of current tile with tile from prev frame tilemap
 
-    PrevTile := FTiles[AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex]];
-    Tile_ := FTiles[AFrame^.TilesIndexes[TMI^.FrameTileIndex]];
+    PrevTile := FTiles[PrevTMI^.GlobalTileIndex];
+    Tile_ := FTiles[TMI^.GlobalTileIndex];
 
     ComputeTileDCT(PrevTile^, True, True, PrevTMI^.HMirror, PrevTMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
     ComputeTileDCT(Tile_^, True, True, TMI^.HMirror, TMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
@@ -3106,11 +3115,20 @@ begin
 
     if Abs(cmp) <= Strength then
     begin
-      TMI^.GlobalTileIndex := AFrame^.TilesIndexes[PrevTMI^.FrameTileIndex];
-      TMI^.FrameTileIndex := PrevTMI^.FrameTileIndex;
-      TMI^.HMirror := PrevTMI^.HMirror;
-      TMI^.VMirror := PrevTMI^.VMirror;
-      TMI^.SpritePal := PrevTMI^.SpritePal;
+      if TMI^.GlobalTileIndex >= PrevTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
+      begin
+        TMI^.GlobalTileIndex := PrevTMI^.GlobalTileIndex;
+        TMI^.HMirror := PrevTMI^.HMirror;
+        TMI^.VMirror := PrevTMI^.VMirror;
+        TMI^.SpritePal := PrevTMI^.SpritePal;
+      end
+      else
+      begin
+        PrevTMI^.GlobalTileIndex := TMI^.GlobalTileIndex;
+        PrevTMI^.HMirror := TMI^.HMirror;
+        PrevTMI^.VMirror := TMI^.VMirror;
+        PrevTMI^.SpritePal := TMI^.SpritePal;
+      end;
       TMI^.Smoothed := True;
     end
     else
@@ -3372,7 +3390,7 @@ begin
         for x := 0 to (cTileMapWidth - 1) do
           if AFrame^.TileMap[y, x].GlobalTileIndex = i then
           begin
-            AFrame^.TilesIndexes[cnt] := i;
+            AFrame^.TilesIndexes[cnt][0] := i;
             Inc(UseCount);
           end;
 
@@ -3391,7 +3409,7 @@ begin
   for i := 0 to High(AFrame^.TilesIndexes) do
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
-        if AFrame^.TileMap[y, x].GlobalTileIndex = AFrame^.TilesIndexes[i] then
+        if AFrame^.TileMap[y, x].GlobalTileIndex = AFrame^.TilesIndexes[i][0] then
           AFrame^.TileMap[y, x].FrameTileIndex := i;
 end;
 
@@ -3452,7 +3470,7 @@ end;
 
 procedure TMainForm.SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
 var
-  j, prevTileIndex, diffTileIndex, prevDTI, sameCount, tiZ80Cycles: Integer;
+  j, prevRomTI, prevVramTI, diffTileIndex, prevDTI, sameCount, tiZ80Cycles: Integer;
   tiVBlank, vbl: Boolean;
   tileIdxStream: TMemoryStream;
 
@@ -3545,16 +3563,20 @@ begin
     tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
     tiVBlank := True;
 
-    prevTileIndex := -1;
+    prevRomTI := -1;
+    prevVramTI := -1;
     prevDTI := -1;
     sameCount := 0;
     for j := 0 to High(AFrame^.TilesIndexes) do
     begin
-      diffTileIndex := AFrame^.TilesIndexes[j] - prevTileIndex;
+      if AFrame^.TilesIndexes[j][1] >= cTilesPerBank then // already in VRAM?
+        Continue;
+
+      diffTileIndex := AFrame^.TilesIndexes[j][0] - prevRomTI;
 
       if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
           (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
-          ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
+          ((AFrame^.TilesIndexes[j][0] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
       begin
         DoTileIndex;
         sameCount := 1;
@@ -3564,16 +3586,18 @@ begin
         Inc(sameCount);
       end;
 
-      if (prevTileIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
-          ((AFrame^.TilesIndexes[j] + cTileIndexesTileOffset) div cTilesPerBank <>
-           (prevTileIndex + cTileIndexesTileOffset) div cTilesPerBank) then // any bank change must be a direct value
+      if (prevRomTI = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
+          ((AFrame^.TilesIndexes[j][0] + cTileIndexesTileOffset) div cTilesPerBank <>
+           (prevRomTI + cTileIndexesTileOffset) div cTilesPerBank) or // any bank change must be a direct value
+          (AFrame^.TilesIndexes[j][1] <> prevVramTI + 1) then // no VRAM continuity
       begin
         vbl := tiVBlank;
         if vbl then
           CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
 
         tileIdxStream.WriteByte(cTileIndexesDirectValue);
-        tileIdxStream.WriteWord(AFrame^.TilesIndexes[j] + cTileIndexesTileOffset);
+        tileIdxStream.WriteWord(cVRAMWriteCmd or (AFrame^.TilesIndexes[j][1] * cTileSize));
+        tileIdxStream.WriteWord(AFrame^.TilesIndexes[j][0] + cTileIndexesTileOffset);
 
         if not vbl then
           CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
@@ -3582,7 +3606,8 @@ begin
         sameCount := 0;
       end;
 
-      prevTileIndex := AFrame^.TilesIndexes[j];
+      prevRomTI := AFrame^.TilesIndexes[j][0];
+      prevVramTI := AFrame^.TilesIndexes[j][1];
       prevDTI := diffTileIndex;
     end;
 
@@ -3659,7 +3684,7 @@ begin
     for x := 0 to cTileMapWidth - 1 do
     begin
       tmi := @AFrame^.TileMap[y, x];
-      rawTMI := (tmi^.FrameTileIndex + cTileMapIndicesOffset[AFrameIdx and 1]) and $1ff;
+      rawTMI := AFrame^.TilesIndexes[tmi^.FrameTileIndex][1] mod cTilesPerBank;
       if tmi^.HMirror then rawTMI := rawTMI or $200;
       if tmi^.VMirror then rawTMI := rawTMI or $400;
       if tmi^.SpritePal then rawTMI := rawTMI or $800;
@@ -3774,14 +3799,110 @@ begin
   ADataStream.WriteByte(cTileMapTerminator);
 end;
 
+function TMainForm.PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCache; const TileCacheLUT: TIntegerDynArray2): Integer;
+
+  function EnsureTileInCache(ATileIdx: Integer; out ANeedsUpload: Boolean): Integer;
+  var
+    frm, i, x, y, bestIdx, best, cur, curTileIdx, foundCnt: Integer;
+    tmi: PTileMapItem;
+  begin
+    Result := -1;
+    ANeedsUpload := False;
+
+    // Was in cache already?
+
+    for i := 0 to High(TileCache) do
+      if (TileCache[i].Frame <> MaxInt) and (TileCache[i].TileIdx = ATileIdx) then
+      begin
+        TileCache[i].Frame := AFrame^.Index;
+        Exit(i);
+      end;
+
+    ANeedsUpload := True;
+
+    // Free cache index?
+
+    for i := 0 to High(TileCache) do
+      if (TileCache[i].Frame <> MaxInt) and (TileCache[i].TileIdx < 0) then
+      begin
+        TileCache[i].TileIdx := ATileIdx;
+        TileCache[i].Frame := AFrame^.Index;
+        Exit(i);
+      end;
+
+    // Use the Belady optimal cache algorithm (replace the item that will be used the furthest into the future)
+
+    bestIdx := -1;
+    best := -1;
+    for i := 0 to High(TileCache) do
+    begin
+      if TileCache[i].Frame >= AFrame^.Index - 1 then  // don't choose an index that hasn't been displayed yet
+        Continue;
+
+      cur := TileCacheLUT[TileCache[i].Frame, TileCache[i].TileIdx];
+
+      if cur > best then
+      begin
+        best := cur;
+        bestIdx := i;
+        if best = MaxInt then // can't find better
+          break;
+      end;
+    end;
+
+    Assert(bestIdx >= 0, 'Frame used too many tiles!');
+
+    TileCache[bestIdx].TileIdx := ATileIdx;
+    TileCache[bestIdx].Frame := AFrame^.Index;
+    Exit(bestIdx);
+  end;
+
+var
+  i, idx: Integer;
+  needsUpload: Boolean;
+begin
+  Result := 0;
+
+  for i := 0 to High(FFrames[AFrame^.Index].TilesIndexes) do
+  begin
+    idx := EnsureTileInCache(FFrames[AFrame^.Index].TilesIndexes[i][0], needsUpload);
+    FFrames[AFrame^.Index].TilesIndexes[i][1] := idx or cTilesPerBank;
+    if needsUpload then
+    begin
+      FFrames[AFrame^.Index].TilesIndexes[i][1] := idx;
+      Inc(Result);
+    end;
+  end;
+
+  WriteLn('needsUpload ', AFrame^.Index, #9, Result);
+end;
+
 procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
-var pp, pp2, i, j, x, y, frameStart: Integer;
+var pp, pp2, i, j, k, x, y, frameStart, nuCnt: Integer;
     palpx, sb: Byte;
     prevKF: PKeyFrame;
     SkipFirst, b: Boolean;
     tilesPlanes: array[0..cTileWidth - 1, 0..3] of Byte;
     TMStream: array[Boolean] of TMemoryStream;
+
+    TileCache: TTileCache;
+    TileCacheLUT: TIntegerDynArray2;
 begin
+  SetLength(TileCacheLUT, Length(FFrames), Length(FTiles));
+  for i := 0 to High(FFrames) do
+    FillDWord(TileCacheLUT[i, 0], Length(FTiles), DWORD(MaxInt));
+
+  for i := 0 to High(FFrames) do
+    for j := High(FFrames) downto i do
+      for k := High(FFrames[j].TilesIndexes) downto 0 do
+        TileCacheLUT[i, FFrames[j].TilesIndexes[k][0]] := j * cTileMapSize + k;
+
+  for i := 0 to High(TTileCache) do
+  begin
+    TileCache[i].TileIdx := -1;
+    TileCache[i].Frame := IfThen((i mod (Length(TTileCache) div 2)) < (cTileMapSize * 2 div cTileSize + 1), MaxInt, -1); // avoid tile addresses within tilemaps
+  end;
+
   // leave the size of one tile for index
 
   for x := 0 to cTileWidth - 1 do
@@ -3822,6 +3943,7 @@ begin
 
   prevKF := nil;
   sb := 0;
+  nuCnt := 0;
   for i := 0 to High(FFrames) do
   begin
     // palette
@@ -3837,6 +3959,8 @@ begin
     begin
       ADataStream.WriteByte(0);
     end;
+
+    nuCnt += PrepareVRAMTileIndexes(@FFrames[i], TileCache, TileCacheLUT);
 
     // tiles indexes
 
@@ -3878,6 +4002,8 @@ begin
 
     prevKF := FFrames[i].KeyFrame;
   end;
+
+  WriteLn('needsUpload ', nuCnt);
 
   WriteLn('Total frames size:'#9, ADataStream.Position - pp2);
 

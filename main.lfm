@@ -111,6 +111,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 4
+    Value = 50
   end
   object Label3: TLabel
     Left = 8
@@ -127,6 +128,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
+    Text = 'C:\smsdev\_old\nggyu\Rick Astley - Never Gonna Give You Up-full4.avi'
   end
   object Label4: TLabel
     Left = 8
@@ -236,6 +238,7 @@ object MainForm: TMainForm
     Top = 272
     Width = 56
     TabOrder = 12
+    Value = 2
   end
   object imgPalette: TImage
     Left = 8
@@ -374,9 +377,7 @@ object MainForm: TMainForm
     Top = 144
     Width = 251
     Caption = 'Use Thomas Knoll dithering (not Yiluoma 2)'
-    Checked = True
     OnChange = chkUseTKChange
-    State = cbChecked
     TabOrder = 6
   end
   object chkExtFT: TCheckBox

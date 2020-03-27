@@ -24,6 +24,7 @@ type
   TIntegerDynArray3 = array of TIntegerDynArray2;
   TByteDynArray2 = array of TByteDynArray;
   TByteDynArray3 = array of TByteDynArray2;
+  TWordDynArray2 = array of TWordDynArray;
   TUInt64DynArray = array of UInt64;
 
   TKmodesRun = packed record
