@@ -50,7 +50,7 @@ const
   cZ80Clock = 3546893;
   cLineCount = 313;
   cRefreshRate = 50;
-  cCyclesPerLine = cZ80Clock / (cLineCount * cRefreshRate);
+  cCyclesPerLine = cZ80Clock * 126 div 127 / (cLineCount * cRefreshRate);
   cCyclesPerDisplayPhase : array[Boolean{VBlank?}] of Integer = (
     Round(cScreenHeight * cCyclesPerLine),
     Round((cLineCount - cScreenHeight) * cCyclesPerLine)
@@ -84,7 +84,7 @@ const
     (343 + 688 + 40 - 20, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
     (347 + 344 + 40, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
   );
-  cLineJitterCompensation = 4;
+  cLineJitterCompensation = 2;
   cTileIndexesInitialLine = 201; // algo starts in VBlank
 
   cColorCpns = 3;
@@ -175,12 +175,14 @@ type
 
   TTileMapItems = array of TTileMapItem;
 
+  TTilesIndexes = array of array [0..1] of Integer;
+
   PKeyFrame = ^TKeyFrame;
 
   TFrame = record
     Index: Integer;
     Tiles: array[0..(cTileMapSize - 1)] of TTile;
-    TilesIndexes: array of array [0..1] of Integer; // ROM addr / VRAM addr
+    TilesIndexes: TTilesIndexes; // ROM addr / VRAM addr
     TileMap: array[0..(cTileMapHeight - 1),0..(cTileMapWidth - 1)] of TTileMapItem;
     FSPixels: TByteDynArray;
     KeyFrame: PKeyFrame;
@@ -393,7 +395,11 @@ type
     procedure SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
     procedure SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
 
-    function PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCache; const TileCacheLUT: TIntegerDynArray2): Integer;
+    procedure BuildTileCacheLUT(var TileCacheLUT: TIntegerDynArray2);
+    procedure InitTileCache(var TileCache: TTileCache);
+    function PrepareVRAMTileIndexes(AFrameIdx: Integer; var ATileIndexes: TTilesIndexes; var TileCache: TTileCache;
+      const TileCacheLUT: TIntegerDynArray2): Integer;
+    function BalanceVRAMTileIndexes(AFrame: PFrame; AUploadLimit: Integer; var TileCache: TTileCache; var TileCacheLUT: TIntegerDynArray2): Integer;
 
     procedure Save(ADataStream, ASoundStream: TStream);
 
@@ -3482,9 +3488,9 @@ end;
 
 procedure TMainForm.SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
 var
-  j, prevRomTI, prevVramTI, diffTileIndex, prevDTI, sameCount, tiZ80Cycles: Integer;
-  tiVBlank, vbl: Boolean;
   tileIdxStream: TMemoryStream;
+  prevDTI, sameCount, tiZ80Cycles: Integer;
+  tiVBlank: Boolean;
 
   function CurrentLineJitter: Integer;
   begin
@@ -3569,7 +3575,12 @@ var
     end;
   end;
 
+var
+  j, prevRomTI, prevVramTI, diffTileIndex: Integer;
+  vbl: Boolean;
+
 begin
+
   tileIdxStream := TMemoryStream.Create;
   try
     tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
@@ -3625,7 +3636,7 @@ begin
 
     DoTileIndex;
     tileIdxStream.WriteByte(cTileIndexesTerminator);
-    tileIdxStream.WriteByte(cMaxTilesPerFrame - Length(AFrame^.TilesIndexes));
+    tileIdxStream.WriteByte(0);
 
     // the whole tiles indices should stay in the same bank
     if ADataStream.Size div cBankSize <> (ADataStream.Size + tileIdxStream.Size) div cBankSize then
@@ -3811,7 +3822,33 @@ begin
   ADataStream.WriteByte(cTileMapTerminator);
 end;
 
-function TMainForm.PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCache; const TileCacheLUT: TIntegerDynArray2): Integer;
+procedure TMainForm.BuildTileCacheLUT(var TileCacheLUT: TIntegerDynArray2);
+var
+  i, j, k: Integer;
+begin
+  SetLength(TileCacheLUT, Length(FFrames), Length(FTiles));
+  for i := 0 to High(FFrames) do
+    FillDWord(TileCacheLUT[i, 0], Length(FTiles), DWORD(MaxInt));
+
+  for i := 0 to High(FFrames) do
+    for j := High(FFrames) downto i do
+      for k := High(FFrames[j].TilesIndexes) downto 0 do
+        TileCacheLUT[i, FFrames[j].TilesIndexes[k][0]] := j * cTileMapSize + k;
+end;
+
+procedure TMainForm.InitTileCache(var TileCache: TTileCache);
+var
+  i: Integer;
+begin
+  for i := 0 to High(TTileCache) do
+  begin
+    TileCache[i].TileIdx := -1;
+    TileCache[i].Frame := IfThen((i mod (Length(TTileCache) div 2)) < (cTileMapSize * 2 div cTileSize + 1), MaxInt, -1); // avoid tile addresses within tilemaps
+  end;
+end;
+
+function TMainForm.PrepareVRAMTileIndexes(AFrameIdx: Integer; var ATileIndexes: TTilesIndexes; var TileCache: TTileCache;
+  const TileCacheLUT: TIntegerDynArray2): Integer;
 
   function EnsureTileInCache(ATileIdx: Integer; out ANeedsUpload: Boolean): Integer;
   var
@@ -3825,7 +3862,7 @@ function TMainForm.PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCa
     for i := 0 to High(TileCache) do
       if (TileCache[i].Frame <> MaxInt) and (TileCache[i].TileIdx = ATileIdx) then
       begin
-        TileCache[i].Frame := AFrame^.Index;
+        TileCache[i].Frame := AFrameIdx;
         Exit(i);
       end;
 
@@ -3837,7 +3874,7 @@ function TMainForm.PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCa
       if (TileCache[i].Frame <> MaxInt) and (TileCache[i].TileIdx < 0) then
       begin
         TileCache[i].TileIdx := ATileIdx;
-        TileCache[i].Frame := AFrame^.Index;
+        TileCache[i].Frame := AFrameIdx;
         Exit(i);
       end;
 
@@ -3847,7 +3884,7 @@ function TMainForm.PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCa
     best := -1;
     for i := 0 to High(TileCache) do
     begin
-      if TileCache[i].Frame >= AFrame^.Index - 1 then  // don't choose an index that hasn't been displayed yet
+      if TileCache[i].Frame >= AFrameIdx - 1 then  // don't choose an index that hasn't been displayed yet
         Continue;
 
       cur := TileCacheLUT[TileCache[i].Frame, TileCache[i].TileIdx];
@@ -3864,7 +3901,7 @@ function TMainForm.PrepareVRAMTileIndexes(AFrame: PFrame; var TileCache: TTileCa
     Assert(bestIdx >= 0, 'Frame used too many tiles!');
 
     TileCache[bestIdx].TileIdx := ATileIdx;
-    TileCache[bestIdx].Frame := AFrame^.Index;
+    TileCache[bestIdx].Frame := AFrameIdx;
     Exit(bestIdx);
   end;
 
@@ -3874,22 +3911,78 @@ var
 begin
   Result := 0;
 
-  for i := 0 to High(FFrames[AFrame^.Index].TilesIndexes) do
+  for i := 0 to High(ATileIndexes) do
   begin
-    idx := EnsureTileInCache(FFrames[AFrame^.Index].TilesIndexes[i][0], needsUpload);
-    FFrames[AFrame^.Index].TilesIndexes[i][1] := idx or cTilesPerBank;
+    idx := EnsureTileInCache(ATileIndexes[i][0], needsUpload);
+    ATileIndexes[i][1] := idx or cTilesPerBank;
     if needsUpload then
     begin
-      FFrames[AFrame^.Index].TilesIndexes[i][1] := idx;
+      ATileIndexes[i][1] := idx;
       Inc(Result);
     end;
   end;
 
-  WriteLn('needsUpload ', AFrame^.Index, #9, Result);
+  //WriteLn('FrmIdx: ', AFrameIdx, #9'UploadCnt: ', Result);
+end;
+
+function TMainForm.BalanceVRAMTileIndexes(AFrame: PFrame; AUploadLimit: Integer; var TileCache: TTileCache;
+  var TileCacheLUT: TIntegerDynArray2): Integer;
+var
+  i, j, ulCnt, cnt: Integer;
+  found: Boolean;
+  frm: PFrame;
+begin
+  ulCnt := 0;
+  frm := AFrame;
+  for i := 0 to High(frm^.TilesIndexes) do
+    if frm^.TilesIndexes[i][1] < cTilesPerBank then
+      Inc(ulCnt);
+
+  if (ulCnt < AUploadLimit) and (AFrame^.Index < High(FFrames)) then
+  begin
+    cnt := 0;
+    frm := @FFrames[AFrame^.Index + 1];
+    for i := 0 to High(frm^.TilesIndexes) do
+      if frm^.TilesIndexes[i][1] < cTilesPerBank then // not already in VRAM?
+        Inc(cnt);
+
+    if cnt > AUploadLimit then
+    begin
+      for i := 0 to High(frm^.TilesIndexes) do
+        if frm^.TilesIndexes[i][1] < cTilesPerBank then // not already in VRAM?
+        begin
+          // prevent 2 uploads in the same cache index
+          found := False;
+          for j := 0 to High(AFrame^.TilesIndexes) do
+            if AFrame^.TilesIndexes[j][1] = frm^.TilesIndexes[i][1] then
+            begin
+              found := True;
+              Break;
+            end;
+          if found then
+            Continue;
+
+          SetLength(AFrame^.TilesIndexes, Length(AFrame^.TilesIndexes) + 1);
+          AFrame^.TilesIndexes[High(AFrame^.TilesIndexes)][0] := frm^.TilesIndexes[i][0];
+          AFrame^.TilesIndexes[High(AFrame^.TilesIndexes)][1] := frm^.TilesIndexes[i][1];
+          frm^.TilesIndexes[i][1] += cTilesPerBank;
+          Inc(ulCnt);
+          Dec(cnt);
+
+          if ulCnt >= cnt then
+            Break;
+        end;
+
+      //WriteLn('FrmIdx: ', AFrame^.Index, #9'NewUploadCnt: ', ulCnt, #9'(balancing)');
+    end;
+  end;
+
+  BuildTileCacheLUT(TileCacheLUT);
+  Result := PrepareVRAMTileIndexes(AFrame^.Index, AFrame^.TilesIndexes, TileCache, TileCacheLUT);
 end;
 
 procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
-var pp, pp2, i, j, k, x, y, frameStart, nuCnt: Integer;
+var pp, pp2, i, j, k, x, y, frameStart, avgUploadCnt, prevUploadCnt, maxUploadCnt: Integer;
     palpx, sb: Byte;
     prevKF: PKeyFrame;
     SkipFirst, b: Boolean;
@@ -3900,21 +3993,25 @@ var pp, pp2, i, j, k, x, y, frameStart, nuCnt: Integer;
     TileCacheLUT: TIntegerDynArray2;
 begin
   // prepare belady cache
-
-  SetLength(TileCacheLUT, Length(FFrames), Length(FTiles));
+  BuildTileCacheLUT(TileCacheLUT);
+  InitTileCache(TileCache);
+  avgUploadCnt := 0;
   for i := 0 to High(FFrames) do
-    FillDWord(TileCacheLUT[i, 0], Length(FTiles), DWORD(MaxInt));
+    avgUploadCnt += PrepareVRAMTileIndexes(i, FFrames[i].TilesIndexes, TileCache, TileCacheLUT);
+  avgUploadCnt := (avgUploadCnt - 1) div length(FFrames) + 1;
+  WriteLn('AvgUploadCnt: ', avgUploadCnt);
 
-  for i := 0 to High(FFrames) do
-    for j := High(FFrames) downto i do
-      for k := High(FFrames[j].TilesIndexes) downto 0 do
-        TileCacheLUT[i, FFrames[j].TilesIndexes[k][0]] := j * cTileMapSize + k;
+  maxUploadCnt := MaxInt;
+  repeat
+    prevUploadCnt := maxUploadCnt;
+    InitTileCache(TileCache);
 
-  for i := 0 to High(TTileCache) do
-  begin
-    TileCache[i].TileIdx := -1;
-    TileCache[i].Frame := IfThen((i mod (Length(TTileCache) div 2)) < (cTileMapSize * 2 div cTileSize + 1), MaxInt, -1); // avoid tile addresses within tilemaps
-  end;
+    maxUploadCnt := 0;
+    for i := 0 to High(FFrames) do
+      maxUploadCnt := max(maxUploadCnt, BalanceVRAMTileIndexes(@FFrames[i] , avgUploadCnt * 2, TileCache, TileCacheLUT));
+
+    WriteLn('MaxUploadCnt: ', maxUploadCnt);
+  until maxUploadCnt >= prevUploadCnt;
 
   // leave the size of one tile for index
 
@@ -3944,6 +4041,7 @@ begin
   WriteLn('Total tiles size:'#9, ADataStream.Position);
   pp2 := ADataStream.Position;
 
+
   // index
 
   frameStart := ADataStream.Position + cBankSize;
@@ -3956,7 +4054,6 @@ begin
 
   prevKF := nil;
   sb := 0;
-  nuCnt := 0;
   for i := 0 to High(FFrames) do
   begin
     // palette
@@ -3974,8 +4071,6 @@ begin
     end;
 
     // tiles indexes
-
-    nuCnt += PrepareVRAMTileIndexes(@FFrames[i], TileCache, TileCacheLUT);
 
     pp := ADataStream.Position;
     SaveTileIndexes(ADataStream, @FFrames[i]);
@@ -4016,8 +4111,6 @@ begin
     prevKF := FFrames[i].KeyFrame;
   end;
 
-  WriteLn('needsUpload ', nuCnt);
-
   WriteLn('Total frames size:'#9, ADataStream.Position - pp2);
 
   WriteLn('Total unpadded size:'#9, ADataStream.Position);
@@ -4032,6 +4125,9 @@ procedure TMainForm.FormCreate(Sender: TObject);
 var
   r,g,b,i,mx,mn,col,prim_col,sr: Integer;
 begin
+  IdleTimer.Interval := 20 * cRefreshRateDiv;
+  IdleTimer.Enabled := True;
+
   FLowMem := True;
 
   InitializeCriticalSection(FCS);
