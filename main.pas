@@ -57,6 +57,7 @@ const
   );
 
   // Video player consts
+  cRefreshRateDiv = 2;
   cMaxTilesPerFrame = 207;
   cSmoothingPrevFrame = 2;
   cTileIndexesTileOffset = cTilesPerBank + 1;
@@ -76,10 +77,10 @@ const
   cTileMapCommandRaw : array[1..4{Rpt}] of Byte = ($c0, $d0, $e0, $f0);
   cTileMapTerminator = $00; // skip 0
   cClocksPerSample = 344;
-  cFrameSoundSize = cZ80Clock / cClocksPerSample / 2 / (cRefreshRate / 4);
+  cFrameSoundSize = cZ80Clock / cClocksPerSample / 2 / (cRefreshRate / cRefreshRateDiv);
 
   // number of Z80 cycles to execute a function
-  cTileIndexesTimings : array[Boolean{VBlank?}, 0..4 {Direct/Std/RptFix/RptVar/VBlankSwitch}] of Integer = (
+  cTileIndexesTimings : array[Boolean {VBlank?}, 0..4 {Direct/Std/RptFix/RptVar/VBlankSwitch}] of Integer = (
     (343 + 688 + 40 - 20, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
     (347 + 344 + 40, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
   );
@@ -946,10 +947,17 @@ end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
+{$if cRefreshRateDiv = 2}
+  CShotTransGracePeriod = 24;
+  CShotTransSAvgFrames = 6;
+  CShotTransSoftThres = 0.8;
+  CShotTransHardThres = 0.4;
+{$else}
   CShotTransGracePeriod = 12;
   CShotTransSAvgFrames = 6;
   CShotTransSoftThres = 0.9;
   CShotTransHardThres = 0.5;
+{$endif}
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -3464,7 +3472,7 @@ begin
 
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'ffmpeg.exe';
-  Process.Parameters.Add('-y -i "' + AFN + '" -r 12.5 -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 ' + vfl + ' -compression_level 0 -pix_fmt rgb24 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-16:TP=-1:LRA=11 -ar 44100 ' + afl + ' "' + AAudioFile + '"');
+  Process.Parameters.Add('-y -i "' + AFN + '" -r ' + FloatToStr(cRefreshRate / cRefreshRateDiv) + ' -vf scale=-1:192:flags=lanczos,crop=256:192 -start_number 0 ' + vfl + ' -compression_level 0 -pix_fmt rgb24 "' + Result + '%04d.png' + '" -ac 1 -af loudnorm=I=-16:TP=-1:LRA=11 -ar 44100 ' + afl + ' "' + AAudioFile + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 

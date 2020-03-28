@@ -46,8 +46,8 @@ banks 1
 ;==============================================================
 
 .define DblBufTileOffset 49 * TileSize
-.define FrameSampleCount 825 ; 344 cycles per PCM sample = one sample every 320 cycles
-.define PCMBufferSizeShift 11
+.define FrameSampleCount 414 ; 344 cycles per PCM sample = one sample every 320 cycles
+.define PCMBufferSizeShift 10
 .define PCMBufferSize (1 << PCMBufferSizeShift)
 
 .macro WaitVBlank args playSmp ; c11
@@ -844,7 +844,7 @@ TilemapUnpackEnd:
     ld iyl, c
     ld bc, PCMData
 .endif
-
+    
     ; Unpack frame PCM data to RAM
 
         ; PSGBufferA for even frames, PSGBufferB for odd frames
@@ -861,7 +861,7 @@ TilemapUnpackEnd:
     ld sp, hl
 
         ; 36 samples per iteration
-    ld ixh, FrameSampleCount / 36 + 0.5
+    ld ixh, FrameSampleCount / 36
 ; c197
 
 ; c0
@@ -885,14 +885,14 @@ TilemapUnpackEnd:
     dec ixh
     jp nz, PCMUnpackLoop
 ; c322
+        ; extra decoding
+	
     PlaySample
 
-        ; cleanup extra decoding
-   pop hl
-   pop hl
-   ld l, h
-   push hl
-   push hl
+    Unpack6Samples
+    Unpack6Samples
+    Unpack6Samples
+    
 ; c46
 
         ; restore frame data pointer into hl
@@ -902,35 +902,13 @@ TilemapUnpackEnd:
     ld hl, FrameSampleCount / 2
     add hl, bc
 .else
-    dec bc
     ld h, b
     ld l, c
 .endif
 ; c60
 
-    PlaySampleSkew 71
+    PlaySampleSkew 210
 p2:
-
-        ; ensure the video frame lasted long enough by checking PCM buffer position
--:
-    .repeat 10
-        inc iy ; timing
-    .endr
-
-    PlaySampleSkew 159
-    exx
-    ld a, d
-    and $fc
-    ld ixh, a
-    ld a, h
-    exx
-
-    cp ixh
-        ; stop on buffer underflow
-    jp c, +
-        ; loop while there's still buffer left
-    jp nz, -
-+:
 
     WaitVBlank 1
 
