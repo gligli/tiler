@@ -23,7 +23,7 @@ const
   cGamma: array[0..1] of TFloat = (1.8, 0.85);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFGamma = 1;
+  cKFGamma = -1;
 
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
@@ -50,7 +50,7 @@ const
   cZ80Clock = 3546893;
   cLineCount = 313;
   cRefreshRate = 50;
-  cCyclesPerLine = cZ80Clock * 126 div 127 / (cLineCount * cRefreshRate);
+  cCyclesPerLine = cZ80Clock * 127 div 128 / (cLineCount * cRefreshRate);
   cCyclesPerDisplayPhase : array[Boolean{VBlank?}] of Integer = (
     Round(cScreenHeight * cCyclesPerLine),
     Round((cLineCount - cScreenHeight) * cCyclesPerLine)
@@ -85,7 +85,7 @@ const
     (347 + 344 + 40, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
   );
   cLineJitterCompensation = 2;
-  cTileIndexesInitialLine = 201; // algo starts in VBlank
+  cTileIndexesInitialLine = 202; // algo starts in VBlank
 
   cColorCpns = 3;
   cTileDCTSize = cColorCpns * sqr(cTileWidth);

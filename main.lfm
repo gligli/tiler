@@ -1,7 +1,7 @@
 object MainForm: TMainForm
   Left = 277
   Height = 848
-  Top = 85
+  Top = 104
   Width = 793
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
@@ -128,7 +128,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
-    Text = 'C:\smsdev\_old\nggyu\Rick Astley - Never Gonna Give You Up-full6.avi'
+    Text = 'C:\smsdev\_old\nggyu\Rick Astley - Never Gonna Give You Up-full5.avi'
   end
   object Label4: TLabel
     Left = 8
@@ -180,7 +180,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     TabOrder = 9
-    Value = 250
+    Value = 225
   end
   object seAvgTPF: TSpinEdit
     Left = 208
@@ -190,7 +190,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 25
+    Value = 20
   end
   object Label10: TLabel
     Left = 8
