@@ -20,7 +20,7 @@ banks 1
 ; SDSC tag and SMS rom header
 ;==============================================================
 
-.sdsctag 7.0,"Video playback","Video playback demo","GliGli"
+.sdsctag 9.0,"Video playback","Video playback demo","GliGli"
 
 ;==============================================================
 ; SMS defines
@@ -95,7 +95,7 @@ banks 1
     ex af, af'
         ; this macro is 27 cycles when not playing
         ; one sample every 325 cycles (320 + 5 from jr not jumping)
-    add a, (skew + 27) / (325 - 1) * 256
+    add a, (skew + 27) / 325 * 256
     jr nc, ++++
     PlaySample
 ++++:
@@ -861,18 +861,12 @@ TilemapUnpackEnd:
     ld sp, hl
 
         ; 36 samples per iteration
-    ld ixh, FrameSampleCount / 36
+    ld ixh, FrameSampleCount / 24
 ; c197
 
 ; c0
 
     PCMUnpackLoop:
-        PlaySample
-        Unpack6Samples
-        Unpack6Samples
-        cp 0 ; timing
-        cp 0 ; timing
-; c320
         PlaySample
         Unpack6Samples
         Unpack6Samples
@@ -890,8 +884,13 @@ TilemapUnpackEnd:
     PlaySample
 
     Unpack6Samples
-    Unpack6Samples
-    Unpack6Samples
+    
+        ; cleanup extra decoding
+   pop hl
+   pop hl
+   ld l, h
+   push hl
+   push hl   
     
 ; c46
 
@@ -907,8 +906,28 @@ TilemapUnpackEnd:
 .endif
 ; c60
 
-    PlaySampleSkew 210
+    PlaySampleSkew 220
 p2:
+        ; ensure the video frame lasted long enough by checking PCM buffer position
+-:
+    .repeat 10
+        inc iy ; timing
+    .endr
+
+    PlaySampleSkew 159
+    exx
+    ld a, d
+    and $fe
+    ld ixh, a
+    ld a, h
+    exx
+
+    cp ixh
+        ; stop on buffer underflow
+    jp c, +
+        ; loop while there's still buffer left
+    jp nz, -
++:
 
     WaitVBlank 1
 
