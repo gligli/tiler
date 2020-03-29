@@ -128,7 +128,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
-    Text = 'C:\smsdev\_old\nggyu\Rick Astley - Never Gonna Give You Up-full5.avi'
+    Text = 'C:\smsdev\_old\nggyu\Rick Astley - Never Gonna Give You Up-full6.avi'
   end
   object Label4: TLabel
     Left = 8
@@ -190,7 +190,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 38
+    Value = 25
   end
   object Label10: TLabel
     Left = 8
@@ -237,7 +237,9 @@ object MainForm: TMainForm
     Height = 23
     Top = 272
     Width = 56
+    MinValue = -1
     TabOrder = 12
+    Value = 2
   end
   object imgPalette: TImage
     Left = 8
@@ -350,7 +352,7 @@ object MainForm: TMainForm
     Top = 119
     Width = 56
     ItemHeight = 15
-    ItemIndex = 4
+    ItemIndex = 3
     Items.Strings = (
       '1'
       '2'
@@ -360,7 +362,7 @@ object MainForm: TMainForm
     )
     OnChange = cbxYilMixChange
     TabOrder = 5
-    Text = '16'
+    Text = '8'
   end
   object Label11: TLabel
     Left = 8
@@ -376,7 +378,9 @@ object MainForm: TMainForm
     Top = 144
     Width = 251
     Caption = 'Use Thomas Knoll dithering (not Yiluoma 2)'
+    Checked = True
     OnChange = chkUseTKChange
+    State = cbChecked
     TabOrder = 6
   end
   object chkExtFT: TCheckBox
