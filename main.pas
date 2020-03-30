@@ -140,7 +140,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 3, 1, 5, 1, 3, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 3, 1, 5, 2, 3, 1, 2);
 
 type
   TSpinlock = LongInt;
@@ -216,6 +216,7 @@ type
     KF: PKeyFrame;
     KFFrmIdx: Integer;
     Iteration, DesiredNbTiles: Integer;
+    FixupMode: Boolean;
 
     Dataset: TFloatDynArray2;
     FrameDataset: TFloatDynArray2;
@@ -244,7 +245,6 @@ type
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
     chkUseTK: TCheckBox;
-    chkExtFT: TCheckBox;
     edInput: TEdit;
     edOutputDir: TEdit;
     edWAV: TEdit;
@@ -321,7 +321,6 @@ type
 
     FInputPath, FWAVFile: String;
     FUseThomasKnoll: Boolean;
-    FExtendedFrmTiling: Boolean;
     FPalBasedFrmTiling: Boolean;
     FY2MixedColors: Integer;
     FLowMem: Boolean;
@@ -359,7 +358,7 @@ type
 
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
-    function GetFrameTileCount(AFrame: PFrame): Integer;
+    function GetFrameTileCount(AFrame: PFrame; ADelta, AFromTileIdxs: Boolean): Integer;
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
@@ -379,10 +378,10 @@ type
     function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat = 0.0; Epsilon: TFloat = 1e-12; Data: Pointer = nil): TFloat;
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
-    function GetMaxTPF(AKF: PKeyFrame): Integer;
     function TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
     procedure DoKeyFrameTiling(AFTD: PFrameTilingData);
-    procedure DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
+    procedure DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer; AForcedFrame: Integer = -1);
+    procedure FixupFrameTiling(AFrame, APrevFrame: PFrame; DesiredNbTiles: Integer);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -395,11 +394,11 @@ type
     procedure SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
     procedure SaveTilemap(ADataStream: TStream; AFrame: PFrame; AFrameIdx: Integer; ASkipFirst: Boolean);
 
-    procedure BuildTileCacheLUT(var TileCacheLUT: TIntegerDynArray2);
+    procedure BuildTileCacheLUT(var TileCacheLUT: TIntegerDynArray2; AFrameIdx: Integer = -1);
     procedure InitTileCache(var TileCache: TTileCache);
     function PrepareVRAMTileIndexes(AFrameIdx: Integer; var ATileIndexes: TTilesIndexes; var TileCache: TTileCache;
       const TileCacheLUT: TIntegerDynArray2): Integer;
-    function BalanceVRAMTileIndexes(AFrame: PFrame; AUploadLimit: Integer; var TileCache: TTileCache; var TileCacheLUT: TIntegerDynArray2): Integer;
+    function PrefetchVRAMTileIndexes(AFrame: PFrame; AUploadLimit: Integer; var TileCache: TTileCache; var TileCacheLUT: TIntegerDynArray2): Integer;
 
     procedure Save(ADataStream, ASoundStream: TStream);
 
@@ -900,21 +899,31 @@ begin
 end;
 
 procedure TMainForm.btnDoKeyFrameTilingClick(Sender: TObject);
+var
+  MaxTPF: Integer;
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(FKeyFrames[AIndex], seMaxTPF.Value)
+    DoFrameTiling(FKeyFrames[AIndex], MaxTPF)
   end;
 
 var
   i: Integer;
+
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
 
+  MaxTPF := seMaxTPF.Value;
+
   ProgressRedraw(-1, esFrameTiling);
   ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames));
   ProgressRedraw(1);
+
+  for i := 1 to High(FKeyFrames) do
+    if GetFrameTileCount(@FFrames[FKeyFrames[i]^.StartFrame], True, False) > cMaxTilesPerFrame then
+      FixupFrameTiling(@FFrames[FKeyFrames[i]^.StartFrame], @FFrames[FKeyFrames[i]^.StartFrame - 1], cMaxTilesPerFrame);
+  ProgressRedraw(2);
 
   tbFrameChange(nil);
 end;
@@ -941,7 +950,6 @@ end;
 
 procedure TMainForm.chkExtFTChange(Sender: TObject);
 begin
-  FExtendedFrmTiling := chkExtFT.Checked;
   FPalBasedFrmTiling := chkPalFT.Checked;
 end;
 
@@ -2498,7 +2506,7 @@ end;
 procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer;
   ATilePage: Integer);
 var
-  i, j, r, g, b, ti, tx, ty, col, ftc: Integer;
+  i, j, r, g, b, ti, tx, ty, col, ftc, dftc: Integer;
   pTiles, pDest, pDest2, p: PInteger;
   tilePtr: PTile;
   TMItem: TTileMapItem;
@@ -2518,8 +2526,9 @@ begin
   if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
     Exit;
 
-  ftc := GetFrameTileCount(Frame);
-  lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(ftc);
+  ftc := GetFrameTileCount(Frame, False, False);
+  dftc := GetFrameTileCount(Frame, True, False);
+  lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(ftc) + ' (Delta=' + IntToStr(dftc) + ')';
   if ftc > seMaxTPF.Value then
     lblTileCount.Font.Color := clDefault
   else
@@ -2757,7 +2766,7 @@ begin
       Inc(Result);
 end;
 
-function TMainForm.GetFrameTileCount(AFrame: PFrame): Integer;
+function TMainForm.GetFrameTileCount(AFrame: PFrame; ADelta, AFromTileIdxs: Boolean): Integer;
 var
   Used: array of Boolean;
   i, j: Integer;
@@ -2770,9 +2779,26 @@ begin
   SetLength(Used, Length(FTiles));
   FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
 
-  for j := 0 to cTileMapHeight - 1 do
-    for i := 0 to cTileMapWidth - 1 do
-      Used[AFrame^.TileMap[j, i].GlobalTileIndex] := True;
+  if AFromTileIdxs then
+  begin
+    for i := 0 to High(AFrame^.TilesIndexes) do
+      Used[AFrame^.TilesIndexes[i][0]] := True;
+
+    if ADelta and (AFrame^.Index > 0) then
+      for i := 0 to High(FFrames[AFrame^.Index - 1].TilesIndexes) do
+        Used[FFrames[AFrame^.Index - 1].TilesIndexes[i][0]] := True;
+  end
+  else
+  begin
+    for j := 0 to cTileMapHeight - 1 do
+      for i := 0 to cTileMapWidth - 1 do
+        Used[AFrame^.TileMap[j, i].GlobalTileIndex] := True;
+
+    if ADelta and (AFrame^.Index > 0) then
+      for j := 0 to cTileMapHeight - 1 do
+        for i := 0 to cTileMapWidth - 1 do
+          Used[FFrames[AFrame^.Index - 1].TileMap[j, i].GlobalTileIndex] := True;
+  end;
 
   for i := 0 to High(Used) do
     Inc(Result, ifthen(Used[i], 1));
@@ -2852,30 +2878,17 @@ begin
       end;
 end;
 
-function TMainForm.GetMaxTPF(AKF: PKeyFrame): Integer;
-var
-  frame: Integer;
-begin
-  Result := 0;
-  for frame := AKF^.StartFrame to AKF^.EndFrame do
-    Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
-end;
-
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  MaxTPF, TPF, i, di, tmi, TrIdx, FrmIdx, UsedIdx: Integer;
+  MaxTPF, TPF, i, di, tmi, TrIdx, FrmIdx: Integer;
   ReducedIdxToDS: TIntegerDynArray;
   tmiO: TTileMapItem;
-  Used: TBooleanDynArray2;
   FTD: PFrameTilingData;
   KDT: PANNkdtree;
   DCT: TDoubleDynArray;
   ReducedDS: TDoubleDynArray2;
 begin
   FTD := PFrameTilingData(Data);
-
-  UsedIdx := 0;
-  SetLength(Used, 2, Length(FTiles));
 
   SetLength(ReducedDS, Length(FTD^.Dataset));
   SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
@@ -2897,41 +2910,29 @@ begin
   SetLength(DCT, cTileDCTSize);
 
   MaxTPF := 0;
-  for FrmIdx := 0 to High(FFrames) do
-    if (FrmIdx = FTD^.KFFrmIdx + FTD^.KF^.StartFrame) or (FrmIdx = FTD^.KFFrmIdx + FTD^.KF^.StartFrame - 1) or (FTD^.KFFrmIdx < 0) then
+  FrmIdx := FTD^.KFFrmIdx + FTD^.KF^.StartFrame;
+
+  for tmi := 0 to cTileMapSize - 1 do
+  begin
+    for i := 0 to cTileDCTSize - 1 do
+      DCT[i] := FTD^.FrameDataset[(FrmIdx - FTD^.KF^.StartFrame + 1) * cTileMapSize + tmi, i];
+
+    TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PDouble(DCT), 0.0)];
+    Assert(TrIdx >= 0);
+
+    if FrmIdx >= FTD^.KF^.StartFrame then
     begin
-      FillChar(Used[UsedIdx, 0], Length(FTiles), 0);
+      tmiO.GlobalTileIndex := FTD^.DsTMItem[TrIdx].GlobalTileIndex;
+      tmiO.HMirror := FTD^.DsTMItem[TrIdx].HMirror;
+      tmiO.VMirror := FTD^.DsTMItem[TrIdx].VMirror;
+      tmiO.SpritePal := FTD^.DsTMItem[TrIdx].SpritePal;
 
-      for tmi := 0 to cTileMapSize - 1 do
-      begin
-        for i := 0 to cTileDCTSize - 1 do
-          DCT[i] := FTD^.FrameDataset[(FrmIdx - FTD^.KF^.StartFrame + 1) * cTileMapSize + tmi, i];
-
-        TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PDouble(DCT), 0.0)];
-        Assert(TrIdx >= 0);
-
-        Used[UsedIdx, FTD^.DsTMItem[TrIdx].GlobalTileIndex] := True;
-
-        if FrmIdx >= FTD^.KF^.StartFrame then
-        begin
-          tmiO.GlobalTileIndex := FTD^.DsTMItem[TrIdx].GlobalTileIndex;
-          tmiO.HMirror := FTD^.DsTMItem[TrIdx].HMirror;
-          tmiO.VMirror := FTD^.DsTMItem[TrIdx].VMirror;
-          tmiO.SpritePal := FTD^.DsTMItem[TrIdx].SpritePal;
-
-          FTD^.OutputTMIs[(FrmIdx - FTD^.KF^.StartFrame) * cTileMapSize + tmi] := tmiO;
-        end;
-      end;
-
-      TPF := 0;
-      for i := 0 to High(Used[UsedIdx]) do
-        if Used[UsedIdx, i] or Used[1 - UsedIdx, i] then
-          Inc(TPF);
-
-      MaxTPF := max(MaxTPF, TPF);
-
-      UsedIdx := 1 - UsedIdx;
+      FFrames[FrmIdx].TileMap[tmi div cTileMapWidth, tmi mod cTileMapWidth] := tmiO
     end;
+  end;
+
+  TPF := GetFrameTileCount(@FFrames[FrmIdx], FTD^.FixupMode, False);
+  MaxTPF := max(MaxTPF, TPF);
 
   ann_kdtree_destroy(KDT);
 
@@ -3042,13 +3043,12 @@ begin
   LeaveCriticalSection(FCS);
 end;
 
-procedure TMainForm.DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
+procedure TMainForm.DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer; AForcedFrame: Integer);
 const
   cNBTilesEpsilon = 1;
 var
-  FrmIdx, sy, sx, i: Integer;
+  i: Integer;
   FTD: PFrameTilingData;
-  tmiO, tmiI: PTileMapItem;
 begin
   FTD := New(PFrameTilingData);
   try
@@ -3056,44 +3056,52 @@ begin
     FTD^.KFFrmIdx := -1;
     FTD^.Iteration := 0;
     FTD^.DesiredNbTiles := DesiredNbTiles;
+    FTD^.FixupMode := False;
     SetLength(FTD^.OutputTMIs, AKF^.FrameCount * cTileMapSize);
 
     DoKeyFrameTiling(FTD);
 
     // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
 
-    if FExtendedFrmTiling then
-    begin
-      for i := 0 to AKF^.FrameCount - 1 do
+    for i := 0 to AKF^.FrameCount - 1 do
+      if (AForcedFrame < 0) or (i = AForcedFrame) then
       begin
         FTD^.Iteration := 0;
         FTD^.KFFrmIdx := i;
         if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
           GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
       end;
-    end
-    else
-    begin
-      if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-        GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
-    end;
-
-    // update tilemap
-
-    for FrmIdx := 0 to AKF^.FrameCount - 1 do
-      for sy := 0 to cTileMapHeight - 1 do
-        for sx := 0 to cTileMapWidth - 1 do
-        begin
-          tmiO := @FFrames[FrmIdx + AKF^.StartFrame].TileMap[sy, sx];
-          tmiI := @FTD^.OutputTMIs[FrmIdx * cTileMapSize + sy * cTileMapWidth + sx];
-
-          tmiO^.GlobalTileIndex := tmiI^.GlobalTileIndex;
-          tmiO^.SpritePal := tmiI^.SpritePal;
-          tmiO^.VMirror := tmiI^.VMirror;
-          tmiO^.HMirror := tmiI^.HMirror;
-        end;
   finally
     Dispose(FTD);
+  end;
+end;
+
+procedure TMainForm.FixupFrameTiling(AFrame, APrevFrame: PFrame; DesiredNbTiles: Integer);
+var
+  KF: PKeyFrame;
+  FTD: PFrameTilingData;
+begin
+  KF := New(PKeyFrame);
+  FTD := New(PFrameTilingData);
+  try
+    KF^ := AFrame^.KeyFrame^;
+    KF^.EndFrame := KF^.StartFrame;
+    KF^.FrameCount := 1;
+
+    FTD^.KF := KF;
+    FTD^.KFFrmIdx := -1;
+    FTD^.Iteration := 0;
+    FTD^.DesiredNbTiles := DesiredNbTiles;
+    FTD^.FixupMode := True;
+    SetLength(FTD^.OutputTMIs, KF^.FrameCount * cTileMapSize);
+    DoKeyFrameTiling(FTD);
+
+    FTD^.Iteration := 0;
+    FTD^.KFFrmIdx := 0;
+    GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - DesiredNbTiles div 10, DesiredNbTiles div 10, FTD);
+  finally
+    Dispose(FTD);
+    Dispose(KF);
   end;
 end;
 
@@ -3826,18 +3834,29 @@ begin
   ADataStream.WriteByte(cTileMapTerminator);
 end;
 
-procedure TMainForm.BuildTileCacheLUT(var TileCacheLUT: TIntegerDynArray2);
+procedure TMainForm.BuildTileCacheLUT(var TileCacheLUT: TIntegerDynArray2; AFrameIdx: Integer);
 var
-  i, j, k: Integer;
+  i, j, x, y: Integer;
 begin
   SetLength(TileCacheLUT, Length(FFrames), Length(FTiles));
   for i := 0 to High(FFrames) do
+  begin
+    if (AFrameIdx >= 0) and (AFrameIdx <> i) then
+      Continue;
+
     FillDWord(TileCacheLUT[i, 0], Length(FTiles), DWORD(MaxInt));
+  end;
 
   for i := 0 to High(FFrames) do
+  begin
+    if (AFrameIdx >= 0) and (AFrameIdx <> i) then
+      Continue;
+
     for j := High(FFrames) downto i do
-      for k := High(FFrames[j].TilesIndexes) downto 0 do
-        TileCacheLUT[i, FFrames[j].TilesIndexes[k][0]] := j * cTileMapSize + k;
+      for y := (cTileMapHeight - 1) downto 0 do
+        for x := (cTileMapWidth - 1) downto 0 do
+          TileCacheLUT[i, FFrames[j].TileMap[y, x].GlobalTileIndex] := j * cTileMapSize + y * cTileMapWidth + x;
+  end;
 end;
 
 procedure TMainForm.InitTileCache(var TileCache: TTileCache);
@@ -3929,64 +3948,75 @@ begin
   //WriteLn('FrmIdx: ', AFrameIdx, #9'UploadCnt: ', Result);
 end;
 
-function TMainForm.BalanceVRAMTileIndexes(AFrame: PFrame; AUploadLimit: Integer; var TileCache: TTileCache;
+function TMainForm.PrefetchVRAMTileIndexes(AFrame: PFrame; AUploadLimit: Integer; var TileCache: TTileCache;
   var TileCacheLUT: TIntegerDynArray2): Integer;
 var
-  i, j, ulCnt, cnt: Integer;
+  i, j, ulCnt, cnt, pos, TPF: Integer;
   found: Boolean;
   frm: PFrame;
 begin
-  ulCnt := 0;
-  frm := AFrame;
-  for i := 0 to High(frm^.TilesIndexes) do
-    if frm^.TilesIndexes[i][1] < cTilesPerBank then
-      Inc(ulCnt);
+  TPF := GetFrameTileCount(AFrame, True, True);
 
-  if ((ulCnt < AUploadLimit) or (AUploadLimit < 0)) and (AFrame^.Index < High(FFrames)) then
+  if TPF < cMaxTilesPerFrame then
   begin
-    cnt := 0;
-    frm := @FFrames[AFrame^.Index + 1];
+    ulCnt := 0;
+    frm := AFrame;
     for i := 0 to High(frm^.TilesIndexes) do
-      if frm^.TilesIndexes[i][1] < cTilesPerBank then // not already in VRAM?
-        Inc(cnt);
+      if frm^.TilesIndexes[i][1] < cTilesPerBank then
+        Inc(ulCnt);
 
-    if (cnt >= AUploadLimit) or (AUploadLimit < 0) then
+    if ((ulCnt < AUploadLimit) or (AUploadLimit < 0)) and (AFrame^.Index < High(FFrames)) then
     begin
+      cnt := 0;
+      frm := @FFrames[AFrame^.Index + 1];
       for i := 0 to High(frm^.TilesIndexes) do
         if frm^.TilesIndexes[i][1] < cTilesPerBank then // not already in VRAM?
-        begin
-          // prevent 2 uploads in the same cache index
-          found := False;
-          for j := 0 to High(AFrame^.TilesIndexes) do
-            if AFrame^.TilesIndexes[j][1] = frm^.TilesIndexes[i][1] then
-            begin
-              found := True;
+          Inc(cnt);
+
+      pos := High(AFrame^.TilesIndexes);
+      SetLength(AFrame^.TilesIndexes, pos + 1 + length(frm^.TilesIndexes));
+
+      if (cnt >= AUploadLimit) or (AUploadLimit < 0) then
+      begin
+        for i := 0 to High(frm^.TilesIndexes) do
+          if frm^.TilesIndexes[i][1] < cTilesPerBank then // not already in VRAM?
+          begin
+            // prevent 2 uploads in the same cache index
+            found := False;
+            for j := 0 to pos do
+              if AFrame^.TilesIndexes[j][1] = frm^.TilesIndexes[i][1] then
+              begin
+                found := True;
+                Break;
+              end;
+            if found then
+              Continue;
+
+            Inc(pos);
+            AFrame^.TilesIndexes[pos][0] := frm^.TilesIndexes[i][0];
+            AFrame^.TilesIndexes[pos][1] := frm^.TilesIndexes[i][1];
+            frm^.TilesIndexes[i][1] += cTilesPerBank;
+            Inc(ulCnt);
+            Dec(cnt);
+            Inc(TPF);
+
+            if (ulCnt >= cnt) or (TPF >= cMaxTilesPerFrame) then
               Break;
-            end;
-          if found then
-            Continue;
+          end;
 
-          SetLength(AFrame^.TilesIndexes, Length(AFrame^.TilesIndexes) + 1);
-          AFrame^.TilesIndexes[High(AFrame^.TilesIndexes)][0] := frm^.TilesIndexes[i][0];
-          AFrame^.TilesIndexes[High(AFrame^.TilesIndexes)][1] := frm^.TilesIndexes[i][1];
-          frm^.TilesIndexes[i][1] += cTilesPerBank;
-          Inc(ulCnt);
-          Dec(cnt);
+        //WriteLn('FrmIdx: ', AFrame^.Index, #9'NewUploadCnt: ', ulCnt, #9'(balancing)');
+      end;
 
-          if ulCnt >= cnt then
-            Break;
-        end;
-
-      //WriteLn('FrmIdx: ', AFrame^.Index, #9'NewUploadCnt: ', ulCnt, #9'(balancing)');
+      SetLength(AFrame^.TilesIndexes, pos + 1);
     end;
   end;
 
-  BuildTileCacheLUT(TileCacheLUT);
+  BuildTileCacheLUT(TileCacheLUT, AFrame^.Index);
   Result := PrepareVRAMTileIndexes(AFrame^.Index, AFrame^.TilesIndexes, TileCache, TileCacheLUT);
 end;
 
 procedure TMainForm.Save(ADataStream, ASoundStream: TStream);
-var pp, pp2, i, j, k, x, y, frameStart, prevUploadCnt, maxUploadCnt: Integer;
+var pp, i, j, x, y, frameStart, avgUploadCnt, prevUploadCnt, maxUploadCnt: Integer;
     palpx, sb: Byte;
     prevKF: PKeyFrame;
     SkipFirst, b: Boolean;
@@ -3997,18 +4027,24 @@ var pp, pp2, i, j, k, x, y, frameStart, prevUploadCnt, maxUploadCnt: Integer;
     TileCacheLUT: TIntegerDynArray2;
 begin
   // prepare belady cache
-  BuildTileCacheLUT(TileCacheLUT);
+
+  avgUploadCnt := 0;
   InitTileCache(TileCache);
+  for i := 0 to High(FFrames) do
+  begin
+    BuildTileCacheLUT(TileCacheLUT, i);
+    avgUploadCnt += PrepareVRAMTileIndexes(i, FFrames[i].TilesIndexes, TileCache, TileCacheLUT);
+  end;
+  avgUploadCnt := (avgUploadCnt - 1) div length(FFrames) + 1;
+  WriteLn('AvgUploadCnt: ', avgUploadCnt);
 
   maxUploadCnt := MaxInt;
   repeat
     prevUploadCnt := maxUploadCnt;
     InitTileCache(TileCache);
-
     maxUploadCnt := 0;
     for i := 0 to High(FFrames) do
-      maxUploadCnt := max(maxUploadCnt, BalanceVRAMTileIndexes(@FFrames[i], -1, TileCache, TileCacheLUT));
-
+      maxUploadCnt := max(maxUploadCnt, PrefetchVRAMTileIndexes(@FFrames[i], -1, TileCache, TileCacheLUT));
     WriteLn('MaxUploadCnt: ', maxUploadCnt);
   until maxUploadCnt >= prevUploadCnt;
 
@@ -4038,7 +4074,7 @@ begin
   end;
 
   WriteLn('Total tiles size:'#9, ADataStream.Position);
-  pp2 := ADataStream.Position;
+  pp := ADataStream.Position;
 
 
   // index
@@ -4071,9 +4107,7 @@ begin
 
     // tiles indexes
 
-    pp := ADataStream.Position;
     SaveTileIndexes(ADataStream, @FFrames[i]);
-    //WriteLn('TileIndexes size: ', ADataStream.Position - pp);
 
     // tilemap
 
@@ -4081,7 +4115,6 @@ begin
     begin
       TMStream[SkipFirst] := TMemoryStream.Create;
       SaveTileMap(TMStream[SkipFirst], @FFrames[i], i, SkipFirst);
-      //WriteLn('TM size: ', TMStream[SkipFirst].Size, ' ', SkipFirst);
     end;
 
     SkipFirst := True;
@@ -4110,7 +4143,7 @@ begin
     prevKF := FFrames[i].KeyFrame;
   end;
 
-  WriteLn('Total frames size:'#9, ADataStream.Position - pp2);
+  WriteLn('Total frames size:'#9, ADataStream.Position - pp);
 
   WriteLn('Total unpadded size:'#9, ADataStream.Position);
 
