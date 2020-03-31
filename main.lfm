@@ -111,7 +111,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 4
-    Value = 100
+    Value = 456
   end
   object Label3: TLabel
     Left = 8
@@ -128,7 +128,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
-    Text = 'Rick Astley - Never Gonna Give You Up-full7.avi'
+    Text = 'Rick Astley - Never Gonna Give You Up-full8.avi'
   end
   object Label4: TLabel
     Left = 8
@@ -169,8 +169,8 @@ object MainForm: TMainForm
     Left = 8
     Height = 15
     Top = 198
-    Width = 100
-    Caption = 'Max tiles per frame'
+    Width = 105
+    Caption = 'Delta tiles per frame'
     ParentColor = False
   end
   object seMaxTPF: TSpinEdit
@@ -180,7 +180,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     TabOrder = 9
-    Value = 230
+    Value = 66
   end
   object seAvgTPF: TSpinEdit
     Left = 208
@@ -190,7 +190,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 7
+    Value = 11
   end
   object Label10: TLabel
     Left = 8

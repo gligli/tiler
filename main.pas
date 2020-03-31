@@ -365,7 +365,7 @@ type
 
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
-    function GetFrameTileCount(AFrame: PFrame; ADelta, AFromTileIdxs: Boolean): Integer;
+    function GetFrameTileCount(AFrame: PFrame; ADelta, ADeltaVal, AFromTileIdxs: Boolean): Integer;
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
@@ -916,7 +916,7 @@ var
 
   procedure DoFixup(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    if GetFrameTileCount(@FFrames[FKeyFrames[AIndex]^.StartFrame], True, False) > cMaxTilesPerFrame then
+    if GetFrameTileCount(@FFrames[FKeyFrames[AIndex]^.StartFrame], True, True, False) > cMaxTilesPerFrame then
       FixupFrameTiling(@FFrames[FKeyFrames[AIndex]^.StartFrame], @FFrames[FKeyFrames[AIndex]^.StartFrame - 1], cMaxTilesPerFrame);
   end;
 
@@ -972,14 +972,12 @@ const
 {$if cRefreshRateDiv = 2}
   CShotTransGracePeriod = 24;
   CShotTransSAvgFrames = 6;
-  CShotTransSoftThres = 0.8;
-  CShotTransHardThres = 0.4;
 {$else}
   CShotTransGracePeriod = 12;
   CShotTransSAvgFrames = 6;
+{$endif}
   CShotTransSoftThres = 0.9;
   CShotTransHardThres = 0.5;
-{$endif}
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -2534,10 +2532,10 @@ begin
   if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
     Exit;
 
-  ftc := GetFrameTileCount(Frame, False, False);
-  dftc := GetFrameTileCount(Frame, True, False);
+  ftc := GetFrameTileCount(Frame, False, False, False);
+  dftc := GetFrameTileCount(Frame, True, False, False);
   lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(ftc) + ' (Delta=' + IntToStr(dftc) + ')';
-  if ftc > seMaxTPF.Value then
+  if dftc > seMaxTPF.Value then
     lblTileCount.Font.Color := clDefault
   else
     lblTileCount.Font.Color := clGreen;
@@ -2774,7 +2772,7 @@ begin
       Inc(Result);
 end;
 
-function TMainForm.GetFrameTileCount(AFrame: PFrame; ADelta, AFromTileIdxs: Boolean): Integer;
+function TMainForm.GetFrameTileCount(AFrame: PFrame; ADelta, ADeltaVal, AFromTileIdxs: Boolean): Integer;
 var
   Used: array of Boolean;
   i, j: Integer;
@@ -2805,7 +2803,7 @@ begin
     if ADelta and (AFrame^.Index > 0) then
       for j := 0 to cTileMapHeight - 1 do
         for i := 0 to cTileMapWidth - 1 do
-          Used[FFrames[AFrame^.Index - 1].TileMap[j, i].GlobalTileIndex] := True;
+          Used[FFrames[AFrame^.Index - 1].TileMap[j, i].GlobalTileIndex] := ADeltaVal;
   end;
 
   for i := 0 to High(Used) do
@@ -2939,7 +2937,7 @@ begin
     end;
   end;
 
-  TPF := GetFrameTileCount(@FFrames[FrmIdx], FTD^.FixupMode, False);
+  TPF := GetFrameTileCount(@FFrames[FrmIdx], True, False, False);
   MaxTPF := max(MaxTPF, TPF);
 
   ann_kdtree_destroy(KDT);
@@ -3973,7 +3971,7 @@ var
   found: Boolean;
   frm: PFrame;
 begin
-  TPF := GetFrameTileCount(AFrame, True, True);
+  TPF := GetFrameTileCount(AFrame, True, True, True);
 
   if TPF < cMaxTilesPerFrame then
   begin
