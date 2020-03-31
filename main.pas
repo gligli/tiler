@@ -20,7 +20,7 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1] of TFloat = (1.8, 0.85);
+  cGamma: array[0..1] of TFloat = (1.5, 0.85);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
   cKFGamma = -1;
@@ -175,14 +175,21 @@ type
 
   TTileMapItems = array of TTileMapItem;
 
-  TTilesIndexes = array of array [0..1] of Integer;
+  TTileIndex = record
+    RomIndex, VramIndex: Integer;
+    InVRAM: Boolean;
+  end;
+
+  PTileIndex = ^TTileIndex;
+
+  TTilesIndexes = array of TTileIndex;
 
   PKeyFrame = ^TKeyFrame;
 
   TFrame = record
     Index: Integer;
     Tiles: array[0..(cTileMapSize - 1)] of TTile;
-    TilesIndexes: TTilesIndexes; // ROM addr / VRAM addr
+    TilesIndexes: TTilesIndexes;
     TileMap: array[0..(cTileMapHeight - 1),0..(cTileMapWidth - 1)] of TTileMapItem;
     FSPixels: TByteDynArray;
     KeyFrame: PKeyFrame;
@@ -2612,7 +2619,7 @@ begin
         begin
           // emulate smoothing (use previous frame tilemap item)
           TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 3, i shr 3];
-          ti := FFrames[AFrameIndex - cSmoothingPrevFrame].TilesIndexes[TMItem.FrameTileIndex][0];
+          ti := FFrames[AFrameIndex - cSmoothingPrevFrame].TilesIndexes[TMItem.FrameTileIndex].RomIndex;
         end;
 
         if ti < Length(FTiles) then
@@ -2783,11 +2790,11 @@ begin
   if AFromTileIdxs then
   begin
     for i := 0 to High(AFrame^.TilesIndexes) do
-      Used[AFrame^.TilesIndexes[i][0]] := True;
+      Used[AFrame^.TilesIndexes[i].RomIndex] := True;
 
     if ADelta and (AFrame^.Index > 0) then
       for i := 0 to High(FFrames[AFrame^.Index - 1].TilesIndexes) do
-        Used[FFrames[AFrame^.Index - 1].TilesIndexes[i][0]] := True;
+        Used[FFrames[AFrame^.Index - 1].TilesIndexes[i].RomIndex] := True;
   end
   else
   begin
@@ -3114,7 +3121,7 @@ procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; 
   begin
     Result := -1;
     for i := 0 to High(AFrm^.TilesIndexes) do
-      if AFrm^.TilesIndexes[i][0] = AGTI then
+      if AFrm^.TilesIndexes[i].RomIndex = AGTI then
         Exit(i);
   end;
 
@@ -3401,7 +3408,7 @@ end;
 
 function CompareTilesIndexes(Item1, Item2, UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PInteger(Item1)^, PInteger(Item2)^);
+  Result := CompareValue(PTileIndex(Item1)^.RomIndex, PTileIndex(Item2)^.RomIndex);
 end;
 
 procedure TMainForm.IndexFrameTiles(AFrame: PFrame);
@@ -3421,7 +3428,7 @@ begin
         for x := 0 to (cTileMapWidth - 1) do
           if AFrame^.TileMap[y, x].GlobalTileIndex = i then
           begin
-            AFrame^.TilesIndexes[cnt][0] := i;
+            AFrame^.TilesIndexes[cnt].RomIndex := i;
             Inc(UseCount);
           end;
 
@@ -3440,7 +3447,7 @@ begin
   for i := 0 to High(AFrame^.TilesIndexes) do
     for y := 0 to (cTileMapHeight - 1) do
       for x := 0 to (cTileMapWidth - 1) do
-        if AFrame^.TileMap[y, x].GlobalTileIndex = AFrame^.TilesIndexes[i][0] then
+        if AFrame^.TileMap[y, x].GlobalTileIndex = AFrame^.TilesIndexes[i].RomIndex then
           AFrame^.TileMap[y, x].FrameTileIndex := i;
 end;
 
@@ -3497,6 +3504,11 @@ begin
 
   i := 0;
   internalRuncommand(Process, Output, ErrOut, i); // destroys Process
+end;
+
+function CompareTilesIndexesVram(Item1, Item2, UserParameter:Pointer):Integer;
+begin
+  Result := CompareValue(PTileIndex(Item1)^.VramIndex, PTileIndex(Item2)^.VramIndex);
 end;
 
 procedure TMainForm.SaveTileIndexes(ADataStream: TStream; AFrame: PFrame);
@@ -3589,30 +3601,34 @@ var
   end;
 
 var
-  j, prevRomTI, prevVramTI, diffTileIndex: Integer;
+  j, diffTileIndex: Integer;
   vbl: Boolean;
-
+  prevTI: TTileIndex;
+  LocalTIs: TTilesIndexes;
 begin
+  LocalTIs := Copy(AFrame^.TilesIndexes);
+  QuickSort(LocalTIs[0], 0, High(LocalTIs), SizeOf(LocalTIs[0]), @CompareTilesIndexesVram);
 
   tileIdxStream := TMemoryStream.Create;
   try
     tiZ80Cycles :=  Round((cTileIndexesInitialLine - cScreenHeight) * cCyclesPerLine);
     tiVBlank := True;
 
-    prevRomTI := -1;
-    prevVramTI := -1;
+    prevTI.RomIndex := -1;
+    prevTI.VramIndex := -1;
+    prevTI.InVRAM := False;
     prevDTI := -1;
     sameCount := 0;
     for j := 0 to High(AFrame^.TilesIndexes) do
     begin
-      if AFrame^.TilesIndexes[j][1] >= cTilesPerBank then // already in VRAM?
+      if LocalTIs[j].InVRAM then // already in VRAM?
         Continue;
 
-      diffTileIndex := AFrame^.TilesIndexes[j][0] - prevRomTI;
+      diffTileIndex := LocalTIs[j].RomIndex - prevTI.RomIndex;
 
       if (diffTileIndex <> 1) or (diffTileIndex <> prevDTI) or
           (diffTileIndex >= cTileIndexesMaxDiff) or (sameCount >= cTileIndexesMaxRepeat) or
-          ((AFrame^.TilesIndexes[j][0] + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
+          ((LocalTIs[j].RomIndex + cTileIndexesTileOffset) mod cTilesPerBank = 0) then // don't change bank while repeating
       begin
         DoTileIndex;
         sameCount := 1;
@@ -3622,18 +3638,18 @@ begin
         Inc(sameCount);
       end;
 
-      if (prevRomTI = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
-          ((AFrame^.TilesIndexes[j][0] + cTileIndexesTileOffset) div cTilesPerBank <>
-           (prevRomTI + cTileIndexesTileOffset) div cTilesPerBank) or // any bank change must be a direct value
-          (AFrame^.TilesIndexes[j][1] <> prevVramTI + 1) then // no VRAM continuity
+      if (prevTI.RomIndex = -1) or (diffTileIndex >= cTileIndexesMaxDiff) or (diffTileIndex < 0) or
+          ((LocalTIs[j].RomIndex + cTileIndexesTileOffset) div cTilesPerBank <>
+           (prevTI.RomIndex + cTileIndexesTileOffset) div cTilesPerBank) or // any bank change must be a direct value
+          (LocalTIs[j].VramIndex <> prevTI.VramIndex + 1) then // no VRAM continuity
       begin
         vbl := tiVBlank;
         if vbl then
           CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
 
         tileIdxStream.WriteByte(cTileIndexesDirectValue);
-        tileIdxStream.WriteWord(cVRAMWriteCmd or (AFrame^.TilesIndexes[j][1] * cTileSize));
-        tileIdxStream.WriteWord(AFrame^.TilesIndexes[j][0] + cTileIndexesTileOffset);
+        tileIdxStream.WriteWord(cVRAMWriteCmd or (LocalTIs[j].VramIndex * cTileSize));
+        tileIdxStream.WriteWord(LocalTIs[j].RomIndex + cTileIndexesTileOffset);
 
         if not vbl then
           CountZ80Cycles(cTileIndexesTimings[tiVBlank, 0]);
@@ -3642,8 +3658,7 @@ begin
         sameCount := 0;
       end;
 
-      prevRomTI := AFrame^.TilesIndexes[j][0];
-      prevVramTI := AFrame^.TilesIndexes[j][1];
+      prevTI := LocalTIs[j];
       prevDTI := diffTileIndex;
     end;
 
@@ -3720,7 +3735,7 @@ begin
     for x := 0 to cTileMapWidth - 1 do
     begin
       tmi := @AFrame^.TileMap[y, x];
-      rawTMI := AFrame^.TilesIndexes[tmi^.FrameTileIndex][1] mod cTilesPerBank;
+      rawTMI := AFrame^.TilesIndexes[tmi^.FrameTileIndex].VramIndex;
       if tmi^.HMirror then rawTMI := rawTMI or $200;
       if tmi^.VMirror then rawTMI := rawTMI or $400;
       if tmi^.SpritePal then rawTMI := rawTMI or $800;
@@ -3937,11 +3952,13 @@ begin
 
   for i := 0 to High(ATileIndexes) do
   begin
-    idx := EnsureTileInCache(ATileIndexes[i][0], needsUpload);
-    ATileIndexes[i][1] := idx or cTilesPerBank;
+    idx := EnsureTileInCache(ATileIndexes[i].RomIndex, needsUpload);
+    ATileIndexes[i].VramIndex := idx;
+    ATileIndexes[i].InVRAM := True;
     if needsUpload then
     begin
-      ATileIndexes[i][1] := idx;
+      ATileIndexes[i].VramIndex := idx;
+      ATileIndexes[i].InVRAM := False;
       Inc(Result);
     end;
   end;
@@ -3963,7 +3980,7 @@ begin
     ulCnt := 0;
     frm := AFrame;
     for i := 0 to High(frm^.TilesIndexes) do
-      if frm^.TilesIndexes[i][1] < cTilesPerBank then
+      if not frm^.TilesIndexes[i].InVRAM then
         Inc(ulCnt);
 
     if ((ulCnt < AUploadLimit) or (AUploadLimit < 0)) and (AFrame^.Index < High(FFrames)) then
@@ -3971,7 +3988,7 @@ begin
       cnt := 0;
       frm := @FFrames[AFrame^.Index + 1];
       for i := 0 to High(frm^.TilesIndexes) do
-        if frm^.TilesIndexes[i][1] < cTilesPerBank then // not already in VRAM?
+        if not frm^.TilesIndexes[i].InVRAM then // not already in VRAM?
           Inc(cnt);
 
       pos := High(AFrame^.TilesIndexes);
@@ -3980,12 +3997,12 @@ begin
       if (cnt >= AUploadLimit) or (AUploadLimit < 0) then
       begin
         for i := 0 to High(frm^.TilesIndexes) do
-          if frm^.TilesIndexes[i][1] < cTilesPerBank then // not already in VRAM?
+          if not frm^.TilesIndexes[i].InVRAM then // not already in VRAM?
           begin
             // prevent 2 uploads in the same cache index
             found := False;
             for j := 0 to pos do
-              if AFrame^.TilesIndexes[j][1] = frm^.TilesIndexes[i][1] then
+              if AFrame^.TilesIndexes[j].VramIndex = frm^.TilesIndexes[i].VramIndex then
               begin
                 found := True;
                 Break;
@@ -3994,9 +4011,8 @@ begin
               Continue;
 
             Inc(pos);
-            AFrame^.TilesIndexes[pos][0] := frm^.TilesIndexes[i][0];
-            AFrame^.TilesIndexes[pos][1] := frm^.TilesIndexes[i][1];
-            frm^.TilesIndexes[i][1] += cTilesPerBank;
+            AFrame^.TilesIndexes[pos] := frm^.TilesIndexes[i];
+            frm^.TilesIndexes[i].InVRAM := True;
             Inc(ulCnt);
             Dec(cnt);
             Inc(TPF);

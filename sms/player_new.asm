@@ -1258,7 +1258,7 @@ TUDoRepeatSlow:
 
 .org $1100
 TUDoTerminator:
-        ; value 224 is terminator
+        ; value 254 is terminator
 
         ; tile pointer back into hl
     ex de, hl

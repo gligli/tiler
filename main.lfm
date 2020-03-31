@@ -111,7 +111,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 4
-    Value = 1520
+    Value = 100
   end
   object Label3: TLabel
     Left = 8
@@ -128,7 +128,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
-    Text = 'Rick Astley - Never Gonna Give You Up-full6.avi'
+    Text = 'Rick Astley - Never Gonna Give You Up-full7.avi'
   end
   object Label4: TLabel
     Left = 8
