@@ -111,7 +111,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 4
-    Value = 100
+    Value = 1520
   end
   object Label3: TLabel
     Left = 8
@@ -128,7 +128,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
-    Text = 'C:\smsdev\_old\nggyu\Rick Astley - Never Gonna Give You Up-full6.avi'
+    Text = 'Rick Astley - Never Gonna Give You Up-full6.avi'
   end
   object Label4: TLabel
     Left = 8
@@ -180,7 +180,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     TabOrder = 9
-    Value = 250
+    Value = 230
   end
   object seAvgTPF: TSpinEdit
     Left = 208
@@ -190,7 +190,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 25
+    Value = 7
   end
   object Label10: TLabel
     Left = 8
