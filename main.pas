@@ -20,10 +20,11 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1] of TFloat = (1.5, 0.85);
+  cGamma: array[0..1] of TFloat = (1.5, 0.8);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFGamma = -1;
+  cKFGamma = 1;
+  cKFQWeighting = True;
 
   cRedMultiplier = 299;
   cGreenMultiplier = 587;
@@ -81,7 +82,7 @@ const
 
   // number of Z80 cycles to execute a function
   cTileIndexesTimings : array[Boolean {VBlank?}, 0..4 {Direct/Std/RptFix/RptVar/VBlankSwitch}] of Integer = (
-    (343 + 688 + 40 - 20, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
+    (343 + 688 + 40, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
     (347 + 344 + 40, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
   );
   cLineJitterCompensation = 2;
@@ -90,40 +91,41 @@ const
   cColorCpns = 3;
   cTileDCTSize = cColorCpns * sqr(cTileWidth);
 
-  cQ = 16.0;
+  cQy = 16.0;
+  cQc = 16.0;
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
     (
       // Luma
-      (cQ / 10, cQ / 11, cQ / 12, cQ / 15, cQ /  21, cQ /  32, cQ /  50, cQ /  66),
-      (cQ / 11, cQ / 12, cQ / 13, cQ / 18, cQ /  24, cQ /  46, cQ /  62, cQ /  73),
-      (cQ / 12, cQ / 13, cQ / 16, cQ / 23, cQ /  38, cQ /  56, cQ /  73, cQ /  75),
-      (cQ / 15, cQ / 18, cQ / 23, cQ / 29, cQ /  53, cQ /  75, cQ /  83, cQ /  80),
-      (cQ / 21, cQ / 24, cQ / 38, cQ / 53, cQ /  68, cQ /  95, cQ / 103, cQ /  94),
-      (cQ / 32, cQ / 46, cQ / 56, cQ / 75, cQ /  95, cQ / 104, cQ / 117, cQ /  96),
-      (cQ / 50, cQ / 62, cQ / 73, cQ / 83, cQ / 103, cQ / 117, cQ / 120, cQ / 128),
-      (cQ / 66, cQ / 73, cQ / 75, cQ / 80, cQ /  94, cQ /  96, cQ / 128, cQ / 144)
+      (cQy / 10, cQy / 11, cQy / 12, cQy / 15, cQy /  21, cQy /  32, cQy /  50, cQy /  66),
+      (cQy / 11, cQy / 12, cQy / 13, cQy / 18, cQy /  24, cQy /  46, cQy /  62, cQy /  73),
+      (cQy / 12, cQy / 13, cQy / 16, cQy / 23, cQy /  38, cQy /  56, cQy /  73, cQy /  75),
+      (cQy / 15, cQy / 18, cQy / 23, cQy / 29, cQy /  53, cQy /  75, cQy /  83, cQy /  80),
+      (cQy / 21, cQy / 24, cQy / 38, cQy / 53, cQy /  68, cQy /  95, cQy / 103, cQy /  94),
+      (cQy / 32, cQy / 46, cQy / 56, cQy / 75, cQy /  95, cQy / 104, cQy / 117, cQy /  96),
+      (cQy / 50, cQy / 62, cQy / 73, cQy / 83, cQy / 103, cQy / 117, cQy / 120, cQy / 128),
+      (cQy / 66, cQy / 73, cQy / 75, cQy / 80, cQy /  94, cQy /  96, cQy / 128, cQy / 144)
     ),
     (
       // U, weighted by luma importance
-      (cQ / 17, cQ /  18, cQ /  24, cQ /  47, cQ /  99, cQ /  99, cQ /  99, cQ /  99),
-      (cQ / 18, cQ /  21, cQ /  26, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112),
-      (cQ / 24, cQ /  26, cQ /  56, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128),
-      (cQ / 47, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144),
-      (cQ / 99, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160),
-      (cQ / 99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176),
-      (cQ / 99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192),
-      (cQ / 99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192, cQ / 208)
+      (cQc / 17, cQc /  18, cQc /  24, cQc /  47, cQc /  99, cQc /  99, cQc /  99, cQc /  99),
+      (cQc / 18, cQc /  21, cQc /  26, cQc /  66, cQc /  99, cQc /  99, cQc /  99, cQc / 112),
+      (cQc / 24, cQc /  26, cQc /  56, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128),
+      (cQc / 47, cQc /  66, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144),
+      (cQc / 99, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160),
+      (cQc / 99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176),
+      (cQc / 99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176, cQc / 192),
+      (cQc / 99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176, cQc / 192, cQc / 208)
     ),
     (
       // V, weighted by luma importance
-      (cQ / 17, cQ /  18, cQ /  24, cQ /  47, cQ /  99, cQ /  99, cQ /  99, cQ /  99),
-      (cQ / 18, cQ /  21, cQ /  26, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112),
-      (cQ / 24, cQ /  26, cQ /  56, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128),
-      (cQ / 47, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144),
-      (cQ / 99, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160),
-      (cQ / 99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176),
-      (cQ / 99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192),
-      (cQ / 99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192, cQ / 208)
+      (cQc / 17, cQc /  18, cQc /  24, cQc /  47, cQc /  99, cQc /  99, cQc /  99, cQc /  99),
+      (cQc / 18, cQc /  21, cQc /  26, cQc /  66, cQc /  99, cQc /  99, cQc /  99, cQc / 112),
+      (cQc / 24, cQc /  26, cQc /  56, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128),
+      (cQc / 47, cQc /  66, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144),
+      (cQc / 99, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160),
+      (cQc / 99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176),
+      (cQc / 99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176, cQc / 192),
+      (cQc / 99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176, cQc / 192, cQc / 208)
     )
   );
 
@@ -229,7 +231,6 @@ type
     FrameDataset: TFloatDynArray2;
     DsTMItem: array of TTileMapItem;
     TileBestDist: TFloatDynArray;
-    MaxDist: TFloat;
   end;
 
   TTileCache = array[0 .. cTilesPerBank - 1] of record
@@ -393,7 +394,7 @@ type
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
     procedure IndexFrameTiles(AFrame: PFrame);
-    procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
+    procedure DoTemporalSmoothing(AFrameIdx: Integer; Y: Integer; Strength: TFloat);
 
     function DoExternalPCMEnc(AFN: String; Volume: Integer): String;
     function DoExternalFFMpeg(AFN: String; var AVidPath: String; var AAudioFile: String; AFrameCount: Integer): String;
@@ -1267,8 +1268,8 @@ procedure TMainForm.btnSmoothClick(Sender: TObject);
   procedure DoSmoothing(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var i: Integer;
   begin
-    for i := cSmoothingPrevFrame to High(FFrames) do
-      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 10.0);
+    for i := 1 to High(FFrames) do
+      DoTemporalSmoothing(i, AIndex, seTempoSmoo.Value / 10.0);
   end;
 begin
   if (Length(FFrames) = 0) or (seTempoSmoo.Value < 0) then
@@ -2886,9 +2887,8 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  MaxTPF, TPF, i, di, tmi, TrIdx, FrmIdx: Integer;
+  MaxTPF, TPF, i, j, tmi, TrIdx, FrmIdx: Integer;
   ReducedIdxToDS: TIntegerDynArray;
-  tmiO: TTileMapItem;
   FTD: PFrameTilingData;
   KDT: PANNkdtree;
   DCT: TDoubleDynArray;
@@ -2896,20 +2896,28 @@ var
 begin
   FTD := PFrameTilingData(Data);
 
-  SetLength(ReducedDS, Length(FTD^.Dataset));
-  SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
-
-  di := 0;
-  for i := 0 to High(FTD^.Dataset) do
-    if FTD^.TileBestDist[i shr 3] < PassX then
+  if round(PassX) = Length(FTD^.Dataset) then
+  begin
+    SetLength(ReducedDS, Length(FTD^.Dataset), cTileDCTSize);
+    SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
+    for i := 0 to High(FTD^.Dataset) do
     begin
-      ReducedDS[di] := FTD^.Dataset[i];
-      ReducedIdxToDS[di] := i;
-      Inc(di);
+      for j := 0 to cTileDCTSize - 1 do
+        ReducedDS[i, j] := FTD^.Dataset[i, j];
+      ReducedIdxToDS[i] := i;
     end;
+  end
+  else
+  begin
+    DoExternalYakmo(FTD^.Dataset, nil, round(PassX), 1, True, False, nil, ReducedIdxToDS);
 
-  SetLength(ReducedDS, di);
-  SetLength(ReducedIdxToDS, di);
+    SetLength(ReducedDS, Length(ReducedIdxToDS), cTileDCTSize);
+    for i := 0 to High(FTD^.Dataset) do
+      for tmi := 0 to High(ReducedIdxToDS) do
+        if ReducedIdxToDS[tmi] = i then
+          for j := 0 to cTileDCTSize - 1 do
+            ReducedDS[tmi, j] := FTD^.Dataset[i, j];
+  end;
 
   KDT := ann_kdtree_create(PPDouble(ReducedDS), Length(ReducedDS), cTileDCTSize, 1, ANN_KD_STD);
 
@@ -2921,20 +2929,12 @@ begin
   for tmi := 0 to cTileMapSize - 1 do
   begin
     for i := 0 to cTileDCTSize - 1 do
-      DCT[i] := FTD^.FrameDataset[(FrmIdx - FTD^.KF^.StartFrame + 1) * cTileMapSize + tmi, i];
+      DCT[i] := FTD^.FrameDataset[FTD^.KFFrmIdx * cTileMapSize + tmi, i];
 
     TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PDouble(DCT), 0.0)];
     Assert(TrIdx >= 0);
 
-    if FrmIdx >= FTD^.KF^.StartFrame then
-    begin
-      tmiO.GlobalTileIndex := FTD^.DsTMItem[TrIdx].GlobalTileIndex;
-      tmiO.HMirror := FTD^.DsTMItem[TrIdx].HMirror;
-      tmiO.VMirror := FTD^.DsTMItem[TrIdx].VMirror;
-      tmiO.SpritePal := FTD^.DsTMItem[TrIdx].SpritePal;
-
-      FFrames[FrmIdx].TileMap[tmi div cTileMapWidth, tmi mod cTileMapWidth] := tmiO
-    end;
+    FFrames[FrmIdx].TileMap[tmi div cTileMapWidth, tmi mod cTileMapWidth] := FTD^.DsTMItem[TrIdx];
   end;
 
   TPF := GetFrameTileCount(@FFrames[FrmIdx], True, False, False);
@@ -2953,29 +2953,26 @@ end;
 
 procedure TMainForm.DoKeyFrameTiling(AFTD: PFrameTilingData);
 var
-  TRSize, di, i, j, frame, sy, sx: Integer;
+  TRSize, di, i, frame, sy, sx: Integer;
   frm: PFrame;
   spal, vmir, hmir: Boolean;
-  pdis: PFloat;
-  diff, best: TFloat;
-  BestCache: TFloatDynArray;
 begin
   // make a list of all used tiles
-  SetLength(AFTD^.FrameDataset, (AFTD^.KF^.FrameCount + 1) * cTileMapSize, cTileDCTSize);
+  SetLength(AFTD^.FrameDataset, AFTD^.KF^.FrameCount * cTileMapSize, cTileDCTSize);
 
   di := 0;
-  for frame := -1 to AFTD^.KF^.FrameCount - 1 do
+  for frame := 0 to AFTD^.KF^.FrameCount - 1 do
   begin
-    frm := @FFrames[Max(0, AFTD^.KF^.StartFrame + frame)];
+    frm := @FFrames[AFTD^.KF^.StartFrame + frame];
     for sy := 0 to cTileMapHeight - 1 do
       for sx := 0 to cTileMapWidth - 1 do
       begin
-        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, False, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
+        ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], AFTD^.FrameDataset[di]);
         Inc(di);
       end;
   end;
 
-  Assert(di = (AFTD^.KF^.FrameCount + 1) * cTileMapSize);
+  Assert(di = AFTD^.KF^.FrameCount * cTileMapSize);
 
   TRSize := Length(FTiles) * 8;
   SetLength(AFTD^.DsTMItem, TRSize);
@@ -2991,7 +2988,7 @@ begin
       for vmir := False to True do
         for spal := False to True do
         begin
-          ComputeTileDCT(FTiles[i]^, True, False, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[di]);
+          ComputeTileDCT(FTiles[i]^, True, cKFQWeighting, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[di]);
 
           AFTD^.DsTMItem[di].GlobalTileIndex := i;
           AFTD^.DsTMItem[di].VMirror := vmir;
@@ -3005,47 +3002,8 @@ begin
   SetLength(AFTD^.DsTMItem, di);
   SetLength(AFTD^.Dataset, di);
 
-  AFTD^.MaxDist := 0;
-  SetLength(AFTD^.TileBestDist, Length(FTiles));
-  FillQWord(AFTD^.TileBestDist[0], Length(AFTD^.TileBestDist), 0);  // TFloat = Double => FillQWord
-
-  SetLength(BestCache, Length(FTiles));
-  FillQWord(BestCache[0], Length(BestCache), 0);  // TFloat = Double => FillQWord
-
-  di := 0;
-  for frame := -1 to AFTD^.KF^.FrameCount - 1 do
-  begin
-    frm := @FFrames[Max(0, AFTD^.KF^.StartFrame + frame)];
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
-      begin
-        if BestCache[frm^.TileMap[sy, sx].GlobalTileIndex] = 0.0 then
-        begin
-          best := MaxSingle;
-          for j := 0 to High(AFTD^.Dataset) do
-          begin
-            diff := CompareEuclidean192(AFTD^.Dataset[j], AFTD^.FrameDataset[di]);
-            if diff < best then
-              best := diff;
-          end;
-          BestCache[frm^.TileMap[sy, sx].GlobalTileIndex] := best;
-        end
-        else
-        begin
-          best := BestCache[frm^.TileMap[sy, sx].GlobalTileIndex];
-        end;
-
-        pdis := @AFTD^.TileBestDist[frm^.TileMap[sy, sx].GlobalTileIndex];
-        pdis^ -= best;
-        if -pdis^ > AFTD^.MaxDist then
-          AFTD^.MaxDist := -pdis^;
-
-        Inc(di);
-      end;
-  end;
-
   EnterCriticalSection(FCS);
-  WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize, #9'ActiveRepo: ', Length(AFTD^.Dataset), #9'MaxDist: ', FormatFloat('0.000', AFTD^.MaxDist));
+  WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize, #9'ActiveRepo: ', Length(AFTD^.Dataset));
   LeaveCriticalSection(FCS);
 end;
 
@@ -3074,8 +3032,8 @@ begin
       begin
         FTD^.Iteration := 0;
         FTD^.KFFrmIdx := i;
-        if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-          GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+        if TestTMICount(Length(FTD^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
+          GoldenRatioSearch(@TestTMICount, 0, Length(FTD^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
       end;
   finally
     Dispose(FTD);
@@ -3104,22 +3062,22 @@ begin
 
     FTD^.Iteration := 0;
     FTD^.KFFrmIdx := 0;
-    GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - DesiredNbTiles div 10, DesiredNbTiles div 10, FTD);
+    GoldenRatioSearch(@TestTMICount, 0, Length(FTD^.Dataset), DesiredNbTiles - DesiredNbTiles div 10, DesiredNbTiles div 10, FTD);
   finally
     Dispose(FTD);
     Dispose(KF);
   end;
 end;
 
-procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
+procedure TMainForm.DoTemporalSmoothing(AFrameIdx: Integer; Y: Integer; Strength: TFloat);
 
-  function GetFTI(AFrm: PFrame; AGTI: Integer): Integer;
+  function GetFTI(AFIdx: Integer; AGTI: Integer): Integer;
   var
     i: Integer;
   begin
     Result := -1;
-    for i := 0 to High(AFrm^.TilesIndexes) do
-      if AFrm^.TilesIndexes[i].RomIndex = AGTI then
+    for i := 0 to High(FFrames[AFIdx].TilesIndexes) do
+      if FFrames[AFIdx].TilesIndexes[i].RomIndex = AGTI then
         Exit(i);
   end;
 
@@ -3132,21 +3090,24 @@ var
   Tile_, PrevTile: PTile;
   TileDCT, PrevTileDCT: TFloatDynArray;
 begin
+  if FFrames[AFrameIdx].KeyFrame <> FFrames[AFrameIdx - 1].KeyFrame then // prevent ghosting between keyframes
+    Exit;
+
   SetLength(PrevTileDCT, cTileDCTSize);
   SetLength(TileDCT, cTileDCTSize);
 
   for sx := 0 to cTileMapWidth - 1 do
   begin
-    PrevTMI := @APrevFrame^.TileMap[Y, sx];
-    TMI := @AFrame^.TileMap[Y, sx];
+    PrevTMI := @FFrames[AFrameIdx - 1].TileMap[Y, sx];
+    TMI := @FFrames[AFrameIdx].TileMap[Y, sx];
 
     // compare DCT of current tile with tile from prev frame tilemap
 
     PrevTile := FTiles[PrevTMI^.GlobalTileIndex];
     Tile_ := FTiles[TMI^.GlobalTileIndex];
 
-    ComputeTileDCT(PrevTile^, True, True, PrevTMI^.HMirror, PrevTMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
-    ComputeTileDCT(Tile_^, True, True, TMI^.HMirror, TMI^.VMirror, cGammaCorrectSmoothing, AFrame^.KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
+    ComputeTileDCT(PrevTile^, True, True, PrevTMI^.HMirror, PrevTMI^.VMirror, cGammaCorrectSmoothing, FFrames[AFrameIdx].KeyFrame^.PaletteRGB[PrevTMI^.SpritePal], PrevTileDCT);
+    ComputeTileDCT(Tile_^, True, True, TMI^.HMirror, TMI^.VMirror, cGammaCorrectSmoothing, FFrames[AFrameIdx].KeyFrame^.PaletteRGB[TMI^.SpritePal], TileDCT);
 
     cmp := CompareEuclidean192(TileDCT, PrevTileDCT);
     cmp := sqrt(cmp * cSqrtFactor);
@@ -3155,17 +3116,37 @@ begin
 
     if Abs(cmp) <= Strength then
     begin
-      fti := GetFTI(AFrame, PrevTMI^.GlobalTileIndex);
-      if fti < 0 then
-        Continue;
+      if TMI^.GlobalTileIndex >= PrevTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
+      begin
+        fti := GetFTI(AFrameIdx, PrevTMI^.GlobalTileIndex);
+        if fti < 0 then
+          Continue;
 
-      TMI^.GlobalTileIndex := PrevTMI^.GlobalTileIndex;
-      TMI^.FrameTileIndex := fti;
-      TMI^.HMirror := PrevTMI^.HMirror;
-      TMI^.VMirror := PrevTMI^.VMirror;
-      TMI^.SpritePal := PrevTMI^.SpritePal;
+        TMI^.GlobalTileIndex := PrevTMI^.GlobalTileIndex;
+        TMI^.FrameTileIndex := fti;
+        TMI^.HMirror := PrevTMI^.HMirror;
+        TMI^.VMirror := PrevTMI^.VMirror;
+        TMI^.SpritePal := PrevTMI^.SpritePal;
+      end
+      else
+      begin
+        fti := GetFTI(AFrameIdx, TMI^.GlobalTileIndex);
+        if fti < 0 then
+          Continue;
 
-      TMI^.Smoothed := True;
+        PrevTMI^.GlobalTileIndex := TMI^.GlobalTileIndex;
+        PrevTMI^.FrameTileIndex := fti;
+        PrevTMI^.HMirror := TMI^.HMirror;
+        PrevTMI^.VMirror := TMI^.VMirror;
+        PrevTMI^.SpritePal := TMI^.SpritePal;
+      end;
+
+      TMI^.Smoothed := False;
+      if AFrameIdx >= cSmoothingPrevFrame then
+      begin
+        PrevTMI := @FFrames[AFrameIdx - cSmoothingPrevFrame].TileMap[Y, sx];
+        TMI^.Smoothed := CompareMem(PrevTMI, TMI, SizeOf(TTileMapItem));
+      end;
     end
     else
     begin
@@ -3222,7 +3203,7 @@ begin
       Inc(Result);
     end;
 
-  PalSigni := GetTilePalZoneThres(ATile, 8, @DataLine[Result]);
+  PalSigni := 0;//GetTilePalZoneThres(ATile, 16, @DataLine[Result]);
   Inc(Result, 16);
 
   Assert(Result = cKModesFeatureCount);
@@ -4180,10 +4161,13 @@ procedure TMainForm.FormCreate(Sender: TObject);
 var
   r,g,b,i,mx,mn,col,prim_col,sr: Integer;
 begin
+  FLowMem := True;
+
   IdleTimer.Interval := 20 * cRefreshRateDiv;
   IdleTimer.Enabled := True;
 
-  FLowMem := True;
+  Constraints.MinWidth := Width;
+  Constraints.MinHeight := Height;
 
   InitializeCriticalSection(FCS);
 

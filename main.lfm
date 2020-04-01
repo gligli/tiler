@@ -81,6 +81,7 @@ object MainForm: TMainForm
     Height = 15
     Top = 788
     Width = 256
+    Anchors = [akLeft, akBottom]
     AutoSize = False
     ParentColor = False
   end
@@ -111,7 +112,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 4
-    Value = 456
+    Value = 10
   end
   object Label3: TLabel
     Left = 8
@@ -128,7 +129,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
-    Text = 'Rick Astley - Never Gonna Give You Up-full8.avi'
+    Text = 'Rick Astley - Never Gonna Give You Up-full9.avi'
   end
   object Label4: TLabel
     Left = 8
@@ -180,7 +181,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     TabOrder = 9
-    Value = 66
+    Value = 100
   end
   object seAvgTPF: TSpinEdit
     Left = 208
@@ -190,7 +191,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 11
+    Value = 20
   end
   object Label10: TLabel
     Left = 8
@@ -239,7 +240,7 @@ object MainForm: TMainForm
     Width = 56
     MinValue = -1
     TabOrder = 11
-    Value = 2
+    Value = 3
   end
   object imgPalette: TImage
     Left = 8
@@ -352,7 +353,7 @@ object MainForm: TMainForm
     Top = 119
     Width = 56
     ItemHeight = 15
-    ItemIndex = 3
+    ItemIndex = 4
     Items.Strings = (
       '1'
       '2'
@@ -362,7 +363,7 @@ object MainForm: TMainForm
     )
     OnChange = cbxYilMixChange
     TabOrder = 5
-    Text = '8'
+    Text = '16'
   end
   object Label11: TLabel
     Left = 8
@@ -398,7 +399,9 @@ object MainForm: TMainForm
     Top = 224
     Width = 154
     Caption = 'Palette based frame tiling'
+    Checked = True
     OnChange = chkExtFTChange
+    State = cbChecked
     TabOrder = 10
   end
   object IdleTimer: TIdleTimer

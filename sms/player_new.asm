@@ -1201,7 +1201,7 @@ TUDoDirectValueSlow:
     ld a, h
     out (VDPControl), a
 
-    PlaySampleSkew 20
+    PlaySampleSkew 40
 
         ; direct value, load tile index from frame data pointer
 
@@ -1212,6 +1212,9 @@ TUDoDirectValueSlow:
 
         ; upload tile
     TilesUploadTileToVRAMSlow
+
+    inc iyl ; timing
+    inc iyl ; timing
 
 ; c319
     PlaySample
