@@ -20,10 +20,10 @@ const
   // Tweakable params
   cRandomKModesCount = 7;
   cKeyframeFixedColors = 4;
-  cGamma: array[0..1] of TFloat = (1.5, 0.8);
+  cGamma: array[0..1] of TFloat = (2.1, 1.0);
   cInvertSpritePalette = False;
   cGammaCorrectSmoothing = -1;
-  cKFGamma = 1;
+  cKFGamma = 0;
   cKFQWeighting = True;
 
   cRedMultiplier = 299;
@@ -91,41 +91,40 @@ const
   cColorCpns = 3;
   cTileDCTSize = cColorCpns * sqr(cTileWidth);
 
-  cQy = 16.0;
-  cQc = 16.0;
+  cQ = 16.0;
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
     (
       // Luma
-      (cQy / 10, cQy / 11, cQy / 12, cQy / 15, cQy /  21, cQy /  32, cQy /  50, cQy /  66),
-      (cQy / 11, cQy / 12, cQy / 13, cQy / 18, cQy /  24, cQy /  46, cQy /  62, cQy /  73),
-      (cQy / 12, cQy / 13, cQy / 16, cQy / 23, cQy /  38, cQy /  56, cQy /  73, cQy /  75),
-      (cQy / 15, cQy / 18, cQy / 23, cQy / 29, cQy /  53, cQy /  75, cQy /  83, cQy /  80),
-      (cQy / 21, cQy / 24, cQy / 38, cQy / 53, cQy /  68, cQy /  95, cQy / 103, cQy /  94),
-      (cQy / 32, cQy / 46, cQy / 56, cQy / 75, cQy /  95, cQy / 104, cQy / 117, cQy /  96),
-      (cQy / 50, cQy / 62, cQy / 73, cQy / 83, cQy / 103, cQy / 117, cQy / 120, cQy / 128),
-      (cQy / 66, cQy / 73, cQy / 75, cQy / 80, cQy /  94, cQy /  96, cQy / 128, cQy / 144)
+      (cQ / sqrt(16), cQ / sqrt( 11), cQ / sqrt( 10), cQ / sqrt( 16), cQ / sqrt( 24), cQ / sqrt( 40), cQ / sqrt( 51), cQ / sqrt( 61)),
+      (cQ / sqrt(12), cQ / sqrt( 12), cQ / sqrt( 14), cQ / sqrt( 19), cQ / sqrt( 26), cQ / sqrt( 58), cQ / sqrt( 60), cQ / sqrt( 55)),
+      (cQ / sqrt(14), cQ / sqrt( 13), cQ / sqrt( 16), cQ / sqrt( 24), cQ / sqrt( 40), cQ / sqrt( 57), cQ / sqrt( 69), cQ / sqrt( 56)),
+      (cQ / sqrt(14), cQ / sqrt( 17), cQ / sqrt( 22), cQ / sqrt( 29), cQ / sqrt( 51), cQ / sqrt( 87), cQ / sqrt( 80), cQ / sqrt( 62)),
+      (cQ / sqrt(18), cQ / sqrt( 22), cQ / sqrt( 37), cQ / sqrt( 56), cQ / sqrt( 68), cQ / sqrt(109), cQ / sqrt(103), cQ / sqrt( 77)),
+      (cQ / sqrt(24), cQ / sqrt( 35), cQ / sqrt( 55), cQ / sqrt( 64), cQ / sqrt( 81), cQ / sqrt(104), cQ / sqrt(113), cQ / sqrt( 92)),
+      (cQ / sqrt(49), cQ / sqrt( 64), cQ / sqrt( 78), cQ / sqrt( 87), cQ / sqrt(103), cQ / sqrt(121), cQ / sqrt(120), cQ / sqrt(101)),
+      (cQ / sqrt(72), cQ / sqrt( 92), cQ / sqrt( 95), cQ / sqrt( 98), cQ / sqrt(112), cQ / sqrt(100), cQ / sqrt(103), cQ / sqrt( 99))
     ),
     (
       // U, weighted by luma importance
-      (cQc / 17, cQc /  18, cQc /  24, cQc /  47, cQc /  99, cQc /  99, cQc /  99, cQc /  99),
-      (cQc / 18, cQc /  21, cQc /  26, cQc /  66, cQc /  99, cQc /  99, cQc /  99, cQc / 112),
-      (cQc / 24, cQc /  26, cQc /  56, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128),
-      (cQc / 47, cQc /  66, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144),
-      (cQc / 99, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160),
-      (cQc / 99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176),
-      (cQc / 99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176, cQc / 192),
-      (cQc / 99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176, cQc / 192, cQc / 208)
+      (cQ / sqrt(17), cQ / sqrt( 18), cQ / sqrt( 24), cQ / sqrt( 47), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99)),
+      (cQ / sqrt(18), cQ / sqrt( 21), cQ / sqrt( 26), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112)),
+      (cQ / sqrt(24), cQ / sqrt( 26), cQ / sqrt( 56), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128)),
+      (cQ / sqrt(47), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192)),
+      (cQ / sqrt(99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192), cQ / sqrt(208))
     ),
     (
       // V, weighted by luma importance
-      (cQc / 17, cQc /  18, cQc /  24, cQc /  47, cQc /  99, cQc /  99, cQc /  99, cQc /  99),
-      (cQc / 18, cQc /  21, cQc /  26, cQc /  66, cQc /  99, cQc /  99, cQc /  99, cQc / 112),
-      (cQc / 24, cQc /  26, cQc /  56, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128),
-      (cQc / 47, cQc /  66, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144),
-      (cQc / 99, cQc /  99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160),
-      (cQc / 99, cQc /  99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176),
-      (cQc / 99, cQc /  99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176, cQc / 192),
-      (cQc / 99, cQc / 112, cQc / 128, cQc / 144, cQc / 160, cQc / 176, cQc / 192, cQc / 208)
+      (cQ / sqrt(17), cQ / sqrt( 18), cQ / sqrt( 24), cQ / sqrt( 47), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99)),
+      (cQ / sqrt(18), cQ / sqrt( 21), cQ / sqrt( 26), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112)),
+      (cQ / sqrt(24), cQ / sqrt( 26), cQ / sqrt( 56), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128)),
+      (cQ / sqrt(47), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192)),
+      (cQ / sqrt(99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192), cQ / sqrt(208))
     )
   );
 
@@ -227,9 +226,9 @@ type
     Iteration, DesiredNbTiles: Integer;
     FixupMode: Boolean;
 
-    Dataset: TFloatDynArray2;
+    Dataset: array[Boolean] of TFloatDynArray2;
     FrameDataset: TFloatDynArray2;
-    DsTMItem: array of TTileMapItem;
+    DsTMItem: array[Boolean] of array of TTileMapItem;
     TileBestDist: TFloatDynArray;
   end;
 
@@ -928,7 +927,7 @@ begin
   MaxTPF := seMaxTPF.Value;
 
   ProgressRedraw(-1, esFrameTiling);
-  ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames), nil, ProcThreadPool.MaxThreadCount div 2);
   ProgressRedraw(1);
 
   ProcThreadPool.DoParallelLocalProc(@DoFixup, 1, High(FKeyFrames));
@@ -2215,9 +2214,9 @@ begin
     fb := b / 255.0;
   end;
 
-  yy := (cRedMultiplier * fr + cGreenMultiplier * fg + cBlueMultiplier * fb) / cLumaMultiplier;
-  uu := (fb - yy) * (0.5 / (1.0 - cBlueMultiplier / cLumaMultiplier));
-  vv := (fr - yy) * (0.5 / (1.0 - cRedMultiplier / cLumaMultiplier));
+  yy := 0.299*fr + 0.587*fg + 0.114*fb;
+  uu := -0.147*fr - 0.289*fg + 0.436*fb;
+  vv := 0.615*fr - 0.515*fg - 0.100*fb;
 
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
@@ -2887,39 +2886,84 @@ end;
 
 function TMainForm.TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
 var
-  MaxTPF, TPF, i, j, tmi, TrIdx, FrmIdx: Integer;
-  ReducedIdxToDS: TIntegerDynArray;
   FTD: PFrameTilingData;
-  KDT: PANNkdtree;
+  DSRec: array[Boolean] of record
+    ReducedIdxToDS: TIntegerDynArray;
+    KDT: PANNkdtree;
+    ReducedDS: TDoubleDynArray2;
+  end;
+
+  procedure DoSPal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    i, j, c: Integer;
+    spal: Boolean;
+    Centroid: TFloatDynArray;
+    Centroids: TStringList;
+    Clusters: TIntegerDynArray;
+    best, cur: TFloat;
+  begin
+    spal := Boolean(AIndex);
+
+    if round(PassX) = Length(FTD^.Dataset[spal]) then
+    begin
+      SetLength(DSRec[spal].ReducedDS, Length(FTD^.Dataset[spal]), cTileDCTSize);
+      SetLength(DSRec[spal].ReducedIdxToDS, Length(FTD^.Dataset[spal]));
+      for i := 0 to High(FTD^.Dataset[spal]) do
+      begin
+        for j := 0 to cTileDCTSize - 1 do
+          DSRec[spal].ReducedDS[i, j] := FTD^.Dataset[spal, i, j];
+        DSRec[spal].ReducedIdxToDS[i] := i;
+      end;
+    end
+    else
+    begin
+      Centroids := TStringList.Create;
+      try
+        DoExternalYakmo(FTD^.Dataset[spal], nil, round(PassX), 1, 26, True, False, Centroids, Clusters);
+
+        SetLength(DSRec[spal].ReducedDS, GetSVMLightClusterCount(Centroids), cTileDCTSize);
+        SetLength(DSRec[spal].ReducedIdxToDS, Length(DSRec[spal].ReducedDS));
+        for c := 0 to High(DSRec[spal].ReducedDS) do
+        begin
+          best := MaxSingle;
+          Centroid := GetSVMLightLine(c, Centroids);
+          for i := 0 to High(Clusters) do
+            if Clusters[i] = c then
+            begin
+              cur := CompareEuclidean192(Centroid, FTD^.Dataset[spal, i]);
+              if cur < best then
+              begin
+                for j := 0 to cTileDCTSize - 1 do
+                  DSRec[spal].ReducedDS[c, j] := FTD^.Dataset[spal, i, j];
+                DSRec[spal].ReducedIdxToDS[c] := i;
+                best := cur;
+              end;
+            end;
+        end;
+      finally
+        Centroids.Free;
+      end;
+    end;
+
+    DSRec[spal].KDT := ann_kdtree_create(PPDouble(DSRec[spal].ReducedDS), Length(DSRec[spal].ReducedDS), cTileDCTSize, 1, ANN_KD_STD);
+  end;
+
+var
+  MaxTPF, TPF, i, tmi, TrIdx, FrmIdx: Integer;
   DCT: TDoubleDynArray;
-  ReducedDS: TDoubleDynArray2;
+  PTmi: PTileMapItem;
+  spal: Boolean;
 begin
   FTD := PFrameTilingData(Data);
 
-  if round(PassX) = Length(FTD^.Dataset) then
+  for spal := False to True do
   begin
-    SetLength(ReducedDS, Length(FTD^.Dataset), cTileDCTSize);
-    SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
-    for i := 0 to High(FTD^.Dataset) do
-    begin
-      for j := 0 to cTileDCTSize - 1 do
-        ReducedDS[i, j] := FTD^.Dataset[i, j];
-      ReducedIdxToDS[i] := i;
-    end;
-  end
-  else
-  begin
-    DoExternalYakmo(FTD^.Dataset, nil, round(PassX), 1, True, False, nil, ReducedIdxToDS);
-
-    SetLength(ReducedDS, Length(ReducedIdxToDS), cTileDCTSize);
-    for i := 0 to High(FTD^.Dataset) do
-      for tmi := 0 to High(ReducedIdxToDS) do
-        if ReducedIdxToDS[tmi] = i then
-          for j := 0 to cTileDCTSize - 1 do
-            ReducedDS[tmi, j] := FTD^.Dataset[i, j];
+    DSRec[False].KDT := nil;
+    DSRec[False].ReducedDS := nil;
+    DSRec[False].ReducedIdxToDS := nil;
   end;
 
-  KDT := ann_kdtree_create(PPDouble(ReducedDS), Length(ReducedDS), cTileDCTSize, 1, ANN_KD_STD);
+  ProcThreadPool.DoParallelLocalProc(@DoSPal, 0, 1, nil, 2);
 
   SetLength(DCT, cTileDCTSize);
 
@@ -2931,19 +2975,22 @@ begin
     for i := 0 to cTileDCTSize - 1 do
       DCT[i] := FTD^.FrameDataset[FTD^.KFFrmIdx * cTileMapSize + tmi, i];
 
-    TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, PDouble(DCT), 0.0)];
+    PTmi := @FFrames[FrmIdx].TileMap[tmi div cTileMapWidth, tmi mod cTileMapWidth];
+
+    TrIdx := DSRec[PTmi^.SpritePal].ReducedIdxToDS[ann_kdtree_search(DSRec[PTmi^.SpritePal].KDT, PDouble(DCT), 0.0)];
     Assert(TrIdx >= 0);
 
-    FFrames[FrmIdx].TileMap[tmi div cTileMapWidth, tmi mod cTileMapWidth] := FTD^.DsTMItem[TrIdx];
+    PTmi^ := FTD^.DsTMItem[PTmi^.SpritePal, TrIdx];
   end;
 
   TPF := GetFrameTileCount(@FFrames[FrmIdx], True, False, False);
   MaxTPF := max(MaxTPF, TPF);
 
-  ann_kdtree_destroy(KDT);
+  ann_kdtree_destroy(DSRec[False].KDT);
+  ann_kdtree_destroy(DSRec[True].KDT);
 
   EnterCriticalSection(FCS);
-  WriteLn('KF FrmIdx: ', FTD^.KF^.StartFrame + max(0, FTD^.KFFrmIdx), #9'Itr: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(ReducedDS));
+  WriteLn('KF FrmIdx: ', FTD^.KF^.StartFrame + max(0, FTD^.KFFrmIdx), #9'Itr: ', FTD^.Iteration, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DSRec[False].ReducedDS));
   LeaveCriticalSection(FCS);
 
   Inc(FTD^.Iteration);
@@ -2974,36 +3021,39 @@ begin
 
   Assert(di = AFTD^.KF^.FrameCount * cTileMapSize);
 
-  TRSize := Length(FTiles) * 8;
-  SetLength(AFTD^.DsTMItem, TRSize);
-  SetLength(AFTD^.Dataset, TRSize, cTileDCTSize);
+  TRSize := Length(FTiles) * 4;
 
-  di := 0;
-  for i := 0 to High(FTiles) do
+  for spal := False to True do
   begin
-    if not FTiles[i]^.Active then
-      Continue;
+    SetLength(AFTD^.DsTMItem[spal], TRSize);
+    SetLength(AFTD^.Dataset[spal], TRSize, cTileDCTSize);
 
-    for hmir := False to True do
-      for vmir := False to True do
-        for spal := False to True do
+    di := 0;
+    for i := 0 to High(FTiles) do
+    begin
+      if not FTiles[i]^.Active then
+        Continue;
+
+      for hmir := False to True do
+        for vmir := False to True do
         begin
-          ComputeTileDCT(FTiles[i]^, True, cKFQWeighting, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[di]);
+          ComputeTileDCT(FTiles[i]^, True, cKFQWeighting, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[spal, di]);
 
-          AFTD^.DsTMItem[di].GlobalTileIndex := i;
-          AFTD^.DsTMItem[di].VMirror := vmir;
-          AFTD^.DsTMItem[di].HMirror := hmir;
-          AFTD^.DsTMItem[di].SpritePal := spal;
+          AFTD^.DsTMItem[spal, di].GlobalTileIndex := i;
+          AFTD^.DsTMItem[spal, di].VMirror := vmir;
+          AFTD^.DsTMItem[spal, di].HMirror := hmir;
+          AFTD^.DsTMItem[spal, di].SpritePal := spal;
 
           Inc(di);
         end;
+    end;
+
+    SetLength(AFTD^.DsTMItem[spal], di);
+    SetLength(AFTD^.Dataset[spal], di);
   end;
 
-  SetLength(AFTD^.DsTMItem, di);
-  SetLength(AFTD^.Dataset, di);
-
   EnterCriticalSection(FCS);
-  WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize, #9'ActiveRepo: ', Length(AFTD^.Dataset));
+  WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize);
   LeaveCriticalSection(FCS);
 end;
 
@@ -3032,8 +3082,8 @@ begin
       begin
         FTD^.Iteration := 0;
         FTD^.KFFrmIdx := i;
-        if TestTMICount(Length(FTD^.Dataset), FTD) > DesiredNbTiles then // no GR in case ok before reducing
-          GoldenRatioSearch(@TestTMICount, 0, Length(FTD^.Dataset), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
+        if TestTMICount(Length(FTD^.Dataset[False]), FTD) > DesiredNbTiles then // no GR in case ok before reducing
+          GoldenRatioSearch(@TestTMICount, 0, Length(FTD^.Dataset[False]), DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
       end;
   finally
     Dispose(FTD);

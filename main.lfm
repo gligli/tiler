@@ -6,7 +6,7 @@ object MainForm: TMainForm
   HorzScrollBar.Page = 1
   HorzScrollBar.Visible = False
   VertScrollBar.Increment = 32
-  VertScrollBar.Page = 803
+  VertScrollBar.Page = 782
   VertScrollBar.Tracking = True
   AutoScroll = True
   Caption = 'SMS video tiler'
@@ -112,7 +112,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 4
-    Value = 10
+    Value = 100
   end
   object Label3: TLabel
     Left = 8
@@ -191,7 +191,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 20
+    Value = 10
   end
   object Label10: TLabel
     Left = 8
@@ -240,7 +240,7 @@ object MainForm: TMainForm
     Width = 56
     MinValue = -1
     TabOrder = 11
-    Value = 3
+    Value = 2
   end
   object imgPalette: TImage
     Left = 8
