@@ -284,7 +284,7 @@ procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, Restar
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
   i, PrevLen, Clu, Inp, RetCode: Integer;
-  TrainFN, TestFN, CrFN, Line, Output, ErrOut, CmdLine: String;
+  TrainFN, TrainStmt, TestFN, CrFN, Line, Output, ErrOut, CmdLine: String;
   SL: TStringList;
   Process: TProcess;
 begin
@@ -317,18 +317,18 @@ begin
     Process.Executable := IfThen(SizeOf(TFloat) = SizeOf(Double), 'yakmo.exe', 'yakmo_single.exe');
 
     CmdLine := IfThen(OutputClusters, ' --output=2 ');
-    CmdLine += IfThen(IterationCount < 0, ' -i 10000 ', ' -i ' + IntToStr(IterationCount) + ' ');
+    CmdLine += IfThen(IterationCount < 0, ' --iteration=10000 ', ' --iteration=' + IntToStr(IterationCount) + ' ');
     CmdLine += IfThen((ClusterCount >= 0) and Assigned(TrainDS), ' --num-cluster=' + IntToStr(ClusterCount) + ' ');
-    CmdLine += IfThen(RestartCount >= 0, '--num-result=' + IntToStr(RestartCount) + ' ');
+    CmdLine += IfThen(RestartCount >= 0, ' --num-result=' + IntToStr(RestartCount) + ' ');
 
-    TrainFN := IfThen(TrainFN = '', '-', '"' + TrainFN + '"');
+    TrainStmt := IfThen(TrainFN = '', '-', '"' + TrainFN + '"');
 
     if Assigned(TestDS) then
-      CmdLine := TrainFN + ' "' + CrFN + '" "' + TestFN + '" ' + CmdLine
+      CmdLine := TrainStmt + ' "' + CrFN + '" "' + TestFN + '" ' + CmdLine
     else if Assigned(Centroids) then
-      CmdLine := TrainFN + ' "' + CrFN + '" - ' + CmdLine
+      CmdLine := TrainStmt + ' "' + CrFN + '" - ' + CmdLine
     else
-      CmdLine := TrainFN + ' - - ' + CmdLine;
+      CmdLine := TrainStmt + ' - - ' + CmdLine;
 
     Process.Parameters.Add(CmdLine);
     Process.ShowWindow := swoHIDE;
