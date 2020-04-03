@@ -112,6 +112,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 4
+    Value = 100
   end
   object Label3: TLabel
     Left = 8
@@ -169,8 +170,8 @@ object MainForm: TMainForm
     Left = 8
     Height = 15
     Top = 198
-    Width = 105
-    Caption = 'Delta tiles per frame'
+    Width = 100
+    Caption = 'Max tiles per frame'
     ParentColor = False
   end
   object seMaxTPF: TSpinEdit
@@ -180,7 +181,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     TabOrder = 9
-    Value = 100
+    Value = 250
   end
   object seAvgTPF: TSpinEdit
     Left = 208
@@ -190,7 +191,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 10
+    Value = 33
   end
   object Label10: TLabel
     Left = 8
@@ -398,9 +399,7 @@ object MainForm: TMainForm
     Top = 224
     Width = 154
     Caption = 'Palette based frame tiling'
-    Checked = True
     OnChange = chkExtFTChange
-    State = cbChecked
     TabOrder = 10
   end
   object IdleTimer: TIdleTimer
