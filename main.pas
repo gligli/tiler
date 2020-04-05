@@ -237,6 +237,13 @@ type
     TileIdx: Integer;
   end;
 
+  TCountIndexArray = packed record
+    Count, Index, Luma: Integer;
+    Hue, Importance: Integer;
+  end;
+
+  PCountIndexArray = ^TCountIndexArray;
+
   { TMainForm }
 
   TMainForm = class(TForm)
@@ -346,8 +353,11 @@ type
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TCustomBitmap);
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
-    procedure Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer; ATilePage: Integer);
+    procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
+      ATilePage: Integer);
 
+    procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
+    procedure RGBToHSV(col: Integer; out h, s, v: TFloat); overload;
     procedure RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat);
 
     procedure ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HMirror, VMirror: Boolean; GammaCor: Integer;
@@ -972,13 +982,8 @@ end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
-{$if cRefreshRateDiv = 2}
-  CShotTransGracePeriod = 24;
+  CShotTransGracePeriod = cRefreshRate div cRefreshRateDiv;
   CShotTransSAvgFrames = 6;
-{$else}
-  CShotTransGracePeriod = 12;
-  CShotTransSAvgFrames = 6;
-{$endif}
   CShotTransSoftThres = 0.9;
   CShotTransHardThres = 0.5;
 
@@ -1337,7 +1342,7 @@ procedure TMainForm.tbFrameChange(Sender: TObject);
 begin
   Screen.Cursor := crDefault;
   seAvgTPFEditingDone(nil);
-  Render(tbFrame.Position, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, Ord(chkSprite.State), sePage.Value);
+  Render(tbFrame.Position, chkPlay.Checked, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, IfThen(chkSprite.State = cbGrayed, -1, Ord(chkSprite.Checked)), sePage.Value);
 end;
 
 function TMainForm.GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
@@ -1919,15 +1924,6 @@ begin
   end;
 end;
 
-type
-  TCountIndexArray = packed record
-    Count, Index, Luma: Integer;
-    Hue, Importance: Integer;
-  end;
-
-  PCountIndexArray = ^TCountIndexArray;
-
-
 function CompareCMUCntImp(Item1,Item2,UserParameter:Pointer):Integer;
 begin
   Result := CompareValue(PCountIndexArray(Item2)^.Count shr 3, PCountIndexArray(Item1)^.Count shr 3);
@@ -2015,91 +2011,94 @@ begin
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame);
-const
-  cPalettePattern : array[Boolean, 0 .. cTilePaletteSize - 1] of Integer = (
-{$if true}
-    (4, 5, 8, 9, 12,13,16,17,20,21,24,25,0, 1, 2, 3),
-    (6, 7, 10,11,14,15,18,19,22,23,26,27,0, 1, 2, 3)
-{$else}
-    (4, 6, 8, 10,12,14,16,18,20,22,24,26,0, 1, 2, 3),
-    (5, 7, 9, 11,13,15,17,19,21,23,25,27,0, 1, 2, 3)
-{$endif}
-  );
 var
   sx, sy, tx, ty, i: Integer;
   GTile: PTile;
   CMUsage: array of TCountIndexArray;
-  sfr, efr: Integer;
+
+  Dataset: TFloatDynArray2;
+  Clusters: TIntegerDynArray;
+  di: Integer;
+  cluster: Boolean;
+
+  PalLuma: array[Boolean] of Integer;
 begin
-  SetLength(CMUsage, cTotalColors);
+  SetLength(Dataset, AKeyFrame^.FrameCount * cTileMapSize, cTileDCTSize);
+  di := 0;
+  for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
+      begin
+        GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+        ComputeTileDCT(GTile^, False, True, False, False, -1, nil, Dataset[di]);
+        Inc(di);
+      end;
+  assert(di = Length(Dataset));
 
-  for i := 0 to High(CMUsage) do
+  DoExternalYakmo(Dataset, nil, 2, 1, -1, True, False, nil, Clusters);
+
+  di := 0;
+  for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+    for sy := 0 to cTileMapHeight - 1 do
+      for sx := 0 to cTileMapWidth - 1 do
+      begin
+        GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+        GTile^.TmpIndex := Clusters[di];
+        Inc(di);
+      end;
+  assert(di = Length(Dataset));
+
+  SetLength(CMUsage, cTilePaletteSize);
+
+  for cluster := False to True do
   begin
-    CMUsage[i].Count := 0;
-    CMUsage[i].Index := i;
-    CMUsage[i].Importance := FColorMapImportance[i];
-    CMUsage[i].Luma := FColorMapLuma[i];
-    CMUsage[i].Hue := FColorMapHue[i];
-  end;
+    SetLength(CMUsage, cTotalColors);
 
-  // get color usage stats
-
-  sfr := High(Integer);
-  efr := Low(Integer);
-  for i := 0 to High(FFrames) do
-    if FFrames[i].KeyFrame = AKeyFrame then
+    for i := 0 to High(CMUsage) do
     begin
-      sfr := Min(sfr, i);
-      efr := Max(efr, i);
+      CMUsage[i].Count := 0;
+      CMUsage[i].Index := i;
+      CMUsage[i].Importance := FColorMapImportance[i];
+      CMUsage[i].Luma := FColorMapLuma[i];
+      CMUsage[i].Hue := FColorMapHue[i];
+    end;
 
+    // get color usage stats
+
+    for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
           GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+          if GTile^.TmpIndex <> Ord(cluster) then
+            Continue;
 
           for ty := 0 to cTileWidth - 1 do
             for tx := 0 to cTileWidth - 1 do
               Inc(CMUsage[GTile^.PaletteIndexes[GTile^.PalPixels[ty, tx]]].Count);
         end;
+
+    QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
+    QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
+
+    SetLength(AKeyFrame^.PaletteIndexes[cluster], cTilePaletteSize);
+    SetLength(AKeyFrame^.PaletteRGB[cluster], cTilePaletteSize);
+
+    PalLuma[cluster] := 0;
+    for i := 0 to cTilePaletteSize - 1 do
+    begin
+      AKeyFrame^.PaletteIndexes[cluster, i] := CMUsage[i].Index;
+      AKeyFrame^.PaletteRGB[cluster, i] := FColorMap[AKeyFrame^.PaletteIndexes[cluster, i]];
+      PalLuma[cluster] += CMUsage[i].Luma;
     end;
-
-  AKeyFrame^.StartFrame := sfr;
-  AKeyFrame^.EndFrame := efr;
-  AKeyFrame^.FrameCount := efr - sfr + 1;
-
-  // sort colors by use count
-
-  QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
-
-  // split most used colors into two 16 color palettes, with brightest and darkest colors repeated in both
-
-  QuickSort(CMUsage[0], 0, cKeyframeFixedColors - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
-  QuickSort(CMUsage[0], cKeyframeFixedColors, cTilePaletteSize * 2 - 1, SizeOf(CMUsage[0]), @CompareCMUHueLuma);
-
-  SetLength(AKeyFrame^.PaletteIndexes[False], cTilePaletteSize);
-  SetLength(AKeyFrame^.PaletteIndexes[True], cTilePaletteSize);
-  SetLength(AKeyFrame^.PaletteRGB[False], cTilePaletteSize);
-  SetLength(AKeyFrame^.PaletteRGB[True], cTilePaletteSize);
-
-  for i := 0 to cTilePaletteSize - 1 do
-  begin
-    AKeyFrame^.PaletteIndexes[False, i] := CMUsage[cPalettePattern[False, i]].Index;
-    AKeyFrame^.PaletteIndexes[True, i] := CMUsage[cPalettePattern[True, i]].Index;
   end;
 
-{$if cInvertSpritePalette}
-  for i := 0 to (cTilePaletteSize - cKeyframeFixedColors) div 2 - 1 do
-    Exchange(AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - cKeyframeFixedColors - 1 - i], AKeyFrame^.PaletteIndexes[False, i]);
-
-  for i := 0 to cKeyframeFixedColors div 2 - 1 do
-    Exchange(AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - 1 - i], AKeyFrame^.PaletteIndexes[False, cTilePaletteSize - cKeyframeFixedColors + i]);
-{$endif}
-
-  for i := 0 to cTilePaletteSize - 1 do
-  begin
-    AKeyFrame^.PaletteRGB[False, i] := FColorMap[AKeyFrame^.PaletteIndexes[False, i]];
-    AKeyFrame^.PaletteRGB[True, i] := FColorMap[AKeyFrame^.PaletteIndexes[True, i]];
-  end;
+  if PalLuma[True] > PalLuma[False] then
+    for i := 0 to cTilePaletteSize - 1 do
+    begin
+      Exchange(AKeyFrame^.PaletteIndexes[False, i], AKeyFrame^.PaletteIndexes[True, i]);
+      Exchange(AKeyFrame^.PaletteRGB[False, i], AKeyFrame^.PaletteRGB[True, i]);
+    end;
 end;
 
 procedure TMainForm.FinalDitherTiles(AFrame: PFrame);
@@ -2512,205 +2511,278 @@ begin
   SetLength(FKeyFrames, 0);
 end;
 
-procedure TMainForm.Render(AFrameIndex: Integer; dithered, mirrored, reduced, gamma: Boolean; spritePal: Integer;
+procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
   ATilePage: Integer);
+
+  procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean);
+  var
+    r, g, b, tx, ty, txm, tym: Integer;
+    psl: PInteger;
+  begin
+    for ty := 0 to cTileWidth - 1 do
+    begin
+      psl := bitmap.ScanLine[ty + sy * cTileWidth];
+      Inc(psl, sx * cTileWidth);
+
+      tym := ty;
+      if vmir and mirrored then tym := cTileWidth - 1 - tym;
+
+      for tx := 0 to cTileWidth - 1 do
+      begin
+        txm := tx;
+        if hmir and mirrored then txm := cTileWidth - 1 - txm;
+
+        if dithered and Assigned(pal) then
+          FromRGB(pal[tilePtr^.PalPixels[tym, txm]], r, g, b)
+        else
+          FromRGB(tilePtr^.RGBPixels[tym, txm], r, g, b);
+
+        if gamma then
+        begin
+          r := round(GammaCorrect(0, r) * 255.0);
+          g := round(GammaCorrect(0, g) * 255.0);
+          b := round(GammaCorrect(0, b) * 255.0);
+        end;
+
+        if not tilePtr^.Active then
+        begin
+          r := 255;
+          g := 0;
+          b := 255;
+        end;
+
+        psl^ := SwapRB(ToRGB(r, g, b));
+        Inc(psl);
+      end;
+    end;
+  end;
+
 var
-  i, j, r, g, b, ti, tx, ty, col, ftc, dftc: Integer;
-  pTiles, pDest, pDest2, p: PInteger;
+  i, j, sx, sy, ti, ftc, dftc: Integer;
+  p: PInteger;
   tilePtr: PTile;
   TMItem: TTileMapItem;
   Frame: PFrame;
-  fn: String;
   pal: TIntegerDynArray;
   oriCorr, chgCorr: TIntegerDynArray;
 begin
   if Length(FFrames) <= 0 then
     Exit;
 
+  mirrored := mirrored and reduced;
+
   AFrameIndex := EnsureRange(AFrameIndex, 0, high(FFrames));
-  ATilePage := EnsureRange(ATilePage, 0, high(FFrames));
 
   Frame := @FFrames[AFrameIndex];
 
   if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
     Exit;
 
-  ftc := GetFrameTileCount(Frame, False, False, False);
-  dftc := GetFrameTileCount(Frame, True, True, False);
-  lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(ftc) + ' (Cml=' + IntToStr(dftc) + ')';
-  if dftc > seMaxTPF.Value then
-    lblTileCount.Font.Color := clDefault
-  else
-    lblTileCount.Font.Color := clGreen;
-
-  imgTiles.Picture.Bitmap.BeginUpdate;
-  imgDest.Picture.Bitmap.BeginUpdate;
   try
-    // tile pages
-
-    for j := 0 to cScreenHeight * 2 - 1 do
+    if not playing then
     begin
-      pTiles := imgTiles.Picture.Bitmap.ScanLine[j];
+      ftc := GetFrameTileCount(Frame, False, False, False);
+      dftc := GetFrameTileCount(Frame, True, True, False);
+      lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(ftc) + ' (Cml=' + IntToStr(dftc) + ')';
+      if dftc > cMaxTilesPerFrame then
+        lblTileCount.Font.Color := clMaroon
+      else
+        lblTileCount.Font.Color := clGreen;
 
-      for i := 0 to cScreenWidth - 1 do
-      begin
-        ti := 32 * (j shr 3) + (i shr 3) + cTileMapSize * ATilePage;
+      imgTiles.Picture.Bitmap.BeginUpdate;
+      try
+        imgTiles.Picture.Bitmap.Canvas.Brush.Color := clAqua;
+        imgTiles.Picture.Bitmap.Canvas.Brush.Style := bsSolid;
+        imgTiles.Picture.Bitmap.Canvas.Clear;
 
-        tx := i and (cTileWidth - 1);
-        ty := j and (cTileWidth - 1);
+        for sy := 0 to CTileMapHeight * 2 - 1 do
+          for sx := 0 to CTileMapWidth - 1 do
+          begin
+            ti := CTileMapWidth * sy + sx + cTileMapSize * 2 * ATilePage;
 
-        if ti >= Length(FTiles) then
-        begin
-          r := 0;
-          g := 255;
-          b := 255;
-        end
-        else
-        begin
-          tilePtr := FTiles[ti];
+            if InRange(ti, 0, High(FTiles)) then
+            begin
+              tilePtr := FTiles[ti];
+              pal := Frame^.KeyFrame^.PaletteRGB[Max(0, palIdx) <> 0];
 
-          case spritePal of
-            0, 2: pal := Frame^.KeyFrame^.PaletteRGB[False];
-            1: pal := Frame^.KeyFrame^.PaletteRGB[True];
+              DrawTile(imgTiles.Picture.Bitmap, sx, sy, tilePtr, pal, False, False);
+            end;
           end;
-
-          if dithered and Assigned(pal) then
-          begin
-            col := pal[tilePtr^.PalPixels[ty, tx]];
-
-            b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
-          end
-          else
-          begin
-            FromRGB(tilePtr^.RGBPixels[ty, tx], r, g, b);
-          end;
-
-          if not tilePtr^.Active then
-          begin
-            r := 255;
-            g := 0;
-            b := 255;
-		     end;
-        end;
-
-        p := pTiles;
-        Inc(p, i);
-        p^ := SwapRB(ToRGB(r, g, b));
+      finally
+        imgTiles.Picture.Bitmap.EndUpdate;
       end;
     end;
 
-    // dest screen
-
-    SetLength(oriCorr, cScreenHeight * cScreenWidth * 2);
-    SetLength(chgCorr, cScreenHeight * cScreenWidth * 2);
-
-    for j := 0 to cScreenHeight - 1 do
-    begin
-      pDest := imgDest.Picture.Bitmap.ScanLine[j shl 1];
-      pDest2 := imgDest.Picture.Bitmap.ScanLine[(j shl 1) + 1];
-
-      for i := 0 to cScreenWidth - 1 do
-      begin
-        tx := i and (cTileWidth - 1);
-        ty := j and (cTileWidth - 1);
-
-        TMItem := Frame^.TileMap[j shr 3, i shr 3];
-        ti := TMItem.GlobalTileIndex;
-        if TMItem.Smoothed then
+    imgSource.Picture.Bitmap.BeginUpdate;
+    try
+      for sy := 0 to CTileMapHeight - 1 do
+        for sx := 0 to CTileMapWidth - 1 do
         begin
-          // emulate smoothing (use previous frame tilemap item)
-          TMItem := FFrames[AFrameIndex - cSmoothingPrevFrame].TileMap[j shr 3, i shr 3];
-          ti := FFrames[AFrameIndex - cSmoothingPrevFrame].TilesIndexes[TMItem.FrameTileIndex].RomIndex;
+          tilePtr :=  @Frame^.Tiles[sy * CTileMapWidth + sx];
+          DrawTile(imgSource.Picture.Bitmap, sx, sy, tilePtr, nil, False, False);
         end;
-
-        if ti < Length(FTiles) then
-        begin
-          tilePtr :=  @Frame^.Tiles[(j shr 3) * cTileMapWidth + (i shr 3)];
-          pal := tilePtr^.PaletteRGB;
-          oriCorr[j * cScreenWidth + i] := tilePtr^.RGBPixels[ty, tx];
-          oriCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := oriCorr[j * cScreenWidth + i];
-
-          if reduced then
-          begin
-            tilePtr := FTiles[ti];
-            if mirrored and TMItem.HMirror then tx := cTileWidth - 1 - tx;
-            if mirrored and TMItem.VMirror then ty := cTileWidth - 1 - ty;
-            case spritePal of
-              0: pal := Frame^.KeyFrame^.PaletteRGB[False];
-              1: pal := Frame^.KeyFrame^.PaletteRGB[True];
-              2: pal := Frame^.KeyFrame^.PaletteRGB[TMItem.SpritePal];
-            end
-          end;
-
-          if dithered and Assigned(pal) then
-          begin
-            col := pal[tilePtr^.PalPixels[ty, tx]];
-            b := (col shr 16) and $ff; g := (col shr 8) and $ff; r := col and $ff;
-          end
-          else
-          begin
-            FromRGB(tilePtr^.RGBPixels[ty, tx], r, g, b);
-          end;
-
-          if gamma then
-          begin
-            r := round(GammaCorrect(0, r) * 255.0);
-            g := round(GammaCorrect(0, g) * 255.0);
-            b := round(GammaCorrect(0, b) * 255.0);
-          end;
-
-          p := pDest;
-          Inc(p, i);
-          p^ := SwapRB(ToRGB(r, g, b));
-
-          chgCorr[j * cScreenWidth + i] := ToRGB(r, g, b);
-          chgCorr[i * cScreenHeight + j + cScreenWidth * cScreenHeight] := chgCorr[j * cScreenWidth + i];
-
-          // 25% scanlines
-          //r := r - r shr 2;
-          //g := g - g shr 2;
-          //b := b - b shr 2;
-
-          p := pDest2;
-          Inc(p, i);
-          p^ := SwapRB(ToRGB(r, g, b));
-        end;
-      end;
+    finally
+      imgSource.Picture.Bitmap.EndUpdate;
     end;
 
-    lblCorrel.Caption := FormatFloat('0.0000', ComputeCorrelation(oriCorr, chgCorr));
-  finally
-    imgTiles.Picture.Bitmap.EndUpdate;
-    imgDest.Picture.Bitmap.EndUpdate;
-  end;
+    //imgSource.Picture.Bitmap.BeginUpdate;
+    //try
+    //  for sy := 0 to cScreenHeight - 1 do
+    //  begin
+    //    p := imgSource.Picture.Bitmap.ScanLine[sy];
+    //
+    //    for sx := 0 to cScreenWidth - 1 do
+    //    begin
+    //      p^ := SwapRB(PInteger(@Frame^.FSPixels[(sy * cScreenWidth + sx) * 3])^);
+    //      Inc(p);
+    //    end;
+    //  end;
+    //finally
+    //  imgSource.Picture.Bitmap.EndUpdate;
+    //end;
 
-  imgPalette.Picture.Bitmap.BeginUpdate;
-  try
-    for j := 0 to imgPalette.Height - 1 do
-    begin
-      p := imgPalette.Picture.Bitmap.ScanLine[j];
-      for i := 0 to imgPalette.Width - 1 do
+    imgDest.Picture.Bitmap.BeginUpdate;
+    try
+      imgDest.Picture.Bitmap.Canvas.Brush.Color := clFuchsia;
+      imgDest.Picture.Bitmap.Canvas.Brush.Style := bsDiagCross;
+      imgDest.Picture.Bitmap.Canvas.Clear;
+
+      for sy := 0 to CTileMapHeight - 1 do
+        for sx := 0 to CTileMapWidth - 1 do
+        begin
+          TMItem := Frame^.TileMap[sy, sx];
+          ti := TMItem.GlobalTileIndex;
+
+          if InRange(ti, 0, High(FTiles)) then
+          begin
+            tilePtr :=  @Frame^.Tiles[sy * CTileMapWidth + sx];
+            pal := tilePtr^.PaletteRGB;
+
+            if reduced then
+            begin
+              tilePtr := FTiles[ti];
+              if palIdx < 0 then
+              begin
+                pal := Frame^.KeyFrame^.PaletteRGB[TMItem.SpritePal]
+              end
+              else
+              begin
+                if palIdx <> Ord(TMItem.SpritePal) then
+                  Continue;
+                pal := Frame^.KeyFrame^.PaletteRGB[palIdx <> 0];
+              end
+            end;
+
+            DrawTile(imgDest.Picture.Bitmap, sx, sy, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
+          end;
+        end;
+    finally
+      imgDest.Picture.Bitmap.EndUpdate;
+    end;
+
+    imgPalette.Picture.Bitmap.BeginUpdate;
+    try
+      for j := 0 to imgPalette.Picture.Bitmap.Height - 1 do
       begin
-        if Assigned(Frame^.KeyFrame^.PaletteRGB[False]) and Assigned(Frame^.KeyFrame^.PaletteRGB[True]) then
-          p^ := SwapRB(Frame^.KeyFrame^.PaletteRGB[j >= imgPalette.Height div 2, i * cTilePaletteSize div imgPalette.Width])
-        else
-          p^ := $00ff00ff;
+        p := imgPalette.Picture.Bitmap.ScanLine[j];
+        for i := 0 to imgPalette.Picture.Bitmap.Width - 1 do
+        begin
+          if Assigned(Frame^.KeyFrame^.PaletteRGB[j <> 0]) then
+            p^ := SwapRB(Frame^.KeyFrame^.PaletteRGB[j <> 0, i])
+          else
+            p^ := clFuchsia;
 
-        Inc(p);
+          Inc(p);
+        end;
       end;
+    finally
+      imgPalette.Picture.Bitmap.EndUpdate;
+    end;
+
+    if not playing then
+    begin
+      SetLength(oriCorr, CScreenHeight * CScreenWidth * 2);
+      SetLength(chgCorr, CScreenHeight * CScreenWidth * 2);
+
+      for j := 0 to CScreenHeight - 1 do
+      begin
+        Move(PInteger(imgSource.Picture.Bitmap.ScanLine[j])^, oriCorr[j * CScreenWidth], CScreenWidth * SizeOf(Integer));
+        Move(PInteger(imgDest.Picture.Bitmap.ScanLine[j])^, chgCorr[j * CScreenWidth], CScreenWidth * SizeOf(Integer));
+      end;
+
+      for j := 0 to CScreenHeight - 1 do
+        for i := 0 to CScreenWidth - 1 do
+        begin
+          oriCorr[CScreenWidth * CScreenHeight + i * CScreenHeight + j] := oriCorr[j * CScreenWidth + i];
+          chgCorr[CScreenWidth * CScreenHeight + i * CScreenHeight + j] := chgCorr[j * CScreenWidth + i];
+        end;
+
+      lblCorrel.Caption := FormatFloat('0.000000', ComputeCorrelation(oriCorr, chgCorr));
     end;
   finally
-    imgPalette.Picture.Bitmap.EndUpdate;
+    Repaint;
+  end;
+end;
+
+// from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
+procedure TMainForm.RGBToHSV(col: Integer; out h, s, v: Byte);
+var
+  rr, gg, bb: Integer;
+
+  function RGBMaxValue: Integer;
+  begin
+    Result := rr;
+    if (Result < gg) then Result := gg;
+    if (Result < bb) then Result := bb;
   end;
 
-  fn := Format(FInputPath, [AFrameIndex]);
-  if FileExists(fn) then
-    imgSource.Picture.LoadFromFile(fn);
+  function RGBMinValue : Integer;
+  begin
+    Result := rr;
+    if (Result > gg) then Result := gg;
+    if (Result > bb) then Result := bb;
+  end;
 
-  imgSource.Invalidate;
-  imgDest.Invalidate;
-  imgTiles.Invalidate;
-  imgPalette.Invalidate;
+var
+  Delta, mx, mn, hh, ss, ll: Integer;
+begin
+  FromRGB(col, rr, gg, bb);
+
+  mx := RGBMaxValue;
+  mn := RGBMinValue;
+
+  hh := 0;
+  ss := 0;
+  ll := mx;
+  if ll <> mn then
+  begin
+    Delta := ll - mn;
+    ss := MulDiv(Delta, 255, ll);
+
+    if (rr = ll) then
+      hh := MulDiv(42, gg - bb, Delta)
+    else if (gg = ll) then
+      hh := MulDiv(42, bb - rr, Delta) + 84
+    else if (bb = ll) then
+      hh := MulDiv(42, rr - gg, Delta) + 168;
+
+    hh := hh mod 252;
+  end;
+
+  h := hh and $ff;
+  s := ss and $ff;
+  v := ll and $ff;
+end;
+
+procedure TMainForm.RGBToHSV(col: Integer; out h, s, v: TFloat);
+var
+  bh, bs, bv: Byte;
+begin
+  bh := 0; bs := 0; bv := 0;
+  RGBToHSV(col, bh, bs, bv);
+  h := bh / 255.0;
+  s := bs / 255.0;
+  v := bv / 255.0;
 end;
 
 procedure TMainForm.ProgressRedraw(CurFrameIdx: Integer; ProgressStep: TEncoderStep);
@@ -4218,20 +4290,20 @@ begin
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}
 
-  imgSource.Picture.Bitmap.Width:=cScreenWidth;
-  imgSource.Picture.Bitmap.Height:=cScreenHeight;
+  imgSource.Picture.Bitmap.Width:=CScreenWidth;
+  imgSource.Picture.Bitmap.Height:=CScreenHeight;
   imgSource.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgDest.Picture.Bitmap.Width:=cScreenWidth;
-  imgDest.Picture.Bitmap.Height:=cScreenHeight * 2;
+  imgDest.Picture.Bitmap.Width:=CScreenWidth;
+  imgDest.Picture.Bitmap.Height:=CScreenHeight;
   imgDest.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgTiles.Picture.Bitmap.Width:=cScreenWidth;
-  imgTiles.Picture.Bitmap.Height:=cScreenHeight * 2;
+  imgTiles.Picture.Bitmap.Width:=CScreenWidth;
+  imgTiles.Picture.Bitmap.Height:=CScreenHeight * 2;
   imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgPalette.Picture.Bitmap.Width := cScreenWidth;
-  imgPalette.Picture.Bitmap.Height := 32;
+  imgPalette.Picture.Bitmap.Width := cTilePaletteSize;
+  imgPalette.Picture.Bitmap.Height := cPaletteCount;
   imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
 
   cbxYilMixChange(nil);

@@ -51,6 +51,7 @@ object MainForm: TMainForm
     Width = 256
     Anchors = [akTop, akLeft, akBottom]
     PopupMenu = pmProcesses
+    Stretch = True
   end
   object tbFrame: TTrackBar
     Left = 272
@@ -112,7 +113,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     TabOrder = 4
-    Value = 100
+    Value = 10
   end
   object Label3: TLabel
     Left = 8
@@ -129,7 +130,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
-    Text = 'Rick Astley - Never Gonna Give You Up-full9.avi'
+    Text = 'Rick Astley - Never Gonna Give You Up-full9_short.avi'
   end
   object Label4: TLabel
     Left = 8
@@ -181,7 +182,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 0
     TabOrder = 9
-    Value = 250
+    Value = 260
   end
   object seAvgTPF: TSpinEdit
     Left = 208
@@ -191,7 +192,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 33
+    Value = 26
   end
   object Label10: TLabel
     Left = 8
@@ -249,6 +250,7 @@ object MainForm: TMainForm
     Width = 256
     Anchors = [akLeft, akBottom]
     PopupMenu = pmProcesses
+    Stretch = True
   end
   object btnDebug: TButton
     Left = 80
@@ -328,10 +330,10 @@ object MainForm: TMainForm
     TabOrder = 18
   end
   object lblCorrel: TLabel
-    Left = 744
+    Left = 736
     Height = 15
     Top = 789
-    Width = 35
+    Width = 48
     Alignment = taRightJustify
     Anchors = [akLeft, akBottom]
     AutoSize = False
@@ -339,7 +341,7 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label5: TLabel
-    Left = 704
+    Left = 696
     Height = 15
     Top = 789
     Width = 35
