@@ -19,7 +19,7 @@ const
 
 {$if true}
   cPaletteCount = 16;
-  cBitsPerComp = 8;
+  cBitsPerComp = 6;
   cTilePaletteSize = 32;
 {$else}
   cPaletteCount = 4;
@@ -1915,7 +1915,10 @@ begin
       end;
   assert(di = Length(Dataset));
 
-  DoExternalYakmo(Dataset, nil, cPaletteCount, 1, -1, True, False, nil, Clusters);
+  if di > 1 then
+    DoExternalYakmo(Dataset, nil, cPaletteCount, 1, -1, True, False, nil, Clusters)
+  else
+    FillDWord(Clusters[0], Length(Clusters), 0);
 
   dlCnt := AKeyFrame^.FrameCount * FScreenWidth * FScreenHeight;
   dlInput := GetMem(dlCnt * 3);
