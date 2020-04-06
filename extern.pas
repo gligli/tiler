@@ -9,8 +9,10 @@ uses
 
 type
   TFloat = Double;
+
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
+  TDoubleDynArray2 = array of TDoubleDynArray;
   PFloat = ^TFloat;
   PPFloat = ^PFloat;
   PFloatDynArray = ^TFloatDynArray;
@@ -35,7 +37,7 @@ type
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount: Integer; RestartCount: Integer;
+procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 
 procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
@@ -43,17 +45,22 @@ function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String
 function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
 
-function ann_kdtree_create(pa: PPFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; cdecl; external 'ANN.dll';
+function ann_kdtree_create(pa: PPDouble; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; cdecl; external 'ANN.dll';
 procedure ann_kdtree_destroy(akd: PANNkdtree); cdecl; external 'ANN.dll';
-function ann_kdtree_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
-function ann_kdtree_pri_search(akd: PANNkdtree; q: PFloat; eps: Double): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_search(akd: PANNkdtree; q: PDouble; eps: Double): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_pri_search(akd: PANNkdtree; q: PDouble; eps: Double): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; cnt: Integer; q: PDouble; eps: Double): Integer; cdecl; external 'ANN.dll';
 
 function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 
 implementation
 
-Const
+var
+  GTempAutoInc : Integer = 0;
+  GInvariantFormatSettings: TFormatSettings;
+
+const
   READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
 
 // helperfunction that does the bulk of the work.
@@ -176,10 +183,10 @@ var
 begin
   Process := TProcess.Create(nil);
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-  Process.Executable := 'bzip2.exe';
+  Process.Executable := '7z.exe';
 
   SrcFN := GetTempFileName('', 'lz-' + IntToStr(GetCurrentThreadId) + '.dat');
-  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.bz2');
+  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.7z');
 
   SrcStream := TFileStream.Create(SrcFN, fmCreate or fmShareDenyWrite);
   try
@@ -189,7 +196,9 @@ begin
     SrcStream.Free;
   end;
 
-  Process.Parameters.Add('-9');
+  Process.Parameters.Add('a');
+  Process.Parameters.Add('-mx9');
+  Process.Parameters.Add(DstFN);
   Process.Parameters.Add(SrcFN);
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
@@ -227,7 +236,7 @@ begin
       SL.Add(Line);
     end;
 
-    InFN := GetTempFileName('', 'dataset-'+IntToStr(GetCurrentThreadId)+'.txt');
+    InFN := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
     SL.SaveToFile(InFN);
     SL.Clear;
 
@@ -273,15 +282,15 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount: Integer; RestartCount: Integer;
+procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 var
   i, PrevLen, Clu, Inp, RetCode: Integer;
-  TrainFN, TestFN, CrFN, Line, Output, ErrOut, CmdLine: String;
+  TrainFN, TrainStmt, TestFN, CrFN, Line, Output, ErrOut, CmdLine: String;
   SL: TStringList;
   Process: TProcess;
 begin
-  if ClusterCount >= Length(TrainDS) then
+  if Assigned(TrainDS) and (ClusterCount >= Length(TrainDS)) then
   begin
     // force a valid dataset by duplicating some lines
     PrevLen := Length(TrainDS);
@@ -293,26 +302,35 @@ begin
   Process := TProcess.Create(nil);
   SL := TStringList.Create;
   try
-    TrainFN := GenerateSVMLightFile(TrainDS, False);
+    if Assigned(TrainDS) then
+      TrainFN := GenerateSVMLightFile(TrainDS, False);
 
     if Assigned(TestDS) then
       TestFN := GenerateSVMLightFile(TestDS, False);
 
     if Assigned(Centroids) then
-      CrFN := GetTempFileName('', 'centroids-'+IntToStr(GetCurrentThreadId)+'.txt');
+    begin
+      CrFN := GetTempFileName('', 'centroids-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
+      if not Assigned(TrainDS) then
+        Centroids.SaveToFile(CrFN)
+    end;
 
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
     Process.Executable := IfThen(SizeOf(TFloat) = SizeOf(Double), 'yakmo.exe', 'yakmo_single.exe');
 
-    CmdLine := IfThen(OutputClusters, ' --output=2 ') + ' --num-cluster=' + IntToStr(ClusterCount);
-    CmdLine += ' --num-result=' + IntToStr(RestartCount);
+    CmdLine := IfThen(OutputClusters, ' --output=2 ');
+    CmdLine += IfThen(IterationCount < 0, ' --iteration=10000 ', ' --iteration=' + IntToStr(IterationCount) + ' ');
+    CmdLine += IfThen((ClusterCount >= 0) and Assigned(TrainDS), ' --num-cluster=' + IntToStr(ClusterCount) + ' ');
+    CmdLine += IfThen(RestartCount >= 0, ' --num-result=' + IntToStr(RestartCount) + ' ');
+
+    TrainStmt := IfThen(TrainFN = '', '-', '"' + TrainFN + '"');
 
     if Assigned(TestDS) then
-      CmdLine := '"' + TrainFN + '" "' + CrFN + '" "' + TestFN + '" ' + CmdLine
+      CmdLine := TrainStmt + ' "' + CrFN + '" "' + TestFN + '" ' + CmdLine
     else if Assigned(Centroids) then
-      CmdLine := '"' + TrainFN + '" "' + CrFN + '" - ' + CmdLine
+      CmdLine := TrainStmt + ' "' + CrFN + '" - ' + CmdLine
     else
-      CmdLine := '"' + TrainFN + '" - - ' + CmdLine;
+      CmdLine := TrainStmt + ' - - ' + CmdLine;
 
     Process.Parameters.Add(CmdLine);
     Process.ShowWindow := swoHIDE;
@@ -324,17 +342,21 @@ begin
     if RetCode <> 0 then
       DebugLn('Yakmo failed! RetCode: ' + IntToStr(RetCode) + sLineBreak + 'Msg: ' + ErrOut + sLineBreak + 'CmdLine: ' + CmdLine);
 
-    DeleteFile(PChar(TrainFN));
+    if Assigned(TrainDS) then
+      DeleteFile(PChar(TrainFN));
 
     if Assigned(TestDS) then
-      DeleteFile(PChar(TestDS));
+      DeleteFile(PChar(TestFN));
 
     if Assigned(Centroids) then
     begin
-      if FileExists(CrFN) then
-        Centroids.LoadFromFile(CrFN)
-      else
-        GenerateSVMLightData(TrainDS, Centroids, True);
+      if Assigned(TrainDS) then
+      begin
+        if FileExists(CrFN) then
+          Centroids.LoadFromFile(CrFN)
+        else
+          GenerateSVMLightData(TrainDS, Centroids, True);
+      end;
 
       DeleteFile(PChar(CrFN));
     end;
@@ -377,10 +399,10 @@ begin
 
   for i := 0 to High(Dataset) do
   begin
-    Line := Format('%d 1:%e', [i, Dataset[i, 0]]);
+    Line := Format('%d 1:%e', [i, Dataset[i, 0]], GInvariantFormatSettings);
 
     for j := 1 to High(Dataset[0]) do
-      Line := Format('%s %d:%e', [Line, j + 1, Dataset[i, j]]);
+      Line := Format('%s %d:%e', [Line, j + 1, Dataset[i, j]], GInvariantFormatSettings);
 
     Output.Add(Line);
   end;
@@ -394,7 +416,7 @@ begin
   try
     GenerateSVMLightData(Dataset, SL, Header);
 
-    Result := GetTempFileName('', 'dataset-'+IntToStr(GetCurrentThreadId)+'.txt');
+    Result := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
 
     SL.SaveToFile(Result);
   finally
@@ -443,7 +465,7 @@ begin
       //writeln(i, #9 ,index,#9,p,#9,np,#9, val);
 
       if Pos('nan', val) = 0 then
-        Result[i] := StrToFloat(val)
+        Result[i] := StrToFloat(val, GInvariantFormatSettings)
       else
         Result[i] := abs(NaN); // Quiet NaN
     end;
@@ -455,5 +477,7 @@ begin
   Result := GetLineInt(lines[1]);
 end;
 
+initialization
+  GetLocaleFormatSettings(LOCALE_INVARIANT, GInvariantFormatSettings);
 end.
 

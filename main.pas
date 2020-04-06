@@ -18,7 +18,7 @@ const
   // tweakable constants
 
 {$if true}
-  cPaletteCount = 64;
+  cPaletteCount = 16;
   cBitsPerComp = 8;
   cTilePaletteSize = 32;
 {$else}
@@ -74,40 +74,40 @@ const
 
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 5, 1, 2, 1, 2);
 
-  cQ = 16.0;
+  cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
     (
       // Luma
-      (cQ / 16, cQ / 11, cQ / 12, cQ / 15, cQ /  21, cQ /  32, cQ /  50, cQ /  66),
-      (cQ / 11, cQ / 12, cQ / 13, cQ / 18, cQ /  24, cQ /  46, cQ /  62, cQ /  73),
-      (cQ / 12, cQ / 13, cQ / 16, cQ / 23, cQ /  38, cQ /  56, cQ /  73, cQ /  75),
-      (cQ / 15, cQ / 18, cQ / 23, cQ / 29, cQ /  53, cQ /  75, cQ /  83, cQ /  80),
-      (cQ / 21, cQ / 24, cQ / 38, cQ / 53, cQ /  68, cQ /  95, cQ / 103, cQ /  94),
-      (cQ / 32, cQ / 46, cQ / 56, cQ / 75, cQ /  95, cQ / 104, cQ / 117, cQ /  96),
-      (cQ / 50, cQ / 62, cQ / 73, cQ / 83, cQ / 103, cQ / 117, cQ / 120, cQ / 128),
-      (cQ / 66, cQ / 73, cQ / 75, cQ / 80, cQ /  94, cQ /  96, cQ / 128, cQ / 144)
+      (cQ / sqrt(16), cQ / sqrt( 11), cQ / sqrt( 10), cQ / sqrt( 16), cQ / sqrt( 24), cQ / sqrt( 40), cQ / sqrt( 51), cQ / sqrt( 61)),
+      (cQ / sqrt(12), cQ / sqrt( 12), cQ / sqrt( 14), cQ / sqrt( 19), cQ / sqrt( 26), cQ / sqrt( 58), cQ / sqrt( 60), cQ / sqrt( 55)),
+      (cQ / sqrt(14), cQ / sqrt( 13), cQ / sqrt( 16), cQ / sqrt( 24), cQ / sqrt( 40), cQ / sqrt( 57), cQ / sqrt( 69), cQ / sqrt( 56)),
+      (cQ / sqrt(14), cQ / sqrt( 17), cQ / sqrt( 22), cQ / sqrt( 29), cQ / sqrt( 51), cQ / sqrt( 87), cQ / sqrt( 80), cQ / sqrt( 62)),
+      (cQ / sqrt(18), cQ / sqrt( 22), cQ / sqrt( 37), cQ / sqrt( 56), cQ / sqrt( 68), cQ / sqrt(109), cQ / sqrt(103), cQ / sqrt( 77)),
+      (cQ / sqrt(24), cQ / sqrt( 35), cQ / sqrt( 55), cQ / sqrt( 64), cQ / sqrt( 81), cQ / sqrt(104), cQ / sqrt(113), cQ / sqrt( 92)),
+      (cQ / sqrt(49), cQ / sqrt( 64), cQ / sqrt( 78), cQ / sqrt( 87), cQ / sqrt(103), cQ / sqrt(121), cQ / sqrt(120), cQ / sqrt(101)),
+      (cQ / sqrt(72), cQ / sqrt( 92), cQ / sqrt( 95), cQ / sqrt( 98), cQ / sqrt(112), cQ / sqrt(100), cQ / sqrt(103), cQ / sqrt( 99))
     ),
     (
       // U, weighted by luma importance
-      (cQ / 17, cQ /  18, cQ /  24, cQ /  47, cQ /  99, cQ /  99, cQ /  99, cQ /  99),
-      (cQ / 18, cQ /  21, cQ /  26, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112),
-      (cQ / 24, cQ /  26, cQ /  56, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128),
-      (cQ / 47, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144),
-      (cQ / 99, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160),
-      (cQ / 99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176),
-      (cQ / 99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192),
-      (cQ / 99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192, cQ / 208)
+      (cQ / sqrt(17), cQ / sqrt( 18), cQ / sqrt( 24), cQ / sqrt( 47), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99)),
+      (cQ / sqrt(18), cQ / sqrt( 21), cQ / sqrt( 26), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112)),
+      (cQ / sqrt(24), cQ / sqrt( 26), cQ / sqrt( 56), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128)),
+      (cQ / sqrt(47), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192)),
+      (cQ / sqrt(99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192), cQ / sqrt(208))
     ),
     (
       // V, weighted by luma importance
-      (cQ / 17, cQ /  18, cQ /  24, cQ /  47, cQ /  99, cQ /  99, cQ /  99, cQ /  99),
-      (cQ / 18, cQ /  21, cQ /  26, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112),
-      (cQ / 24, cQ /  26, cQ /  56, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128),
-      (cQ / 47, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144),
-      (cQ / 99, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160),
-      (cQ / 99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176),
-      (cQ / 99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192),
-      (cQ / 99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192, cQ / 208)
+      (cQ / sqrt(17), cQ / sqrt( 18), cQ / sqrt( 24), cQ / sqrt( 47), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99)),
+      (cQ / sqrt(18), cQ / sqrt( 21), cQ / sqrt( 26), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112)),
+      (cQ / sqrt(24), cQ / sqrt( 26), cQ / sqrt( 56), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128)),
+      (cQ / sqrt(47), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176)),
+      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192)),
+      (cQ / sqrt(99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192), cQ / sqrt(208))
     )
   );
 
@@ -347,7 +347,7 @@ type
     procedure RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat);
 
     procedure ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HMirror, VMirror: Boolean; GammaCor: Integer;
-      const pal: array of Integer; var DCT: TFloatDynArray); inline;
+      const pal: TIntegerDynArray; var DCT: TFloatDynArray); inline;
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -1896,165 +1896,211 @@ var
   dlCnt: Integer;
   dlInput, dlPtr: PByte;
   dlPal: TDLUserPal;
+
+  Dataset: TFloatDynArray2;
+  Clusters: TIntegerDynArray;
+  di: Integer;
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
+  SetLength(Dataset, AKeyFrame^.FrameCount * FTileMapSize, cTileDCTSize);
+  di := 0;
+  for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
+      begin
+        GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+        ComputeTileDCT(GTile^, False, True, False, False, -1, nil, Dataset[di]);
+        Inc(di);
+      end;
+  assert(di = Length(Dataset));
+
+  DoExternalYakmo(Dataset, nil, cPaletteCount, 1, -1, True, False, nil, Clusters);
+
+  dlCnt := AKeyFrame^.FrameCount * FScreenWidth * FScreenHeight;
+  dlInput := GetMem(dlCnt * 3);
   CMUsage := TFPList.Create;
   CMPal := TFPList.Create;
   try
-    if FUseDennisLeeV3 then
+    for PalIdx := 0 to cPaletteCount - 1 do
     begin
-      dlCnt := AKeyFrame^.FrameCount * FScreenWidth * FScreenHeight;
-      dlInput := GetMem(dlCnt * 3);
-      dlPtr := dlInput;
-
-      for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
-      begin
-        j := FTileMapSize * sqr(cTileWidth) * 3;
-        Move(FFrames[i].FSPixels[0], dlPtr^, j);
-        Inc(dlPtr, j);
-      end;
-
-      Assert(dlPtr - dlInput = dlCnt * 3);
-
-      dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cPaletteCount * cTilePaletteSize, EnsureRange(cBitsPerComp - 1, 2, 6), @dlPal);
-
-      CMUsage.Count := cPaletteCount * cTilePaletteSize;
-      for i := 0 to cPaletteCount * cTilePaletteSize - 1 do
-      begin
-        New(CMItem);
-        CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
-        CMItem^.Count := 1;
-        CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
-        CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-        CMUsage[i] := CMItem;
-      end;
-    end
-    else
-    begin
-      SetLength(TrueColorUsage, cRGBColors);
-      FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
-
-      // get color usage stats
-
-      for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
-      begin
-        for sy := 0 to FTileMapHeight - 1 do
-          for sx := 0 to FTileMapWidth - 1 do
-          begin
-            GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-
-{$if cBitsPerComp = 8}
-            for ty := 0 to cTileWidth - 1 do
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                col := GTile^.RGBPixels[ty, tx];
-                Inc(TrueColorUsage[col]);
-              end;
-{$else}
-            DitherTileFloydSteinberg(GTile^, FSPixels);
-            for ty := 0 to cTileWidth - 1 do
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                col := FSPixels[ty, tx];
-                Inc(TrueColorUsage[col]);
-              end;
-{$endif}
-          end;
-      end;
-
-      CMUsage.Count := Length(TrueColorUsage);
-      for i := 0 to High(TrueColorUsage) do
-      begin
-        New(CMItem);
-        CMItem^.Count := TrueColorUsage[i];
-        CMItem^.Index := i;
-        CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
-        CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-        CMUsage[i] := CMItem;
-      end;
-
-      // sort colors by use count
-
-      CMUsage.Sort(@CompareCMUCntHLS);
-
-      LastUsed := -1;
-      for i := CMUsage.Count - 1 downto 0 do    //TODO: rev algo
-        if PCountIndexArray(CMUsage[i])^.Count <> 0 then
-        begin
-          LastUsed := i;
-          Break;
-        end;
-
-      CmlPct := 0;
-      acc := AKeyFrame^.FrameCount * FTileMapSize * sqr(cTileWidth);
-      acc := round(acc * PalVAR);
       for i := 0 to CMUsage.Count - 1 do
+        Dispose(PCountIndexArray(CMUsage[i]));
+
+      CMUsage.Clear;
+      CMPal.Clear;
+
+      if FUseDennisLeeV3 then
       begin
-        acc -= PCountIndexArray(CMUsage[i])^.Count;
-        if acc <= 0 then
+        FillChar(dlInput^, dlCnt, 0);
+        dlPtr := dlInput;
+
+        di := 0;
+        for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
         begin
-          CmlPct := i;
-          Break;
+          dlPtr := @dlInput[(i * FScreenWidth * FScreenHeight) * 3];
+
+          for sy := 0 to FTileMapHeight - 1 do
+            for sx := 0 to FTileMapWidth - 1 do
+            begin
+              GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+
+              if Clusters[di] = PalIdx then
+              begin
+                j := ((sy * cTileWidth) * FScreenWidth + (sx * cTileWidth)) * 3;
+                for ty := 0 to cTileWidth - 1 do
+                begin
+                  Move(FFrames[i].FSPixels[j], dlPtr[j], cTileWidth * 3);
+                  Inc(j, FScreenWidth);
+                end;
+              end;
+
+              Inc(di);
+            end;
         end;
-      end;
-      AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
 
-      WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct);
+        dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cTilePaletteSize * cPaletteCount, EnsureRange(cBitsPerComp - 1, 2, 6), @dlPal);
 
-      CmlPct := max(CmlPct, min(LastUsed + 1, cTilePaletteSize * cPaletteCount)); // ensure enough colors
-
-      // prune colors that are too close to each other
-
-      CMUsage.Count := LastUsed + 1;
-      best := High(Int64);
-      repeat
-        bestI := -1;
-        PrevBest := best;
-        best := High(Int64);
-
-        ciJ := PCountIndexArray(CMUsage[0]);
-        rr := FColorMap[ciJ^.Index, 0]; gg := FColorMap[ciJ^.Index, 1]; bb := FColorMap[ciJ^.Index, 2];
-        for i := 1 to CMUsage.Count - 1 do
+        CMUsage.Count := cTilePaletteSize * cPaletteCount;
+        for i := 0 to CMUsage.Count - 1 do
         begin
-          ciI := PCountIndexArray(CMUsage[i]);
-          r := FColorMap[ciI^.Index, 0]; g := FColorMap[ciI^.Index, 1]; b := FColorMap[ciI^.Index, 2];
-          diff := ColorCompare(r, g, b, rr, gg, bb);
-          if diff < best then
+          New(CMItem);
+          CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
+          CMItem^.Count := 1;
+          CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
+          CMItem^.Luma := FColorMapLuma[CMItem^.Index];
+          CMUsage[i] := CMItem;
+        end;
+      end
+      else
+      begin
+        SetLength(TrueColorUsage, cRGBColors);
+        FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
+
+        // get color usage stats
+
+        di := 0;
+        for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+        begin
+          for sy := 0 to FTileMapHeight - 1 do
+            for sx := 0 to FTileMapWidth - 1 do
+            begin
+              GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+
+              if Clusters[di] = PalIdx then
+              begin
+{$if cBitsPerComp = 8}
+                for ty := 0 to cTileWidth - 1 do
+                  for tx := 0 to cTileWidth - 1 do
+                  begin
+                    col := GTile^.RGBPixels[ty, tx];
+                    Inc(TrueColorUsage[col]);
+                  end;
+{$else}
+                DitherTileFloydSteinberg(GTile^, FSPixels);
+                for ty := 0 to cTileWidth - 1 do
+                  for tx := 0 to cTileWidth - 1 do
+                  begin
+                    col := FSPixels[ty, tx];
+                    Inc(TrueColorUsage[col]);
+                  end;
+{$endif}
+              end;
+
+              Inc(di);
+            end;
+        end;
+
+        CMUsage.Count := Length(TrueColorUsage);
+        for i := 0 to High(TrueColorUsage) do
+        begin
+          New(CMItem);
+          CMItem^.Count := TrueColorUsage[i];
+          CMItem^.Index := i;
+          CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
+          CMItem^.Luma := FColorMapLuma[CMItem^.Index];
+          CMUsage[i] := CMItem;
+        end;
+
+        // sort colors by use count
+
+        CMUsage.Sort(@CompareCMUCntHLS);
+
+        LastUsed := -1;
+        for i := CMUsage.Count - 1 downto 0 do    //TODO: rev algo
+          if PCountIndexArray(CMUsage[i])^.Count <> 0 then
           begin
-            best := diff;
-            bestI := i;
+            LastUsed := i;
+            Break;
           end;
-          rr := r; gg := g; bb := b;
-          ciJ := ciI;
-        end;
 
-        if bestI > 0 then
+        CmlPct := 0;
+        acc := AKeyFrame^.FrameCount * FTileMapSize * sqr(cTileWidth);
+        acc := round(acc * PalVAR);
+        for i := 0 to CMUsage.Count - 1 do
         begin
-          ciI := PCountIndexArray(CMUsage[bestI]);
-          ciJ := PCountIndexArray(CMUsage[bestI - 1]);
-
-          acc := ciI^.Count + ciJ^.Count;
-          ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
-          ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
-          ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
-          ciI^.Luma := (ciI^.Luma * ciI^.Count + ciJ^.Luma * ciJ^.Count) div acc;
-          ciI^.Count := acc;
-
-          ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
-
-          CMUsage.Delete(bestI - 1);
+          acc -= PCountIndexArray(CMUsage[i])^.Count;
+          if acc <= 0 then
+          begin
+            CmlPct := i;
+            Break;
+          end;
         end;
+        AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
 
-      until (CMUsage.Count <= CmlPct) or (best = PrevBest);
-    end;
+        WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct);
 
-    // split most used colors into tile palettes
+        CmlPct := max(CmlPct, min(LastUsed + 1, cTilePaletteSize * cPaletteCount)); // ensure enough colors
 
-    //Assert(cPaletteCount = cTilePaletteSize * 2, 'non transposable');
+        // prune colors that are too close to each other
 
-    for PalIdx := 0 to cPaletteCount div 2 - 1 do
-    begin
+        CMUsage.Count := LastUsed + 1;
+        best := High(Int64);
+        repeat
+          bestI := -1;
+          PrevBest := best;
+          best := High(Int64);
+
+          ciJ := PCountIndexArray(CMUsage[0]);
+          rr := FColorMap[ciJ^.Index, 0]; gg := FColorMap[ciJ^.Index, 1]; bb := FColorMap[ciJ^.Index, 2];
+          for i := 1 to CMUsage.Count - 1 do
+          begin
+            ciI := PCountIndexArray(CMUsage[i]);
+            r := FColorMap[ciI^.Index, 0]; g := FColorMap[ciI^.Index, 1]; b := FColorMap[ciI^.Index, 2];
+            diff := ColorCompare(r, g, b, rr, gg, bb);
+            if diff < best then
+            begin
+              best := diff;
+              bestI := i;
+            end;
+            rr := r; gg := g; bb := b;
+            ciJ := ciI;
+          end;
+
+          if bestI > 0 then
+          begin
+            ciI := PCountIndexArray(CMUsage[bestI]);
+            ciJ := PCountIndexArray(CMUsage[bestI - 1]);
+
+            acc := ciI^.Count + ciJ^.Count;
+            ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
+            ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
+            ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
+            ciI^.Luma := (ciI^.Luma * ciI^.Count + ciJ^.Luma * ciJ^.Count) div acc;
+            ciI^.Count := acc;
+
+            ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
+
+            CMUsage.Delete(bestI - 1);
+          end;
+
+        until (CMUsage.Count <= CmlPct) or (best = PrevBest);
+      end;
+
+      // split most used colors into tile palettes
+
+      //Assert(cPaletteCount = cTilePaletteSize * 2, 'non transposable');
+
       CMPal.Clear;
 
       for i := 0 to cTilePaletteSize - 1 do
@@ -2063,22 +2109,8 @@ begin
       CMPal.Sort(@CompareCMULHS);
 
       SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
-      SetLength(AKeyFrame^.PaletteIndexes[PalIdx + cPaletteCount div 2], cTilePaletteSize);
       for i := 0 to cTilePaletteSize - 1 do
         AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
-    end;
-
-    for PalIdx := 0 to cPaletteCount div 2 - 1 do
-    begin
-      CMPal.Clear;
-
-      for i := 0 to cTilePaletteSize - 1 do
-        CMPal.Add(CMUsage[PalIdx * cTilePaletteSize + i]);
-
-      CMPal.Sort(@CompareCMULHS);
-
-      for i := 0 to cTilePaletteSize - 1 do
-        AKeyFrame^.PaletteIndexes[PalIdx + cPaletteCount div 2, i] := PCountIndexArray(CMPal[i])^.Index;
     end;
 
     QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cPaletteCount - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
@@ -2093,12 +2125,10 @@ begin
       end;
     end;
 
-    for i := 0 to CMUsage.Count - 1 do
-      Dispose(PCountIndexArray(CMUsage[i]));
-
   finally
     CMPal.Free;
     CMUsage.Free;
+    Freemem(dlInput);
   end;
 end;
 
@@ -2323,7 +2353,7 @@ begin
 end;
 
 procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, QWeighting, HMirror, VMirror: Boolean;
-  GammaCor: Integer; const pal: array of Integer; var DCT: TFloatDynArray);  inline;
+  GammaCor: Integer; const pal: TIntegerDynArray; var DCT: TFloatDynArray);
 const
   cUVRatio: array[0..cTileWidth-1,0..cTileWidth-1] of TFloat = (
     (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),

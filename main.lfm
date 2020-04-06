@@ -408,9 +408,7 @@ object MainForm: TMainForm
     Top = 230
     Width = 166
     Caption = 'Use Dennis Lee v3 quantizer'
-    Checked = True
     OnChange = chkUseDL3Change
-    State = cbChecked
     TabOrder = 12
   end
   object chkReload: TCheckBox
