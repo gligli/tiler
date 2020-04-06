@@ -8,7 +8,7 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, FPimage, FPReadPNG,
-  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, extern, typinfo;
+  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, kmeans, extern, typinfo;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -1924,25 +1924,16 @@ begin
   end;
 end;
 
-function CompareCMUCntImp(Item1,Item2,UserParameter:Pointer):Integer;
+function CompareCMUCnt(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item2)^.Count shr 3, PCountIndexArray(Item1)^.Count shr 3);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item2)^.Importance, PCountIndexArray(Item1)^.Importance);
+  Result := CompareValue(PCountIndexArray(Item2)^.Count, PCountIndexArray(Item1)^.Count);
 end;
 
-function CompareCMUHueLuma(Item1,Item2,UserParameter:Pointer):Integer;
-begin
-  Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Luma, PCountIndexArray(Item2)^.Luma);
-end;
-
-function CompareCMULumaHueInv(Item1,Item2,UserParameter:Pointer):Integer;
+function CompareCMUAll(Item1,Item2,UserParameter:Pointer):Integer;
 begin
   Result := CompareValue(PCountIndexArray(Item2)^.Luma, PCountIndexArray(Item1)^.Luma);
   if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item2)^.Hue, PCountIndexArray(Item1)^.Hue);
+    Result := CompareValue(PCountIndexArray(Item2)^.Index, PCountIndexArray(Item1)^.Index);
 end;
 
 procedure TMainForm.PreDitherTiles(AFrame: PFrame);
@@ -1986,10 +1977,10 @@ begin
         for tx := 0 to (cTileWidth - 1) do
           Inc(CMUsage[FullPalTile.PalPixels[ty, tx]].Count);
 
-      QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
+      QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCnt);
 
       // sort those by importance and luma
-      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
+      QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMUAll);
 
       SetLength(Tile_^.PaletteIndexes, cTilePaletteSize);
       SetLength(Tile_^.PaletteRGB, cTilePaletteSize);
@@ -2016,7 +2007,7 @@ var
   GTile: PTile;
   CMUsage: array of TCountIndexArray;
 
-  Dataset: TFloatDynArray2;
+  Dataset, Centroids: TFloatDynArray2;
   Clusters: TIntegerDynArray;
   di: Integer;
   cluster: Boolean;
@@ -2035,18 +2026,10 @@ begin
       end;
   assert(di = Length(Dataset));
 
-  DoExternalYakmo(Dataset, nil, 2, 1, -1, True, False, nil, Clusters);
-
-  di := 0;
-  for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
-    for sy := 0 to cTileMapHeight - 1 do
-      for sx := 0 to cTileMapWidth - 1 do
-      begin
-        GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-        GTile^.TmpIndex := Clusters[di];
-        Inc(di);
-      end;
-  assert(di = Length(Dataset));
+  if di > 1 then
+    KMeansGenerate(Dataset, di, cTileDCTSize, cPaletteCount, 7, i, Centroids, Clusters)
+  else
+    FillDWord(Clusters[0], Length(Clusters), 0);
 
   SetLength(CMUsage, cTilePaletteSize);
 
@@ -2065,21 +2048,22 @@ begin
 
     // get color usage stats
 
+    di := 0;
     for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
           GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-          if GTile^.TmpIndex <> Ord(cluster) then
-            Continue;
-
-          for ty := 0 to cTileWidth - 1 do
-            for tx := 0 to cTileWidth - 1 do
-              Inc(CMUsage[GTile^.PaletteIndexes[GTile^.PalPixels[ty, tx]]].Count);
+          if Clusters[di] = Ord(cluster) then
+            for ty := 0 to cTileWidth - 1 do
+              for tx := 0 to cTileWidth - 1 do
+                Inc(CMUsage[GTile^.PaletteIndexes[GTile^.PalPixels[ty, tx]]].Count);
+          Inc(di);
         end;
+    assert(di = Length(Dataset));
 
-    QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCntImp);
-    QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMULumaHueInv);
+    QuickSort(CMUsage[0], 0, High(CMUsage), SizeOf(CMUsage[0]), @CompareCMUCnt);
+    QuickSort(CMUsage[0], 0, cTilePaletteSize - 1, SizeOf(CMUsage[0]), @CompareCMUAll);
 
     SetLength(AKeyFrame^.PaletteIndexes[cluster], cTilePaletteSize);
     SetLength(AKeyFrame^.PaletteRGB[cluster], cTilePaletteSize);
