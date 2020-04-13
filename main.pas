@@ -1927,12 +1927,6 @@ begin
   try
     for PalIdx := 0 to cPaletteCount - 1 do
     begin
-      for i := 0 to CMUsage.Count - 1 do
-        Dispose(PCountIndexArray(CMUsage[i]));
-
-      CMUsage.Clear;
-      CMPal.Clear;
-
       if FUseDennisLeeV3 then
       begin
         FillChar(dlInput^, dlCnt, 0);
@@ -2057,7 +2051,10 @@ begin
 
         // prune colors that are too close to each other
 
+        for i := LastUsed + 1 to CMUsage.Count - 1 do
+          Dispose(PCountIndexArray(CMUsage[i]));
         CMUsage.Count := LastUsed + 1;
+
         best := High(Int64);
         repeat
           bestI := -1;
@@ -2094,6 +2091,7 @@ begin
 
             ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
 
+            Dispose(PCountIndexArray(CMUsage[bestI - 1]));
             CMUsage.Delete(bestI - 1);
           end;
 
@@ -2114,6 +2112,12 @@ begin
       SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
       for i := 0 to cTilePaletteSize - 1 do
         AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
+
+      for i := 0 to CMUsage.Count - 1 do
+        Dispose(PCountIndexArray(CMUsage[i]));
+
+      CMUsage.Clear;
+      CMPal.Clear;
     end;
 
     QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cPaletteCount - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
