@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, IntfGraphics, FPimage, FPWritePNG, zbase, zdeflate, zstream;
+  correlation, kmeans, IntfGraphics, FPimage, FPWritePNG, zbase, zdeflate, zstream;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -1897,7 +1897,7 @@ var
   dlInput, dlPtr: PByte;
   dlPal: TDLUserPal;
 
-  Dataset: TFloatDynArray2;
+  Dataset, Centroids: TFloatDynArray2;
   Clusters: TIntegerDynArray;
   di: Integer;
 begin
@@ -1916,7 +1916,7 @@ begin
   assert(di = Length(Dataset));
 
   if di > 1 then
-    DoExternalYakmo(Dataset, nil, cPaletteCount, 1, -1, True, False, nil, Clusters)
+    KMeansGenerate(Dataset, di, cTileDCTSize, cPaletteCount, 3, i, Centroids, Clusters)
   else
     FillDWord(Clusters[0], Length(Clusters), 0);
 
