@@ -20,7 +20,7 @@ banks 1
 ; SDSC tag and SMS rom header
 ;==============================================================
 
-.sdsctag 7.0,"Video playback","Video playback demo","GliGli"
+.sdsctag 9.0,"Video playback","Video playback demo","GliGli"
 
 ;==============================================================
 ; SMS defines
@@ -1182,7 +1182,7 @@ TUDoDirectValueSlow:
     ld a, h
     out (VDPControl), a
 
-    PlaySampleSkew 20
+    PlaySampleSkew 40
 
         ; direct value, load tile index from frame data pointer
 
@@ -1193,6 +1193,9 @@ TUDoDirectValueSlow:
 
         ; upload tile
     TilesUploadTileToVRAMSlow
+
+    inc iyl ; timing
+    inc iyl ; timing
 
 ; c319
     PlaySample
@@ -1239,7 +1242,7 @@ TUDoRepeatSlow:
 
 .org $1100
 TUDoTerminator:
-        ; value 224 is terminator
+        ; value 254 is terminator
 
         ; tile pointer back into hl
     ex de, hl
