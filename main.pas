@@ -1979,7 +1979,7 @@ begin
             end;
         end;
 
-        dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cTilePaletteSize + 1, EnsureRange(cBitsPerComp, 2, 6), @dlPal);
+        dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cTilePaletteSize + 1, EnsureRange(cBitsPerComp - 1, 2, 6), @dlPal);
 
         CMUsage.Count := cTilePaletteSize;
         j := 0;
