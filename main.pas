@@ -339,7 +339,7 @@ type
       ATilePage: Integer);
     procedure ReframeUI(AWidth, AHeight: Integer);
 
-    procedure DitherFloydSteinberg(AScreen: TByteDynArray);
+    procedure DitherFloydSteinberg(const AScreen: TByteDynArray);
 
     function HSVToRGB(h, s, v: Byte): Integer;
     procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
@@ -580,6 +580,26 @@ end;
 function CompareEuclideanDCT(const a, b: TFloatDynArray): TFloat; inline;
 begin
   Result := CompareEuclideanDCTPtr(@a[0], @b[0]);
+end;
+
+const
+  CvtPre =  (1 shl cBitsPerComp) - 1;
+  CvtPost = 256 div CvtPre;
+
+function Posterize(v: Integer): Byte; inline;
+begin
+  Result := min(255, (((v * CvtPre) div 255) * CvtPost));
+end;
+
+function Decimate(col: Integer): Integer; inline;
+var
+  r, g, b: Byte;
+begin
+  FromRGB(col, r, g, b);
+  r := r shr (8 - cBitsPerComp);
+  g := g shr (8 - cBitsPerComp);
+  b := b shr (8 - cBitsPerComp);
+  Result := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
 end;
 
 { T8BitPortableNetworkGraphic }
@@ -1169,6 +1189,7 @@ begin
     VK_F10: btnRunAllClick(nil);
     VK_F11: chkPlay.Checked := not chkPlay.Checked;
     VK_F12: btnDebugClick(nil);
+    VK_ESCAPE: TerminateProcess(GetCurrentProcess, 1);
   end;
 end;
 
@@ -1667,7 +1688,7 @@ begin
       for c := 0 to 2 do
       begin
         OldPixel := Pixels[y, x, c];
-        NewPixel := ((OldPixel * ((1 shl cBitsPerComp) - 1)) div 255) shl (8 - cBitsPerComp);
+        NewPixel := Posterize(OldPixel);
         QuantError := OldPixel - NewPixel;
 
         yp := y + 1;
@@ -1734,7 +1755,7 @@ begin
   sedPalIdx.MaxValue := cPaletteCount - 1;
 end;
 
-procedure TMainForm.DitherFloydSteinberg(AScreen: TByteDynArray);
+procedure TMainForm.DitherFloydSteinberg(const AScreen: TByteDynArray);
 var
   x, y, c, yp, xm, xp: Integer;
   OldPixel, NewPixel, QuantError: Integer;
@@ -1744,22 +1765,22 @@ begin
   for y := 0 to FScreenHeight - 1 do
     for x := 0 to FScreenWidth - 1 do
     begin
-      yp := IfThen(y < FScreenHeight - 1, FScreenHeight * 3, 0);
+      yp := IfThen(y < FScreenHeight - 1, FScreenWidth * 3, 0);
       xp := IfThen(x < FScreenWidth - 1, 3, 0);
       xm := IfThen(x > 0, -3, 0);
 
       for c := 0 to 2 do
       begin
         OldPixel := ppx^;
-        NewPixel := ((OldPixel * ((1 shl cBitsPerComp) - 1)) div 255) shl (8 - cBitsPerComp);
+        NewPixel := Posterize(OldPixel);
         QuantError := OldPixel - NewPixel;
 
         ppx^ := NewPixel;
 
-        ppx[xp] += (QuantError * 7) shr 4;
-        ppx[yp + xm] += (QuantError * 3) shr 4;
-        ppx[yp] += (QuantError * 5) shr 4;
-        ppx[yp + xp] += (QuantError * 1) shr 4;
+        ppx[xp] := EnsureRange(ppx[xp] + (QuantError * 7) shr 4, 0, 255);
+        ppx[yp + xm] := EnsureRange(ppx[yp + xm] + (QuantError * 3) shr 4, 0, 255);
+        ppx[yp] := EnsureRange(ppx[yp] + (QuantError * 5) shr 4, 0, 255);
+        ppx[yp + xp] := EnsureRange(ppx[yp + xp] + (QuantError * 1) shr 4, 0, 255);
 
         Inc(ppx);
       end;
@@ -1883,6 +1904,8 @@ begin
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
+const
+  CNoColor = $010101;
 var
   col, sx, sy, tx, ty, i, j, bestI, PalIdx, LastUsed, CmlPct, AtCmlPct, acc, r, g, b, rr, gg, bb: Integer;
   GTile: PTile;
@@ -1929,7 +1952,7 @@ begin
     begin
       if FUseDennisLeeV3 then
       begin
-        FillChar(dlInput^, dlCnt, 0);
+        FillChar(dlInput^, dlCnt * 3, CNoColor and $ff);
         dlPtr := dlInput;
 
         di := 0;
@@ -1948,7 +1971,7 @@ begin
                 for ty := 0 to cTileWidth - 1 do
                 begin
                   Move(FFrames[i].FSPixels[j], dlPtr[j], cTileWidth * 3);
-                  Inc(j, FScreenWidth);
+                  Inc(j, FScreenWidth * 3);
                 end;
               end;
 
@@ -1956,18 +1979,37 @@ begin
             end;
         end;
 
-        dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cTilePaletteSize * cPaletteCount, EnsureRange(cBitsPerComp - 1, 2, 6), @dlPal);
+        dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cTilePaletteSize + 1, EnsureRange(cBitsPerComp, 2, 6), @dlPal);
 
-        CMUsage.Count := cTilePaletteSize * cPaletteCount;
-        for i := 0 to CMUsage.Count - 1 do
+        CMUsage.Count := cTilePaletteSize;
+        j := 0;
+        for i := 0 to cTilePaletteSize + 1 - 1 do
         begin
-          New(CMItem);
-          CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
-          CMItem^.Count := 1;
-          CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
-          CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-          CMUsage[i] := CMItem;
+          col := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
+          if col <> CNoColor then
+          begin
+            New(CMItem);
+            CMItem^.Index := col;
+            CMItem^.Count := 1;
+            CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
+            CMItem^.Luma := FColorMapLuma[CMItem^.Index];
+            CMUsage[j] := CMItem;
+            Inc(j);
+          end;
         end;
+
+        if j < cTilePaletteSize then
+        begin
+           New(CMItem);
+           CMItem^.Index := CNoColor;
+           CMItem^.Count := 1;
+           CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
+           CMItem^.Luma := FColorMapLuma[CMItem^.Index];
+           CMUsage[j] := CMItem;
+        end;
+
+        CMPal.Clear;
+        CMPal.Assign(CMUsage);
       end
       else
       begin
@@ -2096,16 +2138,16 @@ begin
           end;
 
         until (CMUsage.Count <= CmlPct) or (best = PrevBest);
+
+
+        CMPal.Clear;
+        for i := 0 to cTilePaletteSize - 1 do
+          CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
       end;
 
       // split most used colors into tile palettes
 
       //Assert(cPaletteCount = cTilePaletteSize * 2, 'non transposable');
-
-      CMPal.Clear;
-
-      for i := 0 to cTilePaletteSize - 1 do
-        CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
 
       CMPal.Sort(@CompareCMULHS);
 

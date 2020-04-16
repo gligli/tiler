@@ -1,7 +1,7 @@
 object MainForm: TMainForm
   Left = 434
   Height = 784
-  Top = 170
+  Top = 171
   Width = 960
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 960
@@ -18,7 +18,7 @@ object MainForm: TMainForm
   OnDestroy = FormDestroy
   OnKeyDown = FormKeyDown
   Position = poScreenCenter
-  LCLVersion = '2.0.6.0'
+  LCLVersion = '2.0.8.0'
   WindowState = wsMaximized
   object cbxStep: TComboBox
     Left = 172
@@ -111,7 +111,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 15
     Top = 170
-    Width = 126
+    Width = 125
     Caption = 'Tile limit (all; per frame)'
     ParentColor = False
   end
@@ -213,7 +213,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 15
     Top = 192
-    Width = 159
+    Width = 157
     Caption = 'Temporal smoothing strength'
     ParentColor = False
   end
@@ -323,7 +323,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 15
     Top = 148
-    Width = 157
+    Width = 158
     Caption = 'Yiluoma 2 mixed colors count'
     ParentColor = False
   end
@@ -386,7 +386,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 19
     Top = 212
-    Width = 243
+    Width = 244
     Caption = 'Extended frame tiling palette usage (slow!)'
     OnChange = chkTransPaletteChange
     TabOrder = 11
@@ -395,7 +395,7 @@ object MainForm: TMainForm
     Left = 8
     Height = 19
     Top = 248
-    Width = 166
+    Width = 165
     Caption = 'Use Thomas Knoll dithering'
     Checked = True
     OnChange = chkUseTKChange
@@ -408,7 +408,9 @@ object MainForm: TMainForm
     Top = 230
     Width = 166
     Caption = 'Use Dennis Lee v3 quantizer'
+    Checked = True
     OnChange = chkUseDL3Change
+    State = cbChecked
     TabOrder = 12
   end
   object chkReload: TCheckBox
