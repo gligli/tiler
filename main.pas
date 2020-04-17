@@ -72,7 +72,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 5, 1, 2, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 5, 1, 2, 1, 2);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -144,6 +144,8 @@ type
   TTile = record // /!\ update CopyTile each time this structure is changed /!\
     RGBPixels: TRGBPixels;
     PalPixels: TPalPixels;
+
+    RGBDCT: TFloatDynArray;
 
     PaletteIndexes: TIntegerDynArray;
     PaletteRGB: TIntegerDynArray;
@@ -364,6 +366,7 @@ type
     function GetFrameTileCount(AFrame: PFrame): Integer;
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
+    procedure PrepareDitherTiles(AFrame: PFrame);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
     procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
     procedure FinalDitherTiles(AFrame: PFrame);
@@ -698,6 +701,11 @@ end;
 
 procedure TMainForm.btnDitherClick(Sender: TObject);
 
+  procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    PrepareDitherTiles(@FFrames[AIndex]);
+  end;
+
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
     FindBestKeyframePalette(@FKeyFrames[AIndex], sePalVAR.Value / 100);
@@ -713,10 +721,12 @@ begin
     Exit;
 
   ProgressRedraw(-1, esDither);
-  ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, High(FKeyFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FFrames));
   ProgressRedraw(1);
-  ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, High(FKeyFrames));
   ProgressRedraw(2);
+  ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
+  ProgressRedraw(3);
 
   tbFrameChange(nil);
 end;
@@ -1920,26 +1930,26 @@ var
   dlInput, dlPtr: PByte;
   dlPal: TDLUserPal;
 
-  Dataset, Centroids: TFloatDynArray2;
+  Dataset: TFloatDynArray2;
   Clusters: TIntegerDynArray;
   di: Integer;
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
-  SetLength(Dataset, AKeyFrame^.FrameCount * FTileMapSize, cTileDCTSize);
+  SetLength(Dataset, AKeyFrame^.FrameCount * FTileMapSize);
   di := 0;
   for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-        ComputeTileDCT(GTile^, False, True, False, False, -1, nil, Dataset[di]);
+        Dataset[di] := GTile^.RGBDCT;
         Inc(di);
       end;
   assert(di = Length(Dataset));
 
   if di > 1 then
-    KMeansGenerate(Dataset, di, cTileDCTSize, cPaletteCount, 3, i, Centroids, Clusters)
+    DoExternalYakmo(Dataset, nil, cPaletteCount, 7, -1, True, False, nil, Clusters)
   else
     FillDWord(Clusters[0], Length(Clusters), 0);
 
@@ -2207,38 +2217,40 @@ begin
     begin
       OrigTile := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
 
-      if not OrigTile^.Active then
-        Exit;
-
-      // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
-
-      ComputeTileDCT(OrigTile^, False, False, False, False, cDitheringGamma, OrigTile^.PaletteRGB, OrigTileDCT);
-
-      PalIdx := -1;
-      best := MaxDouble;
-      for i := 0 to cPaletteCount - 1 do
+      if OrigTile^.Active then
       begin
-        DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
-        ComputeTileDCT(OrigTile^, True, False, False, False, cDitheringGamma, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
-        cmp := CompareEuclideanDCT(TileDCT, OrigTileDCT);
-        if cmp < best then
+        // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
+
+        ComputeTileDCT(OrigTile^, False, False, False, False, cDitheringGamma, OrigTile^.PaletteRGB, OrigTileDCT);
+
+        PalIdx := -1;
+        best := MaxDouble;
+        for i := 0 to cPaletteCount - 1 do
         begin
-          PalIdx := i;
-          best := cmp;
-          CopyTile(OrigTile^, BestTile);
+          DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
+          ComputeTileDCT(OrigTile^, True, False, False, False, cDitheringGamma, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
+          cmp := CompareEuclideanDCT(TileDCT, OrigTileDCT);
+          if cmp < best then
+          begin
+            PalIdx := i;
+            best := cmp;
+            CopyTile(OrigTile^, BestTile);
+          end;
         end;
+
+        // now that the palette is chosen, keep only one version of the tile
+
+        CopyTile(BestTile, AFrame^.Tiles[sx + sy * FTileMapWidth]);
+
+        AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
+        AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := system.Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
+        AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
+        SetLength(BestTile.PaletteIndexes, 0);
+        SetLength(BestTile.PaletteRGB, 0);
+        OrigTile^ := BestTile;
       end;
 
-      // now that the palette is chosen, keep only one version of the tile
-
-      CopyTile(BestTile, AFrame^.Tiles[sx + sy * FTileMapWidth]);
-
-      AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
-      AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := system.Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
-      AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
-      SetLength(BestTile.PaletteIndexes, 0);
-      SetLength(BestTile.PaletteRGB, 0);
-      OrigTile^ := BestTile;
+      SetLength(OrigTile^.RGBDCT, 0);
     end;
 
   EnterCriticalSection(AFrame^.KeyFrame^.CS);
@@ -3077,6 +3089,20 @@ begin
     begin
       Dest.RGBPixels[y, x] := Src.RGBPixels[y, x];
       Dest.PalPixels[y, x] := Src.PalPixels[y, x];
+    end;
+end;
+
+procedure TMainForm.PrepareDitherTiles(AFrame: PFrame);
+var
+  sy, sx: Integer;
+  GTile: PTile;
+begin
+  for sy := 0 to FTileMapHeight - 1 do
+    for sx := 0 to FTileMapWidth - 1 do
+    begin
+      GTile := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
+      SetLength(GTile^.RGBDCT, cTileDCTSize);
+      ComputeTileDCT(GTile^, False, False, False, False, cDitheringGamma, nil, GTile^.RGBDCT);
     end;
 end;
 
@@ -4001,7 +4027,8 @@ begin
         WriteLn(cs, #9, FTileMapSize);
         Assert(cs = FTileMapSize, 'incomplete TM');
 
-        IsKF := (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and ((kf = High(FKeyFrames)) or (ZStream.Size >= CMaxBufSize div 2));
+        IsKF := (fri = FKeyFrames[kf].EndFrame) and (kf = High(FKeyFrames));
+        IsKF := IsKF or (fri = FKeyFrames[kf].EndFrame) or (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and (ZStream.Size >= CMaxBufSize div 2);
 
         DoCmd(gtmFrameEnd, Ord(IsKF) shl 21);
 
