@@ -1935,11 +1935,13 @@ var
 
   Dataset: TFloatDynArray2;
   Clusters: TIntegerDynArray;
-  di: Integer;
+  di, ClustersLeft: Integer;
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
   SetLength(Dataset, AKeyFrame^.FrameCount * FTileMapSize);
+  SetLength(Clusters, Length(Dataset));
+
   di := 0;
   for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
     for sy := 0 to FTileMapHeight - 1 do
@@ -1956,6 +1958,9 @@ begin
   else
     FillDWord(Clusters[0], Length(Clusters), 0);
 
+  assert(Length(Clusters) = Length(Dataset));
+  ClustersLeft := length(Clusters);
+
   dlCnt := AKeyFrame^.FrameCount * FScreenWidth * FScreenHeight;
   dlInput := GetMem(dlCnt * 3);
   CMUsage := TFPList.Create;
@@ -1971,7 +1976,7 @@ begin
         di := 0;
         for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
         begin
-          dlPtr := @dlInput[(i * FScreenWidth * FScreenHeight) * 3];
+          dlPtr := @dlInput[((i - AKeyFrame^.StartFrame) * FScreenWidth * FScreenHeight) * 3];
 
           for sy := 0 to FTileMapHeight - 1 do
             for sx := 0 to FTileMapWidth - 1 do
@@ -1986,11 +1991,15 @@ begin
                   Move(FFrames[i].FSPixels[j], dlPtr[j], cTileWidth * 3);
                   Inc(j, FScreenWidth * 3);
                 end;
+
+                Dec(ClustersLeft);
               end;
 
               Inc(di);
             end;
         end;
+
+        Assert(di = Length(Clusters));
 
         dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cTilePaletteSize + 1, EnsureRange(cBitsPerComp - 1, 2, 6), @dlPal);
 
@@ -2020,6 +2029,8 @@ begin
            CMItem^.Luma := FColorMapLuma[CMItem^.Index];
            CMUsage[j] := CMItem;
         end;
+
+        Assert(j = cTilePaletteSize);
 
         CMPal.Clear;
         CMPal.Assign(CMUsage);
@@ -2174,6 +2185,8 @@ begin
       CMUsage.Clear;
       CMPal.Clear;
     end;
+
+    Assert(ClustersLeft = 0);
 
     QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cPaletteCount - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
 
