@@ -114,17 +114,20 @@ const
 type
   // GliGli's TileMotion commands
 
-  TGTMCommand = ( // 32bit words; bits 0-3 -> $e (1110); bits 4-9 -> command #; bits 10-31 -> data
-    // single word commands (0-31)
-    gtmFrameEnd = 0, // data bit 31 -> keyframe end
-    gtSkipBlock = 1, // data -> linear TMI skip count
-    gtSkipPattern = 2, // data -> skip (0) or no skip (1) for next 22 TMI, MSB first
-    // ...
-    // multi word commands (32-63) (all commands data bits 0-7 -> payload word count; bits 8-21 -> MW arbitrary index)
-    gtLoadPaletteRGBA32 = 32, // data -> RGBA bytes, word aligned; MW arbitrary index = palette #
-    gtSetDimensions = 33, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (word)
-    // ...
-    gtExtendedMW = 63 // data -> custom commands, proprietary extensions, ...; MW arbitrary index = extended command #
+  TGTMCommand = ( // commandBits: palette # bit count + 2 (H/V mirrors)
+    gtShortTileIdxStart = 0, // short tile index #0 ...
+    gtShortTileIdxEnd = 895, // ... short tile index #767
+
+    gtSkipBlockStart = 896, // skipping 1 tile ...
+    gtSkipBlockEnd = 1015, // ... skipping 120 tiles
+
+    gtExtendedCommand = 1016, // data -> custom commands, proprietary extensions, ...; commandBits = extended command #
+
+    gtTileset = 1019, // data -> 32 bits tile count; 64 byte indexes per tile; commandBits : highest index
+    gtSetDimensions = 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits)
+    gtLoadPaletteRGBA32 = 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits = palette #; commandBits H/V mirrors: palette format (00: RGBA32)
+    gtmFrameEnd = 1022, // commandBits bit 0 -> keyframe end
+    gtmLongTileIdx = 1023 // data -> 32 bits tile index
   );
 
   TSpinlock = LongInt;
@@ -3838,81 +3841,91 @@ end;
 
 procedure TMainForm.SaveStream(AStream: TStream);
 const
-  CPatternSkipBitCount = 22;
   CMaxBufSize = 2 * 1024 * 1024;
   CMinKFFrameCount = 72;
   CMinBlkSkipCount = 1;
-  CMinPatSkipCount = MaxInt; // x / CPatternSkipBitCount %
+  CMaxBlkSkipCount = Ord(gtSkipBlockEnd) - Ord(gtSkipBlockStart) + 1;
+  CTMAttrBits = 2 + round(ln(cPaletteCount) / ln(2));
+  CShortIdxBits = 16 - CTMAttrBits;
+  CGTMCommandsIdxs = Ord(High(TGTMCommand)) + 1;
+  CGTMCommandIdxStart = (1 shl CShortIdxBits) - CGTMCommandsIdxs;
 
 var
   ZStream: TMemoryStream;
-
-  procedure DoVarWord(v: Cardinal);
-  var
-    sz: Integer;
-  begin
-    sz := 0;
-
-    if v < (1 shl 7) then
-    begin
-      v := v shl 1;
-      sz := 1;
-    end
-    else if v < (1 shl 14) then
-    begin
-      v := (v shl 2) or 2;
-      sz := 2;
-    end
-    else if v < (1 shl 21) then
-    begin
-      v := (v shl 3) or 6;
-      sz := 3;
-    end
-    //else if v < (1 shl 28) then
-    //begin
-    //  v := (v shl 4) or $e;
-    //  sz := 4;
-    //end
-    else
-      Assert(False, 'payload too big!');
-
-    v := (v shl 2) or (sz - 1);
-
-    ZStream.Write(v, sz);
-  end;
 
   procedure DoDWord(v: Cardinal);
   begin
     ZStream.WriteDWord(v);
   end;
 
-  procedure DoByte(v: Byte);
+  procedure DoWord(v: Word);
   begin
-    ZStream.WriteByte(v);
-  end;
-
-  procedure DoTMI(PalIdx: Integer; TileIdx: Integer; VMirror, HMirror: Boolean);
-  begin
-    assert((TileIdx >= 0) and (TileIdx < (1 shl 21)));
-    assert((PalIdx >= 0) and (PalIdx < (1 shl 6)));
-    DoVarWord(TileIdx);
-    DoByte((PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
+    ZStream.WriteWord(v);
   end;
 
   procedure DoCmd(Cmd: TGTMCommand; Data: Cardinal);
-  var
-    v: Cardinal;
   begin
-    assert(Data < (1 shl 22));
-    assert(Ord(Cmd) < (1 shl 6));
-    v := (Data shl 10) or (Ord(Cmd) shl 4) or $e;
-    DoDWord(v);
+    assert(Data < (1 shl CTMAttrBits));
+    assert(Ord(Cmd) < CGTMCommandsIdxs);
+
+    DoWord((Data shl CShortIdxBits) or Ord(Cmd));
+  end;
+
+  procedure DoTMI(PalIdx: Integer; TileIdx: Integer; VMirror, HMirror: Boolean);
+  var
+    ShortIdx: Boolean;
+  begin
+    assert((PalIdx >= 0) and (PalIdx < cPaletteCount));
+
+    ShortIdx := TileIdx < CGTMCommandIdxStart;
+    if ShortIdx then
+    begin
+      DoCmd(TGTMCommand(Ord(gtShortTileIdxStart) + TileIdx), (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
+    end
+    else
+    begin
+      DoCmd(gtmLongTileIdx, (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
+      DoDWord(TileIdx);
+    end;
+  end;
+
+  procedure WriteKFAttributes(KF: PKeyFrame);
+  var
+    i, j: Integer;
+  begin
+    DoCmd(gtSetDimensions, 0);
+    DoWord(FTileMapWidth);
+    DoWord(FTileMapHeight);
+    DoDWord(1000*1000*1000 div 24);
+
+    for j := 0 to cPaletteCount - 1 do
+    begin
+      DoCmd(gtLoadPaletteRGBA32, (j shl 2) or $00);
+      for i := 0 to cTilePaletteSize - 1 do
+        DoDWord(KF^.PaletteRGB[j, i] or $ff000000);
+    end;
+  end;
+
+  procedure WriteTiles;
+  var
+    i, cnt: Integer;
+  begin
+    DoCmd(gtTileset, cTilePaletteSize - 1);
+
+    cnt := 0;
+    for i := 0 to High(FTiles) do
+      if FTiles[i]^.Active then
+        Inc(cnt);
+    DoDWord(cnt);
+
+    for i := 0 to High(FTiles) do
+      if FTiles[i]^.Active then
+        ZStream.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
   end;
 
 var
-  StartPos, StreamSize, LastKF, KFCount, KFSize, kf, fri, yx, yxs, cs, BlkSkipCount, PatSkipCount: Integer;
-  SkipPattern: Cardinal;
-  IsKF, smoo: Boolean;
+  StartPos, StreamSize, LastKF, KFCount, KFSize, kf, fri, yx, yxs, cs, BlkSkipCount: Integer;
+  IsKF: Boolean;
   frm: PFrame;
   tmi: PTileMapItem;
 begin
@@ -3920,38 +3933,22 @@ begin
 
   ZStream := TMemoryStream.Create;
   try
-    LastKF := 0;
+    WriteTiles;
 
+    LastKF := 0;
     for kf := 0 to High(FKeyFrames) do
     begin
+      WriteKFAttributes(@FKeyFrames[kf]);
+
       for fri := FKeyFrames[kf].StartFrame to FKeyFrames[kf].EndFrame do
       begin
         frm := @FFrames[fri];
 
         cs := 0;
         BlkSkipCount := 0;
-        PatSkipCount := 0;
-        SkipPattern := 0;
         for yx := 0 to FTileMapSize - 1 do
         begin
-          if (SkipPattern <> 0) or (PatSkipCount > 0) then
-          begin
-            // handle an ongoing pattern skip
-
-            if SkipPattern and (1 shl (CPatternSkipBitCount - 1)) <> 0 then
-            begin
-              tmi := @frm^.TileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
-              DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
-              Inc(cs);
-            end
-            else
-            begin
-              Dec(PatSkipCount);
-            end;
-
-            SkipPattern := (SkipPattern shl 1) and not (1 shl CPatternSkipBitCount);
-          end
-          else if BlkSkipCount > 0 then
+          if BlkSkipCount > 0 then
           begin
             // handle an ongoing block skip
 
@@ -3963,60 +3960,25 @@ begin
 
             BlkSkipCount := 0;
             for yxs := yx to FTileMapSize - 1 do
-            begin
-              if not frm^.TileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
-                Break;
-              Inc(BlkSkipCount);
-            end;
-
-            PatSkipCount := 0;
-            SkipPattern := 0;
-            if yx + CPatternSkipBitCount <= FTileMapSize then
-            begin
-              for yxs := yx to yx + CPatternSkipBitCount - 1 do
-              begin
-                smoo := frm^.TileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed;
-                SkipPattern := SkipPattern shl 1;
-                if smoo then
-                  Inc(PatSkipCount)
-                else
-                  SkipPattern := SkipPattern or 1;
-              end;
-              Assert(CPatternSkipBitCount - PatSkipCount = PopCnt(SkipPattern));
-            end;
+              if frm^.TileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
+                Inc(BlkSkipCount);
+            BlkSkipCount := min(CMaxBlkSkipCount, BlkSkipCount);
 
             // filter using heuristics to avoid unbeneficial skips
 
             if BlkSkipCount >= CMinBlkSkipCount then
             begin
-              if PatSkipCount >= CMinPatSkipCount then
-              begin
-                //writeln('pat ', PatSkipCount, #9, intToBin(SkipPattern, CPatternSkipBitCount));
+              //writeln('blk ', BlkSkipCount);
 
-                DoCmd(gtSkipPattern, SkipPattern);
-                Inc(cs, PatSkipCount);
-                Dec(PatSkipCount);
-                SkipPattern := (SkipPattern shl 1) and not (1 shl CPatternSkipBitCount);
-                BlkSkipCount := 0;
-              end
-              else
-              begin
-                //writeln('blk ', BlkSkipCount);
-
-                DoCmd(gtSkipBlock, BlkSkipCount);
-                Inc(cs, BlkSkipCount);
-                Dec(BlkSkipCount);
-                PatSkipCount := 0;
-                SkipPattern := 0;
-              end;
+              DoCmd(TGTMCommand(Ord(gtSkipBlockStart) + BlkSkipCount - 1), 0);
+              Inc(cs, BlkSkipCount);
+              Dec(BlkSkipCount);
             end
             else
             begin
               // standard case: emit tilemap item
 
               BlkSkipCount := 0;
-              PatSkipCount := 0;
-              SkipPattern := 0;
 
               tmi := @frm^.TileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
               DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
@@ -4024,13 +3986,12 @@ begin
             end;
           end;
         end;
-        WriteLn(cs, #9, FTileMapSize);
         Assert(cs = FTileMapSize, 'incomplete TM');
 
         IsKF := (fri = FKeyFrames[kf].EndFrame) and (kf = High(FKeyFrames));
         IsKF := IsKF or (fri = FKeyFrames[kf].EndFrame) or (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and (ZStream.Size >= CMaxBufSize div 2);
 
-        DoCmd(gtmFrameEnd, Ord(IsKF) shl 21);
+        DoCmd(gtmFrameEnd, Ord(IsKF));
 
         if IsKF then
         begin
@@ -4040,6 +4001,7 @@ begin
           KFSize := AStream.Position;
           LZCompress(ZStream, False, AStream);
           ZStream.Clear;
+
           KFSize := AStream.Position - KFSize;
 
           WriteLn('Frm: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
