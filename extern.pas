@@ -183,10 +183,10 @@ var
 begin
   Process := TProcess.Create(nil);
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-  Process.Executable := '7z.exe';
+  Process.Executable := 'bzip2.exe';
 
   SrcFN := GetTempFileName('', 'lz-' + IntToStr(GetCurrentThreadId) + '.dat');
-  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.7z');
+  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.bz2');
 
   SrcStream := TFileStream.Create(SrcFN, fmCreate or fmShareDenyWrite);
   try
@@ -196,9 +196,7 @@ begin
     SrcStream.Free;
   end;
 
-  Process.Parameters.Add('a');
-  Process.Parameters.Add('-mx9');
-  Process.Parameters.Add(DstFN);
+  Process.Parameters.Add('-9');
   Process.Parameters.Add(SrcFN);
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
