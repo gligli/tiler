@@ -195,8 +195,8 @@ begin
     SrcStream.Free;
   end;
 
-  Process.Parameters.Add('-9');
-  Process.Parameters.Add(SrcFN);
+  Process.Parameters.Add(' --compress --best ');
+  Process.Parameters.Add('"' + SrcFN + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
