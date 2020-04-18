@@ -232,7 +232,8 @@ type
 
   TMainForm = class(TForm)
     btnRunAll: TButton;
-    cbxStep: TComboBox;
+    cbxEndStep: TComboBox;
+    cbxStartStep: TComboBox;
     cbxYilMix: TComboBox;
     chkGamma: TCheckBox;
     chkTransPalette: TCheckBox;
@@ -247,10 +248,11 @@ type
     edInput: TEdit;
     edOutputDir: TEdit;
     edReload: TEdit;
+    To1: TLabel;
     imgPalette: TImage;
     Label1: TLabel;
     Label11: TLabel;
-    Label12: TLabel;
+    From: TLabel;
     Label13: TLabel;
     Label2: TLabel;
     Label3: TLabel;
@@ -1034,32 +1036,40 @@ end;
 
 procedure TMainForm.btnRunAllClick(Sender: TObject);
 var
+  firstStep: TEncoderStep;
   lastStep: TEncoderStep;
-begin
-  lastStep := TEncoderStep(cbxStep.ItemIndex);
 
-  if lastStep >= esLoad then
+  function OkStep(Step: TEncoderStep): Boolean;
+  begin
+    Result := (Step >= firstStep) and (Step <= lastStep);
+  end;
+
+begin
+  firstStep := TEncoderStep(cbxStartStep.ItemIndex);
+  lastStep := TEncoderStep(cbxEndStep.ItemIndex);
+
+  if OkStep(esLoad) then
     btnLoadClick(nil);
 
-  if lastStep >= esDither then
+  if OkStep(esDither) then
     btnDitherClick(nil);
 
-  if lastStep >= esMakeUnique then
+  if OkStep(esMakeUnique) then
     btnDoMakeUniqueClick(nil);
 
-  if lastStep >= esGlobalTiling then
+  if OkStep(esGlobalTiling) then
     btnDoGlobalTilingClick(nil);
 
-  if lastStep >= esFrameTiling then
+  if OkStep(esFrameTiling) then
     btnDoFrameTilingClick(nil);
 
-  if lastStep >= esReindex then
+  if OkStep(esReindex) then
     btnReindexClick(nil);
 
-  if lastStep >= esSmooth then
+  if OkStep(esSmooth) then
     btnSmoothClick(nil);
 
-  if lastStep >= esSave then
+  if OkStep(esSave) then
     btnSaveClick(nil);
 
   ProgressRedraw;
@@ -4066,9 +4076,13 @@ begin
   chkUseTKChange(nil);
   chkLowMemChange(nil);
 
-  for es := esLoad to High(TEncoderStep) do
-    cbxStep.AddItem(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), TObject(PtrInt(Ord(es))));
-  cbxStep.ItemIndex := Ord(es);
+  for es := Succ(Low(TEncoderStep)) to High(TEncoderStep) do
+  begin
+    cbxStartStep.AddItem(Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), 3), TObject(PtrInt(Ord(es))));
+    cbxEndStep.AddItem(Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), 3), TObject(PtrInt(Ord(es))));
+  end;
+  cbxStartStep.ItemIndex := Ord(Succ(Low(TEncoderStep)));
+  cbxEndStep.ItemIndex := Ord(High(TEncoderStep));
 
   sr := (1 shl cRGBBitsPerComp) - 1;
 

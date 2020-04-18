@@ -20,14 +20,14 @@ object MainForm: TMainForm
   Position = poScreenCenter
   LCLVersion = '2.0.8.0'
   WindowState = wsMaximized
-  object cbxStep: TComboBox
-    Left = 172
+  object cbxEndStep: TComboBox
+    Left = 240
     Height = 23
     Top = 289
-    Width = 147
+    Width = 80
     ItemHeight = 15
     Style = csDropDownList
-    TabOrder = 17
+    TabOrder = 18
   end
   object pbProgress: TProgressBar
     Left = 4
@@ -35,7 +35,7 @@ object MainForm: TMainForm
     Top = 316
     Width = 273
     Smooth = True
-    TabOrder = 18
+    TabOrder = 19
   end
   object imgSource: TImage
     Left = 320
@@ -76,7 +76,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 25
+    TabOrder = 26
   end
   object chkPlay: TCheckBox
     Left = 288
@@ -85,7 +85,7 @@ object MainForm: TMainForm
     Width = 42
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 19
+    TabOrder = 20
   end
   object lblTileCount: TLabel
     Left = 8
@@ -105,7 +105,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 20
+    TabOrder = 21
   end
   object Label2: TLabel
     Left = 8
@@ -236,7 +236,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 22
+    TabOrder = 23
   end
   object lblPct: TLabel
     Left = 277
@@ -257,7 +257,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 24
+    TabOrder = 25
   end
   object seMaxTiles: TSpinEdit
     Left = 172
@@ -279,7 +279,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 21
+    TabOrder = 22
   end
   object lblCorrel: TLabel
     Left = 885
@@ -335,7 +335,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     MinValue = -1
     OnChange = tbFrameChange
-    TabOrder = 23
+    TabOrder = 24
     Value = -1
   end
   object Label8: TLabel
@@ -347,12 +347,12 @@ object MainForm: TMainForm
     Caption = 'Palette'
     ParentColor = False
   end
-  object Label12: TLabel
-    Left = 88
+  object From: TLabel
+    Left = 80
     Height = 15
-    Top = 292
-    Width = 77
-    Caption = 'Run up to step'
+    Top = 293
+    Width = 28
+    Caption = 'From'
     ParentColor = False
   end
   object sePalVAR: TFloatSpinEdit
@@ -449,6 +449,23 @@ object MainForm: TMainForm
     MinValue = 0
     TabOrder = 10
     Value = 50
+  end
+  object cbxStartStep: TComboBox
+    Left = 120
+    Height = 23
+    Top = 289
+    Width = 80
+    ItemHeight = 15
+    Style = csDropDownList
+    TabOrder = 17
+  end
+  object To1: TLabel
+    Left = 216
+    Height = 15
+    Top = 293
+    Width = 12
+    Caption = 'To'
+    ParentColor = False
   end
   object IdleTimer: TIdleTimer
     Interval = 42
