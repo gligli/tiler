@@ -3565,9 +3565,8 @@ var
     LocClusters: TIntegerDynArray;
     i, j, di, DSLen: Integer;
     ActualNbTiles: Integer;
-    ToMerge: TByteDynArray2;
     ToMergeIdxs: TIntegerDynArray;
-    dis: UInt64;
+    NewTile: TPalPixels;
   begin
     DSLen := Length(Dataset[AIndex]);
 
@@ -3583,7 +3582,6 @@ var
       KModes.Free;
     end;
 
-    SetLength(ToMerge, DSLen);
     SetLength(ToMergeIdxs, DSLen);
 
     // build a list of this centroid tiles
@@ -3595,7 +3593,6 @@ var
       begin
         if LocClusters[i] = j then
         begin
-          ToMerge[di] := Dataset[AIndex, i];
           ToMergeIdxs[di] := TileIndices[AIndex, i];
           Inc(di);
         end;
@@ -3603,11 +3600,11 @@ var
 
       // choose a tile from the centroids
 
-      i := GetMinMatchingDissim(ToMerge, LocCentroids[j], di, dis);
       if di >= 2 then
       begin
         SpinEnter(@MergeLock);
-        MergeTiles(ToMergeIdxs, di, ToMergeIdxs[i], nil);
+        Move(LocCentroids[j, 0], NewTile[0, 0], sqr(cTileWidth));
+        MergeTiles(ToMergeIdxs, di, ToMergeIdxs[0], @NewTile);
         SpinLeave(@MergeLock);
       end;
     end;
