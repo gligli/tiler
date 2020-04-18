@@ -12,7 +12,7 @@ object MainForm: TMainForm
   VertScrollBar.Tracking = True
   VertScrollBar.Visible = False
   AutoScroll = True
-  Caption = 'SMS video tiler'
+  Caption = 'GliGli''s TileMotion encoder'
   ClientHeight = 502
   ClientWidth = 664
   KeyPreview = True
