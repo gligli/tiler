@@ -29,8 +29,8 @@ const
 
   cRandomKModesCount = 7;
   cGamma: array[0..2{YUV,LAB,INV}] of TFloat = (2.0, 2.10, 0.6);
-  cDitheringGamma = -1;
-  cFTGamma = -1;
+  cDitheringGamma = 0;
+  cFTGamma = 0;
   cFTFromPal = True;
   cFTQWeighting = True;
   cSmoothingGamma = -1;
@@ -2261,7 +2261,6 @@ begin
   end;
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 
-  SetLength(OrigTileDCT, cTileDCTSize);
   SetLength(TileDCT, cTileDCTSize);
 
   for sy := 0 to FTileMapHeight - 1 do
@@ -2273,7 +2272,7 @@ begin
       begin
         // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-        ComputeTileDCT(OrigTile^, False, False, False, False, cDitheringGamma, OrigTile^.PaletteRGB, OrigTileDCT);
+        OrigTileDCT := OrigTile^.RGBDCT;
 
         PalIdx := -1;
         best := MaxDouble;
