@@ -264,10 +264,10 @@ type
     Label7: TLabel;
     Label9: TLabel;
     lblPct: TLabel;
-    lblTileCount: TLabel;
     odInput: TOpenDialog;
     pbProgress: TProgressBar;
     pcPages: TPageControl;
+    pnLbl: TPanel;
     seAvgTPF: TSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -2827,7 +2827,7 @@ begin
   try
     if not playing then
     begin
-      lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
+      pnLbl.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
 
       imgTiles.Picture.Bitmap.BeginUpdate;
       try

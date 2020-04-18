@@ -19,6 +19,7 @@ object MainForm: TMainForm
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   OnKeyDown = FormKeyDown
+  PopupMenu = pmProcesses
   Position = poScreenCenter
   LCLVersion = '2.0.8.0'
   WindowState = wsMaximized
@@ -139,14 +140,15 @@ object MainForm: TMainForm
     Height = 400
     Top = 40
     Width = 668
-    ActivePage = tsSettings
+    ActivePage = tsTilesPal
     Anchors = [akTop, akLeft, akRight, akBottom]
-    TabIndex = 0
+    TabIndex = 3
     TabOrder = 4
     object tsSettings: TTabSheet
       Caption = 'Settings'
       ClientHeight = 372
       ClientWidth = 660
+      PopupMenu = pmProcesses
       object edOutputDir: TEdit
         Left = 88
         Height = 23
@@ -502,13 +504,15 @@ object MainForm: TMainForm
     Caption = '0%'
     ParentColor = False
   end
-  object lblTileCount: TLabel
-    Left = 348
-    Height = 15
+  object pnLbl: TPanel
+    Left = 344
+    Height = 18
     Top = 40
-    Width = 308
-    AutoSize = False
-    ParentColor = False
+    Width = 315
+    Anchors = [akTop, akLeft, akRight]
+    BevelInner = bvLowered
+    BevelOuter = bvNone
+    TabOrder = 12
   end
   object IdleTimer: TIdleTimer
     Interval = 42
