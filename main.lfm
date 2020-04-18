@@ -152,7 +152,7 @@ object MainForm: TMainForm
         Height = 23
         Top = 30
         Width = 545
-        TabOrder = 0
+        TabOrder = 2
         Text = 'C:\tiler_misc\av_tiled\%.4d.png'
       end
       object seMaxTiles: TSpinEdit
@@ -162,7 +162,7 @@ object MainForm: TMainForm
         Width = 90
         MaxValue = 0
         OnEditingDone = seMaxTilesEditingDone
-        TabOrder = 1
+        TabOrder = 9
       end
       object chkTransPalette: TCheckBox
         Left = 8
@@ -171,14 +171,14 @@ object MainForm: TMainForm
         Width = 244
         Caption = 'Extended frame tiling palette usage (slow!)'
         OnChange = chkTransPaletteChange
-        TabOrder = 2
+        TabOrder = 12
       end
       object edReload: TEdit
         Left = 88
         Height = 23
         Top = 52
         Width = 545
-        TabOrder = 3
+        TabOrder = 4
         Text = 'C:\tiler_misc\av_tiled\tiles.gts'
       end
       object btnInput: TButton
@@ -188,7 +188,7 @@ object MainForm: TMainForm
         Width = 26
         Caption = '...'
         OnClick = btnInputClick
-        TabOrder = 4
+        TabOrder = 1
       end
       object seTempoSmoo: TFloatSpinEdit
         Left = 263
@@ -198,7 +198,7 @@ object MainForm: TMainForm
         Increment = 2.5
         MaxValue = 1000
         MinValue = 0
-        TabOrder = 5
+        TabOrder = 11
         Value = 50
       end
       object seStartFrame: TSpinEdit
@@ -207,7 +207,7 @@ object MainForm: TMainForm
         Top = 80
         Width = 56
         MaxValue = 100000
-        TabOrder = 6
+        TabOrder = 5
         Value = 507
       end
       object sePalVAR: TFloatSpinEdit
@@ -245,7 +245,7 @@ object MainForm: TMainForm
         Width = 56
         MaxValue = 0
         OnEditingDone = seAvgTPFEditingDone
-        TabOrder = 9
+        TabOrder = 10
         Value = 1000
       end
       object seFrameCount: TSpinEdit
@@ -254,7 +254,7 @@ object MainForm: TMainForm
         Top = 102
         Width = 56
         MaxValue = 100000
-        TabOrder = 10
+        TabOrder = 6
         Value = 12
       end
       object chkLowMem: TCheckBox
@@ -264,7 +264,7 @@ object MainForm: TMainForm
         Width = 115
         Caption = 'Lower RAM usage'
         OnChange = chkLowMemChange
-        TabOrder = 11
+        TabOrder = 15
       end
       object chkReload: TCheckBox
         Left = 8
@@ -273,7 +273,7 @@ object MainForm: TMainForm
         Width = 80
         Caption = 'Reload tiles'
         OnChange = chkUseTKChange
-        TabOrder = 12
+        TabOrder = 3
       end
       object chkUseDL3: TCheckBox
         Left = 8
@@ -350,7 +350,7 @@ object MainForm: TMainForm
         Height = 23
         Top = 8
         Width = 519
-        TabOrder = 15
+        TabOrder = 0
         Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.mov'
       end
       object Label3: TLabel
