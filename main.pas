@@ -807,8 +807,8 @@ procedure TMainForm.btnLoadClick(Sender: TObject);
 const
   CShotTransGracePeriod = 24;
   CShotTransSAvgFrames = 6;
-  CShotTransSoftThres = 0.8;
-  CShotTransHardThres = 0.4;
+  CShotTransSoftThres = 0.9;
+  CShotTransHardThres = 0.5;
 
 var
   inPath: String;
@@ -964,7 +964,7 @@ begin
       av := -1.0;
       LastKFIdx := i;
 
-      WriteLn('Frm: -> ', i, #9'KF: ', BoolToStr(isKf, True), #9'Ratio: ', FloatToStr(ratio));
+      WriteLn('KF: ', kfIdx, #9'Frm: -> ', i, #9'Ratio: ', FloatToStr(ratio));
     end;
 
     FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
@@ -2201,6 +2201,7 @@ begin
       CMPal.Clear;
     end;
 
+    WriteLn;
     Assert(ClustersLeft = 0);
 
     // sort entire palettes by use count
