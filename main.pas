@@ -3987,8 +3987,11 @@ begin
 
             BlkSkipCount := 0;
             for yxs := yx to FTileMapSize - 1 do
-              if frm^.TileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
-                Inc(BlkSkipCount);
+            begin
+              if not frm^.TileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
+                Break;
+              Inc(BlkSkipCount);
+            end;
             BlkSkipCount := min(CMaxBlkSkipCount, BlkSkipCount);
 
             // filter using heuristics to avoid unbeneficial skips
