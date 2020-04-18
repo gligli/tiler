@@ -1920,7 +1920,8 @@ procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat
 const
   CNoColor = $000000;
 var
-  col, sx, sy, tx, ty, i, j, bestI, PalIdx, LastUsed, CmlPct, AtCmlPct, acc, r, g, b, rr, gg, bb: Integer;
+  col, sx, sy, tx, ty, i, j, k, bestI, PalIdx, LastUsed, CmlPct, AtCmlPct, acc, r, g, b, rr, gg, bb: Integer;
+  found: Boolean;
   GTile: PTile;
   FSPixels: TRGBPixels;
   CMUsage, CMPal: TFPList;
@@ -2010,13 +2011,27 @@ begin
           col := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
           if col <> CNoColor then
           begin
-            New(CMItem);
-            CMItem^.Index := col;
-            CMItem^.Count := 1;
-            CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
-            CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-            CMUsage[j] := CMItem;
-            Inc(j);
+            found := False;
+            for k := 0 to j - 1 do
+              if col = PCountIndexArray(CMUsage[k])^.Index then
+              begin
+                found := True;
+                Break;
+              end;
+
+            if not found then
+            begin
+              New(CMItem);
+              CMItem^.Index := col;
+              CMItem^.Count := 1;
+              CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
+              CMItem^.Luma := FColorMapLuma[CMItem^.Index];
+              CMUsage[j] := CMItem;
+              Inc(j);
+
+              if j >= cTilePaletteSize then
+                Break;
+            end;
           end;
         end;
 
