@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, IntfGraphics, FPimage, FPWritePNG, zstream;
+  correlation, IntfGraphics, FPimage, FPWritePNG, zstream, Process;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -231,40 +231,58 @@ type
   { TMainForm }
 
   TMainForm = class(TForm)
+    btnInput: TButton;
     btnRunAll: TButton;
     cbxEndStep: TComboBox;
     cbxStartStep: TComboBox;
     cbxYilMix: TComboBox;
     chkGamma: TCheckBox;
-    chkTransPalette: TCheckBox;
+    chkLowMem: TCheckBox;
     chkReduced: TCheckBox;
     chkMirrored: TCheckBox;
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
-    chkUseTK: TCheckBox;
-    chkUseDL3: TCheckBox;
     chkReload: TCheckBox;
-    chkLowMem: TCheckBox;
+    chkTransPalette: TCheckBox;
+    chkUseDL3: TCheckBox;
+    chkUseTK: TCheckBox;
     edInput: TEdit;
     edOutputDir: TEdit;
     edReload: TEdit;
-    To1: TLabel;
+    From: TLabel;
+    imgDest: TImage;
     imgPalette: TImage;
+    imgSource: TImage;
+    imgTiles: TImage;
     Label1: TLabel;
     Label11: TLabel;
-    From: TLabel;
     Label13: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
-    Label5: TLabel;
-    Label8: TLabel;
-    lblCorrel: TLabel;
-    lblPct: TLabel;
     Label6: TLabel;
     Label7: TLabel;
     Label9: TLabel;
+    lblPct: TLabel;
     lblTileCount: TLabel;
+    odInput: TOpenDialog;
+    pbProgress: TProgressBar;
+    pcPages: TPageControl;
+    seAvgTPF: TSpinEdit;
+    seFrameCount: TSpinEdit;
+    seMaxTiles: TSpinEdit;
+    sePage: TSpinEdit;
+    sePalVAR: TFloatSpinEdit;
+    seStartFrame: TSpinEdit;
+    seTempoSmoo: TFloatSpinEdit;
+    tsTilesPal: TTabSheet;
+    To1: TLabel;
+    tsSettings: TTabSheet;
+    tsInput: TTabSheet;
+    tsOutput: TTabSheet;
+    Label5: TLabel;
+    Label8: TLabel;
+    lblCorrel: TLabel;
     MenuItem2: TMenuItem;
     MenuItem3: TMenuItem;
     MenuItem4: TMenuItem;
@@ -275,21 +293,11 @@ type
     MenuItem1: TMenuItem;
     pmProcesses: TPopupMenu;
     PopupMenu1: TPopupMenu;
-    pbProgress: TProgressBar;
-    seAvgTPF: TSpinEdit;
-    sePalVAR: TFloatSpinEdit;
     sedPalIdx: TSpinEdit;
-    seStartFrame: TSpinEdit;
-    seMaxTiles: TSpinEdit;
-    sePage: TSpinEdit;
     IdleTimer: TIdleTimer;
-    imgTiles: TImage;
-    imgSource: TImage;
-    imgDest: TImage;
-    seFrameCount: TSpinEdit;
-    seTempoSmoo: TFloatSpinEdit;
     tbFrame: TTrackBar;
 
+    procedure btnInputClick(Sender: TObject);
     procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
     procedure btnDoMakeUniqueClick(Sender: TObject);
@@ -324,6 +332,8 @@ type
     FUseDennisLeeV3: Boolean;
     FY2MixedColors: Integer;
     FLowMem: Boolean;
+    FInputPath: String;
+    FFramesPerSecond: Double;
 
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
@@ -401,6 +411,8 @@ type
     procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
 
     procedure SaveStream(AStream: TStream);
+
+    function DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; out AFPS: Double): String;
   public
     { public declarations }
   end;
@@ -811,9 +823,6 @@ const
   CShotTransSoftThres = 0.9;
   CShotTransHardThres = 0.5;
 
-var
-  inPath: String;
-
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     bmp: TPicture;
@@ -822,7 +831,7 @@ var
     try
       EnterCriticalSection(FCS);
       bmp.Bitmap.PixelFormat:=pf32bit;
-      bmp.LoadFromFile(Format(inPath, [AIndex + PtrUInt(AData)]));
+      bmp.LoadFromFile(Format(FInputPath, [AIndex + PtrUInt(AData)]));
       LeaveCriticalSection(FCS);
 
       LoadFrame(@FFrames[AIndex], bmp.Bitmap);
@@ -849,17 +858,26 @@ begin
 
   ProgressRedraw(-1, esLoad);
 
-  inPath := edInput.Text;
   StartFrame := seStartFrame.Value;
   frc := seFrameCount.Value;
 
+  if FileExists(edInput.Text) then
+  begin
+    DoExternalFFMpeg(edInput.Text, FInputPath, StartFrame, frc, FFramesPerSecond);
+    StartFrame := 1;
+  end
+  else
+  begin
+    FInputPath := edInput.Text;
+  end;
+
   if frc <= 0 then
   begin
-    if Pos('%', inPath) > 0 then
+    if Pos('%', FInputPath) > 0 then
     begin
       i := 0;
       repeat
-        fn := Format(inPath, [i + StartFrame]);
+        fn := Format(FInputPath, [i + StartFrame]);
         Inc(i);
       until not FileExists(fn);
 
@@ -879,7 +897,7 @@ begin
 
   for i := 0 to High(FFrames) do
   begin
-    fn := Format(inPath, [i + StartFrame]);
+    fn := Format(FInputPath, [i + StartFrame]);
     if not FileExists(fn) then
     begin
       SetLength(FFrames, 0);
@@ -891,7 +909,7 @@ begin
   bmp := TPicture.Create;
   try
     bmp.Bitmap.PixelFormat:=pf32bit;
-    bmp.LoadFromFile(Format(inPath, [StartFrame]));
+    bmp.LoadFromFile(Format(FInputPath, [StartFrame]));
     ReframeUI(bmp.Width div cTileWidth, bmp.Height div cTileWidth);
   finally
     bmp.Free;
@@ -902,7 +920,7 @@ begin
 {$if false}
   kfSL := TStringList.Create;
   try
-    fn := ChangeFileExt(Format(inPath, [0]), '.kf');
+    fn := ChangeFileExt(Format(FInputPath, [0]), '.kf');
     if FileExists(fn) then
     begin
       kfSL.LoadFromFile(fn);
@@ -914,7 +932,7 @@ begin
     kfIdx := 0;
     for i := 0 to High(FFrames) do
     begin
-      fn := ChangeFileExt(Format(inPath, [i + StartFrame]), '.kf');
+      fn := ChangeFileExt(Format(FInputPath, [i + StartFrame]), '.kf');
       isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
       if isKf then
       begin
@@ -927,7 +945,7 @@ begin
     kfIdx := -1;
     for i := 0 to High(FFrames) do
     begin
-      fn := ChangeFileExt(Format(inPath, [i + StartFrame]), '.kf');
+      fn := ChangeFileExt(Format(FInputPath, [i + StartFrame]), '.kf');
       isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
       if isKf then
         Inc(kfIdx);
@@ -1000,6 +1018,13 @@ begin
   ProgressRedraw(2);
 
   tbFrameChange(nil);
+end;
+
+procedure TMainForm.btnInputClick(Sender: TObject);
+begin
+  odInput.InitialDir := ExtractFileDir(edInput.Text);
+  if odInput.Execute then
+    edInput.Text := odInput.FileName;
 end;
 
 procedure TMainForm.btnReindexClick(Sender: TObject);
@@ -1245,6 +1270,7 @@ end;
 
 procedure TMainForm.tbFrameChange(Sender: TObject);
 begin
+  IdleTimer.Interval := round(1000 / FFramesPerSecond);
   Screen.Cursor := crDefault;
   seAvgTPFEditingDone(nil);
   Render(tbFrame.Position, chkPlay.Checked, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, sedPalIdx.Value, sePage.Value);
@@ -1764,17 +1790,6 @@ begin
   imgDest.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
   imgDest.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
   imgPalette.Height := min(256, 16 * cPaletteCount);
-
-  imgTiles.Left := imgSource.Left - imgTiles.Width;
-  if imgTiles.Left < 0 then
-  begin
-    imgDest.Left := imgDest.Left - imgTiles.Left;
-    imgSource.Left := imgSource.Left - imgTiles.Left;
-    imgTiles.Left := 0;
-  end;
-
-  imgDest.Top := imgSource.Top + imgSource.Height;
-  imgPalette.Top := imgTiles.Top + imgTiles.Height;
 
   sedPalIdx.MaxValue := cPaletteCount - 1;
 end;
@@ -3930,7 +3945,7 @@ var
     DoCmd(gtSetDimensions, 0);
     DoWord(FTileMapWidth);
     DoWord(FTileMapHeight);
-    DoDWord(1000*1000*1000 div 24);
+    DoDWord(round(1000*1000*1000 / FFramesPerSecond));
 
     for j := 0 to cPaletteCount - 1 do
     begin
@@ -4051,7 +4066,44 @@ begin
   end;
 
   StreamSize := AStream.Size - StartPos;
-  WriteLn('Written: ', StreamSize, #9'Bitrate: ', FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames)) + ' kbpf  '#9'(' + FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames) * 24.0)+' kbps)');
+  WriteLn('Written: ', StreamSize, #9'Bitrate: ', FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames)) + ' kbpf  '#9'(' + FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames) * FFramesPerSecond)+' kbps)');
+end;
+
+function TMainForm.DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; out AFPS: Double): String;
+var
+  i: Integer;
+  Output, ErrOut, vfl, s: String;
+  Process: TProcess;
+begin
+  Process := TProcess.Create(nil);
+
+  Result := IncludeTrailingPathDelimiter(sysutils.GetTempDir) + 'tiler_png\';
+  ForceDirectories(Result);
+
+  DeleteDirectory(Result, True);
+
+  AVidPath := Result + '%.4d.png';
+
+  vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(MaxInt) + '),setpts=PTS-STARTPTS" ';
+  if AFrameCount > 0 then
+  begin
+    vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(AStartFrame + AFrameCount) + '),setpts=PTS-STARTPTS" ';
+  end;
+
+  Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
+  Process.Executable := 'ffmpeg.exe';
+  Process.Parameters.Add('-y -i "' + AFN + '" ' + vfl + ' -compression_level 0 -pix_fmt rgb24 "' + Result + '%04d.png' + '"');
+  Process.ShowWindow := swoHIDE;
+  Process.Priority := ppIdle;
+
+  i := 0;
+  internalRuncommand(Process, Output, ErrOut, i, True); // destroys Process
+
+  s := Copy(Output, 1, Pos(' fps', Output) - 1);
+  s := ReverseString(s);
+  s := Copy(s, 1, Pos(' ', s) - 1);
+  s := ReverseString(s);
+  AFPS := StrToFloatDef(s, 24.0, InvariantFormatSettings);
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
@@ -4061,6 +4113,7 @@ var
 begin
   InitializeCriticalSection(FCS);
 
+  pcPages.ActivePage := tsSettings;
   ReframeUI(160, 66);
 
   FormatSettings.DecimalSeparator := '.';

@@ -53,6 +53,10 @@ function ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; cnt: Integer; 
 function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 
+function InvariantFormatSettings: TFormatSettings;
+function internalRuncommand(p:TProcess;var outputstring:string;
+                            var stderrstring:string; var exitstatus:integer; PrintOut: Boolean):integer;
+
 implementation
 
 var
@@ -462,6 +466,11 @@ end;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
 begin
   Result := GetLineInt(lines[1]);
+end;
+
+function InvariantFormatSettings: TFormatSettings;
+begin
+  Result := GInvariantFormatSettings;
 end;
 
 initialization
