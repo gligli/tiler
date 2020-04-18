@@ -729,6 +729,7 @@ begin
   ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FFrames));
   ProgressRedraw(1);
   ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, High(FKeyFrames));
+  WriteLn;
   ProgressRedraw(2);
   ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
   ProgressRedraw(3);
@@ -2201,7 +2202,6 @@ begin
       CMPal.Clear;
     end;
 
-    WriteLn;
     Assert(ClustersLeft = 0);
 
     // sort entire palettes by use count
