@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, kmeans, IntfGraphics, FPimage, FPWritePNG, zbase, zdeflate, zstream;
+  correlation, IntfGraphics, FPimage, FPWritePNG, zstream;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -207,13 +207,13 @@ type
   end;
 
   TKeyFrame = record
+    StartFrame, EndFrame, FrameCount: Integer;
+    FramesLeft: Integer;
+    TileDS: PTileDataset;
+    CS: TRTLCriticalSection;
+    MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
     PaletteIndexes: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
     PaletteRGB: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
-    StartFrame, EndFrame, FrameCount: Integer;
-    TileDS: PTileDataset;
-    MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
-    FramesLeft: Integer;
-    CS: TRTLCriticalSection;
   end;
 
   { T8BitPortableNetworkGraphic }
@@ -1894,26 +1894,9 @@ begin
     Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
 end;
 
-function ComparePalCmlLuma(Item1,Item2,UserParameter:Pointer):Integer;
-var
-  i: Integer;
-  l1, l2: Int64;
-  a1, a2: TIntegerDynArray;
-  slf: TMainForm;
+function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
 begin
-  slf := TMainForm(UserParameter);
-
-  a1 := PIntegerDynArray(Item1)^;
-  a2 := PIntegerDynArray(Item2)^;
-  l1 := 0;
-  l2 := 0;
-  for i := 0 to cTilePaletteSize - 1 do
-  begin
-    l1 += slf.FColorMapLuma[a1[i]];
-    l2 += slf.FColorMapLuma[a2[i]];
-  end;
-
-  Result := CompareValue(l1, l2);
+  Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
@@ -1937,6 +1920,12 @@ var
   Dataset: TFloatDynArray2;
   Clusters: TIntegerDynArray;
   di, ClustersLeft: Integer;
+
+  PaletteUseCount: array[0 .. cPaletteCount - 1] of record
+    UseCount: Integer;
+    Palette: TIntegerDynArray;
+  end;
+
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
@@ -1994,6 +1983,7 @@ begin
                 end;
 
                 Dec(ClustersLeft);
+                Inc(PaletteUseCount[PalIdx].UseCount);
               end;
 
               Inc(di);
@@ -2082,6 +2072,7 @@ begin
                     Inc(TrueColorUsage[col]);
                   end;
 {$endif}
+                Inc(PaletteUseCount[PalIdx].UseCount);
               end;
 
               Inc(di);
@@ -2202,7 +2193,12 @@ begin
 
     Assert(ClustersLeft = 0);
 
-    QuickSort(AKeyFrame^.PaletteIndexes[0], 0, cPaletteCount - 1, SizeOf(TIntegerDynArray), @ComparePalCmlLuma, Self);
+    // sort entire palettes by use count
+    for PalIdx := 0 to cPaletteCount - 1 do
+      PaletteUseCount[PalIdx].Palette := AKeyFrame^.PaletteIndexes[PalIdx];
+    QuickSort(PaletteUseCount[0], 0, cPaletteCount - 1, SizeOf(PaletteUseCount[0]), @ComparePaletteUseCount, AKeyFrame);
+    for PalIdx := 0 to cPaletteCount - 1 do
+      AKeyFrame^.PaletteIndexes[PalIdx] := PaletteUseCount[PalIdx].Palette;
 
     for PalIdx := 0 to cPaletteCount - 1 do
     begin
@@ -3956,7 +3952,7 @@ var
   frm: PFrame;
   tmi: PTileMapItem;
 begin
-  StartPos := AStream.Position;
+  StartPos := AStream.Size;
 
   ZStream := TMemoryStream.Create;
   try
@@ -4028,11 +4024,12 @@ begin
           KFCount := FKeyFrames[kf].EndFrame - LastKF + 1;
           LastKF := FKeyFrames[kf].EndFrame + 1;
 
+          AStream.Position := AStream.Size;
           KFSize := AStream.Position;
           LZCompress(ZStream, False, AStream);
           ZStream.Clear;
 
-          KFSize := AStream.Position - KFSize;
+          KFSize := AStream.Size - KFSize;
 
           WriteLn('Frm: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
         end;
@@ -4042,7 +4039,7 @@ begin
     ZStream.Free;
   end;
 
-  StreamSize := AStream.Position - StartPos;
+  StreamSize := AStream.Size - StartPos;
   WriteLn('Written: ', StreamSize, #9'Bitrate: ', FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames)) + ' kbpf  '#9'(' + FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames) * 24.0)+' kbps)');
 end;
 
