@@ -37,8 +37,7 @@ type
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
-  OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 
 procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
 function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
@@ -280,109 +279,77 @@ begin
   end;
 end;
 
-procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
-  OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 var
-  i, PrevLen, Clu, Inp, RetCode: Integer;
-  TrainFN, TrainStmt, TestFN, CrFN, Line, Output, ErrOut, CmdLine: String;
-  SL: TStringList;
+  i, j, Clu, Inp, st: Integer;
+  Line, Output, ErrOut, InFN: String;
+  OutSL, Shuffler: TStringList;
+  FS: TFileStream;
   Process: TProcess;
+  OutputStream: TMemoryStream;
+  pdi: PDouble;
+  pfo: PSingle;
+  fbuf: TSingleDynArray;
 begin
-  if Assigned(TrainDS) and (ClusterCount >= Length(TrainDS)) then
-  begin
-    // force a valid dataset by duplicating some lines
-    PrevLen := Length(TrainDS);
-    SetLength(TrainDS, ClusterCount + 1);
-    for i := PrevLen to ClusterCount do
-      TrainDS[i] := TrainDS[i - PrevLen];
-  end;
-
-  Process := TProcess.Create(nil);
-  SL := TStringList.Create;
+  OutSL := TStringList.Create;
+  Shuffler := TStringList.Create;
+  OutputStream := TMemoryStream.Create;
   try
-    if Assigned(TrainDS) then
-      TrainFN := GenerateSVMLightFile(TrainDS, False);
-
-    if Assigned(TestDS) then
-      TestFN := GenerateSVMLightFile(TestDS, False);
-
-    if Assigned(Centroids) then
-    begin
-      CrFN := GetTempFileName('', 'centroids-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
-      if not Assigned(TrainDS) then
-        Centroids.SaveToFile(CrFN)
+    InFN := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.bin');
+    FS := TFileStream.Create(InFN, fmCreate or fmShareDenyWrite);
+    try
+      FS.WriteDWord(Length(Dataset));
+      FS.WriteDWord(Length(Dataset[0]));
+      SetLength(fbuf, Length(Dataset[0]));
+      for i := 0 to High(Dataset) do
+      begin
+        pdi := @Dataset[i, 0];
+        pfo := @fbuf[0];
+        for j := 0 to High(Dataset[0]) do
+        begin
+          pfo^ := pdi^;
+          Inc(pdi);
+          Inc(pfo);
+        end;
+        FS.Write(fbuf[0], Length(Dataset[0]) * SizeOf(pfo^));
+      end;
+    finally
+      FS.Free;
     end;
 
+    Process := TProcess.Create(nil);
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-    Process.Executable := IfThen(SizeOf(TFloat) = SizeOf(Double), 'yakmo.exe', 'yakmo_single.exe');
-
-    CmdLine := IfThen(OutputClusters, ' --output=2 ');
-    CmdLine += IfThen(IterationCount < 0, ' --iteration=10000 ', ' --iteration=' + IntToStr(IterationCount) + ' ');
-    CmdLine += IfThen((ClusterCount >= 0) and Assigned(TrainDS), ' --num-cluster=' + IntToStr(ClusterCount) + ' ');
-    CmdLine += IfThen(RestartCount >= 0, ' --num-result=' + IntToStr(RestartCount) + ' ');
-
-    TrainStmt := IfThen(TrainFN = '', '-', '"' + TrainFN + '"');
-
-    if Assigned(TestDS) then
-      CmdLine := TrainStmt + ' "' + CrFN + '" "' + TestFN + '" ' + CmdLine
-    else if Assigned(Centroids) then
-      CmdLine := TrainStmt + ' "' + CrFN + '" - ' + CmdLine
-    else
-      CmdLine := TrainStmt + ' - - ' + CmdLine;
-
-    Process.Parameters.Add(CmdLine);
+    Process.Executable := 'omp_main.exe';
+    Process.Parameters.Add('-b -i "' + InFN + '" -n ' + IntToStr(ClusterCount) + ' -t 0');
     Process.ShowWindow := swoHIDE;
     Process.Priority := ppIdle;
 
-    RetCode := 0;
-    internalRuncommand(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
+    st := 0;
+    internalRuncommand(Process, Output, ErrOut, st, PrintProgress); // destroys Process
 
-    if RetCode <> 0 then
-      DebugLn('Yakmo failed! RetCode: ' + IntToStr(RetCode) + sLineBreak + 'Msg: ' + ErrOut + sLineBreak + 'CmdLine: ' + CmdLine);
+    OutSL.LoadFromFile(InFN + '.membership');
 
-    if Assigned(TrainDS) then
-      DeleteFile(PChar(TrainFN));
+    DeleteFile(PChar(InFN));
+    DeleteFile(PChar(InFN + '.membership'));
+    DeleteFile(PChar(InFN + '.cluster_centres'));
 
-    if Assigned(TestDS) then
-      DeleteFile(PChar(TestFN));
-
-    if Assigned(Centroids) then
+    for i := 0 to OutSL.Count - 1 do
     begin
-      if Assigned(TrainDS) then
-      begin
-        if FileExists(CrFN) then
-          Centroids.LoadFromFile(CrFN)
-        else
-          GenerateSVMLightData(TrainDS, Centroids, True);
-      end;
-
-      DeleteFile(PChar(CrFN));
-    end;
-
-    if OutputClusters then
-    begin
-      if (Pos(#10, Output) <> Pos(#13#10, Output) + 1) then
-        SL.LineBreak := #10;
-
-      SL.Text := Output;
-
-      SetLength(Clusters, SL.Count);
-      for i := 0 to SL.Count - 1 do
-      begin
-        Line := SL[i];
-        if TryStrToInt(Copy(Line, 1, Pos(' ', Line) - 1), Inp) and
-            TryStrToInt(RightStr(Line, Pos(' ', ReverseString(Line)) - 1), Clu) then
-          Clusters[Inp] := Clu;
-      end;
+      Line := OutSL[i];
+      if TryStrToInt(Copy(Line, 1, Pos(' ', Line) - 1), Inp) and
+          TryStrToInt(RightStr(Line, Pos(' ', ReverseString(Line)) - 1), Clu) then
+        Clusters[Inp] := Clu;
     end;
   finally
-    SL.Free;
+    OutputStream.Free;
+    Shuffler.Free;
+    OutSL.Free;
   end;
 end;
 
 procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
 var
-  i, j: Integer;
+  i, j, cnt: Integer;
   Line: String;
 begin
   Output.Clear;
@@ -397,10 +364,32 @@ begin
 
   for i := 0 to High(Dataset) do
   begin
-    Line := Format('%d 1:%e', [i, Dataset[i, 0]], GInvariantFormatSettings);
+    Line := Format('%d ', [i], GInvariantFormatSettings);
 
-    for j := 1 to High(Dataset[0]) do
-      Line := Format('%s %d:%e', [Line, j + 1, Dataset[i, j]], GInvariantFormatSettings);
+    cnt := Length(Dataset[i]);
+    j := 0;
+
+    while cnt > 16 do
+    begin
+      Line := Format('%s %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f %d:%.12f',
+        [
+          Line,
+          j + 1,  Dataset[i, j + 0],  j + 2,  Dataset[i, j + 1],  j + 3,  Dataset[i, j + 2],  j + 4,  Dataset[i, j + 3],
+          j + 5,  Dataset[i, j + 4],  j + 6,  Dataset[i, j + 5],  j + 7,  Dataset[i, j + 6],  j + 8,  Dataset[i, j + 7],
+          j + 9,  Dataset[i, j + 8],  j + 10, Dataset[i, j + 9],  j + 11, Dataset[i, j + 10], j + 12, Dataset[i, j + 11],
+          j + 13, Dataset[i, j + 12], j + 14, Dataset[i, j + 13], j + 15, Dataset[i, j + 14], j + 16, Dataset[i, j + 15]
+        ],
+        GInvariantFormatSettings);
+      Dec(cnt, 16);
+      Inc(j, 16);
+    end;
+
+    while cnt > 1 do
+    begin
+      Line := Format('%s %d:%.12f', [Line, j + 1,  Dataset[i, j]], GInvariantFormatSettings);
+      Dec(cnt);
+      Inc(j);
+    end;
 
     Output.Add(Line);
   end;

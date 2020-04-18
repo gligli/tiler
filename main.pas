@@ -1918,7 +1918,7 @@ end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
 const
-  CNoColor = $010101;
+  CNoColor = $000000;
 var
   col, sx, sy, tx, ty, i, j, bestI, PalIdx, LastUsed, CmlPct, AtCmlPct, acc, r, g, b, rr, gg, bb: Integer;
   GTile: PTile;
@@ -1954,7 +1954,7 @@ begin
   assert(di = Length(Dataset));
 
   if di > 1 then
-    DoExternalYakmo(Dataset, nil, cPaletteCount, 7, -1, True, False, nil, Clusters)
+    DoExternalKMeans(Dataset, cPaletteCount, True, Clusters)
   else
     FillDWord(Clusters[0], Length(Clusters), 0);
 
@@ -2020,17 +2020,16 @@ begin
           end;
         end;
 
-        if j < cTilePaletteSize then
+        while j < cTilePaletteSize do
         begin
-           New(CMItem);
-           CMItem^.Index := CNoColor;
-           CMItem^.Count := 1;
-           CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
-           CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-           CMUsage[j] := CMItem;
+          New(CMItem);
+          CMItem^.Index := CNoColor;
+          CMItem^.Count := 1;
+          CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
+          CMItem^.Luma := FColorMapLuma[CMItem^.Index];
+          CMUsage[j] := CMItem;
+          Inc(j);
         end;
-
-        Assert(j = cTilePaletteSize);
 
         CMPal.Clear;
         CMPal.Assign(CMUsage);
