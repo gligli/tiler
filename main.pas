@@ -116,15 +116,15 @@ type
 
   TGTMCommand = ( // commandBits: palette # bit count + 2 (H/V mirrors)
     gtShortTileIdxStart = 0, // short tile index #0 ...
-    gtShortTileIdxEnd = 895, // ... short tile index #767
+    gtShortTileIdxEnd = 895, // ... short tile index #895
 
     gtSkipBlockStart = 896, // skipping 1 tile ...
     gtSkipBlockEnd = 1015, // ... skipping 120 tiles
 
     gtExtendedCommand = 1016, // data -> custom commands, proprietary extensions, ...; commandBits = extended command #
 
-    gtTileset = 1019, // data -> 32 bits tile count; 64 byte indexes per tile; commandBits : highest index
-    gtSetDimensions = 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits)
+    gtTileset = 1019, // data -> 32 bits start tile; 32 bits end tile; 64 byte indexes per tile; commandBits : highest index
+    gtSetDimensions = 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); 32 bits tile count;
     gtLoadPaletteRGBA32 = 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits = palette #; commandBits H/V mirrors: palette format (00: RGBA32)
     gtmFrameEnd = 1022, // commandBits bit 0 -> keyframe end
     gtmLongTileIdx = 1023 // data -> 32 bits tile index
@@ -3938,11 +3938,6 @@ var
   var
     i, j: Integer;
   begin
-    DoCmd(gtSetDimensions, 0);
-    DoWord(FTileMapWidth);
-    DoWord(FTileMapHeight);
-    DoDWord(round(1000*1000*1000 / FFramesPerSecond));
-
     for j := 0 to cPaletteCount - 1 do
     begin
       DoCmd(gtLoadPaletteRGBA32, (j shl 2) or $00);
@@ -3953,15 +3948,22 @@ var
 
   procedure WriteTiles;
   var
-    i, cnt: Integer;
+    i, TileCnt: Integer;
   begin
-    DoCmd(gtTileset, cTilePaletteSize - 1);
-
-    cnt := 0;
+    TileCnt := 0;
     for i := 0 to High(FTiles) do
       if FTiles[i]^.Active then
-        Inc(cnt);
-    DoDWord(cnt);
+        Inc(TileCnt);
+
+    DoCmd(gtSetDimensions, 0);
+    DoWord(FTileMapWidth); // frame tilemap width
+    DoWord(FTileMapHeight); // frame tilemap height
+    DoDWord(round(1000*1000*1000 / FFramesPerSecond)); // frame length in nanoseconds
+    DoDWord(TileCnt); // tile count
+
+    DoCmd(gtTileset, cTilePaletteSize - 1);
+    DoDWord(0); // start tile
+    DoDWord(TileCnt - 1); // end tile
 
     for i := 0 to High(FTiles) do
       if FTiles[i]^.Active then
