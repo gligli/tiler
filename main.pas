@@ -9,7 +9,7 @@ interface
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
   StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  correlation, IntfGraphics, FPimage, FPWritePNG, zstream, Process;
+  IntfGraphics, FPimage, FPWritePNG, zstream, Process;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -346,7 +346,8 @@ type
 
     FCS: TRTLCriticalSection;
 
-    function ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+    function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
+    function ComputeCorrelation(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeInterFrameCorrelation(a, b: PFrame): TFloat;
 
     procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
@@ -644,7 +645,7 @@ begin
   W.CompressionLevel := clfastest;
 end;
 
-function TMainForm.ComputeCorrelation(a: TIntegerDynArray; b: TIntegerDynArray): TFloat;
+function TMainForm.ComputeCorrelation(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
 var
   i: Integer;
   ya, yb: TDoubleDynArray;
@@ -662,7 +663,7 @@ begin
     yb[i] := fr; yb[i + Length(a)] := fg; yb[i + Length(a) * 2] := fb;
   end;
 
-  Result := PearsonCorrelation(ya, yb, Length(a) * 3);
+  Result := PearsonCorrelation(ya, yb);
 end;
 
 function TMainForm.ComputeInterFrameCorrelation(a, b: PFrame): TFloat;
@@ -685,7 +686,8 @@ begin
     yb[i + sz * 1] := b^.FSPixels[i * 3 + 1];
     yb[i + sz * 2] := b^.FSPixels[i * 3 + 2];
   end;
-  Result := PearsonCorrelation(ya, yb, Length(ya));
+
+  Result := PearsonCorrelation(ya, yb);
 end;
 
 { TMainForm }
@@ -1274,6 +1276,35 @@ begin
   Screen.Cursor := crDefault;
   seAvgTPFEditingDone(nil);
   Render(tbFrame.Position, chkPlay.Checked, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, sedPalIdx.Value, sePage.Value);
+end;
+
+function TMainForm.PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
+var
+  mx, my, num, den, denx, deny: TFloat;
+  i: Integer;
+begin
+  Assert(Length(x) = Length(y));
+
+  mx := mean(x);
+  my := mean(y);
+
+  num := 0.0;
+  denx := 0.0;
+  deny := 0.0;
+  for i := 0 to High(x) do
+  begin
+    num += (x[i] - mx) * (y[i] - my);
+    denx += sqr(x[i] - mx);
+    deny += sqr(y[i] - my);
+  end;
+
+  denx := sqrt(denx);
+  deny := sqrt(deny);
+  den := denx * deny;
+
+  Result := 0.0;
+  if den <> 0.0 then
+    Result := num / den;
 end;
 
 function TMainForm.GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
@@ -4096,8 +4127,10 @@ begin
 
   i := 0;
   internalRuncommand(Process, Output, ErrOut, i, True); // destroys Process
+  WriteLn;
 
-  s := Copy(Output, 1, Pos(' fps', Output) - 1);
+  s := ErrOut;
+  s := Copy(s, 1, Pos(' fps', s) - 1);
   s := ReverseString(s);
   s := Copy(s, 1, Pos(' ', s) - 1);
   s := ReverseString(s);
