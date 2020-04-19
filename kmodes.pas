@@ -832,7 +832,7 @@ begin
         if CountClusterMembers(old_clust) = 0 then
         begin
           from_clust := GetMaxClusterMembers(dummy);
-          writeln('zero', #9, from_clust, #9, dummy);
+          //writeln('zero', #9, from_clust, #9, dummy);
 
           cnt := 0;
           for i := 0 to High(membship) do

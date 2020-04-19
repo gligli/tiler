@@ -142,10 +142,11 @@ type
 
   TRGBPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
   TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
+  PRGBPixels = ^TRGBPixels;
   PPalPixels = ^TPalPixels;
 
   TTile = record // /!\ update CopyTile each time this structure is changed /!\
-    RGBPixels: TRGBPixels;
+    RGBPixels: PRGBPixels;
     PalPixels: TPalPixels;
 
     RGBDCT: TFloatDynArray;
@@ -170,11 +171,14 @@ type
   PKeyFrame = ^TKeyFrame;
 
   TFrame = record
-    Index: Integer;
-    Tiles: array of TTile;
-    TileMap: array of array of TTileMapItem;
-    FSPixels: TByteDynArray;
     KeyFrame: PKeyFrame;
+    Index: Integer;
+
+    TileMap: array of array of TTileMapItem;
+
+    Tiles: array of TTile;
+    TilesRGBPixels: array of TRGBPixels;
+    FSPixels: TByteDynArray;
   end;
 
   PFrame = ^TFrame;
@@ -985,7 +989,7 @@ begin
       av := -1.0;
       LastKFIdx := i;
 
-      WriteLn('KF: ', kfIdx, #9'Frm: -> ', i, #9'Ratio: ', FloatToStr(ratio));
+      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'Ratio: ', FloatToStr(ratio));
     end;
 
     FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
@@ -1744,7 +1748,7 @@ begin
   for y := 0 to (cTileWidth - 1) do
   begin
     for x := 0 to (cTileWidth - 1) do
-      FromRGB(ATile.RGBPixels[y, x], Pixels[y, x, 0], Pixels[y, x, 1], Pixels[y, x, 2]);
+      FromRGB(ATile.RGBPixels^[y, x], Pixels[y, x, 0], Pixels[y, x, 1], Pixels[y, x, 2]);
 
     Pixels[y, -1, 0] := Pixels[y, 0, 0];
     Pixels[y, -1, 1] := Pixels[y, 0, 1];
@@ -1875,7 +1879,7 @@ begin
        for x := 0 to (cTileWidth - 1) do
        begin
          map_value := cDitheringMap[(y shl 3) + x];
-         DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
+         DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels^[y, x], list);
          ATile.PalPixels[y, x] := list[map_value];
        end;
     end
@@ -1884,7 +1888,7 @@ begin
       for y := 0 to (cTileWidth - 1) do
         for x := 0 to (cTileWidth - 1) do
         begin
-          col := ATile.RGBPixels[y, x];
+          col := ATile.RGBPixels^[y, x];
           map_value := cDitheringMap[(y shl 3) + x];
           SpinEnter(@Plan.CacheLock);
           cachePos := Plan.CountCache[col];
@@ -1897,7 +1901,7 @@ begin
           begin
             SpinLeave(@Plan.CacheLock);
 
-            DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
+            DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels^[y, x], list);
             ATile.PalPixels[y, x] := list[map_value];
 
             SpinEnter(@Plan.CacheLock);
@@ -1922,7 +1926,7 @@ begin
       for x := 0 to (cTileWidth - 1) do
       begin
         map_value := cDitheringMap[(y shl 3) + x];
-        count := DeviseBestMixingPlan(Plan, ATile.RGBPixels[y,x], list);
+        count := DeviseBestMixingPlan(Plan, ATile.RGBPixels^[y,x], list);
         map_value := (map_value * count) shr 6;
         ATile.PalPixels[y, x] := list[map_value];
       end;
@@ -2173,7 +2177,7 @@ begin
         end;
         AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
 
-        WriteLn('KF: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct);
+        WriteLn('Frame: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct);
 
         CmlPct := max(CmlPct, min(LastUsed + 1, cTilePaletteSize * cPaletteCount)); // ensure enough colors
 
@@ -2293,6 +2297,7 @@ begin
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 
   SetLength(TileDCT, cTileDCTSize);
+  FillChar(BestTile, SizeOf(TTile), 0);
 
   for sy := 0 to FTileMapHeight - 1 do
     for sx := 0 to FTileMapWidth - 1 do
@@ -2325,15 +2330,21 @@ begin
         CopyTile(BestTile, AFrame^.Tiles[sx + sy * FTileMapWidth]);
 
         AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
+
         AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := system.Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
         AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
-        SetLength(BestTile.PaletteIndexes, 0);
+        SetLength(AFrame^.Tiles[sx + sy * FTileMapWidth].RGBDCT, 0);
+
         SetLength(BestTile.PaletteRGB, 0);
+        SetLength(BestTile.PaletteIndexes, 0);
+        SetLength(BestTile.RGBDCT, 0);
+
         OrigTile^ := BestTile;
       end;
-
-      SetLength(OrigTile^.RGBDCT, 0);
     end;
+
+  // free up frame memory
+  SetLength(AFrame^.FSPixels, 0);
 
   EnterCriticalSection(AFrame^.KeyFrame^.CS);
   Dec(AFrame^.KeyFrame^.FramesLeft);
@@ -2351,7 +2362,7 @@ begin
       TerminatePlan(AFrame^.KeyFrame^.MixingPlans[i]);
     end;
 
-    WriteLn('KF: ', AFrame^.KeyFrame^.StartFrame, #9'CacheCnt: ', cnt, #9'CacheMax: ', mx);
+    WriteLn('Frame: ', AFrame^.KeyFrame^.StartFrame, #9'CacheCnt: ', cnt, #9'CacheMax: ', mx);
   end;
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 end;
@@ -2551,7 +2562,7 @@ begin
         if HMirror then xx := cTileWidth - 1 - x;
         if VMirror then yy := cTileWidth - 1 - y;
 
-        ToCpn(ATile.RGBPixels[yy,xx], x, y);
+        ToCpn(ATile.RGBPixels^[yy,xx], x, y);
       end;
   end;
 
@@ -2700,6 +2711,7 @@ begin
   FillChar(AFrame^, SizeOf(TFrame), 0);
 
   SetLength(AFrame^.Tiles, FTileMapSize);
+  SetLength(AFrame^.TilesRGBPixels, FTileMapSize);
   SetLength(AFrame^.TileMap, FTileMapHeight, FTileMapWidth);
   SetLength(AFrame^.FSPixels, FScreenHeight * FScreenWidth * 3);
 
@@ -2733,7 +2745,8 @@ begin
           ty := j and (cTileWidth - 1);
 
           col := SwapRB(col);
-          AFrame^.Tiles[ti].RGBPixels[ty, tx] := col;
+
+          AFrame^.TilesRGBPixels[ti][ty, tx] := col;
 
           FromRGB(col, pfs[0], pfs[1], pfs[2]);
           Inc(pfs, 3);
@@ -2742,20 +2755,10 @@ begin
 
     DitherFloydSteinberg(AFrame^.FSPixels);
 
-    //pfs := @AFrame^.FSPixels[0];
-    //for j := 0 to (FScreenHeight - 1) do
-    //  for i := 0 to (FScreenWidth - 1) do
-    //    begin
-    //      ti := FTileMapWidth * (j shr 3) + (i shr 3);
-    //      tx := i and (cTileWidth - 1);
-    //      ty := j and (cTileWidth - 1);
-    //
-    //      AFrame^.Tiles[ti].RGBPixels[ty, tx] := ToRGB(pfs[0], pfs[1], pfs[2]);
-    //      Inc(pfs, 3);
-    //    end;
-
     for i := 0 to (FTileMapSize - 1) do
     begin
+      AFrame^.Tiles[i].RGBPixels := @AFrame^.TilesRGBPixels[i];
+
       for ty := 0 to (cTileWidth - 1) do
         for tx := 0 to (cTileWidth - 1) do
           AFrame^.Tiles[i].PalPixels[ty, tx] := 0;
@@ -2808,23 +2811,17 @@ procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, re
         txm := tx;
         if hmir and mirrored then txm := cTileWidth - 1 - txm;
 
+        r := 255; g := 0; b := 255;
         if dithered and Assigned(pal) then
           FromRGB(pal[tilePtr^.PalPixels[tym, txm]], r, g, b)
-        else
-          FromRGB(tilePtr^.RGBPixels[tym, txm], r, g, b);
+        else if Assigned(tilePtr^.RGBPixels) then
+          FromRGB(tilePtr^.RGBPixels^[tym, txm], r, g, b);
 
         if gamma then
         begin
           r := round(GammaCorrect(2, r) * 255.0);
           g := round(GammaCorrect(2, g) * 255.0);
           b := round(GammaCorrect(2, b) * 255.0);
-        end;
-
-        if not tilePtr^.Active then
-        begin
-          r := 255;
-          g := 0;
-          b := 255;
         end;
 
         psl^ := SwapRB(ToRGB(r, g, b));
@@ -3111,7 +3108,7 @@ begin
   t := GetTickCount;
   if CurFrameIdx >= 0 then
   begin
-    WriteLn('Step: ', GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), ' / ', FProgressPosition,
+    WriteLn('Step: ', Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), 3), ' / ', FProgressPosition,
       #9'Time: ', FormatFloat('0.000', (t - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (t - FProgressStartTime) / 1000));
   end;
   FProgressPrevTime := t;
@@ -3150,7 +3147,6 @@ begin
 end;
 
 procedure TMainForm.CopyTile(const Src: TTile; var Dest: TTile);
-var x,y: Integer;
 begin
   Dest.Active := Src.Active;
   Dest.TmpIndex := Src.TmpIndex;
@@ -3166,12 +3162,8 @@ begin
   if Assigned(Dest.PaletteRGB) then
     move(Src.PaletteRGB[0], Dest.PaletteRGB[0], Length(Src.PaletteRGB) * SizeOf(Integer));
 
-  for y := 0 to cTileWidth - 1 do
-    for x := 0 to cTileWidth - 1 do
-    begin
-      Dest.RGBPixels[y, x] := Src.RGBPixels[y, x];
-      Dest.PalPixels[y, x] := Src.PalPixels[y, x];
-    end;
+  Move(Src.PalPixels[0, 0], Dest.PalPixels[0, 0], SizeOf(TPalPixels));
+  Dest.RGBPixels := Src.RGBPixels;
 end;
 
 procedure TMainForm.PrepareDitherTiles(AFrame: PFrame);
@@ -3211,7 +3203,6 @@ begin
     FTiles[j]^.Active := False;
     FTiles[j]^.MergeIndex := BestIdx;
 
-    FillChar(FTiles[j]^.RGBPixels, SizeOf(FTiles[j]^.RGBPixels), 0);
     FillChar(FTiles[j]^.PalPixels, SizeOf(FTiles[j]^.PalPixels), 0);
   end;
 end;
@@ -3323,7 +3314,7 @@ begin
 
   assert(di = TRSize * 4);
 
-  DebugLn(['KF: ', AKF^.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset)]);
+  DebugLn(['Frame: ', AKF^.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset)]);
 
   DS^.KDT := ann_kdtree_create(PPFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
 end;
@@ -3716,8 +3707,8 @@ begin
       ClusterCount[j] += accf;
   end;
 
-  for i := 0 to sqr(cTileWidth) - 1 do
-    WriteLn('EntropyBin # ', i, #9, dis[i], #9, FloatToStr(ClusterCount[i]));
+  //for i := 0 to sqr(cTileWidth) - 1 do
+  //  WriteLn('EntropyBin # ', i, #9, dis[i], #9, FloatToStr(ClusterCount[i]));
 
   InitMergeTiles;
 
@@ -4086,7 +4077,7 @@ begin
 
           KFSize := AStream.Size - KFSize;
 
-          WriteLn('Frm: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
+          WriteLn('Frame: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
         end;
       end;
     end;
@@ -4142,18 +4133,19 @@ var
   col, i, sr: Integer;
   es: TEncoderStep;
 begin
-  InitializeCriticalSection(FCS);
-
-  pcPages.ActivePage := tsSettings;
-  ReframeUI(160, 66);
-
   FormatSettings.DecimalSeparator := '.';
+  InitializeCriticalSection(FCS);
 
 {$ifdef DEBUG}
   //ProcThreadPool.MaxThreadCount := 1;
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}
+
+  Constraints.MinHeight := Height;
+  Constraints.MinWidth := Width;
+  pcPages.ActivePage := tsSettings;
+  ReframeUI(80, 45);
 
   cbxYilMixChange(nil);
   chkTransPaletteChange(nil);
