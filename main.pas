@@ -2133,6 +2133,7 @@ begin
                     Inc(TrueColorUsage[col]);
                   end;
 {$endif}
+                Dec(ClustersLeft);
                 Inc(PaletteUseCount[PalIdx].UseCount);
               end;
 
