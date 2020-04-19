@@ -377,7 +377,9 @@ object MainForm: TMainForm
         Top = 284
         Width = 170
         Caption = 'Dithering gamma correction'
+        Checked = True
         OnChange = chkLowMemChange
+        State = cbChecked
         TabOrder = 15
       end
       object chkFTGamma: TCheckBox
