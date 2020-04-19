@@ -24,7 +24,7 @@ OMPCC          = gcc
 MPICC          = mpicc
 
 INCFLAGS    = -I.
-OPTFLAGS    = -O2 -DNDEBUG -flto -fuse-linker-plugin
+OPTFLAGS    = -O4 -DNDEBUG -flto -fuse-linker-plugin
 LDFLAGS     = $(OPTFLAGS)
 
 ifeq ($(ENABLE_PNETCDF), yes)

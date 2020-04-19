@@ -2001,7 +2001,7 @@ begin
   assert(di = Length(Dataset));
 
   if di > 1 then
-    DoExternalKMeans(Dataset, cPaletteCount, True, Clusters)
+    DoExternalKMeans(Dataset, cPaletteCount, ProcThreadPool.MaxThreadCount div 2, False, Clusters)
   else
     FillDWord(Clusters[0], Length(Clusters), 0);
 

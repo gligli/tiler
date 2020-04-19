@@ -37,7 +37,7 @@ type
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 
 procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
 function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
@@ -283,7 +283,8 @@ begin
   end;
 end;
 
-procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalKMeans(Dataset: TFloatDynArray2; ClusterCount, ThreadCount: Integer; PrintProgress: Boolean;
+  var Clusters: TIntegerDynArray);
 var
   i, j, Clu, Inp, st: Integer;
   Line, Output, ErrOut, InFN: String;
@@ -324,7 +325,7 @@ begin
     Process := TProcess.Create(nil);
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
     Process.Executable := 'omp_main.exe';
-    Process.Parameters.Add('-b -i "' + InFN + '" -n ' + IntToStr(ClusterCount) + ' -t 0');
+    Process.Parameters.Add(' -b -i "' + InFN + '" -n ' + IntToStr(ClusterCount) + ' -t 0 ' + ifthen(ThreadCount > 0, ' -p ' + IntToStr(ThreadCount) + ' '));
     Process.ShowWindow := swoHIDE;
     Process.Priority := ppIdle;
 
