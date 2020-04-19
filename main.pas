@@ -709,10 +709,12 @@ begin
 end;
 
 procedure TMainForm.btnDitherClick(Sender: TObject);
+var
+  Gamma: Integer;
 
   procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    PrepareDitherTiles(@FFrames[AIndex], Ord(chkDitheringGamma.Checked) - 1);
+    PrepareDitherTiles(@FFrames[AIndex], Gamma);
   end;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -722,12 +724,14 @@ procedure TMainForm.btnDitherClick(Sender: TObject);
 
   procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FinalDitherTiles(@FFrames[AIndex], Ord(chkDitheringGamma.Checked) - 1);
+    FinalDitherTiles(@FFrames[AIndex], Gamma);
   end;
 
 begin
   if Length(FFrames) = 0 then
     Exit;
+
+  Gamma := IfThen(chkDitheringGamma.Checked, 0, -1);
 
   ProgressRedraw(-1, esDither);
   ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FFrames));
@@ -771,10 +775,12 @@ begin
 end;
 
 procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
+var
+  Gamma: Integer;
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(@FFrames[AIndex], Ord(chkFTGamma.Checked) - 1);
+    DoFrameTiling(@FFrames[AIndex], Gamma);
   end;
 
 var
@@ -782,6 +788,8 @@ var
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
+
+  Gamma := IfThen(chkFTGamma.Checked, 0, -1);
 
   for i := 0 to High(FKeyFrames) do
     FKeyFrames[i].FramesLeft := -1;

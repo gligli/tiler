@@ -157,10 +157,10 @@ object MainForm: TMainForm
         Text = 'C:\tiler_misc\av_tiled\%.4d.png'
       end
       object seMaxTiles: TSpinEdit
-        Left = 172
+        Left = 248
         Height = 23
         Top = 168
-        Width = 90
+        Width = 71
         MaxValue = 0
         OnEditingDone = seMaxTilesEditingDone
         TabOrder = 9
@@ -173,7 +173,7 @@ object MainForm: TMainForm
         Width = 244
         Caption = 'Extended frame tiling palette usage (slow!)'
         OnChange = chkTransPaletteChange
-        TabOrder = 12
+        TabOrder = 11
       end
       object edReload: TEdit
         Left = 88
@@ -193,40 +193,40 @@ object MainForm: TMainForm
         TabOrder = 1
       end
       object seTempoSmoo: TFloatSpinEdit
-        Left = 263
+        Left = 248
         Height = 23
         Top = 190
-        Width = 56
+        Width = 71
         Increment = 2.5
         MaxValue = 1000
         MinValue = 0
-        TabOrder = 11
+        TabOrder = 17
         Value = 50
       end
       object seStartFrame: TSpinEdit
-        Left = 263
+        Left = 248
         Height = 23
         Top = 80
-        Width = 56
+        Width = 71
         MaxValue = 100000
         TabOrder = 5
         Value = 507
       end
       object sePalVAR: TFloatSpinEdit
-        Left = 263
+        Left = 248
         Height = 23
         Top = 124
-        Width = 56
+        Width = 71
         Increment = 0.5
         MinValue = 0
         TabOrder = 7
         Value = 95
       end
       object cbxYilMix: TComboBox
-        Left = 263
+        Left = 248
         Height = 23
         Top = 146
-        Width = 56
+        Width = 71
         ItemHeight = 15
         ItemIndex = 2
         Items.Strings = (
@@ -241,19 +241,19 @@ object MainForm: TMainForm
         Text = '4'
       end
       object seAvgTPF: TSpinEdit
-        Left = 263
+        Left = 320
         Height = 23
         Top = 168
-        Width = 56
+        Width = 71
         MaxValue = 0
         OnEditingDone = seAvgTPFEditingDone
         TabOrder = 10
       end
       object seFrameCount: TSpinEdit
-        Left = 263
+        Left = 248
         Height = 23
         Top = 102
-        Width = 56
+        Width = 71
         MaxValue = 100000
         TabOrder = 6
         Value = 12
@@ -265,7 +265,7 @@ object MainForm: TMainForm
         Width = 115
         Caption = 'Lower RAM usage'
         OnChange = chkLowMemChange
-        TabOrder = 15
+        TabOrder = 14
       end
       object chkReload: TCheckBox
         Left = 8
@@ -285,7 +285,7 @@ object MainForm: TMainForm
         Checked = True
         OnChange = chkUseDL3Change
         State = cbChecked
-        TabOrder = 13
+        TabOrder = 12
       end
       object chkUseTK: TCheckBox
         Left = 8
@@ -296,7 +296,7 @@ object MainForm: TMainForm
         Checked = True
         OnChange = chkUseTKChange
         State = cbChecked
-        TabOrder = 14
+        TabOrder = 13
       end
       object Label13: TLabel
         Left = 8
@@ -377,7 +377,7 @@ object MainForm: TMainForm
         Width = 170
         Caption = 'Dithering gamma correction'
         OnChange = chkLowMemChange
-        TabOrder = 16
+        TabOrder = 15
       end
       object chkFTGamma: TCheckBox
         Left = 8
@@ -385,8 +385,7 @@ object MainForm: TMainForm
         Top = 302
         Width = 184
         Caption = 'Frame tiling gamma correction'
-        OnChange = chkLowMemChange
-        TabOrder = 17
+        TabOrder = 16
       end
     end
     object tsInput: TTabSheet
