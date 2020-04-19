@@ -869,6 +869,7 @@ begin
   else
   begin
     FInputPath := edInput.Text;
+    FFramesPerSecond := 24.0;
   end;
 
   if frc <= 0 then
@@ -1927,8 +1928,11 @@ begin
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
+const
+  CNoColor = $000000;
 var
   col, sx, sy, tx, ty, i, j, k, bestI, PalIdx, LastUsed, CmlPct, AtCmlPct, acc, r, g, b, rr, gg, bb: Integer;
+  found: Boolean;
   GTile: PTile;
   FSPixels: TRGBPixels;
   CMUsage, CMPal: TFPList;
@@ -1943,8 +1947,7 @@ var
 
   Dataset: TFloatDynArray2;
   Clusters: TIntegerDynArray;
-  di, ClustersLeft, stride: Integer;
-  PRGBPx: PRGBPixels;
+  di, ClustersLeft: Integer;
 
   PaletteUseCount: array[0 .. cPaletteCount - 1] of record
     UseCount: Integer;
@@ -1988,68 +1991,80 @@ begin
     begin
       if FUseDennisLeeV3 then
       begin
-        // pass 1: get tile count for the palette
-
-        k := 0;
-        di := 0;
-        for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
-          for j := 0 to FTileMapSize - 1 do
-          begin
-            if Clusters[di] = PalIdx then
-              Inc(k);
-            Inc(di);
-          end;
-
-        // pass 2: build a pixel buffer of all palette tiles (1 tile high)
-
+        FillChar(dlInput^, dlCnt * 3, CNoColor and $ff);
         dlPtr := dlInput;
-        stride := k * cTileWidth;
-        PaletteUseCount[PalIdx].UseCount := k;
+
         di := 0;
         for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
-          for j := 0 to FTileMapSize - 1 do
-          begin
-            PRGBPx := @FFrames[i].TilesRGBPixels[j];
+        begin
+          dlPtr := @dlInput[((i - AKeyFrame^.StartFrame) * FScreenWidth * FScreenHeight) * 3];
 
-            if Clusters[di] = PalIdx then
+          for sy := 0 to FTileMapHeight - 1 do
+            for sx := 0 to FTileMapWidth - 1 do
             begin
-              for ty := 0 to cTileWidth - 1 do
-              begin
-                for tx := 0 to cTileWidth - 1 do
-                begin
-                  col := PRGBPx^[ty, tx];
+              GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
 
-                  dlPtr^ := col and $ff; Inc(dlPtr);
-                  dlPtr^ := (col shr 8) and $ff; Inc(dlPtr);
-                  dlPtr^ := (col shr 16) and $ff; Inc(dlPtr);
+              if Clusters[di] = PalIdx then
+              begin
+                j := ((sy * cTileWidth) * FScreenWidth + (sx * cTileWidth)) * 3;
+                for ty := 0 to cTileWidth - 1 do
+                begin
+                  Move(FFrames[i].FSPixels[j], dlPtr[j], cTileWidth * 3);
+                  Inc(j, FScreenWidth * 3);
                 end;
-                Inc(dlPtr, (stride - cTileWidth) * 3);
+
+                Dec(ClustersLeft);
+                Inc(PaletteUseCount[PalIdx].UseCount);
               end;
 
-              Dec(dlPtr, (stride - cTileWidth) * cTileWidth * 3);
-              Dec(ClustersLeft);
+              Inc(di);
             end;
-
-            Inc(di);
-          end;
-
-        // call Dennis Lee v3 algo
+        end;
 
         Assert(di = Length(Clusters));
-        Assert(dlPtr = dlInput + stride * cTileWidth * 3);
-        dl3quant(dlInput, stride, cTileWidth, cTilePaletteSize, EnsureRange(cBitsPerComp - 1, 2, 6), @dlPal);
 
-        // retrieve palette
+        dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cTilePaletteSize + 1, EnsureRange(cBitsPerComp - 1, 2, 6), @dlPal);
 
         CMUsage.Count := cTilePaletteSize;
-        for i := 0 to cTilePaletteSize - 1 do
+        j := 0;
+        for i := 0 to cTilePaletteSize + 1 - 1 do
+        begin
+          col := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
+          if col <> CNoColor then
+          begin
+            found := False;
+            for k := 0 to j - 1 do
+              if col = PCountIndexArray(CMUsage[k])^.Index then
+              begin
+                found := True;
+                Break;
+              end;
+
+            if not found then
+            begin
+              New(CMItem);
+              CMItem^.Index := col;
+              CMItem^.Count := 1;
+              CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
+              CMItem^.Luma := FColorMapLuma[CMItem^.Index];
+              CMUsage[j] := CMItem;
+              Inc(j);
+
+              if j >= cTilePaletteSize then
+                Break;
+            end;
+          end;
+        end;
+
+        while j < cTilePaletteSize do
         begin
           New(CMItem);
-          CMItem^.Index := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
+          CMItem^.Index := CNoColor;
           CMItem^.Count := 1;
           CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
           CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-          CMUsage[i] := CMItem;
+          CMUsage[j] := CMItem;
+          Inc(j);
         end;
 
         CMPal.Clear;
@@ -2064,6 +2079,7 @@ begin
 
         di := 0;
         for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+        begin
           for sy := 0 to FTileMapHeight - 1 do
             for sx := 0 to FTileMapWidth - 1 do
             begin
@@ -2093,6 +2109,7 @@ begin
 
               Inc(di);
             end;
+        end;
 
         CMUsage.Count := Length(TrueColorUsage);
         for i := 0 to High(TrueColorUsage) do
