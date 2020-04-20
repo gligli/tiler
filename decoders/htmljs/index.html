@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>GliGli's TileMotion Live Demo</title>
+    <style>
+    body {
+      font-family: "Helvetica", sans-serif;
+    }
+
+    table#frame {
+      border: 1px solid #CCC;
+      border-collapse: collapse;
+    }
+    td#frame {
+      border: none;
+    }
+    
+    #drop {
+      border: 2px dashed #bbb;
+      -moz-border-radius: 5px;
+      -webkit-border-radius: 5px;
+      border-radius: 5px;
+      padding: 25px;
+      text-align: center;
+      font-size: 20pt;
+      color: #bbb;
+    }
+    </style>
+  </head>
+  <body>
+    <h1>GliGli's TileMotion Live Demo</h1>
+    <h5>This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</h5>
+    <div id="drop">
+      <p>Drag a GTM file into this area to play the contents</p>
+    </div>
+    <table id="frame"></table>
+    <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
+    <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
+    <script src="https://unpkg.com/bz2"></script>
+    <script>
+      const GTMCommand = { // commandBits: palette # bit count + 2 (H/V mirrors)
+        "ShortTileIdxStart" : 0, // short tile index #0 ...
+        "ShortTileIdxEnd" : 895, // ... short tile index #895
+        "SkipBlockStart" : 896, // skipping 1 tile ...
+        "SkipBlockEnd" : 1015, // ... skipping 120 tiles
+        "ExtendedCommand" : 1016, // data -> custom commands, proprietary extensions, ...; commandBits : extended command #
+        "Tileset" : 1019, // data -> 32 bits start tile; 32 bits end tile; 64 byte indexes per tile; commandBits : highest index
+        "SetDimensions" : 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); 32 bits tile count;
+        "LoadPalette" : 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits : palette #; commandBits H/V mirrors: palette format (00: RGBA32)
+        "FrameEnd" : 1022, // commandBits bit 0 -> keyframe end
+        "LongTileIdx" : 1023 // data -> 32 bits tile index
+      };     
+    
+      const CTileWidth = 8;
+      const CTMAttrBits = 1 + 1 + 4; // HMir + VMir + PalIdx
+      const CShortIdxBits = 16 - CTMAttrBits;
+
+      var gtmReader = null;
+      var gtmReady = false;
+      var gtmPos = 0;
+      var gtmFrameData = null;
+      var gtmWidth = 0;
+      var gtmHeight = 0;
+      var gtmFrameLength = 0;
+      var gtmTileCount = 0;
+      var gtmPalSize = 0;
+      var gtmPalette = new Array(256);
+      var gtmTilemap = null;
+
+      drop = document.querySelector('#drop');
+      drop.addEventListener('drop', (event) => {
+        event.preventDefault();
+      
+        let file;
+        if (event.dataTransfer.items) {
+          file = event.dataTransfer.items[0].getAsFile();
+        } else {
+          file = event.dataTransfer.files[0];
+        }
+        
+        gtmReady = false;
+        gtmReader = new FileReader();
+        gtmReader.addEventListener('load', (e) => {
+  	     gtmFrameData = window.bz2.decompress(new Uint8Array(gtmReader.result))
+            gtmPos = 0;
+            gtmReady = true;
+	          setTimeout(renderFrame, 100);
+            drop.parentNode.removeChild(drop);
+        });
+        gtmReader.readAsArrayBuffer(file);
+      });
+      
+      document.querySelector('#drop').addEventListener('dragover', (event) => {
+        event.preventDefault();
+      });
+      
+      function toColor(num) {
+        // from https://stackoverflow.com/questions/11866781/how-do-i-convert-an-integer-to-a-javascript-color/11866980
+        num >>>= 0;
+        var b = num & 0xFF,
+            g = (num & 0xFF00) >>> 8,
+            r = (num & 0xFF0000) >>> 16,
+            a = ( (num & 0xFF000000) >>> 24 ) / 255 ;
+        return "rgba(" + [r, g, b, a].join(",") + ")";
+      }
+      
+      function redimFrame() {
+        var table = document.querySelector('#frame');
+        for (let y = 0; y < gtmHeight; y++) {
+          var row = table.insertRow();
+          row.appendChild(document.createElement("th"));
+          for (let x = 0; x < gtmWidth; x++) {
+            var cell = row.insertCell();
+            cell.style.width = CTileWidth + "px";
+            cell.style.height = CTileWidth + "px";
+          }
+        }
+        setTimeout(renderFrame, Math.round(gtmFrameLength / (1000 * 1000)));
+      }
+      
+      function drawFrame() {
+        var table = document.querySelector('#frame');
+        let p = 0;     
+        let r = 0;
+        while(row=table.rows[r++]) {
+          let c=0;
+          while(cell=row.cells[c++]) {
+            if (r < 16 && c < 32) {
+              cell.style.backgroundColor = gtmPalette[r][c];
+            }
+          }
+        }
+      }
+      
+      function readByte() {
+        return gtmFrameData[gtmPos++];
+      }
+
+      function readWord() {
+        let v = readByte();
+        v |= readByte() << 8;
+        return v;
+      }
+      
+      function readDWord() {
+        let v = readWord();
+        v |= readWord() << 16;
+        return v;
+      }
+      
+      function readCommand() {
+        let v = readWord();
+        return [v & ((1 << CShortIdxBits) - 1), v >> CShortIdxBits];
+      }
+
+      function renderFrame() {
+        if (!gtmReady || !document.querySelector('#play_loop').checked)
+	         return;
+
+        let doContinue = true;
+        do {
+          let cmd = readCommand();
+          
+          switch (cmd[0]) {
+            case GTMCommand.SetDimensions:
+              gtmWidth = readWord();
+              gtmHeight = readWord();
+              gtmFrameLength = readDWord();
+              gtmTileCount = readDWord();
+
+              gtmTilemap = new Array(gtmWidth * gtmHeight);
+              redimFrame();
+              break;
+              
+            case GTMCommand.Tileset:
+              let start = readDWord();
+              let end = readDWord();
+              gtmPalSize = cmd[1] + 1;
+              
+              for (let p = start; p <= end; p++) {
+                for (let i = 0; i < CTileWidth * CTileWidth; i++) {
+                  readByte();
+                }
+              }
+              break;
+            
+            case GTMCommand.LoadPalette:
+              let palIdx = cmd[1] >> 2;
+              gtmPalette[palIdx] = new Array(gtmPalSize);
+              for (let i = 0; i < gtmPalSize; i++) {
+                gtmPalette[palIdx][i] = toColor(readDWord());
+              }
+              break;
+              
+            case GTMCommand.LongTileIdx:
+              let tileIdx = readDWord();
+              break;
+              
+            case GTMCommand.FrameEnd:
+              doContinue = false;
+              break;
+              
+            default:
+              if (cmd[0] >= GTMCommand.ShortTileIdxStart && cmd[0] < GTMCommand.ShortTileIdxEnd) {
+                
+              } else if (cmd[0] >= GTMCommand.SkipBlockStart && cmd[0] < GTMCommand.SkipBlockEnd) {
+                
+              } else {
+                console.log("Undecoded command @" + gtmPos + ": " + cmd + "\n");
+              }
+              break;
+          }
+          
+          gtmReady = (gtmPos < gtmFrameData.length);
+        } while (doContinue && gtmReady);
+        
+        drawFrame();
+      }
+    </script>
+  </body>
+</html>
