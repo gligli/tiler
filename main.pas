@@ -4138,6 +4138,7 @@ begin
   Constraints.MinWidth := Width;
   pcPages.ActivePage := tsSettings;
   ReframeUI(80, 45);
+  FFramesPerSecond := 24.0;
 
   cbxYilMixChange(nil);
   chkTransPaletteChange(nil);

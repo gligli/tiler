@@ -25,7 +25,7 @@ object MainForm: TMainForm
   object tbFrame: TTrackBar
     Left = 0
     Height = 25
-    Top = 489
+    Top = 485
     Width = 963
     Frequency = 25
     Max = 0
@@ -396,8 +396,6 @@ object MainForm: TMainForm
         Top = 348
         Width = 190
         Caption = 'Frame tiling from palettized tiles'
-        Checked = True
-        State = cbChecked
         TabOrder = 20
       end
       object chkFTQWeighting: TCheckBox
@@ -406,8 +404,6 @@ object MainForm: TMainForm
         Top = 366
         Width = 162
         Caption = 'Weighted Frame tiling DCT'
-        Checked = True
-        State = cbChecked
         TabOrder = 21
       end
       object Label10: TLabel
