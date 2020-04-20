@@ -112,9 +112,9 @@ type
 
     gtTileset = 1019, // data -> 32 bits start tile; 32 bits end tile; 64 byte indexes per tile; commandBits : highest index
     gtSetDimensions = 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); 32 bits tile count;
-    gtLoadPaletteRGBA32 = 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits = palette #; commandBits H/V mirrors: palette format (00: RGBA32)
-    gtmFrameEnd = 1022, // commandBits bit 0 -> keyframe end
-    gtmLongTileIdx = 1023 // data -> 32 bits tile index
+    gtLoadPalette = 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits = palette #; commandBits H/V mirrors: palette format (00: RGBA32)
+    gtFrameEnd = 1022, // commandBits bit 0 -> keyframe end
+    gtLongTileIdx = 1023 // data -> 32 bits tile index
   );
 
   TSpinlock = LongInt;
@@ -3946,7 +3946,7 @@ var
     end
     else
     begin
-      DoCmd(gtmLongTileIdx, (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
+      DoCmd(gtLongTileIdx, (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
       DoDWord(TileIdx);
     end;
   end;
@@ -3957,7 +3957,7 @@ var
   begin
     for j := 0 to cPaletteCount - 1 do
     begin
-      DoCmd(gtLoadPaletteRGBA32, (j shl 2) or $00);
+      DoCmd(gtLoadPalette, (j shl 2) or $00);
       for i := 0 to cTilePaletteSize - 1 do
         DoDWord(KF^.PaletteRGB[j, i] or $ff000000);
     end;
@@ -4055,7 +4055,7 @@ begin
         IsKF := (fri = FKeyFrames[kf].EndFrame) and (kf = High(FKeyFrames));
         IsKF := IsKF or (fri = FKeyFrames[kf].EndFrame) or (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and (ZStream.Size >= CMaxBufSize div 2);
 
-        DoCmd(gtmFrameEnd, Ord(IsKF));
+        DoCmd(gtFrameEnd, Ord(IsKF));
 
         if IsKF then
         begin
