@@ -165,7 +165,7 @@ object MainForm: TMainForm
         MinValue = 256
         OnEditingDone = seMaxTilesEditingDone
         TabOrder = 9
-        Value = 100000
+        Value = 25000
       end
       object chkTransPalette: TCheckBox
         Left = 8
@@ -424,7 +424,7 @@ object MainForm: TMainForm
         MinValue = 0.1
         OnChange = seEncGammaChange
         TabOrder = 12
-        Value = 2
+        Value = 1.8
       end
       object seVisGamma: TFloatSpinEdit
         Left = 320
