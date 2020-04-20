@@ -21,9 +21,6 @@ const
   cBitsPerComp = 7;
   cTilePaletteSize = 32;
   cRandomKModesCount = 7;
-  cGamma: array[0..2{YUV,LAB,INV}] of TFloat = (2.0, 2.10, 0.6);
-  cFTFromPal = True;
-  cFTQWeighting = True;
 
 {$if true}
   cRedMul = 2126;
@@ -231,6 +228,8 @@ type
     cbxStartStep: TComboBox;
     cbxYilMix: TComboBox;
     chkFTGamma: TCheckBox;
+    chkFTFromPal: TCheckBox;
+    chkFTQWeighting: TCheckBox;
     chkGamma: TCheckBox;
     chkLowMem: TCheckBox;
     chkDitheringGamma: TCheckBox;
@@ -251,6 +250,7 @@ type
     imgSource: TImage;
     imgTiles: TImage;
     Label1: TLabel;
+    Label10: TLabel;
     Label11: TLabel;
     Label13: TLabel;
     Label2: TLabel;
@@ -265,12 +265,14 @@ type
     pcPages: TPageControl;
     pnLbl: TPanel;
     seAvgTPF: TSpinEdit;
+    seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
     sePage: TSpinEdit;
     sePalVAR: TFloatSpinEdit;
     seStartFrame: TSpinEdit;
     seTempoSmoo: TFloatSpinEdit;
+    seEncGamma: TFloatSpinEdit;
     tsTilesPal: TTabSheet;
     To1: TLabel;
     tsSettings: TTabSheet;
@@ -315,6 +317,7 @@ type
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure IdleTimerTimer(Sender: TObject);
     procedure seAvgTPFEditingDone(Sender: TObject);
+    procedure seEncGammaChange(Sender: TObject);
     procedure seMaxTilesEditingDone(Sender: TObject);
     procedure tbFrameChange(Sender: TObject);
   private
@@ -398,9 +401,9 @@ type
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
     function GetMaxTPF(AKF: PKeyFrame): Integer;
-    procedure PrepareFrameTiling(AKF: PKeyFrame; AFTGamma: Integer);
+    procedure PrepareFrameTiling(AKF: PKeyFrame; AFTGamma: Integer; AFTQWeighting: Boolean);
     procedure TerminateFrameTiling(AKF: PKeyFrame);
-    procedure DoFrameTiling(AFrame: PFrame; AFTGamma: Integer);
+    procedure DoFrameTiling(AFrame: PFrame; AFTGamma: Integer; AFTFromPal, AFTQWeighting: Boolean);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -513,7 +516,8 @@ begin
 end;
 
 var
-  gGammaCorLut: array[-1..High(cGamma), 0..High(Byte)] of TFloat;
+  gGamma: array[0..1] of TFloat = (2.0, 0.6);
+  gGammaCorLut: array[-1..High(gGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
   gDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
   gPalettePattern : array[0 .. cPaletteCount - 1, 0 .. cTilePaletteSize - 1] of TFloat;
@@ -525,10 +529,10 @@ var
   g, i, j, v, u, y, x: Int64;
   f, fp: TFloat;
 begin
-  for g := -1 to High(cGamma) do
+  for g := -1 to High(gGamma) do
     for i := 0 to High(Byte) do
       if g >= 0 then
-        gGammaCorLut[g, i] := power(i / 255.0, cGamma[g])
+        gGammaCorLut[g, i] := power(i / 255.0, gGamma[g])
       else
         gGammaCorLut[g, i] := i / 255.0;
 
@@ -777,10 +781,12 @@ end;
 procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
 var
   Gamma: Integer;
+  FromPal: Boolean;
+  QWeighting: Boolean;
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(@FFrames[AIndex], Gamma);
+    DoFrameTiling(@FFrames[AIndex], Gamma, FromPal, QWeighting);
   end;
 
 var
@@ -790,6 +796,8 @@ begin
     Exit;
 
   Gamma := IfThen(chkFTGamma.Checked, 0, -1);
+  FromPal := chkFTFromPal.Checked;
+  QWeighting := chkFTQWeighting.Checked;
 
   for i := 0 to High(FKeyFrames) do
     FKeyFrames[i].FramesLeft := -1;
@@ -858,6 +866,12 @@ begin
 
   ProgressRedraw(-1, esLoad);
 
+  // init Gamma LUTs
+
+  InitLuts;
+
+  // load video
+
   StartFrame := seStartFrame.Value;
   frc := seFrameCount.Value;
 
@@ -918,6 +932,8 @@ begin
   end;
 
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(StartFrame));
+
+  // find keyframes
 
 {$if false}
   kfSL := TStringList.Create;
@@ -1262,6 +1278,14 @@ procedure TMainForm.seAvgTPFEditingDone(Sender: TObject);
 begin
   if Length(FFrames) = 0 then Exit;
   seMaxTiles.Value := seAvgTPF.Value * Length(FFrames);
+end;
+
+procedure TMainForm.seEncGammaChange(Sender: TObject);
+begin
+  gGamma[0] := seEncGamma.Value;
+  gGamma[1] := seVisGamma.Value;
+  InitLuts;
+  tbFrameChange(nil);
 end;
 
 procedure TMainForm.seMaxTilesEditingDone(Sender: TObject);
@@ -2790,9 +2814,9 @@ procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, re
 
         if gamma then
         begin
-          r := round(GammaCorrect(2, r) * 255.0);
-          g := round(GammaCorrect(2, g) * 255.0);
-          b := round(GammaCorrect(2, b) * 255.0);
+          r := round(GammaCorrect(1, r) * 255.0);
+          g := round(GammaCorrect(1, g) * 255.0);
+          b := round(GammaCorrect(1, b) * 255.0);
         end;
 
         psl^ := SwapRB(ToRGB(r, g, b));
@@ -3209,7 +3233,7 @@ begin
     Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
 end;
 
-procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame; AFTGamma: Integer);
+procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame; AFTGamma: Integer; AFTQWeighting: Boolean);
 
 var
   TRSize, di, i, frame, sy, sx: Integer;
@@ -3277,7 +3301,7 @@ begin
         for vmir := False to True do
           for hmir := False to True do
           begin
-            ComputeTileDCT(T^, True, cFTQWeighting, hmir, vmir, AFTGamma, AKF^.PaletteRGB[palIdx], DS^.Dataset[di]);
+            ComputeTileDCT(T^, True, AFTQWeighting, hmir, vmir, AFTGamma, AKF^.PaletteRGB[palIdx], DS^.Dataset[di]);
             Inc(di);
           end;
       end;
@@ -3301,7 +3325,7 @@ begin
   AKF^.TileDS := nil;
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: PFrame; AFTGamma: Integer);
+procedure TMainForm.DoFrameTiling(AFrame: PFrame; AFTGamma: Integer; AFTFromPal, AFTQWeighting: Boolean);
 var
   sy, sx: Integer;
   DS: PTileDataset;
@@ -3314,7 +3338,7 @@ begin
   EnterCriticalSection(AFrame^.KeyFrame^.CS);
   if AFrame^.KeyFrame^.FramesLeft < 0 then
   begin
-    PrepareFrameTiling(AFrame^.KeyFrame, AFTGamma);
+    PrepareFrameTiling(AFrame^.KeyFrame, AFTGamma, AFTQWeighting);
     AFrame^.KeyFrame^.FramesLeft := AFrame^.KeyFrame^.FrameCount;
   end;
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
@@ -3332,7 +3356,7 @@ begin
   for sy := 0 to FTileMapHeight - 1 do
     for sx := 0 to FTileMapWidth - 1 do
     begin
-      ComputeTileDCT(AFrame^.Tiles[sy * FTileMapWidth + sx], cFTFromPal, cFTQWeighting, False, False, AFTGamma, AFrame^.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
+      ComputeTileDCT(AFrame^.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AFTQWeighting, False, False, AFTGamma, AFrame^.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
 
       tri := ann_kdtree_search(DS^.KDT, PFloat(DCT), 0.0);
 
@@ -4151,7 +4175,5 @@ begin
   ClearAll;
 end;
 
-initialization
-  InitLuts;
 end.
 
