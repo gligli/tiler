@@ -15,6 +15,9 @@
     td#frame {
       border: none;
     }
+    tr#frame {
+      border: none;
+    }
     
     #drop {
       border: 2px dashed #bbb;
@@ -29,8 +32,8 @@
     </style>
   </head>
   <body>
-    <h1>GliGli's TileMotion Live Demo</h1>
-    <h5>This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</h5>
+    <h2>GliGli's TileMotion Live Demo</h2>
+    <p>This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</p>
     <div id="drop">
       <p>Drag a GTM file into this area to play the contents</p>
     </div>
@@ -58,15 +61,17 @@
 
       var gtmReader = null;
       var gtmReady = false;
-      var gtmPos = 0;
       var gtmFrameData = null;
+      var gtmDataPos = 0;
       var gtmWidth = 0;
       var gtmHeight = 0;
       var gtmFrameLength = 0;
       var gtmTileCount = 0;
       var gtmPalSize = 0;
       var gtmPalette = new Array(256);
-      var gtmTilemap = null;
+      var gtmTilemapTileIdx = null;
+      var gtmTilemapAttrs = null;
+      var gtmTMPos = 0;
 
       drop = document.querySelector('#drop');
       drop.addEventListener('drop', (event) => {
@@ -83,7 +88,7 @@
         gtmReader = new FileReader();
         gtmReader.addEventListener('load', (e) => {
   	     gtmFrameData = window.bz2.decompress(new Uint8Array(gtmReader.result))
-            gtmPos = 0;
+            gtmDataPos = 0;
             gtmReady = true;
 	          setTimeout(renderFrame, 100);
             drop.parentNode.removeChild(drop);
@@ -116,7 +121,7 @@
             cell.style.height = CTileWidth + "px";
           }
         }
-        setTimeout(renderFrame, Math.round(gtmFrameLength / (1000 * 1000)));
+        setTimeout(renderFrame, Math.round(gtmFrameLength / (1000 * 1000) * 24));
       }
       
       function drawFrame() {
@@ -126,15 +131,13 @@
         while(row=table.rows[r++]) {
           let c=0;
           while(cell=row.cells[c++]) {
-            if (r < 16 && c < 32) {
-              cell.style.backgroundColor = gtmPalette[r][c];
-            }
+            cell.style.backgroundColor = gtmPalette[gtmTilemapAttrs[p] >>> 2][gtmTilemapTileIdx[p] % gtmPalSize]
           }
         }
       }
       
       function readByte() {
-        return gtmFrameData[gtmPos++];
+        return gtmFrameData[gtmDataPos++];
       }
 
       function readWord() {
@@ -151,7 +154,7 @@
       
       function readCommand() {
         let v = readWord();
-        return [v & ((1 << CShortIdxBits) - 1), v >> CShortIdxBits];
+        return [v & ((1 << CShortIdxBits) - 1), v >>> CShortIdxBits];
       }
 
       function renderFrame() {
@@ -169,7 +172,8 @@
               gtmFrameLength = readDWord();
               gtmTileCount = readDWord();
 
-              gtmTilemap = new Array(gtmWidth * gtmHeight);
+              gtmTilemapTileIdx = new Array(gtmWidth * gtmHeight);
+              gtmTilemapAttrs = new Array(gtmWidth * gtmHeight);
               redimFrame();
               break;
               
@@ -194,25 +198,33 @@
               break;
               
             case GTMCommand.LongTileIdx:
-              let tileIdx = readDWord();
+              gtmTilemapTileIdx[gtmTMPos] = readDWord();
+              gtmTilemapAttrs[gtmTMPos] = cmd[1];
+              gtmTMPos++;
               break;
               
             case GTMCommand.FrameEnd:
+              if (gtmTMPos != gtmWidth * gtmHeight) {
+                console.error("Incomplete tilemap " + gtmTMPos + " <> " + gtmWidth * gtmHeight + "\n");
+              }
+              gtmTMPos = 0;
               doContinue = false;
               break;
               
             default:
-              if (cmd[0] >= GTMCommand.ShortTileIdxStart && cmd[0] < GTMCommand.ShortTileIdxEnd) {
-                
-              } else if (cmd[0] >= GTMCommand.SkipBlockStart && cmd[0] < GTMCommand.SkipBlockEnd) {
-                
+              if (cmd[0] >= GTMCommand.ShortTileIdxStart && cmd[0] <= GTMCommand.ShortTileIdxEnd) {
+                gtmTilemapTileIdx[gtmTMPos] = cmd[0] - GTMCommand.ShortTileIdxStart;
+                gtmTilemapAttrs[gtmTMPos] = cmd[1];
+                gtmTMPos++;
+              } else if (cmd[0] >= GTMCommand.SkipBlockStart && cmd[0] <= GTMCommand.SkipBlockEnd) {
+                gtmTMPos += cmd[0] - GTMCommand.SkipBlockStart + 1;
               } else {
-                console.log("Undecoded command @" + gtmPos + ": " + cmd + "\n");
+                console.error("Undecoded command @" + gtmDataPos + ": " + cmd + "\n");
               }
               break;
           }
           
-          gtmReady = (gtmPos < gtmFrameData.length);
+          gtmReady = (gtmDataPos < gtmFrameData.length);
         } while (doContinue && gtmReady);
         
         drawFrame();
