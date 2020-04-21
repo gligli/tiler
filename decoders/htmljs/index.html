@@ -33,14 +33,15 @@
     </div>
     <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
     <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
-    <script src="bzip2.js"></script>
+    <script src="./lzma.js"></script>
+    <script src="./lzma.shim.js"></script>
     <script>
       const GTMCommand = { // commandBits: palette # bit count + 2 (H/V mirrors)
         'ShortTileIdxStart' : 0, // short tile index #0 ...
         'ShortTileIdxEnd' : 895, // ... short tile index #895
         'SkipBlockStart' : 896, // skipping 1 tile ...
-        'SkipBlockEnd' : 1015, // ... skipping 120 tiles
-        'ExtendedCommand' : 1016, // data -> custom commands, proprietary extensions, ...; commandBits : extended command #
+        'SkipBlockEnd' : 999, // ... skipping 104 tiles
+        'ExtendedCommand' : 1000, // data -> custom commands, proprietary extensions, ...; commandBits : extended command #
         'Tileset' : 1019, // data -> 32 bits start tile; 32 bits end tile; 64 byte indexes per tile; commandBits : highest index
         'SetDimensions' : 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); 32 bits tile count;
         'LoadPalette' : 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits : palette #; commandBits H/V mirrors: palette format (00: RGBA32)
@@ -69,7 +70,7 @@
       var gtmTMImageData = null;
       var gtmTMPos = 0;
       var gtmLoopCount = 0;
-
+      
       drop = document.querySelector('#drop');
       drop.addEventListener('drop', (event) => {
         event.preventDefault();
@@ -84,7 +85,8 @@
         gtmReady = false;
         gtmReader = new FileReader();
         gtmReader.addEventListener('load', (e) => {
-          gtmFrameData = bzip2.simple(bzip2.array(new Uint8Array(gtmReader.result)));
+          var inStream = new LZMA.iStream(gtmReader.result);
+          gtmFrameData = LZMA.decompressFile(inStream).toUint8Array();
           gtmDataPos = 0;
           gtmReady = true;
           drop.parentNode.removeChild(drop);
@@ -188,7 +190,7 @@
       }
       
       function readByte() {
-        return gtmFrameData.charCodeAt(gtmDataPos++);
+        return gtmFrameData[gtmDataPos++];
       }
 
       function readWord() {

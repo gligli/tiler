@@ -106,9 +106,9 @@ type
     gtShortTileIdxEnd = 895, // ... short tile index #895
 
     gtSkipBlockStart = 896, // skipping 1 tile ...
-    gtSkipBlockEnd = 1015, // ... skipping 120 tiles
+    gtSkipBlockEnd = 999, // ... skipping 104 tiles
 
-    gtExtendedCommand = 1016, // data -> custom commands, proprietary extensions, ...; commandBits = extended command #
+    gtExtendedCommand = 1000, // data -> custom commands, proprietary extensions, ...; commandBits = extended command #
 
     gtTileset = 1019, // data -> 32 bits start tile; 32 bits end tile; 64 byte indexes per tile; commandBits : highest index
     gtSetDimensions = 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); 32 bits tile count;
@@ -4051,6 +4051,7 @@ begin
           end;
         end;
         Assert(cs = FTileMapSize, 'incomplete TM');
+        Assert(BlkSkipCount = 0, 'pending skips');
 
         IsKF := (fri = FKeyFrames[kf].EndFrame) and (kf = High(FKeyFrames));
         IsKF := IsKF or (fri = FKeyFrames[kf].EndFrame) or (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and (ZStream.Size >= CMaxBufSize div 2);

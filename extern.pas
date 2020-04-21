@@ -186,10 +186,10 @@ var
 begin
   Process := TProcess.Create(nil);
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-  Process.Executable := 'bzip2.exe';
+  Process.Executable := 'lzma.exe';
 
   SrcFN := GetTempFileName('', 'lz-' + IntToStr(GetCurrentThreadId) + '.dat');
-  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.bz2');
+  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.lzma');
 
   SrcStream := TFileStream.Create(SrcFN, fmCreate or fmShareDenyWrite);
   try
@@ -199,8 +199,7 @@ begin
     SrcStream.Free;
   end;
 
-  Process.Parameters.Add(' --compress --best ');
-  Process.Parameters.Add('"' + SrcFN + '"');
+  Process.Parameters.Add('e "' + SrcFN + '" "' + DstFN + '" -lc8');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
@@ -213,6 +212,9 @@ begin
   finally
     DstStream.Free;
   end;
+
+  DeleteFile(PChar(SrcFN));
+  DeleteFile(PChar(DstFN));
 end;
 
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
