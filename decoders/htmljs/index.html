@@ -33,7 +33,7 @@
     </div>
     <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
     <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
-    <script src="https://unpkg.com/bz2"></script>
+    <script src="bzip2.js"></script>
     <script>
       const GTMCommand = { // commandBits: palette # bit count + 2 (H/V mirrors)
         'ShortTileIdxStart' : 0, // short tile index #0 ...
@@ -84,11 +84,11 @@
         gtmReady = false;
         gtmReader = new FileReader();
         gtmReader.addEventListener('load', (e) => {
-  	     gtmFrameData = window.bz2.decompress(new Uint8Array(gtmReader.result))
-            gtmDataPos = 0;
-            gtmReady = true;
-            drop.parentNode.removeChild(drop);
-	          setTimeout(decodeFrame, 100);
+          gtmFrameData = bzip2.simple(bzip2.array(new Uint8Array(gtmReader.result)));
+          gtmDataPos = 0;
+          gtmReady = true;
+          drop.parentNode.removeChild(drop);
+          setTimeout(decodeFrame, 10);
         });
         gtmReader.readAsArrayBuffer(file);
       });
@@ -189,7 +189,7 @@
       }
       
       function readByte() {
-        return gtmFrameData[gtmDataPos++];
+        return gtmFrameData.charCodeAt(gtmDataPos++);
       }
 
       function readWord() {
