@@ -6,19 +6,11 @@
     <style>
     body {
       font-family: "Helvetica", sans-serif;
+      background-color: #888;
+      margin: 0px;
+      padding: 0px;
     }
 
-    table#frame {
-      border: 1px solid #CCC;
-      border-collapse: collapse;
-    }
-    td#frame {
-      border: none;
-    }
-    tr#frame {
-      border: none;
-    }
-    
     #drop {
       border: 2px dashed #bbb;
       -moz-border-radius: 5px;
@@ -27,32 +19,33 @@
       padding: 25px;
       text-align: center;
       font-size: 20pt;
-      color: #bbb;
+      color: #fff;
+      background-color: #999;
     }
     </style>
   </head>
   <body>
     <h2>GliGli's TileMotion Live Demo</h2>
     <p>This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</p>
+    <canvas id="frame" width="8" height="8"></canvas>
     <div id="drop">
       <p>Drag a GTM file into this area to play the contents</p>
     </div>
-    <table id="frame"></table>
     <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
     <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
     <script src="https://unpkg.com/bz2"></script>
     <script>
       const GTMCommand = { // commandBits: palette # bit count + 2 (H/V mirrors)
-        "ShortTileIdxStart" : 0, // short tile index #0 ...
-        "ShortTileIdxEnd" : 895, // ... short tile index #895
-        "SkipBlockStart" : 896, // skipping 1 tile ...
-        "SkipBlockEnd" : 1015, // ... skipping 120 tiles
-        "ExtendedCommand" : 1016, // data -> custom commands, proprietary extensions, ...; commandBits : extended command #
-        "Tileset" : 1019, // data -> 32 bits start tile; 32 bits end tile; 64 byte indexes per tile; commandBits : highest index
-        "SetDimensions" : 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); 32 bits tile count;
-        "LoadPalette" : 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits : palette #; commandBits H/V mirrors: palette format (00: RGBA32)
-        "FrameEnd" : 1022, // commandBits bit 0 -> keyframe end
-        "LongTileIdx" : 1023 // data -> 32 bits tile index
+        'ShortTileIdxStart' : 0, // short tile index #0 ...
+        'ShortTileIdxEnd' : 895, // ... short tile index #895
+        'SkipBlockStart' : 896, // skipping 1 tile ...
+        'SkipBlockEnd' : 1015, // ... skipping 120 tiles
+        'ExtendedCommand' : 1016, // data -> custom commands, proprietary extensions, ...; commandBits : extended command #
+        'Tileset' : 1019, // data -> 32 bits start tile; 32 bits end tile; 64 byte indexes per tile; commandBits : highest index
+        'SetDimensions' : 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); 32 bits tile count;
+        'LoadPalette' : 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits : palette #; commandBits H/V mirrors: palette format (00: RGBA32)
+        'FrameEnd' : 1022, // commandBits bit 0 -> keyframe end
+        'LongTileIdx' : 1023 // data -> 32 bits tile index
       };     
     
       const CTileWidth = 8;
@@ -66,10 +59,16 @@
       var gtmWidth = 0;
       var gtmHeight = 0;
       var gtmFrameLength = 0;
+      var gtmTiles = null;
       var gtmTileCount = 0;
       var gtmPalSize = 0;
-      var gtmPalette = new Array(256);
+      var gtmPaletteR = new Array(256);
+      var gtmPaletteG = new Array(256);
+      var gtmPaletteB = new Array(256);
+      var gtmPaletteA = new Array(256);
+      var gtmTMImageData = null;
       var gtmTMPos = 0;
+      var gtmLoopCount = 0;
 
       drop = document.querySelector('#drop');
       drop.addEventListener('drop', (event) => {
@@ -89,7 +88,7 @@
             gtmDataPos = 0;
             gtmReady = true;
             drop.parentNode.removeChild(drop);
-	          setTimeout(renderFrame, 100);
+	          setTimeout(decodeFrame, 100);
         });
         gtmReader.readAsArrayBuffer(file);
       });
@@ -101,31 +100,101 @@
       function toColor(num) {
         // from https://stackoverflow.com/questions/11866781/how-do-i-convert-an-integer-to-a-javascript-color/11866980
         var r = num & 0xFF, g = (num & 0xFF00) >>> 8, b = (num & 0xFF0000) >>> 16, a = (num & 0xFF000000) >>> 24;
-        return "rgba(" + [r, g, b, a].join(",") + ")";
+        return 'rgba(' + [r, g, b, a].join(',') + ')';
       }
       
       function redimFrame() {
-        var table = document.querySelector('#frame');
-        for (let y = 0; y < gtmHeight; y++) {
-          var row = table.insertRow();
-          row.appendChild(document.createElement("th"));
-          var cell = row.cells[0];
-          cell.style.width = CTileWidth + "px";
-          cell.style.height = CTileWidth + "px";
-          cell.id = "tm" + (y * gtmWidth + 0).toString();
-          for (let x = 1; x < gtmWidth; x++) {
-            var cell = row.insertCell();
-            cell.style.width = CTileWidth + "px";
-            cell.style.height = CTileWidth + "px";
-            cell.id = "tm" + (y * gtmWidth + x).toString();
-          }
-        }
-        setInterval(renderFrame, Math.round(gtmFrameLength / (1000 * 1000)));
+        var frame = document.getElementById('frame');
+        frame.width = gtmWidth * CTileWidth;
+        frame.height = gtmHeight * CTileWidth;
+        var canvas = frame.getContext('2d');
+        canvas.fillStyle = 'black';
+        canvas.fillRect(0, 0, gtmWidth * CTileWidth, gtmHeight * CTileWidth);
+
+        setInterval(decodeFrame, Math.round(gtmFrameLength / (1000 * 1000)));
+
+        gtmTiles = new Array(gtmTileCount);
       }
       
+      function renderBegin() {
+        var frame = document.querySelector('#frame');
+        canvas = frame.getContext('2d');
+        gtmTMImageData = canvas.getImageData(0, 0, frame.width, frame.height);
+      }
+      
+      function renderEnd() {
+        var frame = document.querySelector('#frame');
+        canvas = frame.getContext('2d');
+        canvas.putImageData(gtmTMImageData, 0, 0);
+      }
+
       function drawTilemapItem(idx, attrs) {
-        var cell = document.getElementById("tm" + gtmTMPos.toString());
-        cell.style.backgroundColor = gtmPalette[attrs >>> 2][idx % gtmPalSize]
+        let tile = gtmTiles[idx];
+        let palR = gtmPaletteR[attrs >>> 2];
+        let palG = gtmPaletteG[attrs >>> 2];
+        let palB = gtmPaletteB[attrs >>> 2];
+        let palA = gtmPaletteA[attrs >>> 2];
+        let x = (gtmTMPos % gtmWidth) * CTileWidth;
+        let y = Math.round(gtmTMPos / gtmWidth) * CTileWidth;
+        let p = (y * gtmWidth * CTileWidth + x) * 4;
+        var data = gtmTMImageData.data
+        
+        if (attrs & 1)
+        {
+          if (attrs & 2)
+          {
+            // HV mirrored
+            for (let ty = CTileWidth - 1; ty >= 0; ty--) {
+              for (let tx = CTileWidth - 1; tx >= 0; tx--) {
+                let v = tile[tx + CTileWidth * ty];
+                data[p++] = palR[v]; 
+                data[p++] = palG[v]; 
+                data[p++] = palB[v]; 
+                data[p++] = palA[v]; 
+              }
+              p += (gtmWidth - 1) * CTileWidth * 4;
+            }
+          } else {
+            // H mirrored
+            for (let ty = 0; ty < CTileWidth; ty++) {
+              for (let tx = CTileWidth - 1; tx >= 0; tx--) {
+                let v = tile[tx + CTileWidth * ty];
+                data[p++] = palR[v]; 
+                data[p++] = palG[v]; 
+                data[p++] = palB[v]; 
+                data[p++] = palA[v]; 
+              }
+              p += (gtmWidth - 1) * CTileWidth * 4;
+            }
+          }
+        } else {
+          if (attrs & 2)
+          {
+            // V mirrored
+            for (let ty = CTileWidth - 1; ty >= 0; ty--) {
+              for (let tx = 0; tx < CTileWidth; tx++) {
+                let v = tile[tx + CTileWidth * ty];
+                data[p++] = palR[v]; 
+                data[p++] = palG[v]; 
+                data[p++] = palB[v]; 
+                data[p++] = palA[v]; 
+              }
+              p += (gtmWidth - 1) * CTileWidth * 4;
+            }
+          } else {
+            // standard
+            for (let ty = 0; ty < CTileWidth; ty++) {
+              for (let tx = 0; tx < CTileWidth; tx++) {
+                let v = tile[tx + CTileWidth * ty];
+                data[p++] = palR[v]; 
+                data[p++] = palG[v]; 
+                data[p++] = palB[v]; 
+                data[p++] = palA[v]; 
+              }
+              p += (gtmWidth - 1) * CTileWidth * 4;
+            }
+          }
+        }
         gtmTMPos++;
       }
       
@@ -150,9 +219,13 @@
         return [v & ((1 << CShortIdxBits) - 1), v >>> CShortIdxBits];
       }
 
-      function renderFrame() {
+      function decodeFrame() {
         if (!gtmReady || !document.querySelector('#play_loop').checked)
 	         return;
+
+        if (gtmLoopCount > 0) {
+          renderBegin();
+        }
 
         let doContinue = true;
         do {
@@ -164,8 +237,11 @@
               gtmHeight = readWord();
               gtmFrameLength = readDWord();
               gtmTileCount = readDWord();
-
-              redimFrame();
+              
+              if (gtmLoopCount <= 0) {
+                redimFrame();
+                renderBegin();
+              }
               break;
               
             case GTMCommand.Tileset:
@@ -174,17 +250,24 @@
               gtmPalSize = cmd[1] + 1;
               
               for (let p = start; p <= end; p++) {
+                gtmTiles[p] = new Array(CTileWidth * CTileWidth);
                 for (let i = 0; i < CTileWidth * CTileWidth; i++) {
-                  readByte();
+                  gtmTiles[p][i] = readByte();
                 }
               }
               break;
             
             case GTMCommand.LoadPalette:
               let palIdx = cmd[1] >> 2;
-              gtmPalette[palIdx] = new Array(gtmPalSize);
+              gtmPaletteR[palIdx] = new Array(gtmPalSize);
+              gtmPaletteG[palIdx] = new Array(gtmPalSize);
+              gtmPaletteB[palIdx] = new Array(gtmPalSize);
+              gtmPaletteA[palIdx] = new Array(gtmPalSize);
               for (let i = 0; i < gtmPalSize; i++) {
-                gtmPalette[palIdx][i] = toColor(readDWord());
+                gtmPaletteR[palIdx][i] = readByte();
+                gtmPaletteG[palIdx][i] = readByte();
+                gtmPaletteB[palIdx][i] = readByte();
+                gtmPaletteA[palIdx][i] = readByte();
               }
               break;
               
@@ -194,7 +277,7 @@
               
             case GTMCommand.FrameEnd:
               if (gtmTMPos != gtmWidth * gtmHeight) {
-                console.error("Incomplete tilemap " + gtmTMPos + " <> " + gtmWidth * gtmHeight + "\n");
+                console.error('Incomplete tilemap ' + gtmTMPos + ' <> ' + gtmWidth * gtmHeight + '\n');
               }
               gtmTMPos = 0;
               doContinue = false;
@@ -206,13 +289,21 @@
               } else if (cmd[0] >= GTMCommand.SkipBlockStart && cmd[0] <= GTMCommand.SkipBlockEnd) {
                 gtmTMPos += cmd[0] - GTMCommand.SkipBlockStart + 1;
               } else {
-                console.error("Undecoded command @" + gtmDataPos + ": " + cmd + "\n");
+                console.error('Undecoded command @' + gtmDataPos + ': ' + cmd + '\n');
               }
               break;
           }
           
           gtmReady = (gtmDataPos < gtmFrameData.length);
         } while (doContinue && gtmReady);
+        
+        if (!gtmReady) {
+          gtmDataPos = 0;
+          gtmLoopCount++;
+          gtmReady = true;
+        }
+        
+        renderEnd();
       }
     </script>
   </body>
