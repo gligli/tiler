@@ -96,13 +96,7 @@
       document.querySelector('#drop').addEventListener('dragover', (event) => {
         event.preventDefault();
       });
-      
-      function toColor(num) {
-        // from https://stackoverflow.com/questions/11866781/how-do-i-convert-an-integer-to-a-javascript-color/11866980
-        var r = num & 0xFF, g = (num & 0xFF00) >>> 8, b = (num & 0xFF0000) >>> 16, a = (num & 0xFF000000) >>> 24;
-        return 'rgba(' + [r, g, b, a].join(',') + ')';
-      }
-      
+
       function redimFrame() {
         var frame = document.getElementById('frame');
         frame.width = gtmWidth * CTileWidth;
@@ -111,15 +105,11 @@
         canvas.fillStyle = 'black';
         canvas.fillRect(0, 0, gtmWidth * CTileWidth, gtmHeight * CTileWidth);
 
+        gtmTMImageData = canvas.getImageData(0, 0, frame.width, frame.height);
+
         setInterval(decodeFrame, Math.round(gtmFrameLength / (1000 * 1000)));
 
         gtmTiles = new Array(gtmTileCount);
-      }
-      
-      function renderBegin() {
-        var frame = document.querySelector('#frame');
-        canvas = frame.getContext('2d');
-        gtmTMImageData = canvas.getImageData(0, 0, frame.width, frame.height);
       }
       
       function renderEnd() {
@@ -223,10 +213,6 @@
         if (!gtmReady || !document.querySelector('#play_loop').checked)
 	         return;
 
-        if (gtmLoopCount > 0) {
-          renderBegin();
-        }
-
         let doContinue = true;
         do {
           let cmd = readCommand();
@@ -240,7 +226,6 @@
               
               if (gtmLoopCount <= 0) {
                 redimFrame();
-                renderBegin();
               }
               break;
               
