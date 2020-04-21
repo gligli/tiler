@@ -106,10 +106,9 @@
         canvas.fillRect(0, 0, gtmWidth * CTileWidth, gtmHeight * CTileWidth);
 
         gtmTMImageData = canvas.getImageData(0, 0, frame.width, frame.height);
+        gtmTiles = new Array(gtmTileCount);
 
         setInterval(decodeFrame, Math.round(gtmFrameLength / (1000 * 1000)));
-
-        gtmTiles = new Array(gtmTileCount);
       }
       
       function renderEnd() {
@@ -125,7 +124,7 @@
         let palB = gtmPaletteB[attrs >>> 2];
         let palA = gtmPaletteA[attrs >>> 2];
         let x = (gtmTMPos % gtmWidth) * CTileWidth;
-        let y = Math.round(gtmTMPos / gtmWidth) * CTileWidth;
+        let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
         let p = (y * gtmWidth * CTileWidth + x) * 4;
         var data = gtmTMImageData.data
         
