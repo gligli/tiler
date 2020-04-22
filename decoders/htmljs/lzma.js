@@ -691,11 +691,9 @@ LZMA.decompressFile = function(inStream, outStream){
 LZMA.decompressFileMaxSize = function(decoder, inStream, outStream, maxDecodeSize) {
   // 
   let wasFinished = decoder._uncompressedSize <= 0;
-  console.log(wasFinished, decoder._uncompressedSize);
   if (wasFinished) {
     // read all the header properties
     var header = decoder.decodeHeader(inStream);
-    console.log(header);
     // setup/init decoder states
     decoder.setProperties(header);
     decoder._uncompressedSize = header.uncompressedSize;
