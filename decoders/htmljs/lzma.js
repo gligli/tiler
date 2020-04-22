@@ -355,8 +355,8 @@ LZMA.Decoder = function(){
   this._uncompressedSize = 0;
   
   this._decodeState = {
-    'state': 0, 'rep0': 0, 'rep1': 0, 'rep2': 0, 'rep3': 0, 'nowPos64': 0, 'prevByte': 0,
-    'posState': 0, 'decoder2': 0, 'len': 0, 'distance': 0, 'posSlot': 0, 'numDirectBits': 0
+    state: 0, rep0: 0, rep1: 0, rep2: 0, rep3: 0, nowPos64: 0, prevByte: 0,
+    posState: 0, decoder2: 0, len: 0, distance: 0, posSlot: 0, numDirectBits: 0
   }
 
   this._posSlotDecoder[0] = new LZMA.BitTreeDecoder(6);
@@ -435,7 +435,7 @@ LZMA.Decoder.prototype.decodeHeader = function(inStream){
   inStream.readByte();
   inStream.readByte();
   inStream.readByte();
-  if(inStream.readByte() == 0xff) uncompressedSize = -1;
+  inStream.readByte();
 
   return {
     // The number of high bits of the previous
@@ -507,6 +507,8 @@ LZMA.Decoder.prototype.decodeBody = function(inStream, outStream, maxSize, doIni
     distance = this._decodeState.distance;
     posSlot = this._decodeState.posSlot;
     numDirectBits = this._decodeState.numDirectBits;
+
+    maxSize += this._decodeState.nowPos64; // fixup for already decoded data
   }
 
   while(maxSize < 0 || nowPos64 < maxSize){
@@ -602,7 +604,6 @@ LZMA.Decoder.prototype.decodeBody = function(inStream, outStream, maxSize, doIni
     this._outWindow.flush();
     this._outWindow.releaseStream();
     this._rangeDecoder.releaseStream();
-    return res;
   } else {
     this._decodeState.state = state;
     this._decodeState.rep0 = rep0;
@@ -618,8 +619,9 @@ LZMA.Decoder.prototype.decodeBody = function(inStream, outStream, maxSize, doIni
     this._decodeState.posSlot = posSlot;
     this._decodeState.numDirectBits = numDirectBits;
     res = 3; // unfinished
-    return res;
   }
+
+  return res;
 };
 
 LZMA.Decoder.prototype.setDecoderProperties = function(properties){
@@ -708,11 +710,10 @@ LZMA.decompressFileMaxSize = function(decoder, inStream, outStream, maxDecodeSiz
     // only generic error given here
     throw Error("Error in lzma data stream");
   }
-
-  if (res == 2) { // interrupted by eos
+  if (res === 2) { // interrupted by eos
     decoder._uncompressedSize = 0;
     return outStream;
-  } else if (res == 1) { // succeeded
+  } else if (res === 1) { // succeeded
     return outStream;
   } else { // error; unfinished
     return null;

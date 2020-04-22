@@ -81,9 +81,7 @@ function unpackData() {
   
   let res = LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, Math.round((2048 * 1024) / (1000 / gtmFrameLength)));
 
-  let len = 0;
   if (res != null) {
-    len = gtmFrameData.length;
     gtmOutStream = res;
     gtmFrameData = gtmOutStream.toUint8Array();
   }
