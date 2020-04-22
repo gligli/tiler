@@ -199,7 +199,7 @@ begin
     SrcStream.Free;
   end;
 
-  Process.Parameters.Add('e "' + SrcFN + '" "' + DstFN + '" -lc8');
+  Process.Parameters.Add('e "' + SrcFN + '" "' + DstFN + '" -lc8 -eos');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
