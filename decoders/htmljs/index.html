@@ -29,9 +29,7 @@
     <h2>GliGli's TileMotion Live Demo</h2>
     <p>This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</p>
     <canvas id="frame" width="8" height="8"></canvas>
-    <div id="drop">
-      <p>Drag a GTM file into this area to play the contents</p>
-    </div>
+    <div id="drop"><p>Drag a GTM file into this area to play the contents</p></div><br/>
     <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
     <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
     <script src="./lzma.js"></script>
@@ -52,6 +50,10 @@
         gtmPlayFromFile(file, 'frame');
       });
       
+      document.querySelector('#play_loop').addEventListener('click', () => {
+        gtmSetPlaying(document.querySelector('#play_loop').checked);
+      });
+
       document.querySelector('#drop').addEventListener('dragover', (event) => {
         event.preventDefault();
       });

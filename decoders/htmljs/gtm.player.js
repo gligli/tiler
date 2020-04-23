@@ -29,6 +29,7 @@ var gtmPaletteG = new Array(256);
 var gtmPaletteB = new Array(256);
 var gtmPaletteA = new Array(256);
 var gtmReady = false;
+var gtmPlaying = true;
 var gtmDataPos = 0;
 var gtmWidth = 0;
 var gtmHeight = 0;
@@ -58,6 +59,10 @@ function gtmPlayFromFile(file, canvasId) {
   });
 
   gtmReader.readAsArrayBuffer(file);
+}
+
+function gtmSetPlaying(playing) {
+  gtmPlaying = playing;
 }
 
 function redimFrame() {
@@ -185,7 +190,7 @@ function readCommand() {
 }
 
 function decodeFrame() {
-  if (!gtmReady || !document.querySelector('#play_loop').checked)
+  if (!gtmReady || !gtmPlaying)
      return;
 
   let doContinue = true;
