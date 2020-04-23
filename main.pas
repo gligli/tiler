@@ -59,7 +59,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 5, 1, 2, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 5, 1, 2, 1, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -864,6 +864,9 @@ var
   sfr, efr: Integer;
   bmp: TPicture;
 begin
+  if seMaxTiles.Value = round(seQbTiles.Value * EqualQualityTileCount(GetGlobalTileCount)) then
+    seMaxTiles.Value := 0;
+
   ProgressRedraw;
 
   ClearAll;
@@ -1171,8 +1174,6 @@ end;
 procedure TMainForm.btnSaveClick(Sender: TObject);
 var
   fs: TFileStream;
-  i: Integer;
-  palPict: TPortableNetworkGraphic;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -1187,32 +1188,6 @@ begin
   end;
 
   ProgressRedraw(1);
-
-{$if cTilePaletteSize * cPaletteCount <= 256}
-  if chkDithered.Checked and Assigned(FKeyFrames[0].PaletteRGB[0]) then
-    palPict := T8BitPortableNetworkGraphic.Create
-  else
-{$endif}
-     palPict := TFastPortableNetworkGraphic.Create;
-
-  palPict.Width := FScreenWidth;
-  palPict.Height := FScreenHeight;
-  palPict.PixelFormat := pf24bit;
-
-  try
-    for i := 0 to High(FFrames) do
-    begin
-      Render(i, True, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, sedPalIdx.Value, sePage.Value);
-      imgDest.Repaint;
-
-      palPict.Canvas.Draw(0, 0, imgDest.Picture.Bitmap);
-      palPict.SaveToFile(Format(edOutputDir.Text, [i]));
-    end;
-  finally
-    palPict.Free;
-  end;
-
-  ProgressRedraw(2);
 
   tbFrameChange(nil);
 end;
