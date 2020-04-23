@@ -264,7 +264,7 @@ type
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
-    seAvgTPF: TSpinEdit;
+    seQbTiles: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -316,9 +316,8 @@ type
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure IdleTimerTimer(Sender: TObject);
-    procedure seAvgTPFEditingDone(Sender: TObject);
     procedure seEncGammaChange(Sender: TObject);
-    procedure seMaxTilesEditingDone(Sender: TObject);
+    procedure seQbTilesEditingDone(Sender: TObject);
     procedure tbFrameChange(Sender: TObject);
   private
     FKeyFrames: array of TKeyFrame;
@@ -622,6 +621,11 @@ begin
   Result := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
 end;
 
+function EqualQualityTileCount(tileCount: Integer): Integer;
+begin
+  Result := round(sqrt(tileCount) * log2(1 + tileCount));
+end;
+
 { T8BitPortableNetworkGraphic }
 
 procedure T8BitPortableNetworkGraphic.InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter);
@@ -909,7 +913,6 @@ begin
 
   SetLength(FFrames, frc);
   tbFrame.Max := High(FFrames);
-  seMaxTilesEditingDone(nil);
 
   for i := 0 to High(FFrames) do
   begin
@@ -1035,6 +1038,8 @@ begin
 
   ProgressRedraw(2);
 
+  if seMaxTiles.Value <= 0 then
+    seQbTilesEditingDone(nil);
   tbFrameChange(nil);
 end;
 
@@ -1274,10 +1279,10 @@ begin
   end;
 end;
 
-procedure TMainForm.seAvgTPFEditingDone(Sender: TObject);
+procedure TMainForm.seQbTilesEditingDone(Sender: TObject);
 begin
   if Length(FFrames) = 0 then Exit;
-  seMaxTiles.Value := seAvgTPF.Value * Length(FFrames);
+  seMaxTiles.Value := round(seQbTiles.Value * EqualQualityTileCount(GetGlobalTileCount));
 end;
 
 procedure TMainForm.seEncGammaChange(Sender: TObject);
@@ -1286,12 +1291,6 @@ begin
   gGamma[1] := seVisGamma.Value;
   InitLuts;
   tbFrameChange(nil);
-end;
-
-procedure TMainForm.seMaxTilesEditingDone(Sender: TObject);
-begin
-  if Length(FFrames) = 0 then Exit;
-  seAvgTPF.Value := seMaxTiles.Value div Length(FFrames);
 end;
 
 procedure TMainForm.tbFrameChange(Sender: TObject);
@@ -3566,11 +3565,13 @@ begin
 end;
 
 procedure TMainForm.DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
+const
+  CBinCnt = 32;
 var
   Dataset: TByteDynArray3;
-  TileIndices: array[0 .. sqr(cTileWidth) - 1] of TIntegerDynArray;
-  StartingPoint: array[0 .. sqr(cTileWidth) - 1] of Integer;
-  ClusterCount: array[0 .. sqr(cTileWidth) - 1] of TFloat;
+  TileIndices: array[0 .. CBinCnt - 1] of TIntegerDynArray;
+  StartingPoint: array[0 .. CBinCnt - 1] of Integer;
+  ClusterCount: array[0 .. CBinCnt - 1] of TFloat;
   Line: TByteDynArray;
   MergeLock: TSpinlock;
 
@@ -3628,24 +3629,24 @@ var
 
 var
   fs: TFileStream;
-  acc, i, j, irev, signi, ActiveTileCnt: Integer;
-  dis: array[0 .. sqr(cTileWidth) - 1] of Integer;
-  best: array[0 .. sqr(cTileWidth) - 1] of Integer;
-  share, accf: TFloat;
+  acc, i, j, disCnt, signi, ActiveTileCnt: Integer;
+  dis: array[0 .. CBinCnt - 1] of Integer;
+  best: array[0 .. CBinCnt - 1] of Integer;
+  share, accf, f: TFloat;
 begin
   // prepare KModes dataset, one line per tile, 64 palette indexes per line plus 16 additional features
   // also choose KModes starting point
 
   SpinLeave(@MergeLock);
-  SetLength(Dataset, sqr(cTileWidth), Length(FTiles) shr 4, cKModesFeatureCount);
+  SetLength(Dataset, CBinCnt, Length(FTiles) shr 4, cKModesFeatureCount);
   SetLength(Line, cKModesFeatureCount);
 
-  for i := 0 to sqr(cTileWidth) - 1 do
+  for i := 0 to CBinCnt - 1 do
     SetLength(TileIndices[i], Length(FTiles));
 
-  FillDWord(dis[0], sqr(cTileWidth), 0);
-  FillDWord(StartingPoint[0], sqr(cTileWidth), DWORD(-RestartCount));
-  FillDWord(best[0], sqr(cTileWidth), DWORD(MaxInt));
+  FillDWord(dis[0], CBinCnt, 0);
+  FillDWord(StartingPoint[0], CBinCnt, DWORD(-RestartCount));
+  FillDWord(best[0], CBinCnt, DWORD(MaxInt));
   ActiveTileCnt := 0;
 
   // bin tiles by PalSigni (highest number of pixels the same color from the tile)
@@ -3656,6 +3657,7 @@ begin
       Continue;
 
     WriteTileDatasetLine(FTiles[i]^, Line, signi);
+    signi := signi * (CBinCnt - 1) div (sqr(cTileWidth) - 1);
 
     if dis[signi] >= Length(Dataset[signi]) then
       SetLength(Dataset[signi], Length(FTiles), cKModesFeatureCount);
@@ -3678,7 +3680,7 @@ begin
     Inc(ActiveTileCnt);
   end;
 
-  for i := 0 to sqr(cTileWidth) - 1 do
+  for i := 0 to CBinCnt - 1 do
   begin
     SetLength(Dataset[i], dis[i]);
     SetLength(TileIndices[i], dis[i]);
@@ -3686,11 +3688,32 @@ begin
 
   // share DesiredNbTiles among bins, proportional to amount of tiles
 
-  FillQWord(ClusterCount[0], sqr(cTileWidth), 0);
-  share := DesiredNbTiles / sqr(cTileWidth);
-  for i := 0 to sqr(cTileWidth) div 2 - 1 do
+{$if true}
+  FillQWord(ClusterCount[0], CBinCnt, 0);
+  disCnt := 0;
+  for i := 0 to CBinCnt - 1 do
+    disCnt += dis[i];
+  share := DesiredNbTiles / disCnt;
+
+  accf := 0;
+  for i := 0 to CBinCnt - 1 do
   begin
-    irev := sqr(cTileWidth) - 1 - i;
+    ClusterCount[i] := dis[i] * share;
+    f := EqualQualityTileCount(dis[i]);
+    accf += max(f, ClusterCount[i]) - ClusterCount[i];
+    ClusterCount[i] := max(f, ClusterCount[i]);
+  end;
+
+  writeln(FloatToStr(accf));
+  share := accf / disCnt;
+  for i := 0 to CBinCnt - 1 do
+    ClusterCount[i] -= dis[i] * share;
+{$else}
+  FillQWord(ClusterCount[0], CBinCnt, 0);
+  share := DesiredNbTiles / CBinCnt;
+  for i := 0 to CBinCnt div 2 - 1 do
+  begin
+    irev := CBinCnt - 1 - i;
 
     ClusterCount[i] += share;
     accf := max(0.0, ClusterCount[i] - dis[i]);
@@ -3706,9 +3729,10 @@ begin
     for j := i + 1 to irev - 1 do
       ClusterCount[j] += accf;
   end;
+{$endif}
 
-  //for i := 0 to sqr(cTileWidth) - 1 do
-  //  WriteLn('EntropyBin # ', i, #9, dis[i], #9, FloatToStr(ClusterCount[i]));
+  for i := 0 to CBinCnt - 1 do
+    WriteLn('EntropyBin # ', i, #9, dis[i], #9, round(ClusterCount[i]));
 
   InitMergeTiles;
 
@@ -3716,7 +3740,7 @@ begin
 
   // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, sqr(cTileWidth) - 1);
+  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, CBinCnt - 1);
 
   ProgressRedraw(2);
 
