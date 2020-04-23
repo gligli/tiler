@@ -3633,6 +3633,9 @@ var
   best: array[0 .. sqr(cTileWidth) - 1] of Integer;
   share, accf: TFloat;
 begin
+  // prepare KModes dataset, one line per tile, 64 palette indexes per line plus 16 additional features
+  // also choose KModes starting point
+
   SpinLeave(@MergeLock);
   SetLength(Dataset, sqr(cTileWidth), Length(FTiles) shr 4, cKModesFeatureCount);
   SetLength(Line, cKModesFeatureCount);
@@ -3640,13 +3643,13 @@ begin
   for i := 0 to sqr(cTileWidth) - 1 do
     SetLength(TileIndices[i], Length(FTiles));
 
-  // prepare KModes dataset, one line per tile, 64 palette indexes per line
-  // also choose KModes starting point
-
   FillDWord(dis[0], sqr(cTileWidth), 0);
   FillDWord(StartingPoint[0], sqr(cTileWidth), DWORD(-RestartCount));
   FillDWord(best[0], sqr(cTileWidth), DWORD(MaxInt));
   ActiveTileCnt := 0;
+
+  // bin tiles by PalSigni (highest number of pixels the same color from the tile)
+
   for i := 0 to High(FTiles) do
   begin
     if not FTiles[i]^.Active then
@@ -3680,6 +3683,8 @@ begin
     SetLength(Dataset[i], dis[i]);
     SetLength(TileIndices[i], dis[i]);
   end;
+
+  // share DesiredNbTiles among bins, proportional to amount of tiles
 
   FillQWord(ClusterCount[0], sqr(cTileWidth), 0);
   share := DesiredNbTiles / sqr(cTileWidth);
