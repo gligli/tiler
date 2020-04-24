@@ -368,10 +368,9 @@ type
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
     function ColorCompare(r1, g1, b1, r2, g2, b2: Int64): Int64;
-    function ColorCompareTK(r1, g1, b1, r2, g2, b2: Int64): Int64;
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure TerminatePlan(var Plan: TMixingPlan);
-    function DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
+    function DeviseBestMixingPlanYiluoma(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
     procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
     procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
@@ -1146,10 +1145,10 @@ begin
   PreparePlan(plan, 4, pal);
 
   SetLength(list, cDitheringListLen);
-  DeviseBestMixingPlan(plan, $ffffff, list);
-  DeviseBestMixingPlan(plan, $ff8000, list);
-  DeviseBestMixingPlan(plan, $808080, list);
-  DeviseBestMixingPlan(plan, $000000, list);
+  DeviseBestMixingPlanYiluoma(plan, $ffffff, list);
+  DeviseBestMixingPlanYiluoma(plan, $ff8000, list);
+  DeviseBestMixingPlanYiluoma(plan, $808080, list);
+  DeviseBestMixingPlanYiluoma(plan, $000000, list);
 
 
   for i := 0 to 255 do
@@ -1373,17 +1372,17 @@ var
 begin
   luma1 := r1 * cRedMul + g1 * cGreenMul + b1 * cBlueMul;
   luma2 := r2 * cRedMul + g2 * cGreenMul + b2 * cBlueMul;
-  lumadiff := luma1 - luma2;
+  lumadiff := (luma1 - luma2) div cLumaDiv;
   diffR := r1 - r2;
   diffG := g1 - g2;
   diffB := b1 - b2;
-  Result := diffR * diffR * cRedMul * cRGBw div 32;
-  Result += diffG * diffG * cGreenMul * cRGBw div 32;
-  Result += diffB * diffB * cBlueMul * cRGBw div 32;
-  Result += lumadiff * lumadiff;
+  Result := (diffR * diffR) * cRGBw;
+  Result += (diffG * diffG) * cRGBw;
+  Result += (diffB * diffB) * cRGBw;
+  Result += (lumadiff * lumadiff) shl 5;
 end;
 
-function TMainForm.DeviseBestMixingPlan(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
+function TMainForm.DeviseBestMixingPlanYiluoma(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
 label
   pal_loop, inner_loop, worst;
 var
@@ -1425,6 +1424,7 @@ begin
     push rax
     push rbx
     push rcx
+    push rdx
 
     mov eax, r
     mov ebx, g
@@ -1440,8 +1440,9 @@ begin
 
     add eax, ebx
     add eax, ecx
-    imul eax, (1 shl 22) / cLumaDiv
-    shr eax, 22
+    mov ecx, cLumaDiv
+    xor edx, edx
+    div ecx
 
     pinsrd xmm4, eax, 3
 
@@ -1449,11 +1450,12 @@ begin
     pinsrq xmm5, rax, 0
     pinsrq xmm5, rax, 1
 
-    mov rax, (cRedMul * cRGBw / 128) or ((cGreenMul * cRGBw / 128) shl 32)
+    mov rax, cRGBw or (cRGBw shl 32)
     pinsrq xmm6, rax, 0
-    mov rax, (cBlueMul * cRGBw / 128) or ((cLumaDiv * 32 / 128) shl 32)
+    mov rax, cRGBw or (32 shl 32)
     pinsrq xmm6, rax, 1
 
+    pop rdx
     pop rcx
     pop rbx
     pop rax
@@ -1635,22 +1637,6 @@ begin
   end;
 end;
 
-function TMainForm.ColorCompareTK(r1, g1, b1, r2, g2, b2: Int64): Int64;
-var
-  luma1, luma2, lumadiff, diffR, diffG, diffB: Int64;
-begin
-  luma1 := r1 * cRedMul + g1 * cGreenMul + b1 * cBlueMul;
-  luma2 := r2 * cRedMul + g2 * cGreenMul + b2 * cBlueMul;
-  lumadiff := (luma1 - luma2) div cLumaDiv;
-  diffR := r1 - r2;
-  diffG := g1 - g2;
-  diffB := b1 - b2;
-  Result := diffR * diffR * cRGBw div 32;
-  Result += diffG * diffG * cRGBw div 32;
-  Result += diffB * diffB * cRGBw div 32;
-  Result += lumadiff * lumadiff;
-end;
-
 procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
 var
   index, chosen, c: Integer;
@@ -1682,7 +1668,7 @@ begin
     chosen := c and (length(Plan.Y2Palette) - 1);
     for index := 0 to length(Plan.Y2Palette) - 1 do
     begin
-      penalty := ColorCompareTK(t[0], t[1], t[2], Plan.Y2Palette[index][0], Plan.Y2Palette[index][1], Plan.Y2Palette[index][2]);
+      penalty := ColorCompare(t[0], t[1], t[2], Plan.Y2Palette[index][0], Plan.Y2Palette[index][1], Plan.Y2Palette[index][2]);
       if penalty < least_penalty then
       begin
         least_penalty := penalty;
@@ -1891,7 +1877,7 @@ begin
       for x := 0 to (cTileWidth - 1) do
       begin
         map_value := cDitheringMap[(y shl 3) + x];
-        count := DeviseBestMixingPlan(Plan, ATile.RGBPixels^[y,x], list);
+        count := DeviseBestMixingPlanYiluoma(Plan, ATile.RGBPixels^[y,x], list);
         map_value := (map_value * count) shr 6;
         ATile.PalPixels[y, x] := list[map_value];
       end;
@@ -4104,7 +4090,7 @@ begin
   vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(MaxInt) + '),setpts=PTS-STARTPTS" ';
   if AFrameCount > 0 then
   begin
-    vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(AStartFrame + AFrameCount) + '),setpts=PTS-STARTPTS" ';
+    vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(AStartFrame + AFrameCount - 1) + '),setpts=PTS-STARTPTS" ';
   end;
 
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
