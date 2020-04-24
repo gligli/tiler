@@ -36,8 +36,10 @@ type
 
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
-procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
+  OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 
 procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
 function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
@@ -217,7 +219,7 @@ begin
   DeleteFile(PChar(DstFN));
 end;
 
-procedure DoExternalSKLearn(Dataset: TFloatDynArray2; ClusterCount, Precision: Integer; PrintProgress: Boolean;
+procedure DoExternalSKLearn(Dataset: TFloatDynArray2; ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean;
   var Clusters: TIntegerDynArray);
 var
   i, j, st: Integer;
@@ -246,9 +248,16 @@ begin
     Process := TProcess.Create(nil);
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
 
-    if SearchPath(nil, 'python.exe', nil, MAX_PATH, pythonExe, nil) = 0 then
-      pythonExe := 'python.exe';
-    Process.Executable := pythonExe;
+    if Compiled then
+    begin
+      Process.Executable := 'cluster.exe';
+    end
+    else
+    begin
+      if SearchPath(nil, 'python.exe', nil, MAX_PATH, pythonExe, nil) = 0 then
+        pythonExe := 'python.exe';
+      Process.Executable := pythonExe;
+    end;
 
     for i := 0 to GetEnvironmentVariableCount - 1 do
       Process.Environment.Add(GetEnvironmentString(i));
@@ -256,7 +265,8 @@ begin
     Process.Environment.Add('NUMEXPR_NUM_THREADS=1');
     Process.Environment.Add('OMP_NUM_THREADS=1');
 
-    Process.Parameters.Add('cluster.py');
+    if not Compiled then
+      Process.Parameters.Add('cluster.py');
     Process.Parameters.Add('-i "' + InFN + '" -n ' + IntToStr(ClusterCount) + ' -t ' + FloatToStr(intpower(10.0, -Precision + 1)));
     if PrintProgress then
       Process.Parameters.Add('-d');
@@ -351,6 +361,118 @@ begin
     OutputStream.Free;
     Shuffler.Free;
     OutSL.Free;
+  end;
+end;
+
+procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
+  OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
+var
+  i, PrevLen, Clu, Inp, RetCode: Integer;
+  TrainFN, TrainStmt, TestFN, CrFN, Line, Output, ErrOut, CmdLine: String;
+  SL: TStringList;
+  FS: TFileStream;
+  Process: TProcess;
+begin
+  if Assigned(TrainDS) and (ClusterCount >= Length(TrainDS)) then
+  begin
+    // force a valid dataset by duplicating some lines
+    PrevLen := Length(TrainDS);
+    SetLength(TrainDS, ClusterCount + 1);
+    for i := PrevLen to ClusterCount do
+      TrainDS[i] := TrainDS[i - PrevLen];
+  end;
+
+  Process := TProcess.Create(nil);
+  SL := TStringList.Create;
+  try
+    if Assigned(TrainDS) then
+    begin
+      TrainFN := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.bin');
+      FS := TFileStream.Create(TrainFN, fmCreate or fmShareDenyWrite);
+      try
+        FS.WriteDWord(Length(TrainDS));
+        FS.WriteDWord(Length(TrainDS[0]));
+        for i := 0 to High(TrainDS) do
+          FS.Write(TrainDS[i, 0], Length(TrainDS[0]) * SizeOf(TrainDS[i, 0]));
+      finally
+        FS.Free;
+      end;
+    end;
+
+    if Assigned(TestDS) then
+      TestFN := GenerateSVMLightFile(TestDS, False);
+
+    if Assigned(Centroids) then
+    begin
+      CrFN := GetTempFileName('', 'centroids-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
+      if not Assigned(TrainDS) then
+        Centroids.SaveToFile(CrFN)
+    end;
+
+    Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
+    Process.Executable := IfThen(SizeOf(TFloat) = SizeOf(Double), 'yakmo.exe', 'yakmo_single.exe');
+
+    CmdLine := IfThen(OutputClusters, ' --binary --output=2 ');
+    CmdLine += IfThen(IterationCount < 0, ' --iteration=10000 ', ' --iteration=' + IntToStr(IterationCount) + ' ');
+    CmdLine += IfThen((ClusterCount >= 0) and Assigned(TrainDS), ' --num-cluster=' + IntToStr(ClusterCount) + ' ');
+    CmdLine += IfThen(RestartCount >= 0, ' --num-result=' + IntToStr(RestartCount) + ' ');
+
+    TrainStmt := IfThen(TrainFN = '', '-', '"' + TrainFN + '"');
+
+    if Assigned(TestDS) then
+      CmdLine := TrainStmt + ' "' + CrFN + '" "' + TestFN + '" ' + CmdLine
+    else if Assigned(Centroids) then
+      CmdLine := TrainStmt + ' "' + CrFN + '" - ' + CmdLine
+    else
+      CmdLine := TrainStmt + ' - - ' + CmdLine;
+
+    Process.Parameters.Add(CmdLine);
+    Process.ShowWindow := swoHIDE;
+    Process.Priority := ppIdle;
+
+    RetCode := 0;
+    internalRuncommand(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
+
+    if RetCode <> 0 then
+      DebugLn('Yakmo failed! RetCode: ' + IntToStr(RetCode) + sLineBreak + 'Msg: ' + ErrOut + sLineBreak + 'CmdLine: ' + CmdLine);
+
+    if Assigned(TrainDS) then
+      DeleteFile(PChar(TrainFN));
+
+    if Assigned(TestDS) then
+      DeleteFile(PChar(TestFN));
+
+    if Assigned(Centroids) then
+    begin
+      if Assigned(TrainDS) then
+      begin
+        if FileExists(CrFN) then
+          Centroids.LoadFromFile(CrFN)
+        else
+          GenerateSVMLightData(TrainDS, Centroids, True);
+      end;
+
+      DeleteFile(PChar(CrFN));
+    end;
+
+    if OutputClusters then
+    begin
+      if (Pos(#10, Output) <> Pos(#13#10, Output) + 1) then
+        SL.LineBreak := #10;
+
+      SL.Text := Output;
+
+      SetLength(Clusters, SL.Count);
+      for i := 0 to SL.Count - 1 do
+      begin
+        Line := SL[i];
+        if TryStrToInt(Copy(Line, 1, Pos(' ', Line) - 1), Inp) and
+            TryStrToInt(RightStr(Line, Pos(' ', ReverseString(Line)) - 1), Clu) then
+          Clusters[Inp] := Clu;
+      end;
+    end;
+  finally
+    SL.Free;
   end;
 end;
 

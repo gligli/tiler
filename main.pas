@@ -1959,7 +1959,7 @@ begin
   assert(di = Length(Dataset));
 
   if di > 1 then
-    DoExternalKMeans(Dataset, cPaletteCount, ProcThreadPool.MaxThreadCount div 2, False, Clusters)
+    DoExternalYakmo(Dataset, nil, cPaletteCount, 1, -1, True, False, nil, Clusters)
   else
     FillDWord(Clusters[0], Length(Clusters), 0);
 
