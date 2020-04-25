@@ -513,7 +513,7 @@ begin
       Inc(j, 16);
     end;
 
-    while cnt > 1 do
+    while cnt > 0 do
     begin
       Line := Format('%s %d:%.12f', [Line, j + 1,  Dataset[i, j]], GInvariantFormatSettings);
       Dec(cnt);
