@@ -17,8 +17,8 @@ type
 const
   // tweakable constants
 
-  cPaletteCount = 16;
-  cBitsPerComp = 6;
+  cPaletteCount = 32;
+  cBitsPerComp = 8;
   cTilePaletteSize = 32;
   cRandomKModesCount = 7;
 
@@ -64,20 +64,20 @@ const
 type
   // GliGli's TileMotion commands
 
-  TGTMCommand = ( // commandBits: palette # bit count + 2 (H/V mirrors)
-    gtShortTileIdxStart = 0, // short tile index #0 ...
-    gtShortTileIdxEnd = 895, // ... short tile index #895
+  TGTMCommand = (
+    gtLongTileIdx = 0, // data -> tile index (24 bits); palette index (8 bits)
+    gtLoadPalette = 1, // data -> palette index (8 bits); palette format (8 bits) (00: RGBA32); RGBA bytes (32bits)
+    // new commands here
+    gtFrameEnd = 28, // commandBits bit 0 -> keyframe end
+    gtTileset = 29, // data -> start tile (32 bits); end tile (32 bits); indexes per tile (64 bytes); commandBits -> indexes bit count
+    gtSetDimensions = 30, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); tile count (32 bits);
+    gtExtendedCommand = 31, // data -> custom commands, proprietary extensions, ...; commandBits -> extended command index
 
-    gtSkipBlockStart = 896, // skipping 1 tile ...
-    gtSkipBlockEnd = 999, // ... skipping 104 tiles
+    gtShortTileIdxStart = 32, // short tile index #0 ...; commandBits: palette index (3 bits); V mirror (1 bit); H mirror (1 bit)
+    gtShortTileIdxEnd = 1919, // ... short tile index #1887
 
-    gtExtendedCommand = 1000, // data -> custom commands, proprietary extensions, ...; commandBits = extended command #
-
-    gtTileset = 1019, // data -> 32 bits start tile; 32 bits end tile; 64 byte indexes per tile; commandBits : highest index
-    gtSetDimensions = 1020, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); 32 bits tile count;
-    gtLoadPalette = 1021, // data -> RGBA bytes, word aligned; commandBits palette # bits = palette #; commandBits H/V mirrors: palette format (00: RGBA32)
-    gtFrameEnd = 1022, // commandBits bit 0 -> keyframe end
-    gtLongTileIdx = 1023 // data -> 32 bits tile index
+    gtSkipBlockStart = 1920, // skipping 128 tiles ...
+    gtSkipBlockEnd = 2047 // ... skipping 1 tile
   );
 
   TSpinlock = LongInt;
@@ -3772,7 +3772,7 @@ begin
   writeln(FloatToStr(accf));
   share := accf / disCnt;
   for i := 0 to CBinCnt - 1 do
-    ClusterCount[i] -= dis[i] * share;
+    ClusterCount[i] := Max(0, ClusterCount[i] - dis[i] * share);
 {$else}
   FillQWord(ClusterCount[0], CBinCnt, 0);
   share := DesiredNbTiles / CBinCnt;
@@ -4001,9 +4001,9 @@ const
   CMinKFFrameCount = 72;
   CMinBlkSkipCount = 1;
   CMaxBlkSkipCount = Ord(gtSkipBlockEnd) - Ord(gtSkipBlockStart) + 1;
-  CTMAttrBits = 2 + round(ln(cPaletteCount) / ln(2));
-  CShortIdxBits = 16 - CTMAttrBits;
   CGTMCommandsIdxs = Ord(High(TGTMCommand)) + 1;
+  CShortIdxBits = round(ln(CGTMCommandsIdxs) / ln(2));
+  CTMAttrBits = 16 - CShortIdxBits;
   CGTMCommandIdxStart = (1 shl CShortIdxBits) - CGTMCommandsIdxs;
 
 var
@@ -4017,6 +4017,11 @@ var
   procedure DoWord(v: Word);
   begin
     ZStream.WriteWord(v);
+  end;
+
+  procedure DoByte(v: Byte);
+  begin
+    ZStream.WriteByte(v);
   end;
 
   procedure DoCmd(Cmd: TGTMCommand; Data: Cardinal);
@@ -4033,15 +4038,15 @@ var
   begin
     assert((PalIdx >= 0) and (PalIdx < cPaletteCount));
 
-    ShortIdx := TileIdx < CGTMCommandIdxStart;
+    ShortIdx := (TileIdx < CGTMCommandIdxStart) and (PalIdx < (1 shl (CTMAttrBits - 2)));
     if ShortIdx then
     begin
       DoCmd(TGTMCommand(Ord(gtShortTileIdxStart) + TileIdx), (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
     end
     else
     begin
-      DoCmd(gtLongTileIdx, (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
-      DoDWord(TileIdx);
+      DoCmd(gtLongTileIdx, (Ord(VMirror) shl 1) or Ord(HMirror));
+      DoDWord((TileIdx and $00ffffff) or (PalIdx shl 24));
     end;
   end;
 
@@ -4051,7 +4056,9 @@ var
   begin
     for j := 0 to cPaletteCount - 1 do
     begin
-      DoCmd(gtLoadPalette, (j shl 2) or $00);
+      DoCmd(gtLoadPalette, 0);
+      DoByte(j);
+      DoByte(0);
       for i := 0 to cTilePaletteSize - 1 do
         DoDWord(KF^.PaletteRGB[j, i] or $ff000000);
     end;
@@ -4069,7 +4076,7 @@ var
     DoDWord(round(1000*1000*1000 / FFramesPerSecond)); // frame length in nanoseconds
     DoDWord(TileCnt); // tile count
 
-    DoCmd(gtTileset, cTilePaletteSize - 1);
+    DoCmd(gtTileset, round(log2(cTilePaletteSize)));
     DoDWord(0); // start tile
     DoDWord(TileCnt - 1); // end tile
 
@@ -4128,7 +4135,7 @@ begin
             begin
               //writeln('blk ', BlkSkipCount);
 
-              DoCmd(TGTMCommand(Ord(gtSkipBlockStart) + BlkSkipCount - 1), 0);
+              DoCmd(TGTMCommand(Ord(gtSkipBlockEnd) - (BlkSkipCount - 1)), 0);
               Inc(cs, BlkSkipCount);
               Dec(BlkSkipCount);
             end
