@@ -186,6 +186,8 @@ type
 
   TMainForm = class(TForm)
     btnInput: TButton;
+    btnGTM: TButton;
+    btnGTS: TButton;
     btnRunAll: TButton;
     cbxEndStep: TComboBox;
     cbxStartStep: TComboBox;
@@ -205,7 +207,7 @@ type
     chkUseDL3: TCheckBox;
     chkUseTK: TCheckBox;
     edInput: TEdit;
-    edOutputDir: TEdit;
+    edOutput: TEdit;
     edReload: TEdit;
     From: TLabel;
     imgDest: TImage;
@@ -223,10 +225,12 @@ type
     Label7: TLabel;
     Label9: TLabel;
     lblPct: TLabel;
-    odInput: TOpenDialog;
+    odFFInput: TOpenDialog;
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
+    sdGTM: TSaveDialog;
+    sdGTS: TSaveDialog;
     seQbTiles: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
@@ -258,6 +262,8 @@ type
     IdleTimer: TIdleTimer;
     tbFrame: TTrackBar;
 
+    procedure btnGTMClick(Sender: TObject);
+    procedure btnGTSClick(Sender: TObject);
     procedure btnInputClick(Sender: TObject);
     procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
@@ -1016,9 +1022,33 @@ end;
 
 procedure TMainForm.btnInputClick(Sender: TObject);
 begin
-  odInput.InitialDir := ExtractFileDir(edInput.Text);
-  if odInput.Execute then
-    edInput.Text := odInput.FileName;
+  odFFInput.InitialDir := ExtractFileDir(edInput.Text);
+  if odFFInput.Execute then
+  begin
+    if (edOutput.Text = '') or (edOutput.Text = ChangeFileExt(edInput.Text, '.gtm')) then
+    begin
+      edOutput.Text := ChangeFileExt(odFFInput.FileName, '.gtm');
+      sdGTM.FileName := edOutput.Text;
+    end;
+    if (edReload.Text = '') or (edReload.Text = ChangeFileExt(edInput.Text, '.gts')) then
+    begin
+      edReload.Text := ChangeFileExt(odFFInput.FileName, '.gts');
+      sdGTS.FileName := edReload.Text;
+    end;
+    edInput.Text := odFFInput.FileName;
+  end;
+end;
+
+procedure TMainForm.btnGTMClick(Sender: TObject);
+begin
+  if sdGTM.Execute then
+    edOutput.Text := sdGTM.FileName;
+end;
+
+procedure TMainForm.btnGTSClick(Sender: TObject);
+begin
+  if sdGTS.Execute then
+    edReload.Text := sdGTS.FileName;
 end;
 
 procedure TMainForm.btnReindexClick(Sender: TObject);
@@ -1148,7 +1178,7 @@ begin
 
   ProgressRedraw(-1, esSave);
 
-  fs := TFileStream.Create(ExtractFilePath(Format(edOutputDir.Text, [0])) + 'stream.gtm', fmCreate or fmShareDenyWrite);
+  fs := TFileStream.Create(edOutput.Text, fmCreate or fmShareDenyWrite);
   try
     SaveStream(fs);
   finally

@@ -148,13 +148,13 @@ object MainForm: TMainForm
       ClientHeight = 418
       ClientWidth = 956
       PopupMenu = pmProcesses
-      object edOutputDir: TEdit
+      object edOutput: TEdit
         Left = 88
         Height = 23
         Top = 26
-        Width = 545
+        Width = 519
         TabOrder = 2
-        Text = 'C:\tiler_misc\av_tiled\%.4d.png'
+        Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gtm'
       end
       object seMaxTiles: TSpinEdit
         Left = 248
@@ -177,14 +177,14 @@ object MainForm: TMainForm
         Left = 88
         Height = 23
         Top = 48
-        Width = 545
+        Width = 519
         TabOrder = 4
-        Text = 'C:\tiler_misc\av_tiled\tiles.gts'
+        Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gts'
       end
       object btnInput: TButton
         Left = 607
         Height = 23
-        Top = 3
+        Top = 4
         Width = 26
         Caption = '...'
         OnClick = btnInputClick
@@ -315,8 +315,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 30
-        Width = 55
-        Caption = 'Output dir'
+        Width = 38
+        Caption = 'Output'
         ParentColor = False
       end
       object Label7: TLabel
@@ -436,6 +436,15 @@ object MainForm: TMainForm
         OnEditingDone = seQbTilesEditingDone
         TabOrder = 6
         Value = 2
+      end
+      object btnGTM: TButton
+        Left = 607
+        Height = 23
+        Top = 26
+        Width = 26
+        Caption = '...'
+        OnClick = btnGTMClick
+        TabOrder = 22
       end
     end
     object tsInput: TTabSheet
@@ -580,15 +589,24 @@ object MainForm: TMainForm
     BevelOuter = bvNone
     TabOrder = 12
   end
+  object btnGTS: TButton
+    Left = 609
+    Height = 23
+    Top = 112
+    Width = 26
+    Caption = '...'
+    OnClick = btnGTSClick
+    TabOrder = 13
+  end
   object IdleTimer: TIdleTimer
     Interval = 42
     OnTimer = IdleTimerTimer
-    left = 592
-    top = 363
+    left = 656
+    top = 320
   end
   object pmProcesses: TPopupMenu
     left = 592
-    top = 315
+    top = 320
     object miLoad: TMenuItem
       Caption = 'Load'
       ShortCut = 113
@@ -630,8 +648,24 @@ object MainForm: TMainForm
       OnClick = btnSaveClick
     end
   end
-  object odInput: TOpenDialog
+  object odFFInput: TOpenDialog
     left = 592
-    top = 267
+    top = 224
+  end
+  object sdGTM: TSaveDialog
+    DefaultExt = '.gtm'
+    FileName = 'C:\tiler\samples'
+    Filter = 'GliGli''s TileMotion|*.gtm'
+    InitialDir = 'C:\tiler\'
+    left = 592
+    top = 272
+  end
+  object sdGTS: TSaveDialog
+    DefaultExt = '.gts'
+    FileName = 'C:\tiler\samples.gtm'
+    Filter = 'GliGli''s TileSet|*.gts'
+    InitialDir = 'C:\tiler\'
+    left = 656
+    top = 272
   end
 end
