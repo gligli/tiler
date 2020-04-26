@@ -185,9 +185,9 @@ type
   { TMainForm }
 
   TMainForm = class(TForm)
+    btnGTS: TButton;
     btnInput: TButton;
     btnGTM: TButton;
-    btnGTS: TButton;
     btnRunAll: TButton;
     cbxEndStep: TComboBox;
     cbxStartStep: TComboBox;

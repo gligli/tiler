@@ -162,7 +162,7 @@ object MainForm: TMainForm
         Top = 80
         Width = 71
         MaxValue = 16777216
-        TabOrder = 5
+        TabOrder = 7
       end
       object chkTransPalette: TCheckBox
         Left = 8
@@ -171,14 +171,14 @@ object MainForm: TMainForm
         Width = 244
         Caption = 'Extended frame tiling palette usage (slow!)'
         OnChange = chkTransPaletteChange
-        TabOrder = 14
+        TabOrder = 16
       end
       object edReload: TEdit
         Left = 88
         Height = 23
         Top = 48
         Width = 519
-        TabOrder = 4
+        TabOrder = 5
         Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gts'
       end
       object btnInput: TButton
@@ -198,7 +198,7 @@ object MainForm: TMainForm
         Increment = 2.5
         MaxValue = 1000
         MinValue = 0
-        TabOrder = 11
+        TabOrder = 13
         Value = 50
       end
       object seStartFrame: TSpinEdit
@@ -207,7 +207,7 @@ object MainForm: TMainForm
         Top = 110
         Width = 71
         MaxValue = 100000
-        TabOrder = 7
+        TabOrder = 9
         Value = 507
       end
       object sePalVAR: TFloatSpinEdit
@@ -217,7 +217,7 @@ object MainForm: TMainForm
         Width = 71
         Increment = 0.5
         MinValue = 0
-        TabOrder = 9
+        TabOrder = 11
         Value = 95
       end
       object cbxYilMix: TComboBox
@@ -235,7 +235,7 @@ object MainForm: TMainForm
           '16'
         )
         OnChange = cbxYilMixChange
-        TabOrder = 10
+        TabOrder = 12
         Text = '4'
       end
       object seFrameCount: TSpinEdit
@@ -244,7 +244,7 @@ object MainForm: TMainForm
         Top = 132
         Width = 71
         MaxValue = 100000
-        TabOrder = 8
+        TabOrder = 10
         Value = 12
       end
       object chkLowMem: TCheckBox
@@ -254,7 +254,7 @@ object MainForm: TMainForm
         Width = 115
         Caption = 'Lower RAM usage'
         OnChange = chkLowMemChange
-        TabOrder = 21
+        TabOrder = 23
       end
       object chkReload: TCheckBox
         Left = 8
@@ -263,7 +263,7 @@ object MainForm: TMainForm
         Width = 80
         Caption = 'Reload tiles'
         OnChange = chkUseTKChange
-        TabOrder = 3
+        TabOrder = 4
       end
       object chkUseDL3: TCheckBox
         Left = 8
@@ -274,7 +274,7 @@ object MainForm: TMainForm
         Checked = True
         OnChange = chkUseDL3Change
         State = cbChecked
-        TabOrder = 15
+        TabOrder = 17
       end
       object chkUseTK: TCheckBox
         Left = 8
@@ -285,7 +285,7 @@ object MainForm: TMainForm
         Checked = True
         OnChange = chkUseTKChange
         State = cbChecked
-        TabOrder = 16
+        TabOrder = 18
       end
       object Label13: TLabel
         Left = 8
@@ -366,7 +366,7 @@ object MainForm: TMainForm
         Width = 170
         Caption = 'Dithering gamma correction'
         OnChange = chkLowMemChange
-        TabOrder = 18
+        TabOrder = 20
       end
       object chkFTGamma: TCheckBox
         Left = 8
@@ -374,7 +374,7 @@ object MainForm: TMainForm
         Top = 358
         Width = 184
         Caption = 'Frame tiling gamma correction'
-        TabOrder = 19
+        TabOrder = 21
       end
       object chkFTFromPal: TCheckBox
         Left = 8
@@ -382,7 +382,7 @@ object MainForm: TMainForm
         Top = 376
         Width = 190
         Caption = 'Frame tiling from palettized tiles'
-        TabOrder = 20
+        TabOrder = 22
       end
       object chkUseWL: TCheckBox
         Left = 8
@@ -392,7 +392,7 @@ object MainForm: TMainForm
         Caption = 'Use Haar Wavelets (not Discrete Cosine Transform)'
         Checked = True
         State = cbChecked
-        TabOrder = 17
+        TabOrder = 19
       end
       object Label10: TLabel
         Left = 8
@@ -411,7 +411,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = seEncGammaChange
-        TabOrder = 12
+        TabOrder = 14
         Value = 1.8
       end
       object seVisGamma: TFloatSpinEdit
@@ -423,7 +423,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = seEncGammaChange
-        TabOrder = 13
+        TabOrder = 15
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
@@ -434,7 +434,7 @@ object MainForm: TMainForm
         Increment = 0.1
         MinValue = 0.1
         OnEditingDone = seQbTilesEditingDone
-        TabOrder = 6
+        TabOrder = 8
         Value = 2
       end
       object btnGTM: TButton
@@ -444,7 +444,16 @@ object MainForm: TMainForm
         Width = 26
         Caption = '...'
         OnClick = btnGTMClick
-        TabOrder = 22
+        TabOrder = 3
+      end
+      object btnGTS: TButton
+        Left = 607
+        Height = 23
+        Top = 48
+        Width = 26
+        Caption = '...'
+        OnClick = btnGTSClick
+        TabOrder = 6
       end
     end
     object tsInput: TTabSheet
@@ -588,15 +597,6 @@ object MainForm: TMainForm
     BevelInner = bvLowered
     BevelOuter = bvNone
     TabOrder = 12
-  end
-  object btnGTS: TButton
-    Left = 609
-    Height = 23
-    Top = 112
-    Width = 26
-    Caption = '...'
-    OnClick = btnGTSClick
-    TabOrder = 13
   end
   object IdleTimer: TIdleTimer
     Interval = 42
