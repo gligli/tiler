@@ -1,6 +1,6 @@
-*************************************
-* GliGli's TileMotion video encoder *
-*************************************
+***********************************
+* GliGli's TileMotion video codec *
+***********************************
 
 The goal of this project is to find a novel way to encode a video stream so that the decoder is computationally cheap and trivially simple to write.
 So far, the encoder is mostly FreePascal code with some x64 SSE3 assembler (additional libraries and tools being mostly C/C++) and has a GUI to showcase it.
