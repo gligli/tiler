@@ -105,7 +105,7 @@ type
     PaletteRGB: TIntegerDynArray;
 
     Active: Boolean;
-    UseCount, TmpIndex, MergeIndex, OriginalReloadedIndex: Integer;
+    UseCount, TmpIndex, MergeIndex, OriginalReloadedIndex, DitheringPalIndex: Integer;
   end;
 
   PTileMapItem = ^TTileMapItem;
@@ -593,7 +593,7 @@ begin
   Result := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
 end;
 
-function EqualQualityTileCount(tileCount: Integer): Integer;
+function EqualQualityTileCount(tileCount: TFloat): Integer;
 begin
   Result := round(sqrt(tileCount) * log2(1 + tileCount));
 end;
@@ -1996,6 +1996,8 @@ begin
                   Inc(j, FScreenWidth * 3);
                 end;
 
+                GTile^.DitheringPalIndex := PalIdx;
+
                 Dec(ClustersLeft);
                 Inc(PaletteUseCount[PalIdx].UseCount);
               end;
@@ -2086,6 +2088,8 @@ begin
                     Inc(TrueColorUsage[col]);
                   end;
 {$endif}
+                GTile^.DitheringPalIndex := PalIdx;
+
                 Dec(ClustersLeft);
                 Inc(PaletteUseCount[PalIdx].UseCount);
               end;
@@ -2827,6 +2831,8 @@ begin
       AFrame^.Tiles[i].UseCount := 1;
       AFrame^.Tiles[i].TmpIndex := -1;
       AFrame^.Tiles[i].MergeIndex := -1;
+      AFrame^.Tiles[i].OriginalReloadedIndex := -1;
+      AFrame^.Tiles[i].DitheringPalIndex := -1;
     end;
 
   finally
@@ -3213,6 +3219,7 @@ begin
   Dest.MergeIndex := Src.MergeIndex;
   Dest.UseCount := Src.UseCount;
   Dest.OriginalReloadedIndex := Src.OriginalReloadedIndex;
+  Dest.DitheringPalIndex := Src.DitheringPalIndex;
 
   SetLength(Dest.PaletteIndexes, Length(Src.PaletteIndexes));
   SetLength(Dest.PaletteRGB, Length(Src.PaletteRGB));
@@ -3631,7 +3638,7 @@ end;
 
 procedure TMainForm.DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
 const
-  CBinCnt = 32;
+  CBinCnt = cPaletteCount;
 var
   Dataset: TByteDynArray3;
   TileIndices: array[0 .. CBinCnt - 1] of TIntegerDynArray;
@@ -3694,7 +3701,7 @@ var
 
 var
   fs: TFileStream;
-  acc, i, j, disCnt, signi, ActiveTileCnt: Integer;
+  acc, i, irev, j, disCnt, signi, ActiveTileCnt: Integer;
   dis: array[0 .. CBinCnt - 1] of Integer;
   best: array[0 .. CBinCnt - 1] of Integer;
   share, accf, f: TFloat;
@@ -3712,7 +3719,7 @@ begin
   FillDWord(dis[0], CBinCnt, 0);
   FillDWord(StartingPoint[0], CBinCnt, DWORD(-RestartCount));
   FillDWord(best[0], CBinCnt, DWORD(MaxInt));
-  ActiveTileCnt := 0;
+  ActiveTileCnt := GetGlobalTileCount;
 
   // bin tiles by PalSigni (highest number of pixels the same color from the tile)
 
@@ -3721,20 +3728,17 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    WriteTileDatasetLine(FTiles[i]^, Line, signi);
-    signi := signi * (CBinCnt - 1) div (sqr(cTileWidth) - 1);
+    WriteTileDatasetLine(FTiles[i]^, Line, j);
 
+    signi :=FTiles[i]^.DitheringPalIndex;
     if dis[signi] >= Length(Dataset[signi]) then
-      SetLength(Dataset[signi], Length(FTiles), cKModesFeatureCount);
-
+      SetLength(Dataset[signi], ActiveTileCnt, cKModesFeatureCount);
     Move(Line[0], Dataset[signi, dis[signi], 0], cKModesFeatureCount);
-
     TileIndices[signi, dis[signi]] := i;
 
     acc := 0;
     for j := 0 to cKModesFeatureCount - 1 do
       acc += Dataset[signi, dis[signi], j];
-
     if acc <= best[signi] then
     begin
       StartingPoint[signi] := dis[signi];
@@ -3742,7 +3746,6 @@ begin
     end;
 
     Inc(dis[signi]);
-    Inc(ActiveTileCnt);
   end;
 
   for i := 0 to CBinCnt - 1 do
@@ -3753,7 +3756,7 @@ begin
 
   // share DesiredNbTiles among bins, proportional to amount of tiles
 
-{$if true}
+{$if false}
   FillQWord(ClusterCount[0], CBinCnt, 0);
   disCnt := 0;
   for i := 0 to CBinCnt - 1 do
@@ -3772,7 +3775,7 @@ begin
   writeln(FloatToStr(accf));
   share := accf / disCnt;
   for i := 0 to CBinCnt - 1 do
-    ClusterCount[i] := Max(0, ClusterCount[i] - dis[i] * share);
+    ClusterCount[i] := Max(1, ClusterCount[i] - dis[i] * share);
 {$else}
   FillQWord(ClusterCount[0], CBinCnt, 0);
   share := DesiredNbTiles / CBinCnt;
@@ -4198,10 +4201,10 @@ begin
 
   AVidPath := Result + '%.4d.png';
 
-  vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(MaxInt) + '),setpts=PTS-STARTPTS" ';
+  vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(MaxInt) + '),setpts=PTS-STARTPTS,scale=in_range=auto:out_range=full" ';
   if AFrameCount > 0 then
   begin
-    vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(AStartFrame + AFrameCount - 1) + '),setpts=PTS-STARTPTS" ';
+    vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(AStartFrame + AFrameCount - 1) + '),setpts=PTS-STARTPTS,scale=in_range=auto:out_range=full" ';
   end;
 
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
