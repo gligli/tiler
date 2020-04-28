@@ -351,8 +351,7 @@ type
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat; ADitheringGamma: Integer; AUseWavelets: Boolean
-      );
+    procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat; ADitheringGamma: Integer; AUseWavelets: Boolean);
     procedure FinalDitherTiles(AFrame: PFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
 
     function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
@@ -795,6 +794,7 @@ end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
+  CShotTransMaxTilesPerKF = 2048 * 1024;
   CShotTransGracePeriod = 24;
   CShotTransSAvgFrames = 6;
   CShotTransSoftThres = 0.9;
@@ -825,7 +825,6 @@ var
   fn: String;
   kfIdx, frc, StartFrame: Integer;
   isKf: Boolean;
-  kfSL: TStringList;
   sfr, efr: Integer;
   bmp: TPicture;
 begin
@@ -906,44 +905,6 @@ begin
 
   // find keyframes
 
-{$if false}
-  kfSL := TStringList.Create;
-  try
-    fn := ChangeFileExt(Format(FInputPath, [0]), '.kf');
-    if FileExists(fn) then
-    begin
-      kfSL.LoadFromFile(fn);
-      kfSL.Insert(0, 'I'); // fix format shifted 1 frame in the past
-      for i := 0 to StartFrame - 1 do
-        kfSL.Delete(0);
-    end;
-
-    kfIdx := 0;
-    for i := 0 to High(FFrames) do
-    begin
-      fn := ChangeFileExt(Format(FInputPath, [i + StartFrame]), '.kf');
-      isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
-      if isKf then
-      begin
-        WriteLn('KF: ', kfIdx, #9'Frame: ', i);
-        Inc(kfIdx);
-      end;
-    end;
-
-    SetLength(FKeyFrames, kfIdx);
-    kfIdx := -1;
-    for i := 0 to High(FFrames) do
-    begin
-      fn := ChangeFileExt(Format(FInputPath, [i + StartFrame]), '.kf');
-      isKf := FileExists(fn) or (i = 0) or (i < kfSL.Count) and (Pos('I', kfSL[i]) <> 0);
-      if isKf then
-        Inc(kfIdx);
-      FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
-    end;
-  finally
-    kfSL.Free;
-  end;
-{$else}
   kfIdx := 0;
   SetLength(FKeyFrames, Length(FFrames));
   FFrames[0].KeyFrame := @FKeyFrames[0];
@@ -965,7 +926,9 @@ begin
     end;
 
     ratio := max(0.01, v) / max(0.01, av);
-    isKf := (ratio < CShotTransHardThres) or (ratio < CShotTransSoftThres) and ((i - LastKFIdx) >= CShotTransGracePeriod);
+    isKf := (ratio < CShotTransHardThres) or
+      (ratio < CShotTransSoftThres) and ((i - LastKFIdx + 1) >= CShotTransGracePeriod) or
+      ((i - LastKFIdx + 1) * FTileMapSize >= CShotTransMaxTilesPerKF);
     if isKf then
     begin
       Inc(kfIdx);
@@ -979,7 +942,6 @@ begin
   end;
 
   SetLength(FKeyFrames, kfIdx + 1);
-{$endif}
 
   for j := 0 to High(FKeyFrames) do
   begin
@@ -1212,8 +1174,13 @@ begin
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+var
+  k: Word;
 begin
-  case Key of
+  k := Key;
+  if k in [VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10, VK_F11, VK_F12, VK_ESCAPE] then
+    Key := 0; // KLUDGE: workaround event called twice
+  case k of
     VK_F2: btnLoadClick(nil);
     VK_F3: btnDitherClick(nil);
     VK_F4: btnDoMakeUniqueClick(nil);

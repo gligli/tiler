@@ -41,13 +41,13 @@ object MainForm: TMainForm
     Left = 8
     Height = 19
     Top = 511
-    Width = 42
+    Width = 71
     Anchors = [akLeft, akBottom]
-    Caption = 'Play'
+    Caption = 'Play (F11)'
     TabOrder = 6
   end
   object chkDithered: TCheckBox
-    Left = 55
+    Left = 87
     Height = 19
     Top = 511
     Width = 65
@@ -59,7 +59,7 @@ object MainForm: TMainForm
     TabOrder = 7
   end
   object chkMirrored: TCheckBox
-    Left = 199
+    Left = 231
     Height = 19
     Top = 511
     Width = 66
@@ -71,7 +71,7 @@ object MainForm: TMainForm
     TabOrder = 9
   end
   object chkGamma: TCheckBox
-    Left = 423
+    Left = 455
     Height = 19
     Top = 511
     Width = 62
@@ -82,7 +82,7 @@ object MainForm: TMainForm
     TabOrder = 11
   end
   object chkReduced: TCheckBox
-    Left = 127
+    Left = 159
     Height = 19
     Top = 512
     Width = 64
@@ -115,7 +115,7 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object sedPalIdx: TSpinEdit
-    Left = 328
+    Left = 360
     Height = 23
     Top = 509
     Width = 42
@@ -126,7 +126,7 @@ object MainForm: TMainForm
     Value = -1
   end
   object Label8: TLabel
-    Left = 280
+    Left = 312
     Height = 15
     Top = 513
     Width = 36
@@ -154,7 +154,7 @@ object MainForm: TMainForm
         Top = 26
         Width = 519
         TabOrder = 2
-        Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gtm'
+        Text = 'C:\tiler\samples\sintel_trailer_2k.gtm'
       end
       object seMaxTiles: TSpinEdit
         Left = 248
@@ -179,7 +179,7 @@ object MainForm: TMainForm
         Top = 48
         Width = 519
         TabOrder = 5
-        Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gts'
+        Text = 'C:\tiler\samples\sintel_trailer_2k.gts'
       end
       object btnInput: TButton
         Left = 607
@@ -208,7 +208,7 @@ object MainForm: TMainForm
         Width = 71
         MaxValue = 100000
         TabOrder = 9
-        Value = 507
+        Value = 1
       end
       object sePalVAR: TFloatSpinEdit
         Left = 248
@@ -245,7 +245,7 @@ object MainForm: TMainForm
         Width = 71
         MaxValue = 100000
         TabOrder = 10
-        Value = 12
+        Value = 224
       end
       object chkLowMem: TCheckBox
         Left = 8
@@ -341,7 +341,7 @@ object MainForm: TMainForm
         Top = 4
         Width = 519
         TabOrder = 0
-        Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.mov'
+        Text = 'C:\tiler\samples\sintel_trailer\sintel_trailer_2k_%.4d.png'
       end
       object Label3: TLabel
         Left = 8
