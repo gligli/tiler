@@ -59,7 +59,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 5, 1, 2, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 2, 1, 5, 1, 2, 1, 1);
 
 type
   // GliGli's TileMotion commands
@@ -98,8 +98,6 @@ type
   TTile = record // /!\ update CopyTile each time this structure is changed /!\
     RGBPixels: PRGBPixels;
     PalPixels: TPalPixels;
-
-    RGBDCT: TFloatDynArray;
 
     PaletteIndexes: TIntegerDynArray;
     PaletteRGB: TIntegerDynArray;
@@ -352,9 +350,9 @@ type
     function GetFrameTileCount(AFrame: PFrame): Integer;
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
-    procedure PrepareDitherTiles(AFrame: PFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
+    procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat; ADitheringGamma: Integer; AUseWavelets: Boolean
+      );
     procedure FinalDitherTiles(AFrame: PFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
 
     function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
@@ -693,14 +691,9 @@ var
   Gamma: Integer;
   UseWavelets: Boolean;
 
-  procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    PrepareDitherTiles(@FFrames[AIndex], Gamma, UseWavelets);
-  end;
-
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FindBestKeyframePalette(@FKeyFrames[AIndex], sePalVAR.Value / 100);
+    FindBestKeyframePalette(@FKeyFrames[AIndex], sePalVAR.Value / 100, Gamma, UseWavelets);
   end;
 
   procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -716,13 +709,11 @@ begin
   UseWavelets := chkUseWL.Checked;
 
   ProgressRedraw(-1, esDither);
-  ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FFrames));
-  ProgressRedraw(1);
   ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, High(FKeyFrames));
   WriteLn;
-  ProgressRedraw(2);
+  ProgressRedraw(1);
   ProcThreadPool.DoParallelLocalProc(@DoFinal, 0, High(FFrames));
-  ProgressRedraw(3);
+  ProgressRedraw(2);
 
   tbFrameChange(nil);
 end;
@@ -1910,7 +1901,7 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
+procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat; ADitheringGamma: Integer; AUseWavelets: Boolean);
 const
   CNoColor = $000000;
 var
@@ -1952,7 +1943,8 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-        Dataset[di] := GTile^.RGBDCT;
+        SetLength(Dataset[di], cTileDCTSize);
+        ComputeTilePsyVisFeatures(GTile^, False, AUseWavelets, True, False, False, ADitheringGamma, nil, Dataset[di]);
         Inc(di);
       end;
   assert(di = Length(Dataset));
@@ -2292,11 +2284,9 @@ begin
 
         AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := system.Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
         AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
-        SetLength(AFrame^.Tiles[sx + sy * FTileMapWidth].RGBDCT, 0);
 
         SetLength(BestTile.PaletteRGB, 0);
         SetLength(BestTile.PaletteIndexes, 0);
-        SetLength(BestTile.RGBDCT, 0);
 
         OrigTile^ := BestTile;
       end;
@@ -3233,20 +3223,6 @@ begin
   Dest.RGBPixels := Src.RGBPixels;
 end;
 
-procedure TMainForm.PrepareDitherTiles(AFrame: PFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
-var
-  sy, sx: Integer;
-  GTile: PTile;
-begin
-  for sy := 0 to FTileMapHeight - 1 do
-    for sx := 0 to FTileMapWidth - 1 do
-    begin
-      GTile := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
-      SetLength(GTile^.RGBDCT, cTileDCTSize);
-      ComputeTilePsyVisFeatures(GTile^, False, AUseWavelets, True, False, False, ADitheringGamma, nil, GTile^.RGBDCT);
-    end;
-end;
-
 procedure TMainForm.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer;
   NewTile: PPalPixels);
 var
@@ -3756,7 +3732,7 @@ begin
 
   // share DesiredNbTiles among bins, proportional to amount of tiles
 
-{$if false}
+{$if true}
   FillQWord(ClusterCount[0], CBinCnt, 0);
   disCnt := 0;
   for i := 0 to CBinCnt - 1 do
