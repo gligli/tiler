@@ -1910,8 +1910,16 @@ begin
 
   assert(Length(Clusters) = Length(Dataset));
 
-  for i := 0 to High(Dataset) do
-    FTiles[i]^.DitheringPalIndex := Clusters[i];
+  di := 0;
+  for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
+      begin
+        GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+        GTile^.DitheringPalIndex := Clusters[di];
+        Inc(di);
+      end;
+  assert(di = Length(Dataset));
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
