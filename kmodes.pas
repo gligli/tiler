@@ -712,7 +712,7 @@ begin
     max := 0;
     ifarthest := -1;
     for i := 0 to NumPoints - 1 do
-      if (MinDistance[i] > max) and not Used[i] then
+      if (MinDistance[i] >= max) and not Used[i] then
       begin
         max := MinDistance[i];
         ifarthest := i;

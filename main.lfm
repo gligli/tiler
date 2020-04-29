@@ -154,7 +154,7 @@ object MainForm: TMainForm
         Top = 26
         Width = 519
         TabOrder = 2
-        Text = 'C:\tiler\samples\sintel_trailer_2k.gtm'
+        Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gtm'
       end
       object seMaxTiles: TSpinEdit
         Left = 248
@@ -179,7 +179,7 @@ object MainForm: TMainForm
         Top = 48
         Width = 519
         TabOrder = 5
-        Text = 'C:\tiler\samples\sintel_trailer_2k.gts'
+        Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gts'
       end
       object btnInput: TButton
         Left = 607
@@ -208,7 +208,7 @@ object MainForm: TMainForm
         Width = 71
         MaxValue = 100000
         TabOrder = 9
-        Value = 1
+        Value = 507
       end
       object sePalVAR: TFloatSpinEdit
         Left = 248
@@ -245,7 +245,7 @@ object MainForm: TMainForm
         Width = 71
         MaxValue = 100000
         TabOrder = 10
-        Value = 224
+        Value = 12
       end
       object chkLowMem: TCheckBox
         Left = 8
@@ -341,7 +341,7 @@ object MainForm: TMainForm
         Top = 4
         Width = 519
         TabOrder = 0
-        Text = 'C:\tiler\samples\sintel_trailer\sintel_trailer_2k_%.4d.png'
+        Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.mov'
       end
       object Label3: TLabel
         Left = 8
