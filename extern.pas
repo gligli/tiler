@@ -375,10 +375,10 @@ var
 begin
   if Assigned(TrainDS) and (ClusterCount >= Length(TrainDS)) then
   begin
-    // force a valid dataset by duplicating some lines
+    // force a valid dataset by duplicating lines
     PrevLen := Length(TrainDS);
-    SetLength(TrainDS, ClusterCount + 1);
-    for i := PrevLen to ClusterCount do
+    SetLength(TrainDS, PrevLen * 2);
+    for i := PrevLen to PrevLen * 2 - 1 do
       TrainDS[i] := TrainDS[i - PrevLen];
   end;
 
@@ -434,7 +434,10 @@ begin
     internalRuncommand(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
 
     if RetCode <> 0 then
+    begin
       DebugLn('Yakmo failed! RetCode: ' + IntToStr(RetCode) + sLineBreak + 'Msg: ' + ErrOut + sLineBreak + 'CmdLine: ' + CmdLine);
+      Exit;
+    end;
 
     if Assigned(TrainDS) then
       DeleteFile(PChar(TrainFN));
@@ -555,14 +558,14 @@ begin
 
   restartCount := GetLineInt(lines[0]);
   clusterCount := GetLineInt(lines[1]);
-  SetLength(Result, GetLineInt(lines[2]));
+  SetLength(Result, GetLineInt(lines[2]) + 1);
 
   Assert(InRange(index, 0, clusterCount - 1), 'wrong index!');
 
   line := lines[3 + clusterCount * (restartCount - 1) + index];
   for i := 0 to High(Result) do
   begin
-    sc := ' ' + IntToStr(i + 1) + ':';
+    sc := ' ' + IntToStr(i) + ':';
 
     p := Pos(sc, line);
     if p = 0 then
