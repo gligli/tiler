@@ -199,7 +199,7 @@ object MainForm: TMainForm
         MaxValue = 1000
         MinValue = 0
         TabOrder = 13
-        Value = 50
+        Value = 20
       end
       object seStartFrame: TSpinEdit
         Left = 248
