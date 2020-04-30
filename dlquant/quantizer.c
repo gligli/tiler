@@ -79,7 +79,7 @@ typedef struct {
 	FCUBE *heap;
 	short *dl_image;
 
-	slong sqr_tbl[255 + 255 + 1], *squares3;
+	float sqr_tbl[255 + 255 + 1], *squares3;
 } DLCONTEXT;
 
 static void	copy_pal(DLCONTEXT *ctx, uchar userpal[3][PALETTE_MAX]);
@@ -511,7 +511,8 @@ static void build_table3(DLCONTEXT *ctx, uchar *image, int size)
 
 static ulong calc_err(DLCONTEXT *ctx, int c1, int c2)
 {
-	ulong dist1, dist2, P1, P2, P3;
+	float dist1, dist2;
+	ulong P1, P2, P3;
 	int R1, G1, B1, R2, G2, B2, R3, G3, B3;
 
 	P1 = ctx->rgb_table3[c1].pixel_count;
@@ -531,10 +532,10 @@ static ulong calc_err(DLCONTEXT *ctx, int c1, int c2)
 	B2 = ctx->rgb_table3[c2].bb;
 
 	dist1 = ctx->squares3[R3 - R1] + ctx->squares3[G3 - G1] + ctx->squares3[B3 - B1];
-	dist1 = (unsigned int)(sqrt(dist1) * P1);
+	dist1 = sqrtf(dist1) * P1;
 
 	dist2 = ctx->squares3[R2 - R3] + ctx->squares3[G2 - G3] + ctx->squares3[B2 - B3];
-	dist2 = (unsigned int)(sqrt(dist2) * P2);
+	dist2 = sqrtf(dist2) * P2;
 
 	return (dist1 + dist2);
 }
