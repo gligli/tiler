@@ -147,8 +147,8 @@ type
 
   TTileMapItem = record
     GlobalTileIndex, TmpIndex: Integer;
-    HMirror,VMirror,Smoothed: Boolean;
     PalIdx: Integer;
+    HMirror,VMirror,Smoothed: Boolean;
   end;
 
   TTileMapItems = array of TTileMapItem;
@@ -160,6 +160,7 @@ type
     Index: Integer;
 
     TileMap: array of array of TTileMapItem;
+    SmoothedTileMap: array of array of TTileMapItem;
 
     Tiles: array of TTile;
     FSPixels: TByteDynArray;
@@ -1192,15 +1193,22 @@ begin
 end;
 
 procedure TMainForm.btnSmoothClick(Sender: TObject);
+var
+  smoo: TFloat;
+
   procedure DoSmoothing(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var i: Integer;
+  var
+    i: Integer;
   begin
     for i := cSmoothingPrevFrame to High(FFrames) do
-      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, seTempoSmoo.Value / 1000.0);
+      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, smoo);
   end;
+
 begin
   if Length(FFrames) = 0 then
     Exit;
+
+  smoo := seTempoSmoo.Value / 1000.0;
 
   ProgressRedraw(-1, esSmooth);
 
@@ -3007,6 +3015,7 @@ begin
   SetLength(TilesRGBPixels, FTileMapSize);
   SetLength(AFrame^.Tiles, FTileMapSize);
   SetLength(AFrame^.TileMap, FTileMapHeight, FTileMapWidth);
+  SetLength(AFrame^.SmoothedTileMap, FTileMapHeight, FTileMapWidth);
   SetLength(AFrame^.FSPixels, FScreenHeight * FScreenWidth * 3);
 
   for j := 0 to (FTileMapHeight - 1) do
@@ -3018,6 +3027,7 @@ begin
       AFrame^.TileMap[j, i].PalIdx := -1;
       AFrame^.TileMap[j, i].Smoothed := False;
       AFrame^.TileMap[j, i].TmpIndex := -1;
+      AFrame^.SmoothedTileMap[j, i] := AFrame^.TileMap[j, i];
     end;
 
   Assert(ABitmap.Width = FScreenWidth, 'Wrong video width!');
@@ -3198,6 +3208,9 @@ begin
         for sx := 0 to FTileMapWidth - 1 do
         begin
           TMItem := Frame^.TileMap[sy, sx];
+          if Frame^.SmoothedTileMap[sy, sx].Smoothed then
+            TMItem := Frame^.SmoothedTileMap[sy, sx];
+
           ti := TMItem.GlobalTileIndex;
 
           if InRange(ti, 0, High(FTiles)) then
@@ -3681,7 +3694,7 @@ const
 var
   sx: Integer;
   cmp: TFloat;
-  TMI, PrevTMI: PTileMapItem;
+  TMI,  SmooTMI, PrevSmooTMI: PTileMapItem;
   Tile_, PrevTile: TTile;
   TileDCT, PrevTileDCT: TFloatDynArray;
 begin
@@ -3693,15 +3706,20 @@ begin
 
   for sx := 0 to FTileMapWidth - 1 do
   begin
-    PrevTMI := @APrevFrame^.TileMap[Y, sx];
     TMI := @AFrame^.TileMap[Y, sx];
+    SmooTMI := @AFrame^.SmoothedTileMap[Y, sx];
+    PrevSmooTMI := @APrevFrame^.SmoothedTileMap[Y, sx];
+
+    if APrevFrame^.Index <= 0 then
+      PrevSmooTMI^ := APrevFrame^.TileMap[Y, sx];
+    SmooTMI^ := TMI^;
 
     // compare DCT of current tile with tile from prev frame tilemap
 
-    PrevTile := FTiles[PrevTMI^.GlobalTileIndex]^;
+    PrevTile := FTiles[PrevSmooTMI^.GlobalTileIndex]^;
     Tile_ := FTiles[TMI^.GlobalTileIndex]^;
 
-    ComputeTilePsyVisFeatures(PrevTile, True, False, False, True, PrevTMI^.HMirror, PrevTMI^.VMirror, -1, AFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
+    ComputeTilePsyVisFeatures(PrevTile, True, False, False, True, PrevSmooTMI^.HMirror, PrevSmooTMI^.VMirror, -1, APrevFrame^.KeyFrame^.PaletteRGB[PrevSmooTMI^.PalIdx], PrevTileDCT);
     ComputeTilePsyVisFeatures(Tile_, True, False, False, True, TMI^.HMirror, TMI^.VMirror, -1, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
 
     cmp := CompareEuclideanDCT(TileDCT, PrevTileDCT);
@@ -3711,25 +3729,16 @@ begin
 
     if Abs(cmp) <= Strength then
     begin
-      if TMI^.GlobalTileIndex >= PrevTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
-      begin
-        TMI^.GlobalTileIndex := PrevTMI^.GlobalTileIndex;
-        TMI^.HMirror := PrevTMI^.HMirror;
-        TMI^.VMirror := PrevTMI^.VMirror;
-        TMI^.PalIdx := PrevTMI^.PalIdx;
-      end
+      if TMI^.GlobalTileIndex >= PrevSmooTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
+        SmooTMI^ := PrevSmooTMI^
       else
-      begin
-        PrevTMI^.GlobalTileIndex := TMI^.GlobalTileIndex;
-        PrevTMI^.HMirror := TMI^.HMirror;
-        PrevTMI^.VMirror := TMI^.VMirror;
-        PrevTMI^.PalIdx := TMI^.PalIdx;
-      end;
-      TMI^.Smoothed := True;
+        PrevSmooTMI^ := TMI^;
+
+      SmooTMI^.Smoothed := True;
     end
     else
     begin
-      TMI^.Smoothed := False;
+      SmooTMI^.Smoothed := False;
     end;
   end;
 end;
@@ -4320,7 +4329,7 @@ begin
             BlkSkipCount := 0;
             for yxs := yx to FTileMapSize - 1 do
             begin
-              if not frm^.TileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
+              if not frm^.SmoothedTileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
                 Break;
               Inc(BlkSkipCount);
             end;
@@ -4342,7 +4351,7 @@ begin
 
               BlkSkipCount := 0;
 
-              tmi := @frm^.TileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
+              tmi := @frm^.SmoothedTileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
               DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
               Inc(cs);
             end;
