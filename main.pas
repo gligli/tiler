@@ -1948,6 +1948,7 @@ begin
    Yakmo := yakmo_create(cPaletteCount, 1, MaxInt, 1, 0, 0, 0);
    yakmo_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
    SetLength(Dataset, 0); // free up some memmory
+   Write('.');
    yakmo_train_on_data(Yakmo, @Clusters[0]);
    yakmo_destroy(Yakmo);
   end
@@ -1974,7 +1975,7 @@ procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat
 const
   CNoColor = $000000;
 var
-  col, i, j, PalIdx: Integer;
+  col, i, j, di, sy, sx, PalIdx: Integer;
   found: Boolean;
   GTile: PTile;
   CMUsage, CMPal: TFPList;
@@ -1986,7 +1987,10 @@ var
   PaletteUseCount: array[0 .. cPaletteCount - 1] of record
     UseCount: Integer;
     Palette: TIntegerDynArray;
+    PalIdx: Integer;
   end;
+
+  PalIdxLUT: array[0 .. cPaletteCount - 1] of Integer;
 
   procedure DoDennisLeeV3(PalIdx: Integer);
   var
@@ -2245,10 +2249,16 @@ begin
 
     // sort entire palettes by use count
     for PalIdx := 0 to cPaletteCount - 1 do
+    begin
       PaletteUseCount[PalIdx].Palette := AKeyFrame^.PaletteIndexes[PalIdx];
+      PaletteUseCount[PalIdx].PalIdx := PalIdx;
+    end;
     QuickSort(PaletteUseCount[0], 0, cPaletteCount - 1, SizeOf(PaletteUseCount[0]), @ComparePaletteUseCount, AKeyFrame);
     for PalIdx := 0 to cPaletteCount - 1 do
+    begin
       AKeyFrame^.PaletteIndexes[PalIdx] := PaletteUseCount[PalIdx].Palette;
+      PalIdxLUT[PaletteUseCount[PalIdx].PalIdx] := PalIdx;
+    end;
 
     for PalIdx := 0 to cPaletteCount - 1 do
     begin
@@ -2259,6 +2269,16 @@ begin
         AKeyFrame^.PaletteRGB[PalIdx, i] := ToRGB(FColorMap[j, 0], FColorMap[j, 1], FColorMap[j, 2]);
       end;
     end;
+
+    di := 0;
+    for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+          GTile^.DitheringPalIndex := PalIdxLUT[GTile^.DitheringPalIndex];
+          Inc(di);
+        end;
 
   finally
     CMPal.Free;
@@ -2271,10 +2291,7 @@ procedure TMainForm.FinalDitherTiles(AFrame: PFrame; ADitheringGamma: Integer; A
 var
   i, PalIdx: Integer;
   cnt, mx, sx, sy: Integer;
-  best, cmp: TFloat;
-  BestTile: TTile;
   OrigTile: PTile;
-  TileDCT, OrigTileDCT: TFloatDynArray;
 begin
   EnterCriticalSection(AFrame^.KeyFrame^.CS);
   if AFrame^.KeyFrame^.FramesLeft < 0 then
@@ -2285,10 +2302,6 @@ begin
   end;
   LeaveCriticalSection(AFrame^.KeyFrame^.CS);
 
-  SetLength(OrigTileDCT, cTileDCTSize);
-  SetLength(TileDCT, cTileDCTSize);
-  FillChar(BestTile, SizeOf(TTile), 0);
-
   for sy := 0 to FTileMapHeight - 1 do
     for sx := 0 to FTileMapWidth - 1 do
     begin
@@ -2298,22 +2311,8 @@ begin
       begin
         // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
-        ComputeTilePsyVisFeatures(OrigTile^, False, AUseWavelets, False, False, False, False, ADitheringGamma, nil, OrigTileDCT);
-
-        PalIdx := -1;
-        best := MaxDouble;
-        for i := 0 to cPaletteCount - 1 do
-        begin
-          DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[i]);
-          ComputeTilePsyVisFeatures(OrigTile^, True, AUseWavelets, False, False, False, False, ADitheringGamma, AFrame^.KeyFrame^.PaletteRGB[i], TileDCT);
-          cmp := CompareEuclideanDCT(TileDCT, OrigTileDCT);
-          if cmp <= best then
-          begin
-            PalIdx := i;
-            best := cmp;
-            CopyTile(OrigTile^, BestTile);
-          end;
-        end;
+        PalIdx := OrigTile^.DitheringPalIndex;
+        DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[PalIdx]);
 
         // now that the palette is chosen, keep only one version of the tile
 
@@ -2321,12 +2320,8 @@ begin
 
         AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := system.Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
         AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
-        Move(BestTile.PalPixels[0, 0], AFrame^.Tiles[sx + sy * FTileMapWidth].PalPixels[0, 0], SizeOf(TPalPixels));
 
-        SetLength(BestTile.PaletteRGB, 0);
-        SetLength(BestTile.PaletteIndexes, 0);
-
-        OrigTile^ := BestTile;
+        Move(OrigTile^.PalPixels[0, 0], AFrame^.Tiles[sx + sy * FTileMapWidth].PalPixels[0, 0], SizeOf(TPalPixels));
       end;
     end;
 
