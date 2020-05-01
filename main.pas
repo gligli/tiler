@@ -3924,7 +3924,7 @@ var
 
 var
   fs: TFileStream;
-  acc, i, irev, j, disCnt, signi, ActiveTileCnt: Integer;
+  acc, i, j, disCnt, signi, ActiveTileCnt: Integer;
   dis: array[0 .. CBinCnt - 1] of Integer;
   best: array[0 .. CBinCnt - 1] of Integer;
   share, accf, f: TFloat;
@@ -3978,7 +3978,6 @@ begin
 
   // share DesiredNbTiles among bins, proportional to amount of tiles
 
-{$if true}
   FillQWord(ClusterCount[0], CBinCnt, 0);
   disCnt := 0;
   for i := 0 to CBinCnt - 1 do
@@ -3997,29 +3996,7 @@ begin
   writeln(FloatToStr(accf));
   share := accf / disCnt;
   for i := 0 to CBinCnt - 1 do
-    ClusterCount[i] := Max(1, ClusterCount[i] - dis[i] * share);
-{$else}
-  FillQWord(ClusterCount[0], CBinCnt, 0);
-  share := DesiredNbTiles / CBinCnt;
-  for i := 0 to CBinCnt div 2 - 1 do
-  begin
-    irev := CBinCnt - 1 - i;
-
-    ClusterCount[i] += share;
-    accf := max(0.0, ClusterCount[i] - dis[i]);
-    ClusterCount[i] -= accf;
-    accf /= irev - i;
-    for j := i + 1 to irev - 1 do
-      ClusterCount[j] += accf;
-
-    ClusterCount[irev] += share;
-    accf := max(0.0, ClusterCount[irev] - dis[irev]);
-    ClusterCount[irev] -= accf;
-    accf /= irev - i;
-    for j := i + 1 to irev - 1 do
-      ClusterCount[j] += accf;
-  end;
-{$endif}
+    ClusterCount[i] := ClusterCount[i] - dis[i] * share;
 
   for i := 0 to CBinCnt - 1 do
     WriteLn('EntropyBin # ', i, #9, dis[i], #9, round(ClusterCount[i]));
