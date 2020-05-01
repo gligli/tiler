@@ -754,6 +754,7 @@ begin
 
   ProgressRedraw(-1, esDither);
   ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames));
+  WriteLn;
   ProgressRedraw(1);
   ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, High(FKeyFrames));
   WriteLn;
@@ -1923,6 +1924,8 @@ var
   Dataset: TFloatDynArray2;
   Clusters: TIntegerDynArray;
   di: Integer;
+
+  Yakmo: PYakmo;
 begin
   Assert(cPaletteCount <= Length(gPalettePattern));
 
@@ -1941,11 +1944,17 @@ begin
   assert(di = Length(Dataset));
 
   if di > 1 then
-    DoExternalYakmo(Dataset, nil, cPaletteCount, 1, -1, True, False, nil, Clusters)
+  begin
+   Yakmo := yakmo_create(cPaletteCount, 1, MaxInt, 1, 0, 0, 0);
+   yakmo_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
+   SetLength(Dataset, 0); // free up some memmory
+   yakmo_train_on_data(Yakmo, @Clusters[0]);
+   yakmo_destroy(Yakmo);
+  end
   else
+  begin
     FillDWord(Clusters[0], Length(Clusters), 0);
-
-  assert(Length(Clusters) = Length(Dataset));
+  end;
 
   di := 0;
   for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
@@ -1956,7 +1965,9 @@ begin
         GTile^.DitheringPalIndex := Clusters[di];
         Inc(di);
       end;
-  assert(di = Length(Dataset));
+  assert(di = Length(Clusters));
+
+  Write('.');
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);

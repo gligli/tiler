@@ -16,6 +16,7 @@ type
   PFloat = ^TFloat;
   PPFloat = ^PFloat;
   PFloatDynArray = ^TFloatDynArray;
+  PFloatDynArray2 = ^TFloatDynArray2;
 
   TANNsplitRule = (
   		ANN_KD_STD = 0,      // the optimized kd-splitting rule
@@ -33,6 +34,13 @@ type
 
   TDLUserPal = array[0..2, 0..65535] of Byte;
   PDLUserPal = ^TDLUserPal;
+
+  TYakmo = record
+  end;
+
+  PYakmo = ^TYakmo;
+
+  TYakmoCallback = procedure(cbData: Pointer); stdcall;
 
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
@@ -54,6 +62,11 @@ function ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; cnt: Integer; 
 
 function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
+
+function yakmo_create(k: Cardinal; restartCount: Cardinal; maxIter: Integer; initType: Integer; initSeed: Integer; doNormalize: Integer; isVerbose: Integer): PYakmo; stdcall; external 'yakmo.dll';
+procedure yakmo_destroy(ay: PYakmo); stdcall; external 'yakmo.dll';
+procedure yakmo_load_train_data(ay: PYakmo; rowCount: Cardinal; colCount: Cardinal; dataset: PPFloat); stdcall; external 'yakmo.dll';
+procedure yakmo_train_on_data(ay: PYakmo; pointToCluster: PInteger); stdcall; external 'yakmo.dll';
 
 function InvariantFormatSettings: TFormatSettings;
 function internalRuncommand(p:TProcess;var outputstring:string;
