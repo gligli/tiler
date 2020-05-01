@@ -61,7 +61,7 @@ typedef struct
 typedef struct {
 	ulong r, g, b;
 	ulong pixel_count;
-	ulong err;
+	float err;
 	slong cc;
 	uchar rr, gg, bb;
 } CUBE3;
@@ -509,7 +509,7 @@ static void build_table3(DLCONTEXT *ctx, uchar *image, int size)
 		}
 }
 
-static ulong calc_err(DLCONTEXT *ctx, int c1, int c2)
+static float calc_err(DLCONTEXT *ctx, int c1, int c2)
 {
 	float dist1, dist2;
 	ulong P1, P2, P3;
@@ -543,9 +543,9 @@ static ulong calc_err(DLCONTEXT *ctx, int c1, int c2)
 static void recount_next(DLCONTEXT *ctx, int i)
 {
 	int j, c2 = 0;
-	ulong err, cur_err;
+	float err, cur_err;
 
-	err = ~0L;
+	err = HUGE_VALF;
 	for (j = i + 1; j < ctx->tot_colors; j++)
 	{
 		cur_err = calc_err(ctx, i, j);
@@ -562,7 +562,7 @@ static void recount_next(DLCONTEXT *ctx, int i)
 static void recount_dist(DLCONTEXT *ctx, int c1)
 {
 	int i;
-	ulong cur_err;
+	float cur_err;
 
 	recount_next(ctx, c1);
 	for (i = 0; i < c1; i++)
@@ -583,7 +583,7 @@ static void recount_dist(DLCONTEXT *ctx, int c1)
 static int reduce_table3(DLCONTEXT *ctx, int num_colors)
 {
 	int i, c1=0, c2=0, grand_total, bailout = false;
-	ulong err;
+	float err;
 
 	progress_init("Quantize Pass 1", 1);
 	for (i = 0; i < (ctx->tot_colors - 1); i++)
@@ -595,7 +595,7 @@ static int reduce_table3(DLCONTEXT *ctx, int num_colors)
 	}
 	progress_end();
 
-	ctx->rgb_table3[i].err = ~0L;
+	ctx->rgb_table3[i].err = HUGE_VALF;
 	ctx->rgb_table3[i].cc = ctx->tot_colors;
 
 	grand_total = ctx->tot_colors-num_colors;
@@ -607,7 +607,7 @@ static int reduce_table3(DLCONTEXT *ctx, int num_colors)
 				grand_total );
 		if (bailout) goto stop;
 
-		err = ~0L;
+		err = HUGE_VALF;
 		for (i = 0; i < ctx->tot_colors; i++)
 		{
 			if (ctx->rgb_table3[i].err < err)
@@ -625,7 +625,7 @@ static int reduce_table3(DLCONTEXT *ctx, int num_colors)
 		ctx->tot_colors--;
 
 		ctx->rgb_table3[c1] = ctx->rgb_table3[ctx->tot_colors];
-		ctx->rgb_table3[ctx->tot_colors-1].err = ~0L;
+		ctx->rgb_table3[ctx->tot_colors-1].err = HUGE_VALF;
 		ctx->rgb_table3[ctx->tot_colors-1].cc = ctx->tot_colors;
 
 		for (i = 0; i < c1; i++)
