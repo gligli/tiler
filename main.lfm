@@ -97,7 +97,7 @@ object MainForm: TMainForm
   object lblCorrel: TLabel
     Left = 904
     Height = 13
-    Top = 513
+    Top = 515
     Width = 51
     Alignment = taRightJustify
     Anchors = [akRight, akBottom]
@@ -108,7 +108,7 @@ object MainForm: TMainForm
   object Label5: TLabel
     Left = 812
     Height = 15
-    Top = 513
+    Top = 514
     Width = 82
     Anchors = [akRight, akBottom]
     Caption = 'Correlation (Q):'
@@ -139,9 +139,9 @@ object MainForm: TMainForm
     Height = 446
     Top = 40
     Width = 964
-    ActivePage = tsSettings
+    ActivePage = tsTilesPal
     Anchors = [akTop, akLeft, akRight, akBottom]
-    TabIndex = 0
+    TabIndex = 3
     TabOrder = 4
     object tsSettings: TTabSheet
       Caption = 'Settings'
@@ -538,14 +538,6 @@ object MainForm: TMainForm
       Caption = 'Palettes / Tiles'
       ClientHeight = 418
       ClientWidth = 956
-      object imgTiles: TImage
-        Left = 312
-        Height = 360
-        Top = 10
-        Width = 320
-        PopupMenu = pmProcesses
-        Stretch = True
-      end
       object sePage: TSpinEdit
         Left = 43
         Height = 23
@@ -565,12 +557,37 @@ object MainForm: TMainForm
       end
       object imgPalette: TImage
         Left = 8
-        Height = 64
+        Height = 384
         Top = 32
         Width = 256
         AntialiasingMode = amOff
+        Anchors = [akTop, akLeft, akBottom]
         PopupMenu = pmProcesses
         Stretch = True
+      end
+      object sbTiles: TScrollBox
+        Left = 272
+        Height = 408
+        Top = 8
+        Width = 680
+        HorzScrollBar.Increment = 64
+        HorzScrollBar.Page = 320
+        HorzScrollBar.Tracking = True
+        VertScrollBar.Increment = 64
+        VertScrollBar.Page = 360
+        VertScrollBar.Tracking = True
+        Anchors = [akTop, akLeft, akRight, akBottom]
+        ClientHeight = 404
+        ClientWidth = 676
+        TabOrder = 1
+        object imgTiles: TImage
+          Left = 0
+          Height = 360
+          Top = 0
+          Width = 320
+          PopupMenu = pmProcesses
+          Stretch = True
+        end
       end
     end
   end
@@ -651,12 +668,12 @@ object MainForm: TMainForm
   object IdleTimer: TIdleTimer
     Interval = 42
     OnTimer = IdleTimerTimer
-    left = 920
-    top = 440
+    left = 888
+    top = 416
   end
   object pmProcesses: TPopupMenu
-    left = 856
-    top = 440
+    left = 824
+    top = 416
     object miLoad: TMenuItem
       Caption = 'Load'
       ShortCut = 113
@@ -699,23 +716,23 @@ object MainForm: TMainForm
     end
   end
   object odFFInput: TOpenDialog
-    left = 856
-    top = 344
+    left = 824
+    top = 320
   end
   object sdGTM: TSaveDialog
     DefaultExt = '.gtm'
     FileName = 'C:\tiler\samples'
     Filter = 'GliGli''s TileMotion|*.gtm'
     InitialDir = 'C:\tiler\'
-    left = 856
-    top = 392
+    left = 824
+    top = 368
   end
   object sdGTS: TSaveDialog
     DefaultExt = '.gts'
     FileName = 'C:\tiler\samples.gtm'
     Filter = 'GliGli''s TileSet|*.gts'
     InitialDir = 'C:\tiler\'
-    left = 920
-    top = 392
+    left = 888
+    top = 368
   end
 end

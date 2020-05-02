@@ -257,6 +257,7 @@ type
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
+    sbTiles: TScrollBox;
     sdGTM: TSaveDialog;
     sdGTS: TSaveDialog;
     seQbTiles: TFloatSpinEdit;
@@ -1822,7 +1823,7 @@ begin
   imgDest.Picture.Bitmap.Height:=FScreenHeight;
   imgDest.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgTiles.Picture.Bitmap.Width:=FScreenWidth div 2;
+  imgTiles.Picture.Bitmap.Width:=FScreenWidth;
   imgTiles.Picture.Bitmap.Height:=FScreenHeight;
   imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
 
@@ -1830,8 +1831,8 @@ begin
   imgPalette.Picture.Bitmap.Height := FPaletteCount;
   imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgTiles.Width := FScreenWidth shr (1 - IfThen(FScreenHeight <= 256, 1, 0));
-  imgTiles.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
+  imgTiles.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 2, 1);
+  imgTiles.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 2, 1);
   imgSource.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
   imgSource.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
   imgDest.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
@@ -3221,9 +3222,9 @@ begin
         imgTiles.Picture.Bitmap.Canvas.Clear;
 
         for sy := 0 to FTileMapHeight - 1 do
-          for sx := 0 to FTileMapWidth div 2 - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
           begin
-            ti := FTileMapWidth * sy + sx + (FTileMapWidth div 2) * (ATilePage and 1) + FTileMapSize * (ATilePage shr 1);
+            ti := FTileMapWidth * sy + sx + FTileMapSize * ATilePage;
 
             if InRange(ti, 0, High(FTiles)) then
             begin
