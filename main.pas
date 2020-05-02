@@ -918,7 +918,7 @@ var
 begin
   FTilePaletteSize := StrToInt(cbxPalSize.Text);
   FPaletteCount := StrToInt(cbxPalCount.Text);
-  if seMaxTiles.Value = round(seQbTiles.Value * EqualQualityTileCount(GetGlobalTileCount)) then
+  if seMaxTiles.Value = round(seQbTiles.Value * EqualQualityTileCount(Length(FFrames) * FTileMapSize)) then
     seMaxTiles.Value := 0;
 
   ProgressRedraw;
@@ -1317,8 +1317,8 @@ end;
 
 procedure TMainForm.seQbTilesEditingDone(Sender: TObject);
 begin
-  if Length(FFrames) = 0 then Exit;
-  seMaxTiles.Value := round(seQbTiles.Value * EqualQualityTileCount(GetGlobalTileCount));
+  if Length(FFrames) * FTileMapSize = 0 then Exit;
+  seMaxTiles.Value := round(seQbTiles.Value * EqualQualityTileCount(Length(FFrames) * FTileMapSize));
 end;
 
 procedure TMainForm.seEncGammaChange(Sender: TObject);
