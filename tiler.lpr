@@ -36,6 +36,7 @@ begin
   Frames := ExceptFrames;
   for I := 0 to ExceptFrameCount - 1 do
     Report := Report + LineEnding + BackTraceStrFunc(Frames[I]);
+  WriteLn(Report);
   TApplication(Sender).MessageBox(PChar(Report), PChar(Application.Title), MB_ICONERROR);
 end;
 
