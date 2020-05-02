@@ -1837,7 +1837,6 @@ begin
   imgSource.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
   imgDest.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
   imgDest.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
-  imgPalette.Height := min(256, 16 * FPaletteCount);
 
   sedPalIdx.MaxValue := FPaletteCount - 1;
 end;
