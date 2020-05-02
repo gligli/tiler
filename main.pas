@@ -59,7 +59,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 5, 1, 2, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 5, 1, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -1204,6 +1204,8 @@ var
       DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, smoo);
   end;
 
+var
+  frm, j, i: Integer;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -1212,9 +1214,14 @@ begin
 
   ProgressRedraw(-1, esSmooth);
 
-  ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, FTileMapHeight - 1);
-
+  for frm := 0 to high(FFrames) do
+    for j := 0 to (FTileMapHeight - 1) do
+      for i := 0 to (FTileMapWidth - 1) do
+        FFrames[frm].SmoothedTileMap[j, i] := FFrames[frm].TileMap[j, i];
   ProgressRedraw(1);
+
+  ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, FTileMapHeight - 1);
+  ProgressRedraw(2);
 
   tbFrameChange(nil);
 end;
@@ -3694,7 +3701,7 @@ const
 var
   sx: Integer;
   cmp: TFloat;
-  TMI,  SmooTMI, PrevSmooTMI: PTileMapItem;
+  TMI, PrevTMI: PTileMapItem;
   Tile_, PrevTile: TTile;
   TileDCT, PrevTileDCT: TFloatDynArray;
 begin
@@ -3706,20 +3713,15 @@ begin
 
   for sx := 0 to FTileMapWidth - 1 do
   begin
-    TMI := @AFrame^.TileMap[Y, sx];
-    SmooTMI := @AFrame^.SmoothedTileMap[Y, sx];
-    PrevSmooTMI := @APrevFrame^.SmoothedTileMap[Y, sx];
-
-    if APrevFrame^.Index <= 0 then
-      PrevSmooTMI^ := APrevFrame^.TileMap[Y, sx];
-    SmooTMI^ := TMI^;
+    TMI := @AFrame^.SmoothedTileMap[Y, sx];
+    PrevTMI := @APrevFrame^.SmoothedTileMap[Y, sx];
 
     // compare DCT of current tile with tile from prev frame tilemap
 
-    PrevTile := FTiles[PrevSmooTMI^.GlobalTileIndex]^;
+    PrevTile := FTiles[PrevTMI^.GlobalTileIndex]^;
     Tile_ := FTiles[TMI^.GlobalTileIndex]^;
 
-    ComputeTilePsyVisFeatures(PrevTile, True, False, False, True, PrevSmooTMI^.HMirror, PrevSmooTMI^.VMirror, -1, APrevFrame^.KeyFrame^.PaletteRGB[PrevSmooTMI^.PalIdx], PrevTileDCT);
+    ComputeTilePsyVisFeatures(PrevTile, True, False, False, True, PrevTMI^.HMirror, PrevTMI^.VMirror, -1, APrevFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
     ComputeTilePsyVisFeatures(Tile_, True, False, False, True, TMI^.HMirror, TMI^.VMirror, -1, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
 
     cmp := CompareEuclideanDCT(TileDCT, PrevTileDCT);
@@ -3729,16 +3731,16 @@ begin
 
     if Abs(cmp) <= Strength then
     begin
-      if TMI^.GlobalTileIndex >= PrevSmooTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
-        SmooTMI^ := PrevSmooTMI^
+      if TMI^.GlobalTileIndex >= PrevTMI^.GlobalTileIndex then // lower tile index means the tile is used more often
+        TMI^ := PrevTMI^
       else
-        PrevSmooTMI^ := TMI^;
+        PrevTMI^ := TMI^;
 
-      SmooTMI^.Smoothed := True;
+      TMI^.Smoothed := True;
     end
     else
     begin
-      SmooTMI^.Smoothed := False;
+      TMI^.Smoothed := False;
     end;
   end;
 end;
@@ -4000,7 +4002,7 @@ begin
   writeln(FloatToStr(accf));
   share := accf / disCnt;
   for i := 0 to CBinCnt - 1 do
-    ClusterCount[i] := ClusterCount[i] - dis[i] * share;
+    ClusterCount[i] := max(0, ClusterCount[i] - dis[i] * share);
 
   for i := 0 to CBinCnt - 1 do
     WriteLn('EntropyBin # ', i, #9, dis[i], #9, round(ClusterCount[i]));
