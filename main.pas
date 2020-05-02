@@ -17,9 +17,7 @@ type
 const
   // tweakable constants
 
-  cPaletteCount = 32;
   cBitsPerComp = 8;
-  cTilePaletteSize = 32;
   cRandomKModesCount = 7;
 
 {$if true}
@@ -153,21 +151,6 @@ type
 
   TTileMapItems = array of TTileMapItem;
 
-  PKeyFrame = ^TKeyFrame;
-
-  TFrame = record
-    KeyFrame: PKeyFrame;
-    Index: Integer;
-
-    TileMap: array of array of TTileMapItem;
-    SmoothedTileMap: array of array of TTileMapItem;
-
-    Tiles: array of TTile;
-    FSPixels: TByteDynArray;
-  end;
-
-  PFrame = ^TFrame;
-
   TTileDataset = record
     Dataset: TFloatDynArray2;
     TRToTileIdx: TIntegerDynArray;
@@ -195,26 +178,33 @@ type
     CountCache: TIntegerDynArray;
   end;
 
-  TKeyFrame = record
+  TKeyFrame = class;
+
+  { TFrame }
+
+  TFrame = class
+    PKeyFrame: TKeyFrame;
+    Index: Integer;
+
+    TileMap: array of array of TTileMapItem;
+    SmoothedTileMap: array of array of TTileMapItem;
+
+    Tiles: array of TTile;
+    FSPixels: TByteDynArray;
+  end;
+
+  { TKeyFrame }
+
+  TKeyFrame = class
     StartFrame, EndFrame, FrameCount: Integer;
     FramesLeft: Integer;
     TileDS: PTileDataset;
     CS: TRTLCriticalSection;
-    MixingPlans: array[0 .. cPaletteCount - 1] of TMixingPlan;
-    PaletteIndexes: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
-    PaletteRGB: array[0 .. cPaletteCount - 1] of TIntegerDynArray;
-  end;
-
-  { T8BitPortableNetworkGraphic }
-
-  T8BitPortableNetworkGraphic = class(TPortableNetworkGraphic)
-    procedure InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter); override;
-  end;
-
-  { TFastPortableNetworkGraphic }
-
-  TFastPortableNetworkGraphic = class(TPortableNetworkGraphic)
-    procedure InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter); override;
+    MixingPlans: array of TMixingPlan;
+    PaletteIndexes: TIntegerDynArray2;
+    PaletteRGB: TIntegerDynArray2;
+    constructor Create(APaletteCount, AStartFrame, AEndFrame: Integer);
+    destructor Destroy; override;
   end;
 
   { TMainForm }
@@ -225,8 +215,10 @@ type
     btnGTM: TButton;
     btnRunAll: TButton;
     cbxEndStep: TComboBox;
+    cbxPalCount: TComboBox;
     cbxStartStep: TComboBox;
     cbxYilMix: TComboBox;
+    cbxPalSize: TComboBox;
     chkFTGamma: TCheckBox;
     chkFTFromPal: TCheckBox;
     chkUseWL: TCheckBox;
@@ -252,6 +244,7 @@ type
     Label1: TLabel;
     Label10: TLabel;
     Label11: TLabel;
+    Label12: TLabel;
     Label13: TLabel;
     Label2: TLabel;
     Label3: TLabel;
@@ -346,14 +339,17 @@ type
     FScreenWidth: Integer;
     FScreenHeight: Integer;
 
+    FPaletteCount: Integer;
+    FTilePaletteSize: Integer;
+
     FCS: TRTLCriticalSection;
     FMergeLock: TSpinlock;
 
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
     function ComputeCorrelation(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-    function ComputeInterFrameCorrelation(a, b: PFrame): TFloat;
+    function ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
 
-    procedure LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
+    procedure LoadFrame(var AFrame: TFrame; ABitmap: TBitmap);
     procedure ClearAll;
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
@@ -387,13 +383,13 @@ type
 
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
-    function GetFrameTileCount(AFrame: PFrame): Integer;
+    function GetFrameTileCount(AFrame: TFrame): Integer;
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    procedure PrepareDitherTiles(AKeyFrame: PKeyFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
-    procedure FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
-    procedure FinalDitherTiles(AFrame: PFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
+    procedure PrepareDitherTiles(AKeyFrame: TKeyFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
+    procedure FindBestKeyframePalette(AKeyFrame: TKeyFrame; PalVAR: TFloat);
+    procedure FinalDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
 
     function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
     function GetTileGridMedian(const ATile: TTile; other: Boolean; out UseCount: Integer): Integer;
@@ -409,20 +405,32 @@ type
 
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
-    function GetMaxTPF(AKF: PKeyFrame): Integer;
-    procedure PrepareFrameTiling(AKF: PKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean);
-    procedure TerminateFrameTiling(AKF: PKeyFrame);
-    procedure DoFrameTiling(AFrame: PFrame; AFTGamma: Integer; AFTFromPal, AUseWavelets: Boolean);
+    function GetMaxTPF(AKF: TKeyFrame): Integer;
+    procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean);
+    procedure TerminateFrameTiling(AKF: TKeyFrame);
+    procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AFTFromPal, AUseWavelets: Boolean);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
-    procedure DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
+    procedure DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat);
 
     procedure SaveStream(AStream: TStream);
 
     function DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; out AFPS: Double): String;
   public
     { public declarations }
+  end;
+
+  { T8BitPortableNetworkGraphic }
+
+  T8BitPortableNetworkGraphic = class(TPortableNetworkGraphic)
+    procedure InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter); override;
+  end;
+
+  { TFastPortableNetworkGraphic }
+
+  TFastPortableNetworkGraphic = class(TPortableNetworkGraphic)
+    procedure InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter); override;
   end;
 
 var
@@ -529,15 +537,17 @@ var
   gGammaCorLut: array[-1..High(gGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
   gDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
-  gPalettePattern : array[0 .. cPaletteCount - 1, 0 .. cTilePaletteSize - 1] of TFloat;
+  gPalettePattern : TFloatDynArray2;
 
-procedure InitLuts;
+procedure InitLuts(ATilePaletteSize, APaletteCount: Integer);
 const
   cCurvature = 2.0;
 var
   g, i, j, v, u, y, x: Int64;
   f, fp: TFloat;
 begin
+  // gamma
+
   for g := -1 to High(gGamma) do
     for i := 0 to High(Byte) do
       if g >= 0 then
@@ -545,8 +555,12 @@ begin
       else
         gGammaCorLut[g, i] := i / 255.0;
 
+  // inverse
+
   for i := 0 to High(gVecInv) do
     gVecInv[i] := iDiv0(1 shl cVecInvWidth, i shr 2);
+
+  // DCT
 
   i := 0;
   for v := 0 to (cTileWidth - 1) do
@@ -558,19 +572,23 @@ begin
           Inc(i);
         end;
 
+  // palette pattern
+
+  SetLength(gPalettePattern, APaletteCount, ATilePaletteSize);
+
   f := 0;
-  for i := 0 to cTilePaletteSize - 1 do
+  for i := 0 to ATilePaletteSize - 1 do
   begin
     fp := f;
     f := power(i + 2, cCurvature);
 
-    for j := 0 to cPaletteCount - 1 do
-      gPalettePattern[j, i] := ((j + 1) / cPaletteCount) * max(cPaletteCount, f - fp) + fp;
+    for j := 0 to APaletteCount - 1 do
+      gPalettePattern[j, i] := ((j + 1) / APaletteCount) * max(APaletteCount, f - fp) + fp;
   end;
 
-  for j := 0 to cPaletteCount - 1 do
-    for i := 0 to cTilePaletteSize - 1 do
-      gPalettePattern[j, i] /= gPalettePattern[cPaletteCount - 1, cTilePaletteSize - 1];
+  for j := 0 to APaletteCount - 1 do
+    for i := 0 to ATilePaletteSize - 1 do
+      gPalettePattern[j, i] /= gPalettePattern[APaletteCount - 1, ATilePaletteSize - 1];
 end;
 
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -636,6 +654,26 @@ begin
   Result := round(sqrt(tileCount) * log2(1 + tileCount));
 end;
 
+{ TKeyFrame }
+
+constructor TKeyFrame.Create(APaletteCount, AStartFrame, AEndFrame: Integer);
+begin
+  StartFrame := AStartFrame;
+  EndFrame := AEndFrame;
+  FrameCount := AEndFrame - AStartFrame + 1;
+  FramesLeft := -1;
+  InitializeCriticalSection(CS);
+  SetLength(MixingPlans, APaletteCount);
+  SetLength(PaletteIndexes, APaletteCount);
+  SetLength(PaletteRGB, APaletteCount);
+end;
+
+destructor TKeyFrame.Destroy;
+begin
+  inherited Destroy;
+  DeleteCriticalSection(CS);
+end;
+
 { T8BitPortableNetworkGraphic }
 
 procedure T8BitPortableNetworkGraphic.InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter);
@@ -679,25 +717,25 @@ begin
   Result := PearsonCorrelation(ya, yb);
 end;
 
-function TMainForm.ComputeInterFrameCorrelation(a, b: PFrame): TFloat;
+function TMainForm.ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
 var
   sz, i: Integer;
   ya, yb: TDoubleDynArray;
 begin
-  Assert(Length(a^.FSPixels) = Length(b^.FSPixels));
-  sz := Length(a^.FSPixels) div 3;
+  Assert(Length(a.FSPixels) = Length(b.FSPixels));
+  sz := Length(a.FSPixels) div 3;
   SetLength(ya, sz * 3);
   SetLength(yb, sz * 3);
 
   for i := 0 to sz - 1 do
   begin
-    ya[i + sz * 0] := a^.FSPixels[i * 3 + 0];
-    ya[i + sz * 1] := a^.FSPixels[i * 3 + 1];
-    ya[i + sz * 2] := a^.FSPixels[i * 3 + 2];
+    ya[i + sz * 0] := a.FSPixels[i * 3 + 0];
+    ya[i + sz * 1] := a.FSPixels[i * 3 + 1];
+    ya[i + sz * 2] := a.FSPixels[i * 3 + 2];
 
-    yb[i + sz * 0] := b^.FSPixels[i * 3 + 0];
-    yb[i + sz * 1] := b^.FSPixels[i * 3 + 1];
-    yb[i + sz * 2] := b^.FSPixels[i * 3 + 2];
+    yb[i + sz * 0] := b.FSPixels[i * 3 + 0];
+    yb[i + sz * 1] := b.FSPixels[i * 3 + 1];
+    yb[i + sz * 2] := b.FSPixels[i * 3 + 2];
   end;
 
   Result := PearsonCorrelation(ya, yb);
@@ -733,17 +771,17 @@ var
 
   procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    PrepareDitherTiles(@FKeyFrames[AIndex], Gamma, UseWavelets);
+    PrepareDitherTiles(FKeyFrames[AIndex], Gamma, UseWavelets);
   end;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FindBestKeyframePalette(@FKeyFrames[AIndex], sePalVAR.Value / 100);
+    FindBestKeyframePalette(FKeyFrames[AIndex], sePalVAR.Value / 100);
   end;
 
   procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FinalDitherTiles(@FFrames[AIndex], Gamma, UseWavelets);
+    FinalDitherTiles(FFrames[AIndex], Gamma, UseWavelets);
   end;
 
 begin
@@ -803,7 +841,7 @@ var
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(@FFrames[AIndex], Gamma, FromPal, UseWavelets);
+    DoFrameTiling(FFrames[AIndex], Gamma, FromPal, UseWavelets);
   end;
 
 var
@@ -860,7 +898,7 @@ const
       bmp.LoadFromFile(Format(FInputPath, [AIndex + PtrUInt(AData)]));
       LeaveCriticalSection(FCS);
 
-      LoadFrame(@FFrames[AIndex], bmp.Bitmap);
+      LoadFrame(FFrames[AIndex], bmp.Bitmap);
 
       FFrames[AIndex].Index := AIndex;
     finally
@@ -877,6 +915,8 @@ var
   sfr, efr: Integer;
   bmp: TPicture;
 begin
+  FTilePaletteSize := StrToInt(cbxPalSize.Text);
+  FPaletteCount := StrToInt(cbxPalCount.Text);
   if seMaxTiles.Value = round(seQbTiles.Value * EqualQualityTileCount(GetGlobalTileCount)) then
     seMaxTiles.Value := 0;
 
@@ -888,7 +928,7 @@ begin
 
   // init Gamma LUTs
 
-  InitLuts;
+  InitLuts(FTilePaletteSize, FPaletteCount);
 
   // load video
 
@@ -956,14 +996,15 @@ begin
 
   kfIdx := 0;
   SetLength(FKeyFrames, Length(FFrames));
-  FFrames[0].KeyFrame := @FKeyFrames[0];
+  FKeyFrames[0] := TKeyFrame.Create(FPaletteCount, 0, 0);
+  FFrames[0].PKeyFrame := FKeyFrames[0];
 
   av := -1.0;
   LastKFIdx := 0;
   for i := 1 to High(FFrames) do
   begin
     Cnt := 0;
-    v := ComputeInterFrameCorrelation(@FFrames[i - 1], @FFrames[i]);
+    v := ComputeInterFrameCorrelation(FFrames[i - 1], FFrames[i]);
     if av = -1.0 then
     begin
       av := v
@@ -981,13 +1022,15 @@ begin
     if isKf then
     begin
       Inc(kfIdx);
+      FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
+
       av := -1.0;
       LastKFIdx := i;
 
       WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'Ratio: ', FloatToStr(ratio));
     end;
 
-    FFrames[i].KeyFrame := @FKeyFrames[kfIdx];
+    FFrames[i].PKeyFrame := FKeyFrames[kfIdx];
   end;
 
   SetLength(FKeyFrames, kfIdx + 1);
@@ -998,7 +1041,7 @@ begin
     efr := Low(Integer);
 
     for i := 0 to High(FFrames) do
-      if FFrames[i].KeyFrame = @FKeyFrames[j] then
+      if FFrames[i].PKeyFrame = FKeyFrames[j] then
       begin
         sfr := Min(sfr, i);
         efr := Max(efr, i);
@@ -1007,8 +1050,6 @@ begin
     FKeyFrames[j].StartFrame := sfr;
     FKeyFrames[j].EndFrame := efr;
     FKeyFrames[j].FrameCount := efr - sfr + 1;
-    FKeyFrames[j].FramesLeft := -1;
-    InitializeCriticalSection(FKeyFrames[j].CS);
   end;
 
   ProgressRedraw(1);
@@ -1201,7 +1242,7 @@ var
     i: Integer;
   begin
     for i := cSmoothingPrevFrame to High(FFrames) do
-      DoTemporalSmoothing(@FFrames[i], @FFrames[i - cSmoothingPrevFrame], AIndex, smoo);
+      DoTemporalSmoothing(FFrames[i], FFrames[i - cSmoothingPrevFrame], AIndex, smoo);
   end;
 
 var
@@ -1283,7 +1324,7 @@ procedure TMainForm.seEncGammaChange(Sender: TObject);
 begin
   gGamma[0] := seEncGamma.Value;
   gGamma[1] := seVisGamma.Value;
-  InitLuts;
+  InitLuts(FTilePaletteSize, FPaletteCount);
   tbFrameChange(nil);
 end;
 
@@ -1785,8 +1826,8 @@ begin
   imgTiles.Picture.Bitmap.Height:=FScreenHeight;
   imgTiles.Picture.Bitmap.PixelFormat:=pf32bit;
 
-  imgPalette.Picture.Bitmap.Width := cTilePaletteSize;
-  imgPalette.Picture.Bitmap.Height := cPaletteCount;
+  imgPalette.Picture.Bitmap.Width := FTilePaletteSize;
+  imgPalette.Picture.Bitmap.Height := FPaletteCount;
   imgPalette.Picture.Bitmap.PixelFormat:=pf32bit;
 
   imgTiles.Width := FScreenWidth shr (1 - IfThen(FScreenHeight <= 256, 1, 0));
@@ -1795,9 +1836,9 @@ begin
   imgSource.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
   imgDest.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
   imgDest.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
-  imgPalette.Height := min(256, 16 * cPaletteCount);
+  imgPalette.Height := min(256, 16 * FPaletteCount);
 
-  sedPalIdx.MaxValue := cPaletteCount - 1;
+  sedPalIdx.MaxValue := FPaletteCount - 1;
 end;
 
 procedure TMainForm.DitherFloydSteinberg(const AScreen: TByteDynArray);
@@ -1931,7 +1972,7 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TMainForm.PrepareDitherTiles(AKeyFrame: PKeyFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
+procedure TMainForm.PrepareDitherTiles(AKeyFrame: TKeyFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
 var
   sx, sy, i: Integer;
   GTile: PTile;
@@ -1942,13 +1983,13 @@ var
 
   Yakmo: PYakmo;
 begin
-  Assert(cPaletteCount <= Length(gPalettePattern));
+  Assert(FPaletteCount <= Length(gPalettePattern));
 
-  SetLength(Dataset, AKeyFrame^.FrameCount * FTileMapSize, cTileDCTSize);
+  SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
   SetLength(Clusters, Length(Dataset));
 
   di := 0;
-  for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+  for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
       begin
@@ -1958,9 +1999,9 @@ begin
       end;
   assert(di = Length(Dataset));
 
-  if di > 1 then
+  if (di > 1) and (FPaletteCount > 1) then
   begin
-   Yakmo := yakmo_create(cPaletteCount, 1, MaxInt, 1, 0, 0, 0);
+   Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
    yakmo_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
    SetLength(Dataset, 0); // free up some memmory
    Write('.');
@@ -1973,7 +2014,7 @@ begin
   end;
 
   di := 0;
-  for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+  for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
       begin
@@ -1986,7 +2027,7 @@ begin
   Write('.');
 end;
 
-procedure TMainForm.FindBestKeyframePalette(AKeyFrame: PKeyFrame; PalVAR: TFloat);
+procedure TMainForm.FindBestKeyframePalette(AKeyFrame: TKeyFrame; PalVAR: TFloat);
 const
   CNoColor = $000000;
 var
@@ -1999,13 +2040,13 @@ var
   dlCnt: Integer;
   dlInput: PByte;
 
-  PaletteUseCount: array[0 .. cPaletteCount - 1] of record
+  PaletteUseCount: array of record
     UseCount: Integer;
     Palette: TIntegerDynArray;
     PalIdx: Integer;
   end;
 
-  PalIdxLUT: array[0 .. cPaletteCount - 1] of Integer;
+  PalIdxLUT: TIntegerDynArray;
 
   procedure DoDennisLeeV3(PalIdx: Integer);
   var
@@ -2016,9 +2057,9 @@ var
     FillChar(dlInput^, dlCnt * 3, CNoColor and $ff);
     dlPtr := dlInput;
 
-    for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
     begin
-      dlPtr := @dlInput[((i - AKeyFrame^.StartFrame) * FScreenWidth * FScreenHeight) * 3];
+      dlPtr := @dlInput[((i - AKeyFrame.StartFrame) * FScreenWidth * FScreenHeight) * 3];
 
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
@@ -2039,11 +2080,11 @@ var
         end;
     end;
 
-    dl3quant(dlInput, FScreenWidth, AKeyFrame^.FrameCount * FScreenHeight, cTilePaletteSize + 1, EnsureRange(cBitsPerComp, 2, 6), @dlPal);
+    dl3quant(dlInput, FScreenWidth, AKeyFrame.FrameCount * FScreenHeight, FTilePaletteSize + 1, EnsureRange(cBitsPerComp, 2, 6), @dlPal);
 
-    CMUsage.Count := cTilePaletteSize;
+    CMUsage.Count := FTilePaletteSize;
     j := 0;
-    for i := 0 to cTilePaletteSize + 1 - 1 do
+    for i := 0 to FTilePaletteSize + 1 - 1 do
     begin
       col := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
       if col <> CNoColor then
@@ -2066,13 +2107,13 @@ var
           CMUsage[j] := CMItem;
           Inc(j);
 
-          if j >= cTilePaletteSize then
+          if j >= FTilePaletteSize then
             Break;
         end;
       end;
     end;
 
-    while j < cTilePaletteSize do
+    while j < FTilePaletteSize do
     begin
       New(CMItem);
       CMItem^.Index := CNoColor;
@@ -2101,7 +2142,7 @@ var
 
     // get color usage stats
 
-    for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
     begin
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
@@ -2156,7 +2197,7 @@ var
       end;
 
     CmlPct := 0;
-    acc := AKeyFrame^.FrameCount * FTileMapSize * sqr(cTileWidth);
+    acc := AKeyFrame.FrameCount * FTileMapSize * sqr(cTileWidth);
     acc := round(acc * PalVAR);
     for i := 0 to CMUsage.Count - 1 do
     begin
@@ -2169,9 +2210,9 @@ var
     end;
     AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
 
-    WriteLn('Frame: ', AKeyFrame^.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct);
+    WriteLn('Frame: ', AKeyFrame.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct);
 
-    CmlPct := max(CmlPct, min(LastUsed + 1, cTilePaletteSize * cPaletteCount)); // ensure enough colors
+    CmlPct := max(CmlPct, min(LastUsed + 1, FTilePaletteSize * FPaletteCount)); // ensure enough colors
 
     // prune colors that are too close to each other
 
@@ -2223,22 +2264,25 @@ var
 
 
     CMPal.Clear;
-    for i := 0 to cTilePaletteSize - 1 do
+    for i := 0 to FTilePaletteSize - 1 do
       CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
   end;
 
 begin
-  Assert(cPaletteCount <= Length(gPalettePattern));
+  SetLength(PaletteUseCount, FPaletteCount);
+  SetLength(PalIdxLUT, FPaletteCount);
 
-  for PalIdx := 0 to cPaletteCount - 1 do
+  Assert(FPaletteCount <= Length(gPalettePattern));
+
+  for PalIdx := 0 to FPaletteCount - 1 do
     PaletteUseCount[PalIdx].UseCount := 0;
 
-  dlCnt := AKeyFrame^.FrameCount * FScreenWidth * FScreenHeight;
+  dlCnt := AKeyFrame.FrameCount * FScreenWidth * FScreenHeight;
   dlInput := GetMem(dlCnt * 3);
   CMUsage := TFPList.Create;
   CMPal := TFPList.Create;
   try
-    for PalIdx := 0 to cPaletteCount - 1 do
+    for PalIdx := 0 to FPaletteCount - 1 do
     begin
       if FUseDennisLeeV3 then
         DoDennisLeeV3(PalIdx)
@@ -2247,13 +2291,13 @@ begin
 
       // split most used colors into tile palettes
 
-      //Assert(cPaletteCount = cTilePaletteSize * 2, 'non transposable');
+      //Assert(FPaletteCount = FTilePaletteSize * 2, 'non transposable');
 
       CMPal.Sort(@CompareCMULHS);
 
-      SetLength(AKeyFrame^.PaletteIndexes[PalIdx], cTilePaletteSize);
-      for i := 0 to cTilePaletteSize - 1 do
-        AKeyFrame^.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
+      SetLength(AKeyFrame.PaletteIndexes[PalIdx], FTilePaletteSize);
+      for i := 0 to FTilePaletteSize - 1 do
+        AKeyFrame.PaletteIndexes[PalIdx, i] := PCountIndexArray(CMPal[i])^.Index;
 
       for i := 0 to CMUsage.Count - 1 do
         Dispose(PCountIndexArray(CMUsage[i]));
@@ -2263,30 +2307,30 @@ begin
     end;
 
     // sort entire palettes by use count
-    for PalIdx := 0 to cPaletteCount - 1 do
+    for PalIdx := 0 to FPaletteCount - 1 do
     begin
-      PaletteUseCount[PalIdx].Palette := AKeyFrame^.PaletteIndexes[PalIdx];
+      PaletteUseCount[PalIdx].Palette := AKeyFrame.PaletteIndexes[PalIdx];
       PaletteUseCount[PalIdx].PalIdx := PalIdx;
     end;
-    QuickSort(PaletteUseCount[0], 0, cPaletteCount - 1, SizeOf(PaletteUseCount[0]), @ComparePaletteUseCount, AKeyFrame);
-    for PalIdx := 0 to cPaletteCount - 1 do
+    QuickSort(PaletteUseCount[0], 0, FPaletteCount - 1, SizeOf(PaletteUseCount[0]), @ComparePaletteUseCount, AKeyFrame);
+    for PalIdx := 0 to FPaletteCount - 1 do
     begin
-      AKeyFrame^.PaletteIndexes[PalIdx] := PaletteUseCount[PalIdx].Palette;
+      AKeyFrame.PaletteIndexes[PalIdx] := PaletteUseCount[PalIdx].Palette;
       PalIdxLUT[PaletteUseCount[PalIdx].PalIdx] := PalIdx;
     end;
 
-    for PalIdx := 0 to cPaletteCount - 1 do
+    for PalIdx := 0 to FPaletteCount - 1 do
     begin
-      SetLength(AKeyFrame^.PaletteRGB[PalIdx], cTilePaletteSize);
-      for i := 0 to cTilePaletteSize - 1 do
+      SetLength(AKeyFrame.PaletteRGB[PalIdx], FTilePaletteSize);
+      for i := 0 to FTilePaletteSize - 1 do
       begin
-        j := AKeyFrame^.PaletteIndexes[PalIdx, i];
-        AKeyFrame^.PaletteRGB[PalIdx, i] := ToRGB(FColorMap[j, 0], FColorMap[j, 1], FColorMap[j, 2]);
+        j := AKeyFrame.PaletteIndexes[PalIdx, i];
+        AKeyFrame.PaletteRGB[PalIdx, i] := ToRGB(FColorMap[j, 0], FColorMap[j, 1], FColorMap[j, 2]);
       end;
     end;
 
     di := 0;
-    for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
@@ -2302,66 +2346,66 @@ begin
   end;
 end;
 
-procedure TMainForm.FinalDitherTiles(AFrame: PFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
+procedure TMainForm.FinalDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
 var
   i, PalIdx: Integer;
   cnt, mx, sx, sy: Integer;
   OrigTile: PTile;
 begin
-  EnterCriticalSection(AFrame^.KeyFrame^.CS);
-  if AFrame^.KeyFrame^.FramesLeft < 0 then
+  EnterCriticalSection(AFrame.PKeyFrame.CS);
+  if AFrame.PKeyFrame.FramesLeft < 0 then
   begin
-    for i := 0 to cPaletteCount - 1 do
-      PreparePlan(AFrame^.KeyFrame^.MixingPlans[i], FY2MixedColors, AFrame^.KeyFrame^.PaletteRGB[i]);
-    AFrame^.KeyFrame^.FramesLeft := AFrame^.KeyFrame^.FrameCount;
+    for i := 0 to FPaletteCount - 1 do
+      PreparePlan(AFrame.PKeyFrame.MixingPlans[i], FY2MixedColors, AFrame.PKeyFrame.PaletteRGB[i]);
+    AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
   end;
-  LeaveCriticalSection(AFrame^.KeyFrame^.CS);
+  LeaveCriticalSection(AFrame.PKeyFrame.CS);
 
   for sy := 0 to FTileMapHeight - 1 do
     for sx := 0 to FTileMapWidth - 1 do
     begin
-      OrigTile := FTiles[AFrame^.TileMap[sy, sx].GlobalTileIndex];
+      OrigTile := FTiles[AFrame.TileMap[sy, sx].GlobalTileIndex];
 
       if OrigTile^.Active then
       begin
         // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
         PalIdx := OrigTile^.DitheringPalIndex;
-        DitherTile(OrigTile^, AFrame^.KeyFrame^.MixingPlans[PalIdx]);
+        DitherTile(OrigTile^, AFrame.PKeyFrame.MixingPlans[PalIdx]);
 
         // now that the palette is chosen, keep only one version of the tile
 
-        AFrame^.TileMap[sy, sx].PalIdx := PalIdx;
+        AFrame.TileMap[sy, sx].PalIdx := PalIdx;
 
-        AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteRGB := system.Copy(AFrame^.KeyFrame^.PaletteRGB[PalIdx]);
-        AFrame^.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame^.KeyFrame^.PaletteIndexes[PalIdx]);
+        AFrame.Tiles[sx + sy * FTileMapWidth].PaletteRGB := system.Copy(AFrame.PKeyFrame.PaletteRGB[PalIdx]);
+        AFrame.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame.PKeyFrame.PaletteIndexes[PalIdx]);
 
-        Move(OrigTile^.PalPixels[0, 0], AFrame^.Tiles[sx + sy * FTileMapWidth].PalPixels[0, 0], SizeOf(TPalPixels));
+        Move(OrigTile^.PalPixels[0, 0], AFrame.Tiles[sx + sy * FTileMapWidth].PalPixels[0, 0], SizeOf(TPalPixels));
       end;
     end;
 
   // free up frame memory
-  SetLength(AFrame^.FSPixels, 0);
+  SetLength(AFrame.FSPixels, 0);
 
-  EnterCriticalSection(AFrame^.KeyFrame^.CS);
-  Dec(AFrame^.KeyFrame^.FramesLeft);
-  if AFrame^.KeyFrame^.FramesLeft <= 0 then
+  EnterCriticalSection(AFrame.PKeyFrame.CS);
+  Dec(AFrame.PKeyFrame.FramesLeft);
+  if AFrame.PKeyFrame.FramesLeft <= 0 then
   begin
     mx := 0;
     cnt := 0;
-    for i := 0 to cPaletteCount - 1 do
+    for i := 0 to FPaletteCount - 1 do
     begin
       if not FLowMem then
       begin
-        mx := Max(AFrame^.KeyFrame^.MixingPlans[i].ListCache.Count, mx);
-        cnt += AFrame^.KeyFrame^.MixingPlans[i].ListCache.Count;
+        mx := Max(AFrame.PKeyFrame.MixingPlans[i].ListCache.Count, mx);
+        cnt += AFrame.PKeyFrame.MixingPlans[i].ListCache.Count;
       end;
-      TerminatePlan(AFrame^.KeyFrame^.MixingPlans[i]);
+      TerminatePlan(AFrame.PKeyFrame.MixingPlans[i]);
     end;
 
-    WriteLn('Frame: ', AFrame^.KeyFrame^.StartFrame, #9'CacheCnt: ', cnt, #9'CacheMax: ', mx);
+    WriteLn('Frame: ', AFrame.PKeyFrame.StartFrame, #9'CacheCnt: ', cnt, #9'CacheMax: ', mx);
   end;
-  LeaveCriticalSection(AFrame^.KeyFrame^.CS);
+  LeaveCriticalSection(AFrame.PKeyFrame.CS);
 end;
 
 function CompareTilePalPixels(Item1, Item2:Pointer):Integer;
@@ -3010,31 +3054,31 @@ begin
     end;
 end;
 
-procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TBitmap);
+procedure TMainForm.LoadFrame(var AFrame: TFrame; ABitmap: TBitmap);
 var
   i, j, col, ti, tx, ty: Integer;
   pcol: PInteger;
   pfs: PByte;
   TilesRGBPixels: array of TRGBPixels;
 begin
-  FillChar(AFrame^, SizeOf(TFrame), 0);
+  AFrame := TFrame.Create;
 
   SetLength(TilesRGBPixels, FTileMapSize);
-  SetLength(AFrame^.Tiles, FTileMapSize);
-  SetLength(AFrame^.TileMap, FTileMapHeight, FTileMapWidth);
-  SetLength(AFrame^.SmoothedTileMap, FTileMapHeight, FTileMapWidth);
-  SetLength(AFrame^.FSPixels, FScreenHeight * FScreenWidth * 3);
+  SetLength(AFrame.Tiles, FTileMapSize);
+  SetLength(AFrame.TileMap, FTileMapHeight, FTileMapWidth);
+  SetLength(AFrame.SmoothedTileMap, FTileMapHeight, FTileMapWidth);
+  SetLength(AFrame.FSPixels, FScreenHeight * FScreenWidth * 3);
 
   for j := 0 to (FTileMapHeight - 1) do
     for i := 0 to (FTileMapWidth - 1) do
     begin
-      AFrame^.TileMap[j, i].GlobalTileIndex := FTileMapWidth * j + i;
-      AFrame^.TileMap[j, i].HMirror := False;
-      AFrame^.TileMap[j, i].VMirror := False;
-      AFrame^.TileMap[j, i].PalIdx := -1;
-      AFrame^.TileMap[j, i].Smoothed := False;
-      AFrame^.TileMap[j, i].TmpIndex := -1;
-      AFrame^.SmoothedTileMap[j, i] := AFrame^.TileMap[j, i];
+      AFrame.TileMap[j, i].GlobalTileIndex := FTileMapWidth * j + i;
+      AFrame.TileMap[j, i].HMirror := False;
+      AFrame.TileMap[j, i].VMirror := False;
+      AFrame.TileMap[j, i].PalIdx := -1;
+      AFrame.TileMap[j, i].Smoothed := False;
+      AFrame.TileMap[j, i].TmpIndex := -1;
+      AFrame.SmoothedTileMap[j, i] := AFrame.TileMap[j, i];
     end;
 
   Assert(ABitmap.Width = FScreenWidth, 'Wrong video width!');
@@ -3042,7 +3086,7 @@ begin
 
   ABitmap.BeginUpdate;
   try
-    pfs := @AFrame^.FSPixels[0];
+    pfs := @AFrame.FSPixels[0];
     for j := 0 to (FScreenHeight - 1) do
     begin
       pcol := ABitmap.ScanLine[j];
@@ -3064,22 +3108,22 @@ begin
         end;
     end;
 
-    DitherFloydSteinberg(AFrame^.FSPixels);
+    DitherFloydSteinberg(AFrame.FSPixels);
 
     for i := 0 to (FTileMapSize - 1) do
     begin
-      Move(TilesRGBPixels[i], AFrame^.Tiles[i].RGBPixels, SizeOf(TRGBPixels));
+      Move(TilesRGBPixels[i], AFrame.Tiles[i].RGBPixels, SizeOf(TRGBPixels));
 
       for ty := 0 to (cTileWidth - 1) do
         for tx := 0 to (cTileWidth - 1) do
-          AFrame^.Tiles[i].PalPixels[ty, tx] := 0;
+          AFrame.Tiles[i].PalPixels[ty, tx] := 0;
 
-      AFrame^.Tiles[i].Active := True;
-      AFrame^.Tiles[i].UseCount := 1;
-      AFrame^.Tiles[i].TmpIndex := -1;
-      AFrame^.Tiles[i].MergeIndex := -1;
-      AFrame^.Tiles[i].OriginalReloadedIndex := -1;
-      AFrame^.Tiles[i].DitheringPalIndex := -1;
+      AFrame.Tiles[i].Active := True;
+      AFrame.Tiles[i].UseCount := 1;
+      AFrame.Tiles[i].TmpIndex := -1;
+      AFrame.Tiles[i].MergeIndex := -1;
+      AFrame.Tiles[i].OriginalReloadedIndex := -1;
+      AFrame.Tiles[i].DitheringPalIndex := -1;
     end;
 
   finally
@@ -3091,15 +3135,16 @@ procedure TMainForm.ClearAll;
 var
   i: Integer;
 begin
-  for i := 0 to High(FTiles) do
-    Dispose(FTiles[i]);
-
+  for i := 0 to High(FFrames) do
+    FFrames[i].Free;
   SetLength(FFrames, 0);
 
   for i := 0 to High(FKeyFrames) do
-    DeleteCriticalSection(FKeyFrames[i].CS);
-
+    FKeyFrames[i].Free;
   SetLength(FKeyFrames, 0);
+
+  for i := 0 to High(FTiles) do
+    Dispose(FTiles[i]);
   SetLength(FTiles, 0);
 end;
 
@@ -3148,7 +3193,7 @@ var
   p: PInteger;
   tilePtr: PTile;
   TMItem: TTileMapItem;
-  Frame: PFrame;
+  Frame: TFrame;
   pal: TIntegerDynArray;
   oriCorr, chgCorr: TIntegerDynArray;
 begin
@@ -3159,15 +3204,15 @@ begin
 
   AFrameIndex := EnsureRange(AFrameIndex, 0, high(FFrames));
 
-  Frame := @FFrames[AFrameIndex];
+  Frame := FFrames[AFrameIndex];
 
-  if not Assigned(Frame) or not Assigned(Frame^.KeyFrame) then
+  if not Assigned(Frame) or not Assigned(Frame.PKeyFrame) then
     Exit;
 
   try
     if not playing then
     begin
-      pnLbl.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
+      pnLbl.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
 
       imgTiles.Picture.Bitmap.BeginUpdate;
       try
@@ -3183,7 +3228,7 @@ begin
             if InRange(ti, 0, High(FTiles)) then
             begin
               tilePtr := FTiles[ti];
-              pal := Frame^.KeyFrame^.PaletteRGB[Max(0, palIdx)];
+              pal := Frame.PKeyFrame.PaletteRGB[Max(0, palIdx)];
 
               DrawTile(imgTiles.Picture.Bitmap, sx, sy, tilePtr, pal, False, False);
             end;
@@ -3198,7 +3243,7 @@ begin
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
-          tilePtr :=  @Frame^.Tiles[sy * FTileMapWidth + sx];
+          tilePtr :=  @Frame.Tiles[sy * FTileMapWidth + sx];
           DrawTile(imgSource.Picture.Bitmap, sx, sy, tilePtr, nil, False, False);
         end;
     finally
@@ -3214,15 +3259,15 @@ begin
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
-          TMItem := Frame^.TileMap[sy, sx];
-          if Frame^.SmoothedTileMap[sy, sx].Smoothed then
-            TMItem := Frame^.SmoothedTileMap[sy, sx];
+          TMItem := Frame.TileMap[sy, sx];
+          if Frame.SmoothedTileMap[sy, sx].Smoothed then
+            TMItem := Frame.SmoothedTileMap[sy, sx];
 
           ti := TMItem.GlobalTileIndex;
 
           if InRange(ti, 0, High(FTiles)) then
           begin
-            tilePtr :=  @Frame^.Tiles[sy * FTileMapWidth + sx];
+            tilePtr :=  @Frame.Tiles[sy * FTileMapWidth + sx];
             pal := tilePtr^.PaletteRGB;
 
             if reduced then
@@ -3230,15 +3275,15 @@ begin
               tilePtr := FTiles[ti];
               if palIdx < 0 then
               begin
-                if not InRange(TMItem.PalIdx, 0, High(Frame^.KeyFrame^.PaletteRGB)) then
+                if not InRange(TMItem.PalIdx, 0, High(Frame.PKeyFrame.PaletteRGB)) then
                   Continue;
-                pal := Frame^.KeyFrame^.PaletteRGB[TMItem.PalIdx]
+                pal := Frame.PKeyFrame.PaletteRGB[TMItem.PalIdx]
               end
               else
               begin
                 if palIdx <> TMItem.PalIdx then
                   Continue;
-                pal := Frame^.KeyFrame^.PaletteRGB[palIdx];
+                pal := Frame.PKeyFrame.PaletteRGB[palIdx];
               end
             end;
 
@@ -3256,8 +3301,8 @@ begin
         p := imgPalette.Picture.Bitmap.ScanLine[j];
         for i := 0 to imgPalette.Picture.Bitmap.Width - 1 do
         begin
-          if Assigned(Frame^.KeyFrame^.PaletteRGB[j]) then
-            p^ := SwapRB(Frame^.KeyFrame^.PaletteRGB[j, i])
+          if Assigned(Frame.PKeyFrame.PaletteRGB[j]) then
+            p^ := SwapRB(Frame.PKeyFrame.PaletteRGB[j, i])
           else
             p^ := clFuchsia;
 
@@ -3441,7 +3486,7 @@ begin
       Inc(Result);
 end;
 
-function TMainForm.GetFrameTileCount(AFrame: PFrame): Integer;
+function TMainForm.GetFrameTileCount(AFrame: TFrame): Integer;
 var
   Used: TIntegerDynArray;
   i, j: Integer;
@@ -3456,7 +3501,7 @@ begin
 
   for j := 0 to FTileMapHeight - 1 do
     for i := 0 to FTileMapWidth - 1 do
-      Used[AFrame^.TileMap[j, i].GlobalTileIndex] := 1;
+      Used[AFrame.TileMap[j, i].GlobalTileIndex] := 1;
 
   for i := 0 to High(Used) do
     Inc(Result, Used[i]);
@@ -3535,22 +3580,22 @@ begin
       end;
 end;
 
-function TMainForm.GetMaxTPF(AKF: PKeyFrame): Integer;
+function TMainForm.GetMaxTPF(AKF: TKeyFrame): Integer;
 var
   frame: Integer;
 begin
   Result := 0;
-  for frame := AKF^.StartFrame to AKF^.EndFrame do
-    Result := Max(Result, GetFrameTileCount(@FFrames[frame]));
+  for frame := AKF.StartFrame to AKF.EndFrame do
+    Result := Max(Result, GetFrameTileCount(FFrames[frame]));
 end;
 
-procedure TMainForm.PrepareFrameTiling(AKF: PKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean);
+procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean);
 var
   TRSize, di, i, frame, sy, sx: Integer;
-  frm: PFrame;
+  frm: TFrame;
   T: PTile;
   DS: PTileDataset;
-  used: array[0 .. cPaletteCount - 1] of TBooleanDynArray;
+  used: array of TBooleanDynArray;
   vmir, hmir: Boolean;
   palIdx: Integer;
 
@@ -3561,35 +3606,36 @@ var
 
 begin
   DS := New(PTileDataset);
-  AKF^.TileDS := DS;
+  AKF.TileDS := DS;
 
-  for palIdx := 0 to cPaletteCount - 1 do
+  SetLength(used, FPaletteCount);
+  for palIdx := 0 to FPaletteCount - 1 do
   begin
     SetLength(used[palIdx], Length(FTiles));
     FillByte(used[palIdx, 0], Length(FTiles), 0);
   end;
 
-  for frame := 0 to AKF^.FrameCount - 1 do
+  for frame := 0 to AKF.FrameCount - 1 do
   begin
-    frm := @FFrames[AKF^.StartFrame + frame];
+    frm := FFrames[AKF.StartFrame + frame];
 
     if FTransPalette then
     begin
-      for palIdx := 0 to cPaletteCount - 1 do
+      for palIdx := 0 to FPaletteCount - 1 do
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
-            UseOne(@frm^.TileMap[sy, sx], palIdx);
+            UseOne(@frm.TileMap[sy, sx], palIdx);
     end
     else
     begin
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
-          UseOne(@frm^.TileMap[sy, sx], frm^.TileMap[sy, sx].PalIdx);
+          UseOne(@frm.TileMap[sy, sx], frm.TileMap[sy, sx].PalIdx);
     end;
   end;
 
   TRSize := 0;
-  for palIdx := 0 to cPaletteCount - 1 do
+  for palIdx := 0 to FPaletteCount - 1 do
     for i := 0 to High(FTiles) do
       TRSize += Ord(used[palIdx, i]);
 
@@ -3602,7 +3648,7 @@ begin
   begin
     T := FTiles[i];
 
-    for palIdx := 0 to cPaletteCount - 1 do
+    for palIdx := 0 to FPaletteCount - 1 do
       if used[palIdx, i] then
       begin
         DS^.TRToTileIdx[di shr 2] := i;
@@ -3611,7 +3657,7 @@ begin
         for vmir := False to True do
           for hmir := False to True do
           begin
-            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir, vmir, AFTGamma, AKF^.PaletteRGB[palIdx], DS^.Dataset[di]);
+            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir, vmir, AFTGamma, AKF.PaletteRGB[palIdx], DS^.Dataset[di]);
             Inc(di);
           end;
       end;
@@ -3619,23 +3665,23 @@ begin
 
   assert(di = TRSize * 4);
 
-  WriteLn('Frame: ', AKF^.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset));
+  WriteLn('Frame: ', AKF.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset));
 
   DS^.KDT := ann_kdtree_create(PPFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
 end;
 
-procedure TMainForm.TerminateFrameTiling(AKF: PKeyFrame);
+procedure TMainForm.TerminateFrameTiling(AKF: TKeyFrame);
 begin
-  ann_kdtree_destroy(AKF^.TileDS^.KDT);
-  AKF^.TileDS^.KDT := nil;
-  SetLength(AKF^.TileDS^.Dataset, 0);
-  SetLength(AKF^.TileDS^.TRToPalIdx, 0);
-  SetLength(AKF^.TileDS^.TRToTileIdx, 0);
-  Dispose(AKF^.TileDS);
-  AKF^.TileDS := nil;
+  ann_kdtree_destroy(AKF.TileDS^.KDT);
+  AKF.TileDS^.KDT := nil;
+  SetLength(AKF.TileDS^.Dataset, 0);
+  SetLength(AKF.TileDS^.TRToPalIdx, 0);
+  SetLength(AKF.TileDS^.TRToTileIdx, 0);
+  Dispose(AKF.TileDS);
+  AKF.TileDS := nil;
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: PFrame; AFTGamma: Integer; AFTFromPal, AUseWavelets: Boolean);
+procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AFTFromPal, AUseWavelets: Boolean);
 var
   sy, sx: Integer;
   DS: PTileDataset;
@@ -3645,15 +3691,15 @@ var
   Used: TBooleanDynArray;
   DCT: TFloatDynArray;
 begin
-  EnterCriticalSection(AFrame^.KeyFrame^.CS);
-  if AFrame^.KeyFrame^.FramesLeft < 0 then
+  EnterCriticalSection(AFrame.PKeyFrame.CS);
+  if AFrame.PKeyFrame.FramesLeft < 0 then
   begin
-    PrepareFrameTiling(AFrame^.KeyFrame, AFTGamma, AUseWavelets);
-    AFrame^.KeyFrame^.FramesLeft := AFrame^.KeyFrame^.FrameCount;
+    PrepareFrameTiling(AFrame.PKeyFrame, AFTGamma, AUseWavelets);
+    AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
   end;
-  LeaveCriticalSection(AFrame^.KeyFrame^.CS);
+  LeaveCriticalSection(AFrame.PKeyFrame.CS);
 
-  DS := AFrame^.KeyFrame^.TileDS;
+  DS := AFrame.PKeyFrame.TileDS;
 
   // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
@@ -3666,11 +3712,11 @@ begin
   for sy := 0 to FTileMapHeight - 1 do
     for sx := 0 to FTileMapWidth - 1 do
     begin
-      ComputeTilePsyVisFeatures(AFrame^.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AUseWavelets, False, False, False, False, AFTGamma, AFrame^.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
+      ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
 
       tri := ann_kdtree_search(DS^.KDT, PFloat(DCT), 0.0);
 
-      tmiO := @FFrames[AFrame^.Index].TileMap[sy, sx];
+      tmiO := @FFrames[AFrame.Index].TileMap[sy, sx];
 
       tmiO^.GlobalTileIndex := DS^.TRToTileIdx[tri shr 2];
       tmiO^.PalIdx :=  DS^.TRToPalIdx[tri shr 2];
@@ -3686,16 +3732,16 @@ begin
 
   MaxTPF := max(MaxTPF, TPF);
 
-  //DebugLn(['KF: ', AFrame^.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame^.KeyFrame^.FramesLeft]);
+  //DebugLn(['KF: ', AFrame.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft]);
 
-  EnterCriticalSection(AFrame^.KeyFrame^.CS);
-  Dec(AFrame^.KeyFrame^.FramesLeft);
-  if AFrame^.KeyFrame^.FramesLeft <= 0 then
-    TerminateFrameTiling(AFrame^.KeyFrame);
-  LeaveCriticalSection(AFrame^.KeyFrame^.CS);
+  EnterCriticalSection(AFrame.PKeyFrame.CS);
+  Dec(AFrame.PKeyFrame.FramesLeft);
+  if AFrame.PKeyFrame.FramesLeft <= 0 then
+    TerminateFrameTiling(AFrame.PKeyFrame);
+  LeaveCriticalSection(AFrame.PKeyFrame.CS);
 end;
 
-procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: PFrame; Y: Integer; Strength: TFloat);
+procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat);
 const
   cSqrtFactor = 1 / (sqr(cTileWidth) * 3);
 var
@@ -3705,7 +3751,7 @@ var
   Tile_, PrevTile: TTile;
   TileDCT, PrevTileDCT: TFloatDynArray;
 begin
-  if AFrame^.KeyFrame <> APrevFrame^.KeyFrame then
+  if AFrame.PKeyFrame <> APrevFrame.PKeyFrame then
     Exit;
 
   SetLength(PrevTileDCT, cTileDCTSize);
@@ -3713,16 +3759,16 @@ begin
 
   for sx := 0 to FTileMapWidth - 1 do
   begin
-    TMI := @AFrame^.SmoothedTileMap[Y, sx];
-    PrevTMI := @APrevFrame^.SmoothedTileMap[Y, sx];
+    TMI := @AFrame.SmoothedTileMap[Y, sx];
+    PrevTMI := @APrevFrame.SmoothedTileMap[Y, sx];
 
     // compare DCT of current tile with tile from prev frame tilemap
 
     PrevTile := FTiles[PrevTMI^.GlobalTileIndex]^;
     Tile_ := FTiles[TMI^.GlobalTileIndex]^;
 
-    ComputeTilePsyVisFeatures(PrevTile, True, False, False, True, PrevTMI^.HMirror, PrevTMI^.VMirror, -1, APrevFrame^.KeyFrame^.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
-    ComputeTilePsyVisFeatures(Tile_, True, False, False, True, TMI^.HMirror, TMI^.VMirror, -1, AFrame^.KeyFrame^.PaletteRGB[TMI^.PalIdx], TileDCT);
+    ComputeTilePsyVisFeatures(PrevTile, True, False, False, True, PrevTMI^.HMirror, PrevTMI^.VMirror, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.PalIdx], PrevTileDCT);
+    ComputeTilePsyVisFeatures(Tile_, True, False, False, True, TMI^.HMirror, TMI^.VMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.PalIdx], TileDCT);
 
     cmp := CompareEuclideanDCT(TileDCT, PrevTileDCT);
     cmp := sqrt(cmp * cSqrtFactor);
@@ -3759,10 +3805,11 @@ end;
 function TMainForm.GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
 var uc, i, j: Integer;
     px: Byte;
-    cnt: array [0..cTilePaletteSize - 1] of Integer;
+    cnt: TIntegerDynArray;
     highest: Integer;
 begin
-  FillDWord(cnt[0], cTilePaletteSize, DWORD(Low(Integer)));
+  SetLength(cnt, FTilePaletteSize);
+  FillDWord(cnt[0], FTilePaletteSize, DWORD(Low(Integer)));
 
   for j := y to y + h - 1 do
     for i := x to x + w - 1 do
@@ -3778,7 +3825,7 @@ begin
   Result := 0;
   highest := -1;
   uc := 0;
-  for i := 0 to cTilePaletteSize - 1 do
+  for i := 0 to FTilePaletteSize - 1 do
     if cnt[i] >= highest then
     begin
       Result := i;
@@ -3792,10 +3839,11 @@ end;
 function TMainForm.GetTileGridMedian(const ATile: TTile; other: Boolean; out UseCount: Integer): Integer;
 var uc, i, j: Integer;
     px: Byte;
-    cnt: array [0..cTilePaletteSize - 1] of Integer;
+    cnt: TIntegerDynArray;
     highest: Integer;
 begin
-  FillDWord(cnt[0], cTilePaletteSize, DWORD(Low(Integer)));
+  SetLength(cnt, FTilePaletteSize);
+  FillDWord(cnt[0], FTilePaletteSize, DWORD(Low(Integer)));
 
   for j := 0 to cTileWidth - 1 do
     for i := 0 to cTileWidth - 1 do
@@ -3812,7 +3860,7 @@ begin
   Result := 0;
   highest := -1;
   uc := 0;
-  for i := 0 to cTilePaletteSize - 1 do
+  for i := 0 to FTilePaletteSize - 1 do
     if cnt[i] >= highest then
     begin
       Result := i;
@@ -3835,14 +3883,14 @@ begin
     for x := 0 to cTileWidth - 1 do
     begin
       b := ATile.PalPixels[y, x];
-      Inc(acc[b * ZoneCount div cTilePaletteSize]);
+      Inc(acc[b * ZoneCount div FTilePaletteSize]);
     end;
 
   Result := sqr(cTileWidth);
   for i := 0 to ZoneCount - 1 do
   begin
     Result := Min(Result, sqr(cTileWidth) - acc[i]);
-    signi := acc[i] > (cTilePaletteSize div ZoneCount);
+    signi := acc[i] > (FTilePaletteSize div ZoneCount);
     Zones^ := Ord(signi);
     Inc(Zones);
   end;
@@ -3867,13 +3915,11 @@ begin
 end;
 
 procedure TMainForm.DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
-const
-  CBinCnt = cPaletteCount;
 var
   Dataset: TByteDynArray3;
-  TileIndices: array[0 .. CBinCnt - 1] of TIntegerDynArray;
-  StartingPoint: array[0 .. CBinCnt - 1] of Integer;
-  ClusterCount: array[0 .. CBinCnt - 1] of TFloat;
+  TileIndices: TIntegerDynArray2;
+  StartingPoint: TIntegerDynArray;
+  ClusterCount: TFloatDynArray;
   Line: TByteDynArray;
 
   procedure DoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -3893,7 +3939,7 @@ var
 
     KModes := TKModes.Create(1, 0, False);
     try
-      ActualNbTiles := KModes.ComputeKModes(Dataset[AIndex], round(ClusterCount[AIndex]), -StartingPoint[AIndex], cTilePaletteSize, LocClusters, LocCentroids);
+      ActualNbTiles := KModes.ComputeKModes(Dataset[AIndex], round(ClusterCount[AIndex]), -StartingPoint[AIndex], FTilePaletteSize, LocClusters, LocCentroids);
       Assert(Length(LocCentroids) = ActualNbTiles);
       Assert(MaxIntValue(LocClusters) = ActualNbTiles - 1);
     finally
@@ -3931,22 +3977,28 @@ var
 var
   fs: TFileStream;
   acc, i, j, disCnt, signi, ActiveTileCnt: Integer;
-  dis: array[0 .. CBinCnt - 1] of Integer;
-  best: array[0 .. CBinCnt - 1] of Integer;
+  dis: TIntegerDynArray;
+  best: TIntegerDynArray;
   share, accf, f: TFloat;
 begin
+  SetLength(TileIndices, FPaletteCount);
+  SetLength(StartingPoint, FPaletteCount);
+  SetLength(ClusterCount, FPaletteCount);
+  SetLength(dis, FPaletteCount);
+  SetLength(best, FPaletteCount);
+
   // prepare KModes dataset, one line per tile, 64 palette indexes per line plus 16 additional features
   // also choose KModes starting point
 
-  SetLength(Dataset, CBinCnt, Length(FTiles) shr 4, cKModesFeatureCount);
+  SetLength(Dataset, FPaletteCount, Length(FTiles) shr 4, cKModesFeatureCount);
   SetLength(Line, cKModesFeatureCount);
 
-  for i := 0 to CBinCnt - 1 do
+  for i := 0 to FPaletteCount - 1 do
     SetLength(TileIndices[i], Length(FTiles));
 
-  FillDWord(dis[0], CBinCnt, 0);
-  FillDWord(StartingPoint[0], CBinCnt, DWORD(-RestartCount));
-  FillDWord(best[0], CBinCnt, DWORD(MaxInt));
+  FillDWord(dis[0], FPaletteCount, 0);
+  FillDWord(StartingPoint[0], FPaletteCount, DWORD(-RestartCount));
+  FillDWord(best[0], FPaletteCount, DWORD(MaxInt));
   ActiveTileCnt := GetGlobalTileCount;
 
   // bin tiles by PalSigni (highest number of pixels the same color from the tile)
@@ -3976,7 +4028,7 @@ begin
     Inc(dis[signi]);
   end;
 
-  for i := 0 to CBinCnt - 1 do
+  for i := 0 to FPaletteCount - 1 do
   begin
     SetLength(Dataset[i], dis[i]);
     SetLength(TileIndices[i], dis[i]);
@@ -3984,14 +4036,14 @@ begin
 
   // share DesiredNbTiles among bins, proportional to amount of tiles
 
-  FillQWord(ClusterCount[0], CBinCnt, 0);
+  FillQWord(ClusterCount[0], FPaletteCount, 0);
   disCnt := 0;
-  for i := 0 to CBinCnt - 1 do
+  for i := 0 to FPaletteCount - 1 do
     disCnt += dis[i];
   share := DesiredNbTiles / disCnt;
 
   accf := 0;
-  for i := 0 to CBinCnt - 1 do
+  for i := 0 to FPaletteCount - 1 do
   begin
     ClusterCount[i] := dis[i] * share;
     f := EqualQualityTileCount(dis[i]);
@@ -4000,12 +4052,13 @@ begin
   end;
 
   writeln(FloatToStr(accf));
-  share := accf / disCnt;
-  for i := 0 to CBinCnt - 1 do
-    ClusterCount[i] := max(0, ClusterCount[i] - dis[i] * share);
+  share := accf / sum(ClusterCount);
+  for i := 0 to FPaletteCount - 1 do
+    if ClusterCount[i] > 0 then
+      ClusterCount[i] := max(1, ClusterCount[i] * (1.0 - share));
 
-  for i := 0 to CBinCnt - 1 do
-    WriteLn('EntropyBin # ', i, #9, dis[i], #9, round(ClusterCount[i]));
+  for i := 0 to FPaletteCount - 1 do
+    WriteLn('EntropyBin # ', i, #9'RawTiles: ', dis[i], #9'FinalTiles: ', round(ClusterCount[i]));
 
   InitMergeTiles;
 
@@ -4013,7 +4066,7 @@ begin
 
   // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, CBinCnt - 1);
+  ProcThreadPool.DoParallelLocalProc(@DoKModes, 0, FPaletteCount - 1);
 
   ProgressRedraw(2);
 
@@ -4035,7 +4088,7 @@ begin
 
   fs := TFileStream.Create(OutFN, fmCreate or fmShareDenyWrite);
   try
-    fs.WriteByte(cTilePaletteSize);
+    fs.WriteByte(FTilePaletteSize);
     for i := 0 to High(FTiles) do
       if FTiles[i]^.Active then
         fs.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
@@ -4112,7 +4165,7 @@ begin
 
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
-          T.PalPixels[y, x] := (T.PalPixels[y, x] * cTilePaletteSize) div TilingPaletteSize;
+          T.PalPixels[y, x] := (T.PalPixels[y, x] * FTilePaletteSize) div TilingPaletteSize;
 
       WriteTileDatasetLine(T, Dataset[i], signi);
 
@@ -4244,7 +4297,7 @@ var
   var
     ShortIdx: Boolean;
   begin
-    assert((PalIdx >= 0) and (PalIdx < cPaletteCount));
+    assert((PalIdx >= 0) and (PalIdx < FPaletteCount));
 
     ShortIdx := (TileIdx < CGTMCommandIdxStart) and (PalIdx < (1 shl (CTMAttrBits - 2)));
     if ShortIdx then
@@ -4258,17 +4311,17 @@ var
     end;
   end;
 
-  procedure WriteKFAttributes(KF: PKeyFrame);
+  procedure WriteKFAttributes(KF: TKeyFrame);
   var
     i, j: Integer;
   begin
-    for j := 0 to cPaletteCount - 1 do
+    for j := 0 to FPaletteCount - 1 do
     begin
       DoCmd(gtLoadPalette, 0);
       DoByte(j);
       DoByte(0);
-      for i := 0 to cTilePaletteSize - 1 do
-        DoDWord(KF^.PaletteRGB[j, i] or $ff000000);
+      for i := 0 to FTilePaletteSize - 1 do
+        DoDWord(KF.PaletteRGB[j, i] or $ff000000);
     end;
   end;
 
@@ -4284,7 +4337,7 @@ var
     DoDWord(round(1000*1000*1000 / FFramesPerSecond)); // frame length in nanoseconds
     DoDWord(TileCnt); // tile count
 
-    DoCmd(gtTileset, round(log2(cTilePaletteSize)));
+    DoCmd(gtTileset, round(log2(FTilePaletteSize)));
     DoDWord(0); // start tile
     DoDWord(TileCnt - 1); // end tile
 
@@ -4296,7 +4349,7 @@ var
 var
   StartPos, StreamSize, LastKF, KFCount, KFSize, kf, fri, yx, yxs, cs, BlkSkipCount: Integer;
   IsKF: Boolean;
-  frm: PFrame;
+  frm: TFrame;
   tmi: PTileMapItem;
 begin
   StartPos := AStream.Size;
@@ -4308,11 +4361,11 @@ begin
     LastKF := 0;
     for kf := 0 to High(FKeyFrames) do
     begin
-      WriteKFAttributes(@FKeyFrames[kf]);
+      WriteKFAttributes(FKeyFrames[kf]);
 
       for fri := FKeyFrames[kf].StartFrame to FKeyFrames[kf].EndFrame do
       begin
-        frm := @FFrames[fri];
+        frm := FFrames[fri];
 
         cs := 0;
         BlkSkipCount := 0;
@@ -4331,7 +4384,7 @@ begin
             BlkSkipCount := 0;
             for yxs := yx to FTileMapSize - 1 do
             begin
-              if not frm^.SmoothedTileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
+              if not frm.SmoothedTileMap[yxs div FTileMapWidth, yxs mod FTileMapWidth].Smoothed then
                 Break;
               Inc(BlkSkipCount);
             end;
@@ -4353,7 +4406,7 @@ begin
 
               BlkSkipCount := 0;
 
-              tmi := @frm^.SmoothedTileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
+              tmi := @frm.SmoothedTileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
               DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
               Inc(cs);
             end;
