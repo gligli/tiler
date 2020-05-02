@@ -170,9 +170,7 @@ object MainForm: TMainForm
         Top = 300
         Width = 244
         Caption = 'Extended frame tiling palette usage (slow!)'
-        Checked = True
         OnChange = chkTransPaletteChange
-        State = cbChecked
         TabOrder = 18
       end
       object edReload: TEdit
@@ -472,7 +470,7 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 3
+        ItemIndex = 4
         Items.Strings = (
           '2'
           '4'
@@ -483,7 +481,7 @@ object MainForm: TMainForm
         )
         Style = csDropDownList
         TabOrder = 12
-        Text = '16'
+        Text = '32'
       end
       object cbxPalCount: TComboBox
         Left = 248
@@ -492,7 +490,7 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 6
+        ItemIndex = 5
         Items.Strings = (
           '1'
           '2'
@@ -505,7 +503,7 @@ object MainForm: TMainForm
         )
         Style = csDropDownList
         TabOrder = 11
-        Text = '64'
+        Text = '32'
       end
     end
     object tsInput: TTabSheet
