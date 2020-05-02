@@ -25,6 +25,12 @@ type
   TByteDynArray3 = array of TByteDynArray2;
   TUInt64DynArray = array of UInt64;
 
+  TGMMD = record
+    clust: TIntegerDynArray;
+    dis: TUInt64DynArray;
+    X, centroids: TByteDynArray2;
+  end;
+
   TKmodesRun = packed record
     Labels: TIntegerDynArray;
     Centroids: TByteDynArray2;
@@ -44,6 +50,10 @@ type
     cl_attr_freq: TIntegerDynArray3;
     MaxIter, NumClusters, NumThreads, NumAttrs, NumPoints: Integer;
     Log: Boolean;
+    FGMMD: TGMMD;
+
+    procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure FinishGMMD;
 
     function CountClusterMembers(cluster: Integer): Integer;
     function GetMaxClusterMembers(out member_count: Integer): Integer;
@@ -763,23 +773,24 @@ begin
   Self.Log := aLog;
 end;
 
-type
-  TGMMD = record
-    clust: TIntegerDynArray;
-    dis: TUInt64DynArray;
-    X, centroids: TByteDynArray2;
-  end;
-  PGMMD = ^TGMMD;
-
-procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TKModes.DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  GMMD: PGMMD;
   dis: UInt64;
 begin
-  GMMD := PGMMD(AData);
-  GMMD^.clust[AIndex] := GetMinMatchingDissim(GMMD^.centroids, GMMD^.X[AIndex], Length(GMMD^.centroids), dis);
-  if Assigned(GMMD^.dis) then
-    GMMD^.dis[AIndex] := dis;
+  if AIndex < Length(FGMMD.clust) then
+  begin
+    FGMMD.clust[AIndex] := GetMinMatchingDissim(FGMMD.centroids, FGMMD.X[AIndex], Length(FGMMD.centroids), dis);
+    if Assigned(FGMMD.dis) then
+      FGMMD.dis[AIndex] := dis;
+  end;
+end;
+
+procedure TKModes.FinishGMMD;
+begin
+  FGMMD.clust := nil;
+  FGMMD.dis := nil;
+  FGMMD.X := nil;
+  FGMMD.centroids := nil;
 end;
 
 function TKModes.KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
@@ -790,7 +801,6 @@ var
   cost_acc: UInt64;
   clust, choices: TIntegerDynArray;
   dis: TUInt64DynArray;
-  GMMD: TGMMD;
 begin
   Result := 0;
   cost_acc := 0;
@@ -799,10 +809,10 @@ begin
   SetLength(clust, NumPoints);
   SetLength(dis, NumPoints);
 
-  GMMD.clust := clust;
-  GMMD.dis := dis;
-  GMMD.X := X;
-  GMMD.centroids := centroids;
+  FGMMD.clust := clust;
+  FGMMD.dis := dis;
+  FGMMD.X := X;
+  FGMMD.centroids := centroids;
 
   for bin := 0 to ((NumPoints - 1) div cBinSize + 1) - 1 do
   begin
@@ -815,7 +825,7 @@ begin
     end
     else
     begin
-      ProcThreadPool.DoParallel(@DoGMMD, bin * cBinSize, last, @GMMD, NumThreads);
+      ProcThreadPool.DoParallel(@DoGMMD, bin * cBinSize, last, nil, NumThreads);
     end;
 
     for ipoint := bin * cBinSize to last do
@@ -850,6 +860,8 @@ begin
     end;
   end;
 
+  FinishGMMD;
+
   Cost := cost_acc;
 end;
 
@@ -865,7 +877,6 @@ var
   cost, ncost: UInt64;
   InvGoldenRatio, GRAcc: Single;
   Seed: Cardinal;
-  GMMD: TGMMD;
 begin
   Seed := $42381337;
 
@@ -928,11 +939,12 @@ begin
     end
     else
     begin
-      GMMD.clust := membship;
-      GMMD.dis := nil;
-      GMMD.X := X;
-      GMMD.centroids := centroids;
-      ProcThreadPool.DoParallel(@DoGMMD, 0, NumPoints - 1, @GMMD, NumThreads);
+      FGMMD.clust := membship;
+      FGMMD.dis := nil;
+      FGMMD.X := X;
+      FGMMD.centroids := centroids;
+      ProcThreadPool.DoParallel(@DoGMMD, 0, NumPoints - 1, nil, NumThreads);
+      FinishGMMD;
     end;
 
     for ipoint := 0 to NumPoints - 1 do
@@ -995,7 +1007,7 @@ begin
 
   FinalLabels := all[j].Labels;
   FinalCentroids := all[j].Centroids;
-  Result := Length(centroids);
+  Result := Length(FinalCentroids);
 end;
 
 end.

@@ -3937,7 +3937,7 @@ var
     if DSLen <= ClusterCount[AIndex] then
       Exit;
 
-    KModes := TKModes.Create(1, 0, False);
+    KModes := TKModes.Create(4, 0, False);
     try
       ActualNbTiles := KModes.ComputeKModes(Dataset[AIndex], round(ClusterCount[AIndex]), -StartingPoint[AIndex], FTilePaletteSize, LocClusters, LocCentroids);
       Assert(Length(LocCentroids) = ActualNbTiles);
