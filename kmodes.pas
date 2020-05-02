@@ -26,9 +26,9 @@ type
   TUInt64DynArray = array of UInt64;
 
   TGMMD = record
-    clust: TIntegerDynArray;
-    dis: TUInt64DynArray;
-    X, centroids: TByteDynArray2;
+    clust: PInteger;
+    dis: PUInt64;
+    X, centroids: PPByte;
   end;
 
   TKmodesRun = packed record
@@ -70,7 +70,7 @@ type
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer; overload;
 
 implementation
 
@@ -236,7 +236,7 @@ const
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
-function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline; overload;
 var
   i: Integer;
 begin
@@ -249,7 +249,7 @@ begin
   end;
 end;
 
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer; overload;
 var
   i: Integer;
   dis, best: UInt64;
@@ -269,13 +269,46 @@ begin
   bestDissim := best;
 end;
 
-function GetMatchingDissimSum(const a: TByteDynArray2; const b: TByteDynArray; count: Integer): UInt64;
+//function GetMatchingDissimSum(const a: TByteDynArray2; const b: TByteDynArray; count: Integer): UInt64;
+//var
+//  i: Integer;
+//begin
+//  Result := 0;
+//  for i := 0 to count - 1 do
+//    Result += MatchingDissim(a[i], b);
+//end;
+
+function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
 var
   i: Integer;
 begin
   Result := 0;
   for i := 0 to count - 1 do
-    Result += MatchingDissim(a[i], b);
+  begin
+    if a[i] <> b[i] then
+      Result += UInt64(1) shl cDissimSubMatchingSize;
+    Result += abs(Int64(a[i]) - Int64(b[i]));
+  end;
+end;
+
+function GetMinMatchingDissim(a: PPByte; b: PByte; rowCount, colCount: Integer; out bestDissim: UInt64): Integer; overload;
+var
+  i: Integer;
+  dis, best: UInt64;
+begin
+  Result := -1;
+  best := High(UInt64);
+  for i := 0 to rowCount - 1 do
+  begin
+    dis := MatchingDissim(a[i], b, colCount);
+    if dis <= best then
+    begin
+      best := dis;
+      Result := i;
+    end;
+  end;
+
+  bestDissim := best;
 end;
 
 {$else}
@@ -562,11 +595,19 @@ asm
 
 end;
 
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer; overload;
 var
   bd: UInt64;
 begin
   Result := GetMinMatchingDissim_Asm(@b[0], @a[0], count, @bd);
+  bestDissim := bd;
+end;
+
+function GetMinMatchingDissim(a: PPByte; b: PByte; rowCount, colCount: Integer; out bestDissim: UInt64): Integer; overload;
+var
+  bd: UInt64;
+begin
+  Result := GetMinMatchingDissim_Asm(b, a, rowCount, @bd);
   bestDissim := bd;
 end;
 
@@ -777,9 +818,9 @@ procedure TKModes.DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProc
 var
   dis: UInt64;
 begin
-  if AIndex < Length(FGMMD.clust) then
+  if AIndex < NumPoints then
   begin
-    FGMMD.clust[AIndex] := GetMinMatchingDissim(FGMMD.centroids, FGMMD.X[AIndex], Length(FGMMD.centroids), dis);
+    FGMMD.clust[AIndex] := GetMinMatchingDissim(FGMMD.centroids, FGMMD.X[AIndex], NumClusters, NumAttrs, dis);
     if Assigned(FGMMD.dis) then
       FGMMD.dis[AIndex] := dis;
   end;
@@ -809,10 +850,10 @@ begin
   SetLength(clust, NumPoints);
   SetLength(dis, NumPoints);
 
-  FGMMD.clust := clust;
-  FGMMD.dis := dis;
-  FGMMD.X := X;
-  FGMMD.centroids := centroids;
+  FGMMD.clust := @clust[0];
+  FGMMD.dis := @dis[0];
+  FGMMD.X := @X[0];
+  FGMMD.centroids := @centroids[0];
 
   for bin := 0 to ((NumPoints - 1) div cBinSize + 1) - 1 do
   begin
@@ -939,10 +980,10 @@ begin
     end
     else
     begin
-      FGMMD.clust := membship;
+      FGMMD.clust := @membship[0];
       FGMMD.dis := nil;
-      FGMMD.X := X;
-      FGMMD.centroids := centroids;
+      FGMMD.X := @X[0];
+      FGMMD.centroids := @centroids[0];
       ProcThreadPool.DoParallel(@DoGMMD, 0, NumPoints - 1, nil, NumThreads);
       FinishGMMD;
     end;
