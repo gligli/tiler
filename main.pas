@@ -881,7 +881,7 @@ end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
-  CShotTransMaxTilesPerKF = 2048 * 1024;
+  CShotTransMaxTilesPerKF = 24 * 1920 * 1080 div sqr(cTileWidth);
   CShotTransGracePeriod = 24;
   CShotTransSAvgFrames = 6;
   CShotTransSoftThres = 0.9;
@@ -1017,8 +1017,8 @@ begin
 
     ratio := max(0.01, v) / max(0.01, av);
     isKf := (ratio < CShotTransHardThres) or
-      (ratio < CShotTransSoftThres) and ((i - LastKFIdx + 1) >= CShotTransGracePeriod) or
-      ((i - LastKFIdx + 1) * FTileMapSize >= CShotTransMaxTilesPerKF);
+      (ratio < CShotTransSoftThres) and ((i - LastKFIdx + 1) > CShotTransGracePeriod) or
+      ((i - LastKFIdx + 1) * FTileMapSize > CShotTransMaxTilesPerKF);
     if isKf then
     begin
       Inc(kfIdx);
