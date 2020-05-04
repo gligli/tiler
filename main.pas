@@ -219,6 +219,7 @@ type
     cbxStartStep: TComboBox;
     cbxYilMix: TComboBox;
     cbxPalSize: TComboBox;
+    cbxDLBPC: TComboBox;
     chkFTGamma: TCheckBox;
     chkFTFromPal: TCheckBox;
     chkUseWL: TCheckBox;
@@ -246,6 +247,7 @@ type
     Label11: TLabel;
     Label12: TLabel;
     Label13: TLabel;
+    Label14: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
@@ -308,7 +310,6 @@ type
     procedure cbxYilMixChange(Sender: TObject);
     procedure chkLowMemChange(Sender: TObject);
     procedure chkTransPaletteChange(Sender: TObject);
-    procedure chkUseDL3Change(Sender: TObject);
     procedure chkUseTKChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -325,7 +326,6 @@ type
     FTiles: array of PTile;
     FTransPalette: Boolean;
     FUseThomasKnoll: Boolean;
-    FUseDennisLeeV3: Boolean;
     FY2MixedColors: Integer;
     FLowMem: Boolean;
     FInputPath: String;
@@ -389,7 +389,7 @@ type
 
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
     procedure PrepareDitherTiles(AKeyFrame: TKeyFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
-    procedure FindBestKeyframePalette(AKeyFrame: TKeyFrame; PalVAR: TFloat);
+    procedure FindBestKeyframePalette(AKeyFrame: TKeyFrame; UseDLv3: Boolean; PalVAR: TFloat; DLv3BPC: Integer);
     procedure FinalDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
 
     function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
@@ -769,6 +769,8 @@ procedure TMainForm.btnDitherClick(Sender: TObject);
 var
   Gamma: Integer;
   UseWavelets: Boolean;
+  UseDL3: Boolean;
+  DLBPC: Integer;
 
   procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
@@ -777,7 +779,7 @@ var
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FindBestKeyframePalette(FKeyFrames[AIndex], sePalVAR.Value / 100);
+    FindBestKeyframePalette(FKeyFrames[AIndex], UseDL3, sePalVAR.Value / 100, DLBPC);
   end;
 
   procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -791,6 +793,8 @@ begin
 
   Gamma := IfThen(chkDitheringGamma.Checked, 0, -1);
   UseWavelets := chkUseWL.Checked;
+  UseDL3 := chkUseDL3.Checked;
+  DLBPC := StrToInt(cbxDLBPC.Text);
 
   ProgressRedraw(-1, esDither);
   ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames));
@@ -868,11 +872,6 @@ end;
 procedure TMainForm.chkTransPaletteChange(Sender: TObject);
 begin
   FTransPalette := chkTransPalette.Checked;
-end;
-
-procedure TMainForm.chkUseDL3Change(Sender: TObject);
-begin
-  FUseDennisLeeV3 := chkUseDL3.Checked;
 end;
 
 procedure TMainForm.chkUseTKChange(Sender: TObject);
@@ -2027,7 +2026,7 @@ begin
   Write('.');
 end;
 
-procedure TMainForm.FindBestKeyframePalette(AKeyFrame: TKeyFrame; PalVAR: TFloat);
+procedure TMainForm.FindBestKeyframePalette(AKeyFrame: TKeyFrame; UseDLv3: Boolean; PalVAR: TFloat; DLv3BPC: Integer);
 const
   CNoColor = $000000;
 var
@@ -2080,7 +2079,7 @@ var
         end;
     end;
 
-    dl3quant(dlInput, FScreenWidth, AKeyFrame.FrameCount * FScreenHeight, FTilePaletteSize + 1, EnsureRange(cBitsPerComp, 2, 6), @dlPal);
+    dl3quant(dlInput, FScreenWidth, AKeyFrame.FrameCount * FScreenHeight, FTilePaletteSize + 1, DLv3BPC, @dlPal);
 
     CMUsage.Count := FTilePaletteSize;
     j := 0;
@@ -2284,7 +2283,7 @@ begin
   try
     for PalIdx := 0 to FPaletteCount - 1 do
     begin
-      if FUseDennisLeeV3 then
+      if UseDLv3 then
         DoDennisLeeV3(PalIdx)
       else
         DoValueAtRiskBased(PalIdx);
@@ -4506,7 +4505,6 @@ begin
 
   cbxYilMixChange(nil);
   chkTransPaletteChange(nil);
-  chkUseDL3Change(nil);
   chkUseTKChange(nil);
   chkLowMemChange(nil);
 
