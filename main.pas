@@ -152,10 +152,12 @@ type
   TTileMapItems = array of TTileMapItem;
 
   TTileDataset = record
-    Dataset: TFloatDynArray2;
+    Dataset: TANNFloatDynArray2;
     TRToTileIdx: TIntegerDynArray;
     TRToPalIdx: TByteDynArray;
     KDT: PANNkdtree;
+    DistErrCml: TFloatDynArray;
+    DistErrCnt: TIntegerDynArray;
   end;
 
   PTileDataset = ^TTileDataset;
@@ -3590,13 +3592,14 @@ end;
 
 procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean);
 var
-  TRSize, di, i, frame, sy, sx: Integer;
+  TRSize, di, i, j, frame, sy, sx: Integer;
   frm: TFrame;
   T: PTile;
   DS: PTileDataset;
   used: array of TBooleanDynArray;
   vmir, hmir: Boolean;
   palIdx: Integer;
+  DCT: TFloatDynArray;
 
   procedure UseOne(Item: PTileMapItem; palIdx: Integer);
   begin
@@ -3638,6 +3641,7 @@ begin
     for i := 0 to High(FTiles) do
       TRSize += Ord(used[palIdx, i]);
 
+  SetLength(DCT, cTileDCTSize);
   SetLength(DS^.TRToTileIdx, TRSize);
   SetLength(DS^.TRToPalIdx, TRSize);
   SetLength(DS^.Dataset, TRSize * 4, cTileDCTSize);
@@ -3656,7 +3660,9 @@ begin
         for vmir := False to True do
           for hmir := False to True do
           begin
-            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir, vmir, AFTGamma, AKF.PaletteRGB[palIdx], DS^.Dataset[di]);
+            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir, vmir, AFTGamma, AKF.PaletteRGB[palIdx], DCT);
+            for j := 0 to cTileDCTSize - 1 do
+              DS^.Dataset[di, j] := DCT[j];
             Inc(di);
           end;
       end;
@@ -3664,13 +3670,28 @@ begin
 
   assert(di = TRSize * 4);
 
-  WriteLn('Frame: ', AKF.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset));
+  DS^.KDT := ann_kdtree_create(PPANNFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
 
-  DS^.KDT := ann_kdtree_create(PPFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+  SetLength(DS^.DistErrCml, FPaletteCount);
+  SetLength(DS^.DistErrCnt, FPaletteCount);
+
+  WriteLn('Frame: ', AKF.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset));
 end;
 
 procedure TMainForm.TerminateFrameTiling(AKF: TKeyFrame);
+var
+  i: Integer;
+  resDist: TFloat;
 begin
+  resDist := 0.0;
+  for i := 0 to FPaletteCount - 1 do
+    if AKF.TileDS^.DistErrCnt[i] <> 0 then
+    begin
+      //WriteLn(AKF.StartFrame, #9, i, #9, FloatToStr(AKF.TileDS^.DistErrCml[i] / AKF.TileDS^.DistErrCnt[i]));
+      resDist += AKF.TileDS^.DistErrCml[i];
+    end;
+  WriteLn('Frame: ', AKF.StartFrame, #9'ResidualErr: ', FloatToStr(resDist));
+
   ann_kdtree_destroy(AKF.TileDS^.KDT);
   AKF.TileDS^.KDT := nil;
   SetLength(AKF.TileDS^.Dataset, 0);
@@ -3686,9 +3707,11 @@ var
   DS: PTileDataset;
   tmiO: PTileMapItem;
 
-  TPF, MaxTPF, i, tri: Integer;
+  TPF, MaxTPF, i, j, tri: Integer;
   Used: TBooleanDynArray;
   DCT: TFloatDynArray;
+  ANNDCT: TANNFloatDynArray;
+  err: TANNFloat;
 begin
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   if AFrame.PKeyFrame.FramesLeft < 0 then
@@ -3704,6 +3727,7 @@ begin
 
   SetLength(Used, Length(FTiles));
   SetLength(DCT, cTileDCTSize);
+  SetLength(ANNDCT, cTileDCTSize);
 
   MaxTPF := 0;
   FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
@@ -3712,8 +3736,11 @@ begin
     for sx := 0 to FTileMapWidth - 1 do
     begin
       ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
+      for j := 0 to cTileDCTSize - 1 do
+        ANNDCT[j] := DCT[j];
 
-      tri := ann_kdtree_search(DS^.KDT, PFloat(DCT), 0.0);
+      err := 0;
+      tri := ann_kdtree_search(DS^.KDT, PANNFloat(ANNDCT), 0.0, @err);
 
       tmiO := @FFrames[AFrame.Index].TileMap[sy, sx];
 
@@ -3721,6 +3748,9 @@ begin
       tmiO^.PalIdx :=  DS^.TRToPalIdx[tri shr 2];
       tmiO^.HMirror := (tri and 1) <> 0;
       tmiO^.VMirror := (tri and 2) <> 0;
+
+      DS^.DistErrCml[tmiO^.PalIdx] += err;
+      Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
 
       Used[tmiO^.GlobalTileIndex] := True;
     end;
@@ -3978,7 +4008,7 @@ var
   acc, i, j, disCnt, signi, ActiveTileCnt: Integer;
   dis: TIntegerDynArray;
   best: TIntegerDynArray;
-  share, accf, f: TFloat;
+  share: TFloat;
 begin
   SetLength(TileIndices, FPaletteCount);
   SetLength(StartingPoint, FPaletteCount);
@@ -4038,23 +4068,11 @@ begin
   FillQWord(ClusterCount[0], FPaletteCount, 0);
   disCnt := 0;
   for i := 0 to FPaletteCount - 1 do
-    disCnt += dis[i];
+    disCnt += EqualQualityTileCount(dis[i]);
   share := DesiredNbTiles / disCnt;
 
-  accf := 0;
   for i := 0 to FPaletteCount - 1 do
-  begin
-    ClusterCount[i] := dis[i] * share;
-    f := EqualQualityTileCount(dis[i]);
-    accf += max(f, ClusterCount[i]) - ClusterCount[i];
-    ClusterCount[i] := max(f, ClusterCount[i]);
-  end;
-
-  writeln(FloatToStr(accf));
-  share := accf / sum(ClusterCount);
-  for i := 0 to FPaletteCount - 1 do
-    if ClusterCount[i] > 0 then
-      ClusterCount[i] := max(1, ClusterCount[i] * (1.0 - share));
+    ClusterCount[i] := ceil(EqualQualityTileCount(dis[i]) * share);
 
   for i := 0 to FPaletteCount - 1 do
     WriteLn('EntropyBin # ', i, #9'RawTiles: ', dis[i], #9'FinalTiles: ', round(ClusterCount[i]));
