@@ -137,7 +137,7 @@ type
     PaletteIndexes: TIntegerDynArray;
     PaletteRGB: TIntegerDynArray;
 
-    Active: Boolean;
+    Active, HMirror, VMirror: Boolean;
     UseCount, TmpIndex, MergeIndex, OriginalReloadedIndex, DitheringPalIndex: Integer;
   end;
 
@@ -146,7 +146,7 @@ type
   TTileMapItem = record
     GlobalTileIndex, TmpIndex: Integer;
     PalIdx: Integer;
-    HMirror,VMirror,Smoothed: Boolean;
+    HMirror, VMirror, Smoothed: Boolean;
   end;
 
   TTileMapItems = array of TTileMapItem;
@@ -412,6 +412,7 @@ type
     procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean);
     procedure TerminateFrameTiling(AKF: TKeyFrame);
     procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AFTFromPal, AUseWavelets: Boolean);
+    procedure PrepareTileMirrors(var ATile: TTile);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -711,10 +712,10 @@ begin
   for i := 0 to High(a) do
   begin
     fr := (a[i] shr 16) and $ff; fg := (a[i] shr 8) and $ff; fb := a[i] and $ff;
-    ya[i] := fr; ya[i + Length(a)] := fg; ya[i + Length(a) * 2] := fb;
+    ya[i] := fr * cRedMul; ya[i + Length(a)] := fg * cGreenMul; ya[i + Length(a) * 2] := fb * cBlueMul;
 
     fr := (b[i] shr 16) and $ff; fg := (b[i] shr 8) and $ff; fb := b[i] and $ff;
-    yb[i] := fr; yb[i + Length(a)] := fg; yb[i + Length(a) * 2] := fb;
+    yb[i] := fr * cRedMul; yb[i + Length(a)] := fg * cGreenMul; yb[i + Length(a) * 2] := fb * cBlueMul;
   end;
 
   Result := PearsonCorrelation(ya, yb);
@@ -2382,6 +2383,8 @@ begin
         AFrame.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame.PKeyFrame.PaletteIndexes[PalIdx]);
 
         Move(OrigTile^.PalPixels[0, 0], AFrame.Tiles[sx + sy * FTileMapWidth].PalPixels[0, 0], SizeOf(TPalPixels));
+
+        PrepareTileMirrors(OrigTile^);
       end;
     end;
 
@@ -3163,12 +3166,12 @@ procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, re
       Inc(psl, sx * cTileWidth);
 
       tym := ty;
-      if vmir and mirrored then tym := cTileWidth - 1 - tym;
+      if (vmir xor tilePtr^.VMirror) and mirrored then tym := cTileWidth - 1 - tym;
 
       for tx := 0 to cTileWidth - 1 do
       begin
         txm := tx;
-        if hmir and mirrored then txm := cTileWidth - 1 - txm;
+        if (hmir xor tilePtr^.HMirror) and mirrored then txm := cTileWidth - 1 - txm;
 
         r := 255; g := 0; b := 255;
         if dithered and Assigned(pal) then
@@ -3660,7 +3663,7 @@ begin
         for vmir := False to True do
           for hmir := False to True do
           begin
-            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir, vmir, AFTGamma, AKF.PaletteRGB[palIdx], DCT);
+            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir xor T^.HMirror, vmir xor T^.VMirror, AFTGamma, AKF.PaletteRGB[palIdx], DCT);
             for j := 0 to cTileDCTSize - 1 do
               DS^.Dataset[di, j] := DCT[j];
             Inc(di);
@@ -3768,6 +3771,28 @@ begin
   if AFrame.PKeyFrame.FramesLeft <= 0 then
     TerminateFrameTiling(AFrame.PKeyFrame);
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
+end;
+
+procedure TMainForm.PrepareTileMirrors(var ATile: TTile);
+var
+  dummy, bestV, v: Integer;
+  hf, vf: Boolean;
+begin
+  bestV := -1;
+  for vf := False to True do
+    for hf := False to True do
+    begin
+      v := GetTileZoneMedian(ATile, IfThen(hf, cTileWidth div 2), IfThen(vf, cTileWidth div 2), cTileWidth div 2, cTileWidth div 2, dummy);
+      if v > bestV then
+      begin
+        ATile.HMirror := hf;
+        ATile.VMirror := vf;
+        bestV := v;
+      end;
+    end;
+
+  if ATile.HMirror then HMirrorPalTile(ATile);
+  if ATile.VMirror then VMirrorPalTile(ATile);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat);
@@ -4424,7 +4449,7 @@ begin
               BlkSkipCount := 0;
 
               tmi := @frm.SmoothedTileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
-              DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
+              DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror xor FTiles[tmi^.GlobalTileIndex]^.VMirror, tmi^.HMirror xor FTiles[tmi^.GlobalTileIndex]^.HMirror);
               Inc(cs);
             end;
           end;
