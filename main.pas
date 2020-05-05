@@ -2306,6 +2306,9 @@ begin
 
       CMUsage.Clear;
       CMPal.Clear;
+
+      if PalIdx = FPaletteCount div 2 then
+        Write('.');
     end;
 
     // sort entire palettes by use count
@@ -2346,6 +2349,8 @@ begin
     CMUsage.Free;
     Freemem(dlInput);
   end;
+
+  Write('.');
 end;
 
 procedure TMainForm.FinalDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);

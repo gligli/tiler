@@ -9,7 +9,7 @@
 
 void progress_init(char *text, int canc)		// Initialise progress window
 {
-	putchar('.');
+	//putchar('.');
 }
 
 int progress_update(float val)				// Update progress window
