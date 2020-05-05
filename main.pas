@@ -394,8 +394,7 @@ type
     procedure FindBestKeyframePalette(AKeyFrame: TKeyFrame; UseDLv3: Boolean; PalVAR: TFloat; DLv3BPC: Integer);
     procedure FinalDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
 
-    function GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
-    function GetTileGridMedian(const ATile: TTile; other: Boolean; out UseCount: Integer): Integer;
+    function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Integer);
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
@@ -3171,12 +3170,12 @@ procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, re
       Inc(psl, sx * cTileWidth);
 
       tym := ty;
-      if (vmir xor tilePtr^.VMirror) and mirrored then tym := cTileWidth - 1 - tym;
+      if (vmir and mirrored) xor tilePtr^.VMirror then tym := cTileWidth - 1 - tym;
 
       for tx := 0 to cTileWidth - 1 do
       begin
         txm := tx;
-        if (hmir xor tilePtr^.HMirror) and mirrored then txm := cTileWidth - 1 - txm;
+        if (hmir and mirrored) xor tilePtr^.HMirror then txm := cTileWidth - 1 - txm;
 
         r := 255; g := 0; b := 255;
         if dithered and Assigned(pal) then
@@ -3780,14 +3779,14 @@ end;
 
 procedure TMainForm.PrepareTileMirrors(var ATile: TTile);
 var
-  dummy, bestV, v: Integer;
+  bestV, v: Integer;
   hf, vf: Boolean;
 begin
   bestV := -1;
   for vf := False to True do
     for hf := False to True do
     begin
-      v := GetTileZoneMedian(ATile, IfThen(hf, cTileWidth div 2), IfThen(vf, cTileWidth div 2), cTileWidth div 2, cTileWidth div 2, dummy);
+      v := GetTileZoneSum(ATile, IfThen(hf, cTileWidth div 2), IfThen(vf, cTileWidth div 2), cTileWidth div 2, cTileWidth div 2);
       if v > bestV then
       begin
         ATile.HMirror := hf;
@@ -3861,73 +3860,14 @@ begin
         Inc(Result, Ord(FFrames[i].TileMap[sy, sx].GlobalTileIndex = ATileIndex));
 end;
 
-function TMainForm.GetTileZoneMedian(const ATile: TTile; x, y, w, h: Integer; out UseCount: Integer): Integer;
-var uc, i, j: Integer;
-    px: Byte;
-    cnt: TIntegerDynArray;
-    highest: Integer;
+function TMainForm.GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
+var
+  i, j: Integer;
 begin
-  SetLength(cnt, FTilePaletteSize);
-  FillDWord(cnt[0], FTilePaletteSize, DWORD(Low(Integer)));
-
+  Result := 0;
   for j := y to y + h - 1 do
     for i := x to x + w - 1 do
-    begin
-      px := ATile.PalPixels[j, i];
-
-      if cnt[px] = Low(Integer) then
-        cnt[px] := 1
-      else
-        Inc(cnt[px]);
-    end;
-
-  Result := 0;
-  highest := -1;
-  uc := 0;
-  for i := 0 to FTilePaletteSize - 1 do
-    if cnt[i] >= highest then
-    begin
-      Result := i;
-      highest := cnt[i];
-      Inc(uc, Ord(cnt[i] <> 0));
-    end;
-
-  UseCount := uc;
-end;
-
-function TMainForm.GetTileGridMedian(const ATile: TTile; other: Boolean; out UseCount: Integer): Integer;
-var uc, i, j: Integer;
-    px: Byte;
-    cnt: TIntegerDynArray;
-    highest: Integer;
-begin
-  SetLength(cnt, FTilePaletteSize);
-  FillDWord(cnt[0], FTilePaletteSize, DWORD(Low(Integer)));
-
-  for j := 0 to cTileWidth - 1 do
-    for i := 0 to cTileWidth - 1 do
-      if other xor (odd(i) = not odd(j)) then
-      begin
-        px := ATile.PalPixels[j, i];
-
-        if cnt[px] = Low(Integer) then
-          cnt[px] := 1
-        else
-          Inc(cnt[px]);
-      end;
-
-  Result := 0;
-  highest := -1;
-  uc := 0;
-  for i := 0 to FTilePaletteSize - 1 do
-    if cnt[i] >= highest then
-    begin
-      Result := i;
-      highest := cnt[i];
-      Inc(uc, Ord(cnt[i] <> 0));
-    end;
-
-  UseCount := uc;
+      Result += ATile.PalPixels[j, i];
 end;
 
 function TMainForm.GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
