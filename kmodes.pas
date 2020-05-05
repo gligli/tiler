@@ -485,7 +485,7 @@ asm
   movdqu xmm10, oword ptr [item_rcx + $40]
 
   mov eax, count
-  lea rbx, [list_rdx + 8 * rax - 8]
+  lea rbx, [list_rdx + 8 * rax]
 
   xor eax, eax
 
@@ -568,7 +568,7 @@ asm
     jne used
 
     cmp list_rdx, rbx
-    jle loop
+    jne loop
 
   movdqu xmm0, oword ptr [rsp]
   movdqu xmm1, oword ptr [rsp + $10]
