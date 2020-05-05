@@ -51,6 +51,7 @@ type
     MaxIter, NumClusters, NumThreads, NumAttrs, NumPoints: Integer;
     Log: Boolean;
     FGMMD: TGMMD;
+    FPTP: TProcThreadPool;
 
     procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure FinishGMMD;
@@ -62,6 +63,7 @@ type
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
     constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0; aLog: Boolean = False);
+    destructor Destroy; override;
     function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
     // negative n_init means use -n_init as starting point
     // FinalLabels cluster indexes start at 1
@@ -736,7 +738,7 @@ var
       UMD.mindistance := mindistance;
       UMD.used := used;
       UMD.X := X;
-      ProcThreadPool.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, NumThreads);
+      FPTP.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, NumThreads);
     end;
   end;
 
@@ -809,9 +811,17 @@ constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolea
 begin
   inherited Create;
 
+  FPTP := TProcThreadPool.Create;
   Self.MaxIter := aMaxIter;
   Self.NumThreads := aNumThreads;
   Self.Log := aLog;
+end;
+
+destructor TKModes.Destroy;
+begin
+  inherited Destroy;
+
+  FPTP.Free;
 end;
 
 procedure TKModes.DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -866,7 +876,7 @@ begin
     end
     else
     begin
-      ProcThreadPool.DoParallel(@DoGMMD, bin * cBinSize, last, nil, NumThreads);
+      FPTP.DoParallel(@DoGMMD, bin * cBinSize, last, nil, NumThreads);
     end;
 
     for ipoint := bin * cBinSize to last do
@@ -984,7 +994,7 @@ begin
       FGMMD.dis := nil;
       FGMMD.X := @X[0];
       FGMMD.centroids := @centroids[0];
-      ProcThreadPool.DoParallel(@DoGMMD, 0, NumPoints - 1, nil, NumThreads);
+      FPTP.DoParallel(@DoGMMD, 0, NumPoints - 1, nil, NumThreads);
       FinishGMMD;
     end;
 
