@@ -19,6 +19,7 @@ const
 
   cBitsPerComp = 8;
   cRandomKModesCount = 7;
+  cFTPaletteTol = 0.025;
 
 {$if true}
   cRedMul = 2126;
@@ -328,7 +329,7 @@ type
     FColorMap: array[0..cRGBColors - 1, 0..5] of Byte;
     FColorMapLuma: array[0..cRGBColors - 1] of Integer;
     FTiles: array of PTile;
-    FTransPalette: Boolean;
+    FTransPalette: Integer;
     FUseThomasKnoll: Boolean;
     FY2MixedColors: Integer;
     FLowMem: Boolean;
@@ -351,7 +352,8 @@ type
     FMergeLock: TSpinlock;
 
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
-    function ComputeCorrelation(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
+    function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
+    function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
 
     procedure LoadFrame(var AFrame: TFrame; ABitmap: TBitmap);
@@ -410,9 +412,9 @@ type
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
     function GetMaxTPF(AKF: TKeyFrame): Integer;
-    procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean);
+    procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean);
     procedure TerminateFrameTiling(AKF: TKeyFrame);
-    procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AFTFromPal, AUseWavelets: Boolean);
+    procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AFTFromPal, AUseWavelets: Boolean);
     procedure PrepareTileMirrors(var ATile: TTile);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
@@ -634,6 +636,16 @@ begin
   Result := CompareEuclideanDCTPtr(@a[0], @b[0]);
 end;
 
+function CompareEuclidean(const a, b: TFloatDynArray): TFloat; inline;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 0 to High(a) do
+    Result += sqr(a[i] - b[i]);
+  Result := sqrt(Result);
+end;
+
 const
   CvtPre =  (1 shl cBitsPerComp) - 1;
   CvtPost = 256 div CvtPre;
@@ -701,7 +713,7 @@ begin
   W.CompressionLevel := clfastest;
 end;
 
-function TMainForm.ComputeCorrelation(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
+function TMainForm.ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
 var
   i: Integer;
   ya, yb: TDoubleDynArray;
@@ -720,6 +732,27 @@ begin
   end;
 
   Result := PearsonCorrelation(ya, yb);
+end;
+
+function TMainForm.ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
+var
+  i: Integer;
+  ya, yb: TDoubleDynArray;
+  fr, fg, fb: TFloat;
+begin
+  SetLength(ya, Length(a) * 3);
+  SetLength(yb, Length(a) * 3);
+
+  for i := 0 to High(a) do
+  begin
+    fr := a[i] and $ff; fg := (a[i] shr 8) and $ff; fb := (a[i] shr 16) and $ff;
+    ya[i] := fr * cRedMul; ya[i + Length(a)] := fg * cGreenMul; ya[i + Length(a) * 2] := fb * cBlueMul;
+
+    fr := b[i] and $ff; fg := (b[i] shr 8) and $ff; fb := (b[i] shr 16) and $ff;
+    yb[i] := fr * cRedMul; yb[i + Length(a)] := fg * cGreenMul; yb[i + Length(a) * 2] := fb * cBlueMul;
+  end;
+
+  Result := CompareEuclidean(ya, yb) / (Length(a) * cLumaDiv * 256.0);
 end;
 
 function TMainForm.ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
@@ -775,6 +808,7 @@ var
   UseWavelets: Boolean;
   UseDL3: Boolean;
   DLBPC: Integer;
+  PalVAR: TFloat;
 
   procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
@@ -783,7 +817,7 @@ var
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    FindBestKeyframePalette(FKeyFrames[AIndex], UseDL3, sePalVAR.Value / 100, DLBPC);
+    FindBestKeyframePalette(FKeyFrames[AIndex], UseDL3, PalVAR, DLBPC);
   end;
 
   procedure DoFinal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -799,6 +833,7 @@ begin
   UseWavelets := chkUseWL.Checked;
   UseDL3 := chkUseDL3.Checked;
   DLBPC := StrToInt(cbxDLBPC.Text);
+  PalVAR := sePalVAR.Value / 100;
 
   ProgressRedraw(-1, esDither);
   ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames));
@@ -850,7 +885,7 @@ var
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(FFrames[AIndex], Gamma, FromPal, UseWavelets);
+    DoFrameTiling(FFrames[AIndex], Gamma, cFTPaletteTol, FromPal, UseWavelets);
   end;
 
 var
@@ -875,7 +910,7 @@ end;
 
 procedure TMainForm.chkTransPaletteChange(Sender: TObject);
 begin
-  FTransPalette := chkTransPalette.Checked;
+  FTransPalette := Ord(chkTransPalette.State);
 end;
 
 procedure TMainForm.chkUseTKChange(Sender: TObject);
@@ -3354,7 +3389,7 @@ begin
           chgCorr[FScreenWidth * FScreenHeight + i * FScreenHeight + j] := chgCorr[j * FScreenWidth + i];
         end;
 
-      lblCorrel.Caption := FormatFloat('0.0000000', ComputeCorrelation(oriCorr, chgCorr));
+      lblCorrel.Caption := FormatFloat('0.0000000', ComputeCorrelationBGR(oriCorr, chgCorr));
     end;
   finally
     Repaint;
@@ -3612,7 +3647,7 @@ begin
     Result := Max(Result, GetFrameTileCount(FFrames[frame]));
 end;
 
-procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean);
+procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean);
 var
   TRSize, di, i, j, frame, sy, sx: Integer;
   frm: TFrame;
@@ -3622,15 +3657,44 @@ var
   vmir, hmir: Boolean;
   palIdx: Integer;
   DCT: TFloatDynArray;
+  Corrs: TFloatDynArray2;
 
   procedure UseOne(Item: PTileMapItem; palIdx: Integer);
   begin
     used[palIdx, Item^.GlobalTileIndex] := True;
   end;
 
+  function BuildPalletteCorrTriangle: TFloatDynArray2;
+  var
+    i, j : Integer;
+  begin
+    SetLength(Result, FPaletteCount);
+    for j := 0 to FPaletteCount - 1 do
+    begin
+      SetLength(Result[j], j + 1);
+      for i := 0 to j do
+      begin
+        Result[j, i] := ComputeDistanceRGB(AKF.PaletteRGB[j], AKF.PaletteRGB[i]);
+        //Write(FormatFloat('0.000', Result[j, i]), ' ');
+      end;
+      //WriteLn;
+    end;
+  end;
+
+  function IsAllowedPalette(const Corrs: TFloatDynArray2; palIdx, palIdx2: Integer): Boolean;
+  begin
+    if palIdx2 > palIdx then
+      Exchange(palIdx, palIdx2);
+    Result := Corrs[palIdx, palIdx2] < APalTol;
+  end;
+
 begin
   DS := New(PTileDataset);
   AKF.TileDS := DS;
+
+  Corrs := nil;
+  if FTransPalette > 0 then
+    Corrs := BuildPalletteCorrTriangle;
 
   SetLength(used, FPaletteCount);
   for palIdx := 0 to FPaletteCount - 1 do
@@ -3643,12 +3707,13 @@ begin
   begin
     frm := FFrames[AKF.StartFrame + frame];
 
-    if FTransPalette then
+    if FTransPalette > 0 then
     begin
       for palIdx := 0 to FPaletteCount - 1 do
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
-            UseOne(@frm.TileMap[sy, sx], palIdx);
+            if (FTransPalette < 2) or IsAllowedPalette(Corrs, palIdx, frm.TileMap[sy, sx].PalIdx) then
+              UseOne(@frm.TileMap[sy, sx], palIdx);
     end
     else
     begin
@@ -3723,7 +3788,8 @@ begin
   AKF.TileDS := nil;
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AFTFromPal, AUseWavelets: Boolean);
+procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AFTFromPal, AUseWavelets: Boolean
+  );
 var
   sy, sx: Integer;
   DS: PTileDataset;
@@ -3738,7 +3804,7 @@ begin
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   if AFrame.PKeyFrame.FramesLeft < 0 then
   begin
-    PrepareFrameTiling(AFrame.PKeyFrame, AFTGamma, AUseWavelets);
+    PrepareFrameTiling(AFrame.PKeyFrame, AFTGamma, APalVAR, AUseWavelets);
     AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
   end;
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
