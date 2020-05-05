@@ -317,6 +317,8 @@ type
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure IdleTimerTimer(Sender: TObject);
+    procedure imgPaletteClick(Sender: TObject);
+    procedure imgPaletteDblClick(Sender: TObject);
     procedure seEncGammaChange(Sender: TObject);
     procedure seQbTilesEditingDone(Sender: TObject);
     procedure tbFrameChange(Sender: TObject);
@@ -1314,6 +1316,19 @@ begin
 
     tbFrame.Position := tbFrame.Position + 1;
   end;
+end;
+
+procedure TMainForm.imgPaletteClick(Sender: TObject);
+var
+  P: TPoint;
+begin
+  P := imgPalette.ScreenToClient(Mouse.CursorPos);
+  sedPalIdx.Value := iDiv0(P.y * FPaletteCount, imgPalette.Height);
+end;
+
+procedure TMainForm.imgPaletteDblClick(Sender: TObject);
+begin
+  sedPalIdx.Value := -1;
 end;
 
 procedure TMainForm.seQbTilesEditingDone(Sender: TObject);
