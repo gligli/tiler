@@ -1,23 +1,22 @@
 "use strict";
 
-const GTMCommand = { // commandBits: palette # bit count + 2 (H/V mirrors)
-  'LongTileIdx' : 0, // data -> tile index (24 bits); palette index (8 bits)
-  'LoadPalette' : 1, // data -> palette index (8 bits); palette format (8 bits) (00: RGBA32); RGBA bytes (32bits)
-  // new commands here
-  'FrameEnd' : 28, // commandBits bit 0 -> keyframe end
-  'Tileset' : 29, // data -> start tile (32 bits); end tile (32 bits); indexes per tile (64 bytes); commandBits -> indexes bit count
-  'SetDimensions' : 30, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); tile count (32 bits);
-  'ExtendedCommand' : 31, // data -> custom commands, proprietary extensions, ...; commandBits -> extended command index
-  
-  'ShortTileIdxStart' : 32, // short tile index #0 ...; commandBits: palette index (3 bits); V mirror (1 bit); H mirror (1 bit)
-  'ShortTileIdxEnd' : 1919, // ... short tile index #1887
-  
-  'SkipBlockStart' : 1920, // skipping 128 tiles ...
-  'SkipBlockEnd' : 2047, // ... skipping 1 tile
-};     
+const GTMCommand = { // commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+    'SkipBlock' : 0, // commandBits -> skip count - 1 (10 bits)
+    'ShortTileIdx' : 1, // data -> tile index (16 bits)
+    'LongTileIdx' : 2, // data -> tile index (32 bits)
+    'LoadPalette' : 3, // data -> palette index (8 bits); palette format (8 bits) (00: RGBA32); RGBA bytes (32bits)
+    // new commands here
+    'FrameEnd' : 28, // commandBits bit 0 -> keyframe end
+    'TileSet' : 29, // data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
+    'SetDimensions' : 30, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); tile count (32 bits);
+    'ExtendedCommand' : 31, // data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
+
+    'ReservedAreaBegin' : 32, // reserving the MSB for future use
+    'ReservedAreaEnd' : 63
+}; 
 
 const CTileWidth = 8;
-const CTMAttrBits = 1 + 1 + 3; // HMir + VMir + PalIdx
+const CTMAttrBits = 1 + 1 + 8; // HMir + VMir + PalIdx
 const CShortIdxBits = 16 - CTMAttrBits;
 
 var gtmCanvasId = '';
@@ -106,11 +105,12 @@ function renderEnd() {
 }
 
 function drawTilemapItem(idx, attrs) {
+  let palIdx = attrs >>> 2;
   let tile = gtmTiles[idx];
-  let palR = gtmPaletteR[attrs >>> 2];
-  let palG = gtmPaletteG[attrs >>> 2];
-  let palB = gtmPaletteB[attrs >>> 2];
-  let palA = gtmPaletteA[attrs >>> 2];
+  let palR = gtmPaletteR[palIdx];
+  let palG = gtmPaletteG[palIdx];
+  let palB = gtmPaletteB[palIdx];
+  let palA = gtmPaletteA[palIdx];
   let x = (gtmTMPos % gtmWidth) * CTileWidth;
   let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
   let p = (y * gtmWidth * CTileWidth + x) * 4;
@@ -219,12 +219,12 @@ function decodeFrame() {
           }
           break;
           
-        case GTMCommand.Tileset:
-          let start = readDWord();
-          let end = readDWord();
-          gtmPalSize = 1 << cmd[1];
+        case GTMCommand.TileSet:
+          let tstart = readDWord();
+          let tend = readDWord();
+          gtmPalSize = cmd[1];
           
-          for (let p = start; p <= end; p++) {
+          for (let p = tstart; p <= tend; p++) {
             gtmTiles[p] = new Array(CTileWidth * CTileWidth);
             for (let i = 0; i < CTileWidth * CTileWidth; i++) {
               gtmTiles[p][i] = readByte();
@@ -232,9 +232,29 @@ function decodeFrame() {
           }
           break;
         
+        case GTMCommand.FrameEnd:
+          if (gtmTMPos != gtmWidth * gtmHeight) {
+            console.error('Incomplete tilemap ' + gtmTMPos + ' <> ' + gtmWidth * gtmHeight + '\n');
+          }
+          gtmTMPos = 0;
+          doContinue = false;
+          break;
+          
+        case GTMCommand.SkipBlock:
+          gtmTMPos += cmd[1] + 1;
+          break;
+          
+        case GTMCommand.ShortTileIdx:
+          drawTilemapItem(readWord(), cmd[1]);
+          break;
+          
+        case GTMCommand.LongTileIdx:
+          drawTilemapItem(readDWord(), cmd[1]);
+          break;
+          
         case GTMCommand.LoadPalette:
           let palIdx = readByte();
-	  readByte(); // palette format
+          readByte(); // palette format
           gtmPaletteR[palIdx] = new Array(gtmPalSize);
           gtmPaletteG[palIdx] = new Array(gtmPalSize);
           gtmPaletteB[palIdx] = new Array(gtmPalSize);
@@ -247,27 +267,8 @@ function decodeFrame() {
           }
           break;
           
-        case GTMCommand.LongTileIdx:
-	  let v = readDWord();
-          drawTilemapItem(v & 0x00ffffff, (cmd[1] & 3) | ((v >> 22) & 0x3fc))
-          break;
-          
-        case GTMCommand.FrameEnd:
-          if (gtmTMPos != gtmWidth * gtmHeight) {
-            console.error('Incomplete tilemap ' + gtmTMPos + ' <> ' + gtmWidth * gtmHeight + '\n');
-          }
-          gtmTMPos = 0;
-          doContinue = false;
-          break;
-          
         default:
-          if (cmd[0] >= GTMCommand.ShortTileIdxStart && cmd[0] <= GTMCommand.ShortTileIdxEnd) {
-            drawTilemapItem(cmd[0] - GTMCommand.ShortTileIdxStart, cmd[1])
-          } else if (cmd[0] >= GTMCommand.SkipBlockStart && cmd[0] <= GTMCommand.SkipBlockEnd) {
-            gtmTMPos += GTMCommand.SkipBlockEnd - cmd[0] + 1;
-          } else {
-            console.error('Undecoded command @' + gtmDataPos + ': ' + cmd + '\n');
-          }
+          console.error('Undecoded command @' + gtmDataPos + ': ' + cmd + '\n');
           break;
       }
       

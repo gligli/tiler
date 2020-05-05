@@ -100,20 +100,19 @@ const
 type
   // GliGli's TileMotion commands
 
-  TGTMCommand = (
-    gtLongTileIdx = 0, // data -> tile index (24 bits); palette index (8 bits)
-    gtLoadPalette = 1, // data -> palette index (8 bits); palette format (8 bits) (00: RGBA32); RGBA bytes (32bits)
+  TGTMCommand = ( // commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+    gtSkipBlock = 0, // commandBits -> skip count - 1 (10 bits)
+    gtShortTileIdx = 1, // data -> tile index (16 bits)
+    gtLongTileIdx = 2, // data -> tile index (32 bits)
+    gtLoadPalette = 3, // data -> palette index (8 bits); palette format (8 bits) (00: RGBA32); RGBA bytes (32bits)
     // new commands here
     gtFrameEnd = 28, // commandBits bit 0 -> keyframe end
-    gtTileset = 29, // data -> start tile (32 bits); end tile (32 bits); indexes per tile (64 bytes); commandBits -> indexes bit count
+    gtTileSet = 29, // data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
     gtSetDimensions = 30, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); tile count (32 bits);
-    gtExtendedCommand = 31, // data -> custom commands, proprietary extensions, ...; commandBits -> extended command index
+    gtExtendedCommand = 31, // data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
 
-    gtShortTileIdxStart = 32, // short tile index #0 ...; commandBits: palette index (3 bits); V mirror (1 bit); H mirror (1 bit)
-    gtShortTileIdxEnd = 1919, // ... short tile index #1887
-
-    gtSkipBlockStart = 1920, // skipping 128 tiles ...
-    gtSkipBlockEnd = 2047 // ... skipping 1 tile
+    gtReservedAreaBegin = 32, // reserving the MSB for future use
+    gtReservedAreaEnd = 63
   );
 
   TSpinlock = LongInt;
@@ -4336,13 +4335,11 @@ end;
 procedure TMainForm.SaveStream(AStream: TStream);
 const
   CMaxBufSize = 2 * 1024 * 1024;
-  CMinKFFrameCount = 72;
+  CGTMCommandsCount = Ord(High(TGTMCommand)) + 1;
+  CGTMCommandsBits = round(ln(CGTMCommandsCount) / ln(2));
+  CGTMAttributeBits = 16 - CGTMCommandsBits;
   CMinBlkSkipCount = 1;
-  CMaxBlkSkipCount = Ord(gtSkipBlockEnd) - Ord(gtSkipBlockStart) + 1;
-  CGTMCommandsIdxs = Ord(High(TGTMCommand)) + 1;
-  CShortIdxBits = round(ln(CGTMCommandsIdxs) / ln(2));
-  CTMAttrBits = 16 - CShortIdxBits;
-  CGTMCommandIdxStart = (1 shl CShortIdxBits) - CGTMCommandsIdxs;
+  CMaxBlkSkipCount = 1 shl CGTMAttributeBits;
 
 var
   ZStream: TMemoryStream;
@@ -4350,6 +4347,16 @@ var
   procedure DoDWord(v: Cardinal);
   begin
     ZStream.WriteDWord(v);
+  end;
+
+  procedure Do3Bytes(v: Cardinal);
+  begin
+    Assert(v < 1 shl 24);
+    ZStream.WriteByte(v and $ff);
+    v := v shr 8;
+    ZStream.WriteByte(v and $ff);
+    v := v shr 8;
+    ZStream.WriteByte(v and $ff);
   end;
 
   procedure DoWord(v: Word);
@@ -4364,27 +4371,25 @@ var
 
   procedure DoCmd(Cmd: TGTMCommand; Data: Cardinal);
   begin
-    assert(Data < (1 shl CTMAttrBits));
-    assert(Ord(Cmd) < CGTMCommandsIdxs);
+    assert(Data < (1 shl CGTMAttributeBits));
+    assert(Ord(Cmd) < CGTMCommandsCount);
 
-    DoWord((Data shl CShortIdxBits) or Ord(Cmd));
+    DoWord((Data shl CGTMCommandsBits) or Ord(Cmd));
   end;
 
   procedure DoTMI(PalIdx: Integer; TileIdx: Integer; VMirror, HMirror: Boolean);
-  var
-    ShortIdx: Boolean;
   begin
-    assert((PalIdx >= 0) and (PalIdx < FPaletteCount));
+    Assert((PalIdx >= 0) and (PalIdx < FPaletteCount));
 
-    ShortIdx := (TileIdx < CGTMCommandIdxStart) and (PalIdx < (1 shl (CTMAttrBits - 2)));
-    if ShortIdx then
+    if TileIdx < (1 shl 16) then
     begin
-      DoCmd(TGTMCommand(Ord(gtShortTileIdxStart) + TileIdx), (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
+      DoCmd(gtShortTileIdx, (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
+      DoWord(TileIdx);
     end
     else
     begin
-      DoCmd(gtLongTileIdx, (Ord(VMirror) shl 1) or Ord(HMirror));
-      DoDWord((TileIdx and $00ffffff) or (PalIdx shl 24));
+      DoCmd(gtLongTileIdx, (PalIdx shl 2) or (Ord(VMirror) shl 1) or Ord(HMirror));
+      DoDWord(TileIdx);
     end;
   end;
 
@@ -4414,7 +4419,7 @@ var
     DoDWord(round(1000*1000*1000 / FFramesPerSecond)); // frame length in nanoseconds
     DoDWord(TileCnt); // tile count
 
-    DoCmd(gtTileset, round(log2(FTilePaletteSize)));
+    DoCmd(gtTileSet, FTilePaletteSize);
     DoDWord(0); // start tile
     DoDWord(TileCnt - 1); // end tile
 
@@ -4473,7 +4478,7 @@ begin
             begin
               //writeln('blk ', BlkSkipCount);
 
-              DoCmd(TGTMCommand(Ord(gtSkipBlockEnd) - (BlkSkipCount - 1)), 0);
+              DoCmd(gtSkipBlock, BlkSkipCount - 1);
               Inc(cs, BlkSkipCount);
               Dec(BlkSkipCount);
             end
@@ -4492,8 +4497,8 @@ begin
         Assert(cs = FTileMapSize, 'incomplete TM');
         Assert(BlkSkipCount = 0, 'pending skips');
 
-        IsKF := (fri = FKeyFrames[kf].EndFrame) and (kf = High(FKeyFrames));
-        IsKF := IsKF or (fri = FKeyFrames[kf].EndFrame) or (FKeyFrames[kf].StartFrame - LastKF > CMinKFFrameCount) or (fri = FKeyFrames[kf].EndFrame) and (ZStream.Size >= CMaxBufSize div 2);
+        IsKF := (fri = FKeyFrames[kf].EndFrame) and (kf = High(FKeyFrames)); // last frame of last keyframe?
+        IsKF := IsKF or (fri = FKeyFrames[kf].EndFrame) and (ZStream.Size >= CMaxBufSize div 2); // buffer full enough?
 
         DoCmd(gtFrameEnd, Ord(IsKF));
 
