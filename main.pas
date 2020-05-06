@@ -152,6 +152,7 @@ type
   TTileMapItems = array of TTileMapItem;
 
   TTileDataset = record
+    ColOrder: TIntegerDynArray;
     Dataset: TANNFloatDynArray2;
     TRToTileIdx: TIntegerDynArray;
     TRToPalIdx: TByteDynArray;
@@ -1941,7 +1942,7 @@ begin
      for y := 0 to (cTileWidth - 1) do
        for x := 0 to (cTileWidth - 1) do
        begin
-         map_value := cDitheringMap[(y shl 3) + x];
+         map_value := cDitheringMap[(y * cTileWidth) + x];
          DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
          ATile.PalPixels[y, x] := list[map_value];
        end;
@@ -3153,7 +3154,7 @@ begin
           col := pcol^;
           Inc(pcol);
 
-          ti := FTileMapWidth * (j shr 3) + (i shr 3);
+          ti := FTileMapWidth * (j div cTileWidth) + (i div cTileWidth);
           tx := i and (cTileWidth - 1);
           ty := j and (cTileWidth - 1);
 
@@ -3649,7 +3650,7 @@ end;
 
 procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean);
 var
-  TRSize, di, i, j, frame, sy, sx: Integer;
+  TRSize, di, i, j, k, frame, sy, sx: Integer;
   frm: TFrame;
   T: PTile;
   DS: PTileDataset;
@@ -3658,6 +3659,10 @@ var
   palIdx: Integer;
   DCT: TFloatDynArray;
   Corrs: TFloatDynArray2;
+  Mins, Maxs: TFloatDynArray;
+  best: TFloat;
+  TmpLine: TANNFloatDynArray;
+  DSSort: TIntegerDynArray;
 
   procedure UseOne(Item: PTileMapItem; palIdx: Integer);
   begin
@@ -3732,6 +3737,15 @@ begin
   SetLength(DS^.TRToTileIdx, TRSize);
   SetLength(DS^.TRToPalIdx, TRSize);
   SetLength(DS^.Dataset, TRSize * 4, cTileDCTSize);
+  SetLength(Mins, cTileDCTSize);
+  SetLength(Maxs, cTileDCTSize);
+  SetLength(DS^.ColOrder, cTileDCTSize);
+
+  for i := 0 to cTileDCTSize - 1 do
+  begin
+    Mins[i] := MaxSingle;
+    Maxs[i] := -MaxSingle;
+  end;
 
   di := 0;
   for i := 0 to High(FTiles) do
@@ -3749,7 +3763,11 @@ begin
           begin
             ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir xor T^.HMirror, vmir xor T^.VMirror, AFTGamma, AKF.PaletteRGB[palIdx], DCT);
             for j := 0 to cTileDCTSize - 1 do
+            begin
               DS^.Dataset[di, j] := DCT[j];
+              Mins[j] := min(Mins[j], DCT[j]);
+              Maxs[j] := max(Maxs[j], DCT[j]);
+            end;
             Inc(di);
           end;
       end;
@@ -3757,8 +3775,31 @@ begin
 
   assert(di = TRSize * 4);
 
-  DS^.KDT := ann_kdtree_create(PPANNFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+  for i := 0 to cTileDCTSize - 1 do
+  begin
+    k := 0;
+    best := Infinity;
+    for j := 0 to cTileDCTSize - 1 do
+      if Maxs[j] - Mins[j] < best then
+      begin
+        best := Maxs[j] - Mins[j];
+        k := j;
+      end;
+    DS^.ColOrder[i] := k;
+    Mins[k] := -MaxSingle;
+    Maxs[k] := MaxSingle;
+  end;
 
+  SetLength(DSSort, Length(DS^.Dataset));
+  for j := 0 to High(DS^.Dataset) do
+  begin
+    DSSort[j] := j;
+    TmpLine := Copy(DS^.Dataset[j]);
+    for i := 0 to cTileDCTSize - 1 do
+      DS^.Dataset[j, i] := TmpLine[DS^.ColOrder[i]];
+  end;
+
+  DS^.KDT := ann_kdtree_create(PPANNFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
   SetLength(DS^.DistErrCml, FPaletteCount);
   SetLength(DS^.DistErrCnt, FPaletteCount);
 
@@ -3825,7 +3866,7 @@ begin
     begin
       ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
       for j := 0 to cTileDCTSize - 1 do
-        ANNDCT[j] := DCT[j];
+        ANNDCT[j] := DCT[DS^.ColOrder[j]];
 
       err := 0;
       tri := ann_kdtree_search(DS^.KDT, PANNFloat(ANNDCT), 0.0, @err);
@@ -3988,8 +4029,8 @@ begin
       Inc(Result);
     end;
 
-  PalSigni := GetTilePalZoneThres(ATile, 16, @DataLine[Result]);
-  Inc(Result, 16);
+  PalSigni := GetTilePalZoneThres(ATile, sqr(cTileWidth) div 4, @DataLine[Result]);
+  Inc(Result, sqr(cTileWidth) div 4);
 
   Assert(Result = cKModesFeatureCount);
 end;
