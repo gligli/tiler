@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>GliGli's TileMotion Live Demo</title>
+    <style>
+    body {
+      font-family: "Helvetica", sans-serif;
+      background-color: #888;
+      margin: 0px;
+      padding: 0px;
+    }
+
+    #drop {
+      border: 2px dashed #bbb;
+      -moz-border-radius: 5px;
+      -webkit-border-radius: 5px;
+      border-radius: 10px;
+      margin: 25px;
+      padding: 25px;
+      font-size: 20pt;
+      color: #fff;
+      background-color: #999;
+    }
+    
+    a {
+      color: #ccf;
+    }
+    
+    </style>
+  </head>
+  <body>
+    <h2>GliGli's TileMotion Live Demo</h2>
+    <p>This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</p>
+    <canvas id="frame" width="8" height="8"></canvas>
+    <div id="drop"><p>Click on a GTM file to play the contents (from <a href="https://media.xiph.org/">media.xiph.org</a>)<br/><br/>
+    <a class="sample" href="sintel_trailer_2k.gtm">sintel_trailer_2k.gtm</a> (47MB, 1080p, 1253 frames)<br/>
+    <a class="sample" href="sunflower_540p25.gtm">sunflower_540p25.gtm</a> (11MB, 540p, 500 frames)<br/></p></div>
+    <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
+    <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
+    <script src="./lzma.js"></script>
+    <script src="./lzma.shim.js"></script>
+    <script src="./gtm.player.js"></script>
+    <script>
+      document.querySelectorAll('.sample').forEach( function(sample) {
+        sample.addEventListener('click', (event) => {
+          event.preventDefault();
+  
+          gtmPlayFromURL(sample.href, 'frame');
+          document.querySelector('#drop').parentNode.removeChild(document.querySelector('#drop'));
+        });
+      });
+      
+      document.querySelector('#play_loop').addEventListener('click', () => {
+        gtmSetPlaying(document.querySelector('#play_loop').checked);
+      });
+    </script>
+  </body>
+</html>
