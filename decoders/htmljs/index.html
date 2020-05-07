@@ -48,6 +48,7 @@
         }
         
         gtmPlayFromFile(file, 'frame');
+        drop.parentNode.removeChild(drop);
       });
       
       document.querySelector('#play_loop').addEventListener('click', () => {

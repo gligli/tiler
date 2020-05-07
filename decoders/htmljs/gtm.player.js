@@ -48,23 +48,41 @@ function gtmPlayFromFile(file, canvasId) {
   gtmReader = new FileReader();
   gtmReader.addEventListener('load', (e) => {
     gtmInStream = new LZMA.iStream(gtmReader.result);
-    gtmOutStream = new LZMA.oStream();
-    gtmOutStream = LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, Infinity);
-    gtmFrameData = gtmOutStream.toUint8Array();
-
-    if (!gtmReady) {
-      gtmDataPos = 0;
-      gtmReady = true;
-      drop.parentNode.removeChild(drop);
-      setTimeout(decodeFrame, 10);
-    }
+    startFromReader();
   });
-
   gtmReader.readAsArrayBuffer(file);
+}
+
+function gtmPlayFromURL(url, canvasId) {
+  gtmCanvasId = canvasId;
+  gtmReady = false;
+
+  var oReq = new XMLHttpRequest();
+  oReq.open("GET", url, true);
+  oReq.responseType = "arraybuffer";
+  
+  oReq.onload = function (oEvent) {
+    gtmInStream = new LZMA.iStream(oReq.response);
+    startFromReader();
+  };
+  
+  oReq.send(null);
 }
 
 function gtmSetPlaying(playing) {
   gtmPlaying = playing;
+}
+
+function startFromReader() {
+  gtmOutStream = new LZMA.oStream();
+  LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, Infinity);
+  gtmFrameData = gtmOutStream.toUint8Array();
+  
+  if (!gtmReady) {
+    gtmDataPos = 0;
+    gtmReady = true;
+    setTimeout(decodeFrame, 10);
+  }
 }
 
 function redimFrame() {
