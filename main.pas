@@ -375,6 +375,7 @@ type
     procedure RGBToLAB(r, g, b: TFloat; GammaCor: Integer; out ol, oa, ob: TFloat);
     procedure RGBToLAB(ir, ig, ib: Integer; GammaCor: Integer; out ol, oa, ob: TFloat);
     function LABToRGB(ll, aa, bb: TFloat): Integer;
+    function YUVToRGB(y, u, v: TFloat): Integer;
 
     procedure WaveletGS(Data: PFloat; Output: PFloat; dx, dy, depth: cardinal);
     procedure DeWaveletGS(wl: PFloat; pic: PFloat; dx, dy, depth: longint);
@@ -2603,6 +2604,25 @@ begin
   vv := (fr - yy) * (0.5 / (1.0 - cRedMul / cLumaDiv));
 
   y := yy; u := uu; v := vv; // for safe "out" param
+end;
+
+function TMainForm.YUVToRGB(y, u, v: TFloat): Integer;
+var
+  r, g, b: TFloat;
+begin
+{$if cRedMul = 299}
+  r := y + v * 1.13983;
+  g := y - u * 0.39465 - v * 0.58060;
+  b := y + u * 2.03211;
+{$elseif cRedMul = 2126}
+  r := y + v * 1.28033;
+  g := y - u * 0.21482 - v * 0.38059;
+  b := y + u * 2.12798;
+{$else}
+  {$error YUVToRGB not implemented!}
+{$endif}
+
+  Result := ToRGB(EnsureRange(Round(r * 255), 0, 255), EnsureRange(Round(g * 255), 0, 255), EnsureRange(Round(b * 255), 0, 255));
 end;
 
 procedure TMainForm.RGBToHSV(col: Integer; out h, s, v: TFloat);

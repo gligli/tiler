@@ -73,6 +73,7 @@ function yakmo_create(k: Cardinal; restartCount: Cardinal; maxIter: Integer; ini
 procedure yakmo_destroy(ay: PYakmo); stdcall; external 'yakmo.dll';
 procedure yakmo_load_train_data(ay: PYakmo; rowCount: Cardinal; colCount: Cardinal; dataset: PPFloat); stdcall; external 'yakmo.dll';
 procedure yakmo_train_on_data(ay: PYakmo; pointToCluster: PInteger); stdcall; external 'yakmo.dll';
+procedure yakmo_get_centroids(ay: PYakmo; centroids: PPFloat); stdcall; external 'yakmo.dll';
 
 function InvariantFormatSettings: TFormatSettings;
 function internalRuncommand(p:TProcess;var outputstring:string;
