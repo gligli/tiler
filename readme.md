@@ -6,7 +6,9 @@ The current decoder is written **entirely in javascript** and uses **HTML5 Canva
 
 Upon bitstream format maturity I will probably write a DirectShow plugin or something akin.
 
-The project is in **Alpha stage** and located at: https://github.com/gligli/tiler
+Online demo here: <https://gligli.github.io/tiler/demo/>
+
+The project is in **Alpha stage** and located at: <https://github.com/gligli/tiler>
 
 _Author: GliGli_<br>
 _License: GNU GPL v3_
