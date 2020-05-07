@@ -217,6 +217,7 @@ type
     btnInput: TButton;
     btnGTM: TButton;
     btnRunAll: TButton;
+    cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
     cbxStartStep: TComboBox;
@@ -251,6 +252,7 @@ type
     Label12: TLabel;
     Label13: TLabel;
     Label14: TLabel;
+    Label15: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
@@ -424,7 +426,8 @@ type
 
     procedure SaveStream(AStream: TStream);
 
-    function DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; out AFPS: Double): String;
+    function DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; AScale: Double; out
+      AFPS: Double): String;
   public
     { public declarations }
   end;
@@ -977,7 +980,7 @@ begin
 
   if FileExists(edInput.Text) then
   begin
-    DoExternalFFMpeg(edInput.Text, FInputPath, StartFrame, frc, FFramesPerSecond);
+    DoExternalFFMpeg(edInput.Text, FInputPath, StartFrame, frc, StrToFloat(cbxScaling.Text), FFramesPerSecond);
     StartFrame := 1;
   end
   else
@@ -3140,8 +3143,8 @@ begin
       AFrame.SmoothedTileMap[j, i] := AFrame.TileMap[j, i];
     end;
 
-  Assert(ABitmap.Width = FScreenWidth, 'Wrong video width!');
-  Assert(ABitmap.Height = FScreenHeight, 'Wrong video height!');
+  Assert(ABitmap.Width >= FScreenWidth, 'Wrong video width!');
+  Assert(ABitmap.Height >= FScreenHeight, 'Wrong video height!');
 
   ABitmap.BeginUpdate;
   try
@@ -4567,7 +4570,7 @@ begin
   WriteLn('Written: ', StreamSize, #9'Bitrate: ', FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames)) + ' kbpf  '#9'(' + FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames) * FFramesPerSecond)+' kbps)');
 end;
 
-function TMainForm.DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; out AFPS: Double): String;
+function TMainForm.DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; AScale: Double; out AFPS: Double): String;
 var
   i: Integer;
   Output, ErrOut, vfl, s: String;
@@ -4582,11 +4585,9 @@ begin
 
   AVidPath := Result + '%.4d.png';
 
-  vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(MaxInt) + '),setpts=PTS-STARTPTS,scale=in_range=auto:out_range=full" ';
-  if AFrameCount > 0 then
-  begin
-    vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' + IntToStr(AStartFrame + AFrameCount - 1) + '),setpts=PTS-STARTPTS,scale=in_range=auto:out_range=full" ';
-  end;
+  vfl := ' -vf select="between(n\,' + IntToStr(AStartFrame) + '\,' +
+    IntToStr(IfThen(AFrameCount > 0, AStartFrame + AFrameCount - 1, MaxInt)) +
+    '),setpts=PTS-STARTPTS,scale=in_range=auto:out_range=full",scale=iw*' + FloatToStr(AScale, InvariantFormatSettings) + ':ih*' + FloatToStr(AScale, InvariantFormatSettings) + ':flags=lanczos ';
 
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'ffmpeg.exe';
