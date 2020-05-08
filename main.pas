@@ -20,6 +20,8 @@ const
   cBitsPerComp = 8;
   cRandomKModesCount = 7;
   cFTPaletteTol = 0.025;
+  cPreKNNFeatureCount = 4;
+  cPreKNNFeatureBits = 4;
 
 {$if true}
   cRedMul = 2126;
@@ -152,11 +154,13 @@ type
   TTileMapItems = array of TTileMapItem;
 
   TTileDataset = record
+    Mins, Maxs: TFloatDynArray;
     ColOrder: TIntegerDynArray;
-    Dataset: TANNFloatDynArray2;
-    TRToTileIdx: TIntegerDynArray;
-    TRToPalIdx: TByteDynArray;
-    KDT: PANNkdtree;
+    Dataset: array of TANNFloatDynArray2;
+    TRToTileIdx: array of TIntegerDynArray;
+    TRToPalIdx: array of TByteDynArray;
+    TRToHVMir: array of TByteDynArray;
+    KDT: array of PANNkdtree;
     DistErrCml: TFloatDynArray;
     DistErrCnt: TIntegerDynArray;
   end;
@@ -642,6 +646,16 @@ begin
 end;
 
 function CompareEuclidean(const a, b: TFloatDynArray): TFloat; inline;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 0 to High(a) do
+    Result += sqr(a[i] - b[i]);
+  Result := sqrt(Result);
+end;
+
+function CompareEuclideanANN(const a, b: TANNFloatDynArray): TANNFloat; inline;
 var
   i: Integer;
 begin
@@ -3673,19 +3687,23 @@ end;
 
 procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean);
 var
-  TRSize, di, i, j, k, frame, sy, sx: Integer;
+  TRSize, di, i, j, k, cnt, frame, sy, sx: Integer;
   frm: TFrame;
   T: PTile;
   DS: PTileDataset;
+  AllDS: TANNFloatDynArray2;
   used: array of TBooleanDynArray;
   vmir, hmir: Boolean;
   palIdx: Integer;
   DCT: TFloatDynArray;
   Corrs: TFloatDynArray2;
   Mins, Maxs: TFloatDynArray;
-  best: TFloat;
   TmpLine: TANNFloatDynArray;
   DSSort: TIntegerDynArray;
+  TRToTileIdx: TIntegerDynArray;
+  TRToPalIdx: TByteDynArray;
+  KCounts: TIntegerDynArray;
+  best: TFloat;
 
   procedure UseOne(Item: PTileMapItem; palIdx: Integer);
   begin
@@ -3731,6 +3749,8 @@ begin
     FillByte(used[palIdx, 0], Length(FTiles), 0);
   end;
 
+  // Build an indicator table of used tiles
+
   for frame := 0 to AKF.FrameCount - 1 do
   begin
     frm := FFrames[AKF.StartFrame + frame];
@@ -3751,18 +3771,22 @@ begin
     end;
   end;
 
+  // Dim structures
+
   TRSize := 0;
   for palIdx := 0 to FPaletteCount - 1 do
     for i := 0 to High(FTiles) do
       TRSize += Ord(used[palIdx, i]);
 
   SetLength(DCT, cTileDCTSize);
-  SetLength(DS^.TRToTileIdx, TRSize);
-  SetLength(DS^.TRToPalIdx, TRSize);
-  SetLength(DS^.Dataset, TRSize * 4, cTileDCTSize);
+  SetLength(TRToTileIdx, TRSize);
+  SetLength(TRToPalIdx, TRSize);
+  SetLength(AllDS, TRSize * 4, cTileDCTSize);
   SetLength(Mins, cTileDCTSize);
   SetLength(Maxs, cTileDCTSize);
   SetLength(DS^.ColOrder, cTileDCTSize);
+
+  // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
   for i := 0 to cTileDCTSize - 1 do
   begin
@@ -3778,8 +3802,8 @@ begin
     for palIdx := 0 to FPaletteCount - 1 do
       if used[palIdx, i] then
       begin
-        DS^.TRToTileIdx[di shr 2] := i;
-        DS^.TRToPalIdx[di shr 2] := palIdx;
+        TRToTileIdx[di shr 2] := i;
+        TRToPalIdx[di shr 2] := palIdx;
 
         for vmir := False to True do
           for hmir := False to True do
@@ -3787,7 +3811,7 @@ begin
             ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir xor T^.HMirror, vmir xor T^.VMirror, AFTGamma, AKF.PaletteRGB[palIdx], DCT);
             for j := 0 to cTileDCTSize - 1 do
             begin
-              DS^.Dataset[di, j] := DCT[j];
+              AllDS[di, j] := DCT[j];
               Mins[j] := min(Mins[j], DCT[j]);
               Maxs[j] := max(Maxs[j], DCT[j]);
             end;
@@ -3798,35 +3822,93 @@ begin
 
   assert(di = TRSize * 4);
 
+  // Sort feature columns by importance (raw max-min scale)
+
+  DS^.Mins := Copy(Mins);
+  DS^.Maxs := Copy(Maxs);
   for i := 0 to cTileDCTSize - 1 do
   begin
     k := 0;
-    best := Infinity;
+    best := -Infinity;
     for j := 0 to cTileDCTSize - 1 do
-      if Maxs[j] - Mins[j] < best then
+      if Maxs[j] - Mins[j] > best then
       begin
         best := Maxs[j] - Mins[j];
         k := j;
       end;
     DS^.ColOrder[i] := k;
-    Mins[k] := -MaxSingle;
-    Maxs[k] := MaxSingle;
+    Mins[k] := MaxSingle;
+    Maxs[k] := -MaxSingle;
   end;
 
-  SetLength(DSSort, Length(DS^.Dataset));
-  for j := 0 to High(DS^.Dataset) do
+  SetLength(DSSort, Length(AllDS));
+  for j := 0 to High(AllDS) do
   begin
     DSSort[j] := j;
-    TmpLine := Copy(DS^.Dataset[j]);
+    TmpLine := Copy(AllDS[j]);
     for i := 0 to cTileDCTSize - 1 do
-      DS^.Dataset[j, i] := TmpLine[DS^.ColOrder[i]];
+      AllDS[j, i] := TmpLine[DS^.ColOrder[i]];
   end;
 
-  DS^.KDT := ann_kdtree_create(PPANNFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+  Mins := Copy(DS^.Mins);
+  Maxs := Copy(DS^.Maxs);
+  for i := 0 to cTileDCTSize - 1 do
+  begin
+    DS^.Mins[i] := Mins[DS^.ColOrder[i]];
+    DS^.Maxs[i] := Maxs[DS^.ColOrder[i]];
+  end;
+
+  // Prepare dataset for multiple KNNs structure (split by most imporant features)
+
+  SetLength(KCounts, 1 shl (cPreKNNFeatureCount * cPreKNNFeatureBits));
+  SetLength(DS^.KDT, Length(KCounts));
+  SetLength(DS^.Dataset, Length(KCounts), Length(AllDS) div Length(KCounts));
+  SetLength(DS^.TRToPalIdx, Length(KCounts), Length(DS^.Dataset[0]));
+  SetLength(DS^.TRToTileIdx, Length(KCounts), Length(DS^.Dataset[0]));
+  SetLength(DS^.TRToHVMir, Length(KCounts), Length(DS^.Dataset[0]));
+  for j := 0 to High(AllDS) do
+  begin
+    k := 0;
+    for i := 0 to cPreKNNFeatureCount - 1 do
+      k := (k shl cPreKNNFeatureBits) or round((AllDS[j, i] - DS^.Mins[i]) * ((1 shl cPreKNNFeatureBits) - 1) / (DS^.Maxs[i] - DS^.Mins[i]));
+
+    if Length(DS^.Dataset[k]) < KCounts[k] + 1 then
+    begin
+      cnt := ceil(Length(DS^.Dataset[k]) * cPhi);
+      SetLength(DS^.Dataset[k], cnt);
+      SetLength(DS^.TRToPalIdx[k], cnt);
+      SetLength(DS^.TRToTileIdx[k], cnt);
+      SetLength(DS^.TRToHVMir[k], cnt);
+    end;
+
+    DS^.Dataset[k, KCounts[k]] := AllDS[j];
+    DS^.TRToPalIdx[k, KCounts[k]] := TRToPalIdx[j shr 2];
+    DS^.TRToTileIdx[k, KCounts[k]] := TRToTileIdx[j shr 2];
+    DS^.TRToHVMir[k, KCounts[k]] := j and 3;
+
+    Inc(KCounts[k]);
+  end;
+
+  // Build KNNs & redim dataset
+
+  cnt := 0;
+  for k := 0 to High(DS^.Dataset) do
+  begin
+    SetLength(DS^.Dataset[k], KCounts[k]);
+    SetLength(DS^.TRToPalIdx[k], KCounts[k]);
+    SetLength(DS^.TRToTileIdx[k], KCounts[k]);
+    SetLength(DS^.TRToHVMir[k], KCounts[k]);
+    if KCounts[k] > 0 then
+    begin
+      DS^.KDT[k] := ann_kdtree_create(PPANNFloat(DS^.Dataset[k]), Length(DS^.Dataset[k]), cTileDCTSize, 1, ANN_KD_STD);
+      Inc(cnt);
+    end;
+  end;
+
   SetLength(DS^.DistErrCml, FPaletteCount);
   SetLength(DS^.DistErrCnt, FPaletteCount);
 
-  WriteLn('Frame: ', AKF.StartFrame, #9'TRSize: ', TRSize, #9'DSSize: ', Length(DS^.Dataset));
+  WriteLn('Frame: ', AKF.StartFrame, #9'KnnCount: ', cnt, #9'DSSize: ', Length(AllDS));
 end;
 
 procedure TMainForm.TerminateFrameTiling(AKF: TKeyFrame);
@@ -3843,7 +3925,9 @@ begin
     end;
   WriteLn('Frame: ', AKF.StartFrame, #9'ResidualErr: ', FloatToStr(resDist));
 
-  ann_kdtree_destroy(AKF.TileDS^.KDT);
+  for i := 0 to High(AKF.TileDS^.KDT) do
+    if Assigned(AKF.TileDS^.KDT[i]) then
+      ann_kdtree_destroy(AKF.TileDS^.KDT[i]);
   AKF.TileDS^.KDT := nil;
   SetLength(AKF.TileDS^.Dataset, 0);
   SetLength(AKF.TileDS^.TRToPalIdx, 0);
@@ -3859,11 +3943,32 @@ var
   DS: PTileDataset;
   tmiO: PTileMapItem;
 
-  TPF, MaxTPF, i, j, tri: Integer;
+  i, k, bestIdx, bestKnn, miss: Integer;
   Used: TBooleanDynArray;
   DCT: TFloatDynArray;
   ANNDCT: TANNFloatDynArray;
-  err: TANNFloat;
+  PreKNNFactorLUT: array[0..cPreKNNFeatureCount - 1] of TFloat;
+  PreKNNBaseLUT: array[0..cPreKNNFeatureCount - 1] of TFloat;
+  bestErr: TANNFloat;
+
+  procedure DoOneKNN(k: Integer); inline;
+  var
+    v: TANNFloat;
+    i: Integer;
+  begin
+    if (k < 0) or (k >= 1 shl (cPreKNNFeatureBits * cPreKNNFeatureCount)) or not Assigned(DS^.KDT[k]) then
+      Exit;
+
+    v := 0;
+    i := ann_kdtree_search(DS^.KDT[k], PANNFloat(ANNDCT), 0.0, @v);
+    if v < bestErr then
+    begin
+      bestErr := v;
+      bestIdx := i;
+      bestKnn := k;
+    end;
+  end;
+
 begin
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   if AFrame.PKeyFrame.FramesLeft < 0 then
@@ -3881,39 +3986,59 @@ begin
   SetLength(DCT, cTileDCTSize);
   SetLength(ANNDCT, cTileDCTSize);
 
-  MaxTPF := 0;
-  FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+  for i := 0 to cPreKNNFeatureCount - 1 do
+  begin
+    PreKNNFactorLUT[i] := ((1 shl cPreKNNFeatureBits) - 1) / (DS^.Maxs[i] - DS^.Mins[i]);
+    PreKNNBaseLUT[i] := DS^.Mins[i];
+  end;
 
+  miss := 0;
   for sy := 0 to FTileMapHeight - 1 do
+  begin
     for sx := 0 to FTileMapWidth - 1 do
     begin
       ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
-      for j := 0 to cTileDCTSize - 1 do
-        ANNDCT[j] := DCT[DS^.ColOrder[j]];
+      for i := 0 to cTileDCTSize - 1 do
+        ANNDCT[i] := DCT[DS^.ColOrder[i]];
 
-      err := 0;
-      tri := ann_kdtree_search(DS^.KDT, PANNFloat(ANNDCT), 0.0, @err);
+      k := 0;
+      for i := 0 to cPreKNNFeatureCount - 1 do
+        k := (k shl cPreKNNFeatureBits) or round(PreKNNFactorLUT[i] * (ANNDCT[i] - PreKNNBaseLUT[i]));
+
+      bestErr := Infinity;
+      bestIdx := -1;
+      bestKnn := -1;
+
+      DoOneKNN(k);
+
+      for i := 0 to cPreKNNFeatureCount - 1 do
+      begin
+        DoOneKNN(k + (1 shl (i * cPreKNNFeatureBits)));
+        DoOneKNN(k - (1 shl (i * cPreKNNFeatureBits)));
+      end;
+
+      if bestIdx = -1 then
+      begin
+        for k := 0 to (1 shl (cPreKNNFeatureCount * cPreKNNFeatureBits)) - 1 do
+          DoOneKNN(k);
+        Inc(miss);
+      end;
 
       tmiO := @FFrames[AFrame.Index].TileMap[sy, sx];
 
-      tmiO^.GlobalTileIndex := DS^.TRToTileIdx[tri shr 2];
-      tmiO^.PalIdx :=  DS^.TRToPalIdx[tri shr 2];
-      tmiO^.HMirror := (tri and 1) <> 0;
-      tmiO^.VMirror := (tri and 2) <> 0;
+      tmiO^.GlobalTileIndex := DS^.TRToTileIdx[bestKnn, bestIdx];
+      tmiO^.PalIdx :=  DS^.TRToPalIdx[bestKnn, bestIdx];
+      tmiO^.HMirror := (DS^.TRToHVMir[bestKnn, bestIdx] and 1) <> 0;
+      tmiO^.VMirror := (DS^.TRToHVMir[bestKnn, bestIdx] and 2) <> 0;
 
-      DS^.DistErrCml[tmiO^.PalIdx] += err;
+      DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
       Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
 
       Used[tmiO^.GlobalTileIndex] := True;
     end;
+  end;
 
-  TPF := 0;
-  for i := 0 to High(Used) do
-    Inc(TPF, Ord(Used[i]));
-
-  MaxTPF := max(MaxTPF, TPF);
-
-  //DebugLn(['KF: ', AFrame.Index, #9'MaxTPF: ', MaxTPF, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft]);
+  WriteLn('KF: ', AFrame.Index, #9'KnnMisses: ', miss, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft);
 
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   Dec(AFrame.PKeyFrame.FramesLeft);
