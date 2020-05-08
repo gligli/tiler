@@ -3863,19 +3863,20 @@ begin
 
   SetLength(KCounts, 1 shl (cPreKNNFeatureCount * cPreKNNFeatureBits));
   SetLength(DS^.KDT, Length(KCounts));
-  SetLength(DS^.Dataset, Length(KCounts), Length(AllDS) div Length(KCounts));
+  SetLength(DS^.Dataset, Length(KCounts));
   SetLength(DS^.TRToPalIdx, Length(KCounts), Length(DS^.Dataset[0]));
   SetLength(DS^.TRToTileIdx, Length(KCounts), Length(DS^.Dataset[0]));
   SetLength(DS^.TRToHVMir, Length(KCounts), Length(DS^.Dataset[0]));
   for j := 0 to High(AllDS) do
   begin
     k := 0;
-    for i := 0 to cPreKNNFeatureCount - 1 do
-      k := (k shl cPreKNNFeatureBits) or round((AllDS[j, i] - DS^.Mins[i]) * ((1 shl cPreKNNFeatureBits) - 1) / (DS^.Maxs[i] - DS^.Mins[i]));
+    if FTransPalette > 0 then
+      for i := 0 to cPreKNNFeatureCount - 1 do
+        k := (k shl cPreKNNFeatureBits) or round((AllDS[j, i] - DS^.Mins[i]) * ((1 shl cPreKNNFeatureBits) - 1) / (DS^.Maxs[i] - DS^.Mins[i]));
 
     if Length(DS^.Dataset[k]) < KCounts[k] + 1 then
     begin
-      cnt := ceil(Length(DS^.Dataset[k]) * cPhi);
+      cnt := round(Length(DS^.Dataset[k]) * cPhi) + 1;
       SetLength(DS^.Dataset[k], cnt);
       SetLength(DS^.TRToPalIdx[k], cnt);
       SetLength(DS^.TRToTileIdx[k], cnt);
@@ -4003,8 +4004,9 @@ begin
         ANNDCT[i] := DCT[DS^.ColOrder[i]];
 
       k := 0;
-      for i := 0 to cPreKNNFeatureCount - 1 do
-        k := (k shl cPreKNNFeatureBits) or round(PreKNNFactorLUT[i] * (ANNDCT[i] - PreKNNBaseLUT[i]));
+      if FTransPalette > 0 then
+        for i := 0 to cPreKNNFeatureCount - 1 do
+          k := (k shl cPreKNNFeatureBits) or round(PreKNNFactorLUT[i] * (ANNDCT[i] - PreKNNBaseLUT[i]));
 
       bestErr := Infinity;
       bestIdx := -1;
