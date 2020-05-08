@@ -4014,11 +4014,12 @@ begin
 
       DoOneKNN(k);
 
-      for i := 0 to cPreKNNFeatureCount - 1 do
-      begin
-        DoOneKNN(k + (1 shl (i * cPreKNNFeatureBits)));
-        DoOneKNN(k - (1 shl (i * cPreKNNFeatureBits)));
-      end;
+      if FTransPalette > 0 then
+        for i := 0 to cPreKNNFeatureCount - 1 do
+        begin
+          DoOneKNN(k + (1 shl (i * cPreKNNFeatureBits)));
+          DoOneKNN(k - (1 shl (i * cPreKNNFeatureBits)));
+        end;
 
       if bestIdx = -1 then
       begin
