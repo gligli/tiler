@@ -3736,6 +3736,7 @@ var
 
 begin
   DS := New(PTileDataset);
+  FillChar(DS^, SizeOf(TTileDataset), 0);
   AKF.TileDS := DS;
 
   Corrs := nil;
