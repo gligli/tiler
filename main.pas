@@ -2098,11 +2098,8 @@ begin
 end;
 
 procedure TMainForm.FindBestKeyframePalette(AKeyFrame: TKeyFrame; UseDLv3: Boolean; PalVAR: TFloat; DLv3BPC: Integer);
-const
-  CNoColor = $000000;
 var
   col, i, j, di, sy, sx, PalIdx: Integer;
-  found: Boolean;
   GTile: PTile;
   CMUsage, CMPal: TFPList;
   CMItem: PCountIndexArray;
@@ -2120,17 +2117,45 @@ var
 
   procedure DoDennisLeeV3(PalIdx: Integer);
   var
-    i, sy, sx, ty, k: Integer;
-    dlPtr: PByte;
+    i, j, sy, sx, dx, dy, ty, k, tileCnt, tileFx, tileFy, best: Integer;
     dlPal: TDLUserPal;
   begin
-    FillChar(dlInput^, dlCnt * 3, CNoColor and $ff);
-    dlPtr := dlInput;
+    FillChar(dlInput^, dlCnt * 3, 0);
 
+    // find width and height of a rectangular area to arrange tiles
+
+    tileCnt := 0;
+    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+          if GTile^.Active and (GTile^.DitheringPalIndex = PalIdx) then
+            Inc(tileCnt);
+        end;
+
+    best := MaxInt;
+    tileFx := 0;
+    tileFy := 0;
+    j := 0;
+    k := 0;
+    for i := 1 to tileCnt do
+    begin
+      DivMod(tileCnt, i, j, k);
+      if (k = 0) and (abs(i - j) < best) then
+      begin
+        best := abs(i - j);
+        tileFx := i;
+        tileFy := j;
+      end;
+    end;
+
+    // copy tile date into area
+
+    dx := 0;
+    dy := 0;
     for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
     begin
-      dlPtr := @dlInput[((i - AKeyFrame.StartFrame) * FScreenWidth * FScreenHeight) * 3];
-
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
@@ -2138,11 +2163,20 @@ var
 
           if GTile^.Active and (GTile^.DitheringPalIndex = PalIdx) then
           begin
-            j := ((sy * cTileWidth) * FScreenWidth + (sx * cTileWidth)) * 3;
+            j := ((dy * cTileWidth) * tileFx * cTileWidth + (dx * cTileWidth)) * 3;
+            k := ((sy * cTileWidth) * FScreenWidth + (sx * cTileWidth)) * 3;
             for ty := 0 to cTileWidth - 1 do
             begin
-              Move(FFrames[i].FSPixels[j], dlPtr[j], cTileWidth * 3);
-              Inc(j, FScreenWidth * 3);
+              Move(FFrames[i].FSPixels[k], dlInput[j], cTileWidth * 3);
+              Inc(j, tileFx * cTileWidth * 3);
+              Inc(k, FScreenWidth * 3);
+            end;
+
+            Inc(dx);
+            if dx >= tileFx then
+            begin
+              dx := 0;
+              Inc(dy);
             end;
 
             Inc(PaletteUseCount[PalIdx].UseCount);
@@ -2150,48 +2184,23 @@ var
         end;
     end;
 
-    dl3quant(dlInput, FScreenWidth, AKeyFrame.FrameCount * FScreenHeight, FTilePaletteSize + 1, DLv3BPC, @dlPal);
+    // call Dennis Lee v3 method
+
+    dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FTilePaletteSize, DLv3BPC, @dlPal);
+
+    // retrieve palette data
 
     CMUsage.Count := FTilePaletteSize;
-    j := 0;
-    for i := 0 to FTilePaletteSize + 1 - 1 do
+    for i := 0 to FTilePaletteSize - 1 do
     begin
       col := ToRGB(dlPal[0][i], dlPal[1][i], dlPal[2][i]);
-      if col <> CNoColor then
-      begin
-        found := False;
-        for k := 0 to j - 1 do
-          if col = PCountIndexArray(CMUsage[k])^.Index then
-          begin
-            found := True;
-            Break;
-          end;
 
-        if not found then
-        begin
-          New(CMItem);
-          CMItem^.Index := col;
-          CMItem^.Count := 1;
-          CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
-          CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-          CMUsage[j] := CMItem;
-          Inc(j);
-
-          if j >= FTilePaletteSize then
-            Break;
-        end;
-      end;
-    end;
-
-    while j < FTilePaletteSize do
-    begin
       New(CMItem);
-      CMItem^.Index := CNoColor;
+      CMItem^.Index := col;
       CMItem^.Count := 1;
-      CMItem^.Hue := FColorMap[CMItem^.Index, 3]; CMItem^.Sat := FColorMap[CMItem^.Index, 4]; CMItem^.Val := FColorMap[CMItem^.Index, 5];
-      CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-      CMUsage[j] := CMItem;
-      Inc(j);
+      CMItem^.Hue := FColorMap[col, 3]; CMItem^.Sat := FColorMap[col, 4]; CMItem^.Val := FColorMap[col, 5];
+      CMItem^.Luma := FColorMapLuma[col];
+      CMUsage[i] := CMItem;
     end;
 
     CMPal.Clear;
