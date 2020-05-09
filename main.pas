@@ -4214,8 +4214,10 @@ var
   i, j, di, DSLen: Integer;
   ActualNbTiles: Integer;
   ToMergeIdxs: TIntegerDynArray;
+  ToMerge: TByteDynArray2;
   NewTile: TPalPixels;
   KMBin: PKModesBin;
+  dis: UInt64;
 begin
   KMBin := PKModesBin(AData);
 
@@ -4233,6 +4235,7 @@ begin
     KModes.Free;
   end;
 
+  SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
   // build a list of this centroid tiles
@@ -4244,6 +4247,7 @@ begin
     begin
       if LocClusters[i] = j then
       begin
+        ToMerge[di] := KMBin^.Dataset[AIndex, i];
         ToMergeIdxs[di] := KMBin^.TileIndices[AIndex, i];
         Inc(di);
       end;
@@ -4253,9 +4257,9 @@ begin
 
     if di >= 2 then
     begin
+      i := GetMinMatchingDissim(ToMerge, LocCentroids[j], di, dis);
       SpinEnter(@FMergeLock);
-      Move(LocCentroids[j, 0], NewTile[0, 0], sqr(cTileWidth));
-      MergeTiles(ToMergeIdxs, di, ToMergeIdxs[0], @NewTile, nil);
+      MergeTiles(ToMergeIdxs, di, ToMergeIdxs[i], nil, nil);
       SpinLeave(@FMergeLock);
     end;
   end;

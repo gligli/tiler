@@ -13,6 +13,7 @@ uses
 
 const
   cKModesFeatureCount = 80;
+  cDissimSubMatchingSize = 11;
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
 
@@ -232,9 +233,6 @@ begin
       Dec(Cnt);
   Result := Cnt;
 end;
-
-const
-  cDissimSubMatchingSize = 11;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
