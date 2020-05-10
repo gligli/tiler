@@ -119,6 +119,8 @@ type
   PSpinLock = ^TSpinlock;
 
   PIntegerDynArray = ^TIntegerDynArray;
+  PBoolean = ^Boolean;
+  PPBoolean = ^PBoolean;
 
   TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
 
@@ -152,7 +154,6 @@ type
   TTileMapItems = array of TTileMapItem;
 
   TTileDataset = record
-    ColOrder: TIntegerDynArray;
     Dataset: TANNFloatDynArray2;
     TRToTileIdx: TIntegerDynArray;
     TRToPalIdx: TByteDynArray;
@@ -3709,17 +3710,13 @@ end;
 
 procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean);
 var
-  TRSize, i, j, k, frame, sy, sx: Integer;
+  TRSize, i, frame, sy, sx: Integer;
   frm: TFrame;
   DS: PTileDataset;
   used: array of TBooleanDynArray;
   usedCount: TIntegerDynArray;
   palIdx: Integer;
   Corrs: TFloatDynArray2;
-  Mins, Maxs: TFloatDynArray;
-  TmpLine: TANNFloatDynArray;
-  DSSort: TIntegerDynArray;
-  best: TFloat;
   HighestCorr: TFloat;
 
   procedure UseOne(Item: PTileMapItem; palIdx: Integer);
@@ -3757,26 +3754,21 @@ var
     di, dend, i, j: Integer;
     vmir, hmir: Boolean;
     T: PTile;
-    Mn, Mx, DCT: TFloatDynArray;
-    v: TFloat;
+    DCT: TFloatDynArray;
+    LocUsed: PPBoolean;
   begin
+    LocUsed := PPBoolean(AData);
     SetLength(DCT, cTileDCTSize);
-    SetLength(Mn, cTileDCTSize);
-    SetLength(Mx, cTileDCTSize);
 
-    for i := 0 to cTileDCTSize - 1 do
-    begin
-      Mn[i] := Infinity;
-      Mx[i] := NegInfinity;
-    end;
-
+    SpinEnter(@FLock);
     di := 0;
     for i := 0 to AIndex - 1 do
       Inc(di, usedCount[i] * 4);
     dend := di + usedCount[AIndex] * 4;
+    SpinLeave(@FLock);
 
     for i := 0 to High(FTiles) do
-      if used[AIndex, i] then
+      if LocUsed[AIndex, i] then
       begin
         T := FTiles[i];
         DS^.TRToTileIdx[di shr 2] := i;
@@ -3787,25 +3779,12 @@ var
           begin
             ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir xor T^.HMirror, vmir xor T^.VMirror, AFTGamma, AKF.PaletteRGB[AIndex], DCT);
             for j := 0 to cTileDCTSize - 1 do
-            begin
-              v := DCT[j];
-              DS^.Dataset[di, j] := v;
-              Mn[j] := min(Mn[j], v);
-              Mx[j] := max(Mx[j], v);
-            end;
+              DS^.Dataset[di, j] := DCT[j];
             Inc(di);
           end;
       end;
 
     Assert(di = dend);
-
-    SpinEnter(@FLock);
-    for i := 0 to cTileDCTSize - 1 do
-    begin
-      Mins[i] := min(Mins[i], Mn[i]);
-      Maxs[i] := max(Maxs[i], Mx[i]);
-    end;
-    SpinLeave(@FLock);
   end;
 
 begin
@@ -3818,13 +3797,10 @@ begin
   if FTransPalette > 0 then
     Corrs := BuildPalletteCorrTriangle;
 
-  SetLength(used, FPaletteCount);
   SetLength(usedCount, FPaletteCount);
+  SetLength(used, FPaletteCount, Length(FTiles));
   for palIdx := 0 to FPaletteCount - 1 do
-  begin
-    SetLength(used[palIdx], Length(FTiles));
     FillByte(used[palIdx, 0], Length(FTiles), 0);
-  end;
 
   // Build an indicator table of used tiles
 
@@ -3862,40 +3838,8 @@ begin
   SetLength(DS^.TRToTileIdx, TRSize);
   SetLength(DS^.TRToPalIdx, TRSize);
   SetLength(DS^.Dataset, TRSize * 4, cTileDCTSize);
-  SetLength(Mins, cTileDCTSize);
-  SetLength(Maxs, cTileDCTSize);
-  SetLength(DS^.ColOrder, cTileDCTSize);
 
-  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount - 1);
-
-  // Sort feature columns by importance (raw max-min scale)
-
-  for i := 0 to cTileDCTSize - 1 do
-    DS^.ColOrder[i] := i;
-
-  for i := 0 to cTileDCTSize - 1 do
-  begin
-    k := 0;
-    best := NegInfinity;
-    for j := 0 to cTileDCTSize - 1 do
-      if Maxs[j] - Mins[j] > best then
-      begin
-        best := Maxs[j] - Mins[j];
-        k := j;
-      end;
-    DS^.ColOrder[i] := k;
-    Mins[k] := MaxSingle;
-    Maxs[k] := -MaxSingle;
-  end;
-
-  SetLength(DSSort, Length(DS^.Dataset));
-  for j := 0 to High(DS^.Dataset) do
-  begin
-    DSSort[j] := j;
-    TmpLine := Copy(DS^.Dataset[j]);
-    for i := 0 to cTileDCTSize - 1 do
-      DS^.Dataset[j, i] := TmpLine[DS^.ColOrder[i]];
-  end;
+  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount - 1, @used[0]);
 
   // Build KNN
 
@@ -3963,7 +3907,7 @@ begin
     begin
       ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
       for i := 0 to cTileDCTSize - 1 do
-        ANNDCT[i] := DCT[DS^.ColOrder[i]];
+        ANNDCT[i] := DCT[i];
 
       bestIdx := ann_kdtree_search(DS^.KDT, PANNFloat(ANNDCT), 0.0, @bestErr);
 
