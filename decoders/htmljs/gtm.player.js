@@ -104,7 +104,7 @@ function unpackData() {
     return;
   }
   
-  let res = LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, Math.round((4096 * 1024) / (1000 / gtmFrameLength)));
+  let res = LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, Math.round((2048 * 1024) / (1000 / gtmFrameLength)));
 
   if (res != null) {
     gtmOutStream = res;
