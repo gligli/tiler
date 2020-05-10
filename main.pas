@@ -2113,6 +2113,7 @@ var
   end;
 
   PalIdxLUT: TIntegerDynArray;
+  TmpCentroids: TFloatDynArray2;
 
   procedure DoDennisLeeV3(PalIdx: Integer);
   var
@@ -2419,6 +2420,10 @@ begin
           GTile^.DitheringPalIndex := PalIdxLUT[GTile^.DitheringPalIndex];
           Inc(di);
         end;
+
+    TmpCentroids := Copy(AKeyFrame.PaletteCentroids);
+    for PalIdx := 0 to FPaletteCount - 1 do
+      AKeyFrame.PaletteCentroids[PalIdxLUT[PalIdx]] := TmpCentroids[PalIdx];
 
   finally
     CMPal.Free;
