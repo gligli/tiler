@@ -359,7 +359,7 @@ type
     FTilePaletteSize: Integer;
 
     FCS: TRTLCriticalSection;
-    FMergeLock: TSpinlock;
+    FLock: TSpinlock;
 
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
     function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
@@ -3709,14 +3709,12 @@ end;
 
 procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean);
 var
-  TRSize, di, i, j, k, frame, sy, sx: Integer;
+  TRSize, i, j, k, frame, sy, sx: Integer;
   frm: TFrame;
-  T: PTile;
   DS: PTileDataset;
   used: array of TBooleanDynArray;
-  vmir, hmir: Boolean;
+  usedCount: TIntegerDynArray;
   palIdx: Integer;
-  DCT: TFloatDynArray;
   Corrs: TFloatDynArray2;
   Mins, Maxs: TFloatDynArray;
   TmpLine: TANNFloatDynArray;
@@ -3754,6 +3752,62 @@ var
     Result := Corrs[palIdx, palIdx2] < APalTol * HighestCorr;
   end;
 
+  procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    di, dend, i, j: Integer;
+    vmir, hmir: Boolean;
+    T: PTile;
+    Mn, Mx, DCT: TFloatDynArray;
+    v: TFloat;
+  begin
+    SetLength(DCT, cTileDCTSize);
+    SetLength(Mn, cTileDCTSize);
+    SetLength(Mx, cTileDCTSize);
+
+    for i := 0 to cTileDCTSize - 1 do
+    begin
+      Mn[i] := Infinity;
+      Mx[i] := NegInfinity;
+    end;
+
+    di := 0;
+    for i := 0 to AIndex - 1 do
+      Inc(di, usedCount[i] * 4);
+    dend := di + usedCount[AIndex] * 4;
+
+    for i := 0 to High(FTiles) do
+      if used[AIndex, i] then
+      begin
+        T := FTiles[i];
+        DS^.TRToTileIdx[di shr 2] := i;
+        DS^.TRToPalIdx[di shr 2] := AIndex;
+
+        for vmir := False to True do
+          for hmir := False to True do
+          begin
+            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir xor T^.HMirror, vmir xor T^.VMirror, AFTGamma, AKF.PaletteRGB[AIndex], DCT);
+            for j := 0 to cTileDCTSize - 1 do
+            begin
+              v := DCT[j];
+              DS^.Dataset[di, j] := v;
+              Mn[j] := min(Mn[j], v);
+              Mx[j] := max(Mx[j], v);
+            end;
+            Inc(di);
+          end;
+      end;
+
+    Assert(di = dend);
+
+    SpinEnter(@FLock);
+    for i := 0 to cTileDCTSize - 1 do
+    begin
+      Mins[i] := min(Mins[i], Mn[i]);
+      Maxs[i] := max(Maxs[i], Mx[i]);
+    end;
+    SpinLeave(@FLock);
+  end;
+
 begin
   DS := New(PTileDataset);
   FillChar(DS^, SizeOf(TTileDataset), 0);
@@ -3765,6 +3819,7 @@ begin
     Corrs := BuildPalletteCorrTriangle;
 
   SetLength(used, FPaletteCount);
+  SetLength(usedCount, FPaletteCount);
   for palIdx := 0 to FPaletteCount - 1 do
   begin
     SetLength(used[palIdx], Length(FTiles));
@@ -3793,14 +3848,17 @@ begin
     end;
   end;
 
-  // Dim structures
+  // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
   TRSize := 0;
   for palIdx := 0 to FPaletteCount - 1 do
+  begin
+    usedCount[palIdx] := 0;
     for i := 0 to High(FTiles) do
-      TRSize += Ord(used[palIdx, i]);
+      Inc(usedCount[palIdx], Ord(used[palIdx, i]));
+    TRSize += usedCount[palIdx];
+  end;
 
-  SetLength(DCT, cTileDCTSize);
   SetLength(DS^.TRToTileIdx, TRSize);
   SetLength(DS^.TRToPalIdx, TRSize);
   SetLength(DS^.Dataset, TRSize * 4, cTileDCTSize);
@@ -3808,48 +3866,17 @@ begin
   SetLength(Maxs, cTileDCTSize);
   SetLength(DS^.ColOrder, cTileDCTSize);
 
-  // Compute psycho visual model for all used tiles (in all palettes / mirrors)
-
-  for i := 0 to cTileDCTSize - 1 do
-  begin
-    Mins[i] := MaxSingle;
-    Maxs[i] := -MaxSingle;
-  end;
-
-  di := 0;
-  for i := 0 to High(FTiles) do
-  begin
-    T := FTiles[i];
-
-    for palIdx := 0 to FPaletteCount - 1 do
-      if used[palIdx, i] then
-      begin
-        DS^.TRToTileIdx[di shr 2] := i;
-        DS^.TRToPalIdx[di shr 2] := palIdx;
-
-        for vmir := False to True do
-          for hmir := False to True do
-          begin
-            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir xor T^.HMirror, vmir xor T^.VMirror, AFTGamma, AKF.PaletteRGB[palIdx], DCT);
-            for j := 0 to cTileDCTSize - 1 do
-            begin
-              DS^.Dataset[di, j] := DCT[j];
-              Mins[j] := min(Mins[j], DCT[j]);
-              Maxs[j] := max(Maxs[j], DCT[j]);
-            end;
-            Inc(di);
-          end;
-      end;
-  end;
-
-  assert(di = TRSize * 4);
+  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount - 1);
 
   // Sort feature columns by importance (raw max-min scale)
 
   for i := 0 to cTileDCTSize - 1 do
+    DS^.ColOrder[i] := i;
+
+  for i := 0 to cTileDCTSize - 1 do
   begin
     k := 0;
-    best := -Infinity;
+    best := NegInfinity;
     for j := 0 to cTileDCTSize - 1 do
       if Maxs[j] - Mins[j] > best then
       begin
@@ -3910,8 +3937,7 @@ var
   DS: PTileDataset;
   tmiO: PTileMapItem;
 
-  i, bestIdx, miss: Integer;
-  Used: TBooleanDynArray;
+  i, bestIdx: Integer;
   DCT: TFloatDynArray;
   ANNDCT: TANNFloatDynArray;
   bestErr: TANNFloat;
@@ -3929,13 +3955,10 @@ begin
 
   // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
-  SetLength(Used, Length(FTiles));
   SetLength(DCT, cTileDCTSize);
   SetLength(ANNDCT, cTileDCTSize);
 
-  miss := 0;
   for sy := 0 to FTileMapHeight - 1 do
-  begin
     for sx := 0 to FTileMapWidth - 1 do
     begin
       ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
@@ -3953,12 +3976,9 @@ begin
 
       DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
       Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
-
-      Used[tmiO^.GlobalTileIndex] := True;
     end;
-  end;
 
-  WriteLn('KF: ', AFrame.Index, #9'KnnMisses: ', miss, #9'TileCnt: ', Length(DS^.Dataset), #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft);
+  WriteLn('Frame: ', AFrame.Index, #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft);
 
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   Dec(AFrame.PKeyFrame.FramesLeft);
@@ -4164,9 +4184,9 @@ begin
     if di >= 2 then
     begin
       i := GetMinMatchingDissim(ToMerge, LocCentroids[j], di, dis);
-      SpinEnter(@FMergeLock);
+      SpinEnter(@FLock);
       MergeTiles(ToMergeIdxs, di, ToMergeIdxs[i], nil, nil);
-      SpinLeave(@FMergeLock);
+      SpinLeave(@FLock);
     end;
   end;
 end;
@@ -4682,7 +4702,7 @@ var
 begin
   FormatSettings.DecimalSeparator := '.';
   InitializeCriticalSection(FCS);
-  SpinLeave(@FMergeLock);
+  SpinLeave(@FLock);
 
 {$ifdef DEBUG}
   //ProcThreadPool.MaxThreadCount := 1;
