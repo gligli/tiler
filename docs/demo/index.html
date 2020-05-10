@@ -4,40 +4,128 @@
     <meta charset="utf-8">
     <title>GliGli's TileMotion Live Demo</title>
     <style>
-    body {
-      font-family: "Helvetica", sans-serif;
-      background-color: #888;
-      margin: 0px;
-      padding: 0px;
+    body{
+      box-sizing:border-box;
+      color:#373737;
+      background:#f2f2f2;
+      font-size:16px;
+      font-family:'Myriad Pro', Calibri, Helvetica, Arial, sans-serif;
+      line-height:1.5;
+      -webkit-font-smoothing:antialiased;
+      margin:0px
+    }
+    
+    h1,h2,h3,h4,h5,h6{
+      margin:10px 0;
+      font-weight:700;
+      color:#222222;
+      font-family:'Lucida Grande', 'Calibri', Helvetica, Arial, sans-serif;
+      letter-spacing:-1px
+    }
+    h1{
+      font-size:36px;
+      font-weight:700
+    }
+    h2{
+      padding-bottom:10px;
+      font-size:32px;
+    }
+    h3{
+      font-size:24px
+    }
+    h4{
+      font-size:21px
+    }
+    h5{
+      font-size:18px
+    }
+    h6{
+      font-size:16px
+    }
+    
+    p{
+      margin:10px 0 15px 0
+    }
+
+    a{
+      text-decoration:none;
+      color:#0F79D0;
+      text-shadow:none;
+      transition:color 0.5s ease;
+      transition:text-shadow 0.5s ease;
+      -webkit-transition:color 0.5s ease;
+      -webkit-transition:text-shadow 0.5s ease;
+      -moz-transition:color 0.5s ease;
+      -moz-transition:text-shadow 0.5s ease;
+      -o-transition:color 0.5s ease;
+      -o-transition:text-shadow 0.5s ease;
+      -ms-transition:color 0.5s ease;
+      -ms-transition:text-shadow 0.5s ease
+    }
+    a:hover,a:focus{
+      text-decoration:underline
+    }
+    
+    #header_wrap{
+      background:#212121;
+      background:-moz-linear-gradient(top, #373737, #212121);
+      background:-webkit-linear-gradient(top, #373737, #212121);
+      background:-ms-linear-gradient(top, #373737, #212121);
+      background:-o-linear-gradient(top, #373737, #212121);
+      background:linear-gradient(to top, #373737, #212121)
+    }
+    
+    #header_wrap .inner{
+      padding:20px 10px 20px 10px
+    }
+    
+    #main_content_wrap{
+      background:#f2f2f2;
+      border-top:1px solid #111;
+      border-bottom:1px solid #111
+    }
+    
+    #project_title{
+      margin:0;
+      color:#fff;
+      font-size:42px;
+      font-weight:700;
+      text-shadow:#111 0px 0px 10px
+    }
+    
+    #project_tagline{
+      color:#fff;
+      font-size:24px;
+      font-weight:300;
+      background:none;
+      text-shadow:#111 0px 0px 10px
     }
 
     #drop {
-      border: 2px dashed #bbb;
-      -moz-border-radius: 5px;
-      -webkit-border-radius: 5px;
-      border-radius: 10px;
       margin: 25px;
       padding: 25px;
       font-size: 20pt;
-      color: #fff;
-      background-color: #999;
+      background:#f2f2f2;
+      border-top:1px dashed #888;
+      border-bottom:1px dashed #888
     }
-    
-    a {
-      color: #ccf;
-    }
-    
     </style>
   </head>
   <body>
-    <h2>GliGli's TileMotion Live Demo</h2>
-    <p>This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</p>
-    <canvas id="frame" width="8" height="8"></canvas>
-    <div id="drop"><p>Click on a GTM file to play the contents (from <a href="https://media.xiph.org/">media.xiph.org</a>)<br/><br/>
-    <a class="sample" href="sintel_trailer_2k.gtm">sintel_trailer_2k.gtm</a> (47MB, 1080p, 1253 frames)<br/>
-    <a class="sample" href="sunflower_540p25.gtm">sunflower_540p25.gtm</a> (11MB, 540p, 500 frames)<br/>
-    <a class="sample" href="rush_field_cuts_540p.gtm">rush_field_cuts_540p.gtm</a> (12MB, 540p, 570 frames)<br/>
-    <a class="sample" href="tractor_540p25.gtm">tractor_540p25.gtm</a> (17MB, 540p, 690 frames)<br/></p></div><br/>
+    <div id="header_wrap" class="outer">
+      <header class="inner">
+        <h2 id="project_title">GliGli's TileMotion Live Demo</h2>
+        <span id="project_tagline">This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</span>
+      </header>
+    </div>
+    <canvas id="frame" width="8" height="8"></canvas><br/>
+    <div id="drop">
+      <h2>Click on a GTM file to play the contents (source: <a href="https://media.xiph.org/">media.xiph.org</a>)</h2>
+      <a class="sample" href="sintel_trailer_2k.gtm">sintel_trailer_2k.gtm</a> (47MB, 1080p, 1253 frames)<br/>
+      <a class="sample" href="sunflower_540p25.gtm">sunflower_540p25.gtm</a> (11MB, 540p, 500 frames)<br/>
+      <a class="sample" href="rush_field_cuts_540p.gtm">rush_field_cuts_540p.gtm</a> (12MB, 540p, 570 frames)<br/>
+      <a class="sample" href="tractor_540p25.gtm">tractor_540p25.gtm</a> (17MB, 540p, 690 frames)<br/>
+    </div>
     <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
     <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
     <script src="./lzma.js"></script>
