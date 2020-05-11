@@ -1,18 +1,31 @@
 "use strict";
 
-const GTMCommand = { // commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-    'SkipBlock' : 0, // commandBits -> skip count - 1 (10 bits)
-    'ShortTileIdx' : 1, // data -> tile index (16 bits)
-    'LongTileIdx' : 2, // data -> tile index (32 bits)
-    'LoadPalette' : 3, // data -> palette index (8 bits); palette format (8 bits) (00: RGBA32); RGBA bytes (32bits)
-    // new commands here
-    'FrameEnd' : 28, // commandBits bit 0 -> keyframe end
-    'TileSet' : 29, // data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
-    'SetDimensions' : 30, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); tile count (32 bits);
-    'ExtendedCommand' : 31, // data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
+const GTMHeader = {
+  'FourCC' : 0, // ASCII "GTMv"
+  'RIFFSize' : 1,
+  'WholeHeaderSize' : 2, // including TGTMKeyFrameInfo and all
+  'EncoderVersion' : 3,
+  'FramePixelWidth' : 4,
+  'FramePixelHeight' : 5,
+  'KFCount' : 6,
+  'FrameCount' : 7,
+  'AverageBytesPerSec' : 8,
+  'KFMaxBytesPerSec' : 9
+}; 
 
-    'ReservedAreaBegin' : 32, // reserving the MSB for future use
-    'ReservedAreaEnd' : 63
+const GTMCommand = { // commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+  'SkipBlock' : 0, // commandBits -> skip count - 1 (10 bits)
+  'ShortTileIdx' : 1, // data -> tile index (16 bits)
+  'LongTileIdx' : 2, // data -> tile index (32 bits)
+  'LoadPalette' : 3, // data -> palette index (8 bits); palette format (8 bits) (00: RGBA32); RGBA bytes (32bits)
+  // new commands here
+  'FrameEnd' : 28, // commandBits bit 0 -> keyframe end
+  'TileSet' : 29, // data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
+  'SetDimensions' : 30, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); tile count (32 bits);
+  'ExtendedCommand' : 31, // data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
+
+  'ReservedAreaBegin' : 32, // reserving the MSB for future use
+  'ReservedAreaEnd' : 63
 }; 
 
 const CTileWidth = 8;
@@ -20,10 +33,11 @@ const CTMAttrBits = 1 + 1 + 8; // HMir + VMir + PalIdx
 const CShortIdxBits = 16 - CTMAttrBits;
 
 var gtmCanvasId = '';
-var gtmReader = null;
 var gtmInStream = null;
 var gtmOutStream = null;
+var gtmHeader = null;
 var gtmLzmaDecoder = new LZMA.Decoder();
+var gtmLzmaBytesPerSecond = 1024 * 1024;
 var gtmFrameData = null;
 var gtmTMImageData = null;
 var gtmPaletteR = new Array(256);
@@ -45,12 +59,15 @@ var gtmLoopCount = 0;
 function gtmPlayFromFile(file, canvasId) {
   gtmCanvasId = canvasId;
   gtmReady = false;
-  gtmReader = new FileReader();
-  gtmReader.addEventListener('load', (e) => {
-    gtmInStream = new LZMA.iStream(gtmReader.result);
+  
+  var oReader = new FileReader();
+  
+  oReader.onload = function (oEvent) {
+    gtmInStream = new LZMA.iStream(oReader.result);
     startFromReader();
-  });
-  gtmReader.readAsArrayBuffer(file);
+  };
+  
+  oReader.readAsArrayBuffer(file);
 }
 
 function gtmPlayFromURL(url, canvasId) {
@@ -74,6 +91,8 @@ function gtmSetPlaying(playing) {
 }
 
 function startFromReader() {
+  parseHeader();
+  
   gtmOutStream = new LZMA.oStream();
   LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, Infinity);
   gtmFrameData = gtmOutStream.toUint8Array();
@@ -85,18 +104,54 @@ function startFromReader() {
   }
 }
 
+function getHeaderDWord () {
+  let v = gtmInStream.readByte();
+  v |= gtmInStream.readByte() << 8;
+  v |= gtmInStream.readByte() << 16;
+  v |= gtmInStream.readByte() << 24;
+  return v;
+}
+
+function parseHeader() {
+  let fcc = getHeaderDWord();
+  
+  if (fcc == 0x764D5447) { // "GTMv"; file header
+    let hdrsize = getHeaderDWord();
+    let whlsize = getHeaderDWord();
+    
+    gtmHeader = new Array(whlsize >>> 2);
+    gtmHeader[GTMHeader.FourCC] = fcc;
+    gtmHeader[GTMHeader.RIFFSize] = hdrsize;
+    gtmHeader[GTMHeader.WholeHeaderSize] = whlsize;
+    for (let p = GTMHeader.WholeHeaderSize + 1; p < whlsize >>> 2; p++) {
+      gtmHeader[p] = getHeaderDWord();
+    }
+    
+    gtmWidth = (gtmHeader[GTMHeader.FramePixelWidth] / CTileWidth) >>> 0;
+    gtmHeight = (gtmHeader[GTMHeader.FramePixelHeight] / CTileWidth) >>> 0;
+    gtmLzmaBytesPerSecond = gtmHeader[GTMHeader.KFMaxBytesPerSec];
+    console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',', gtmLzmaBytesPerSecond * 8 / 1024, 'MBps');
+    
+    redimFrame();
+  } else {
+    gtmInStream.offset -= 4;
+  }
+}
+
 function redimFrame() {
   var frame = document.getElementById(gtmCanvasId);
-  frame.width = gtmWidth * CTileWidth;
-  frame.height = gtmHeight * CTileWidth;
-  var canvas = frame.getContext('2d');
-  canvas.fillStyle = 'black';
-  canvas.fillRect(0, 0, gtmWidth * CTileWidth, gtmHeight * CTileWidth);
+  
+  if (frame.width != gtmWidth * CTileWidth || frame.height != gtmHeight * CTileWidth)
+  {
+    frame.width = gtmWidth * CTileWidth;
+    frame.height = gtmHeight * CTileWidth;
+    
+    var canvas = frame.getContext('2d');
+    canvas.fillStyle = 'black';
+    canvas.fillRect(0, 0, gtmWidth * CTileWidth, gtmHeight * CTileWidth);
 
-  gtmTMImageData = canvas.getImageData(0, 0, frame.width, frame.height);
-  gtmTiles = new Array(gtmTileCount);
-
-  setInterval(decodeFrame, gtmFrameLength);
+    gtmTMImageData = canvas.getImageData(0, 0, frame.width, frame.height);
+  }
 }
 
 function unpackData() {
@@ -104,7 +159,9 @@ function unpackData() {
     return;
   }
   
-  let res = LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, Math.round((2048 * 1024) / (1000 / gtmFrameLength)));
+  let maxSize = Math.round(gtmLzmaBytesPerSecond / (1000 / gtmFrameLength));
+  
+  let res = LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, maxSize);
 
   if (res != null) {
     gtmOutStream = res;
@@ -233,6 +290,8 @@ function decodeFrame() {
           gtmTileCount = readDWord();
           
           if (gtmLoopCount <= 0) {
+            setInterval(decodeFrame, gtmFrameLength);
+            gtmTiles = new Array(gtmTileCount);
             redimFrame();
           }
           break;

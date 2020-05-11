@@ -98,7 +98,30 @@ const
   );
 
 type
-  // GliGli's TileMotion commands
+  // GliGli's TileMotion header structs and commands
+
+  TGTMHeader = packed record
+    FourCC: array[0..3] of AnsiChar; // ASCII "GTMv"
+    RIFFSize: Cardinal;
+    WholeHeaderSize: Cardinal; // including TGTMKeyFrameInfo and all
+    EncoderVersion: Cardinal;
+    FramePixelWidth: Cardinal;
+    FramePixelHeight: Cardinal;
+    KFCount: Cardinal;
+    FrameCount: Cardinal;
+    AverageBytesPerSec: Cardinal;
+    KFMaxBytesPerSec: Cardinal;
+  end;
+
+  TGTMKeyFrameInfo = packed record
+    FourCC: array[0..3] of AnsiChar; // ASCII "GTMk"
+    RIFFSize: Cardinal;
+    KFIndex: Cardinal;
+    FrameIndex: Cardinal;
+    RawSize: Cardinal;
+    CompressedSize: Cardinal;
+    TimeCodeMillisecond: Cardinal;
+  end;
 
   TGTMCommand = ( // commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
     gtSkipBlock = 0, // commandBits -> skip count - 1 (10 bits)
@@ -4515,7 +4538,37 @@ var
   IsKF: Boolean;
   frm: TFrame;
   tmi: PTileMapItem;
+  Header: TGTMHeader;
+  KFInfo: array of TGTMKeyFrameInfo;
 begin
+  StartPos := AStream.Size;
+
+  FillChar(Header, SizeOf(Header), 0);
+  Header.FourCC := 'GTMv';
+  Header.RIFFSize := SizeOf(Header) - SizeOf(Header.FourCC) - SizeOf(Header.RIFFSize);
+  Header.EncoderVersion := 1;
+  Header.FramePixelWidth := FScreenWidth;
+  Header.FramePixelHeight := FScreenHeight;
+  Header.KFCount := Length(FKeyFrames);
+  Header.FrameCount := Length(FFrames);
+  Header.AverageBytesPerSec := 0;
+  Header.KFMaxBytesPerSec := 0;
+  AStream.WriteBuffer(Header, SizeOf(Header));
+
+  SetLength(KFInfo, Length(FKeyFrames));
+  for kf := 0 to High(FKeyFrames) do
+  begin
+    FillChar(KFInfo[kf], SizeOf(KFInfo[0]), 0);
+    KFInfo[kf].FourCC := 'GTMk';
+    KFInfo[kf].RIFFSize := SizeOf(KFInfo[0]) - SizeOf(KFInfo[0].FourCC) - SizeOf(KFInfo[0].RIFFSize);
+    KFInfo[kf].KFIndex := kf;
+    KFInfo[kf].FrameIndex := FKeyFrames[kf].StartFrame;
+    KFInfo[kf].TimeCodeMillisecond := Round(1000.0 * FKeyFrames[kf].StartFrame / FFramesPerSecond);
+    AStream.WriteBuffer(KFInfo[kf], SizeOf(KFInfo[0]));
+  end;
+
+  Header.WholeHeaderSize := AStream.Size - StartPos;
+
   StartPos := AStream.Size;
 
   ZStream := TMemoryStream.Create;
@@ -4579,8 +4632,7 @@ begin
         Assert(cs = FTileMapSize, 'incomplete TM');
         Assert(BlkSkipCount = 0, 'pending skips');
 
-        IsKF := (fri = FKeyFrames[kf].EndFrame) and (kf = High(FKeyFrames)); // last frame of last keyframe?
-        IsKF := IsKF or (fri = FKeyFrames[kf].EndFrame) and (ZStream.Size >= CMaxBufSize div 2); // buffer full enough?
+        IsKF := (fri = FKeyFrames[kf].EndFrame);
 
         DoCmd(gtFrameEnd, Ord(IsKF));
 
@@ -4596,7 +4648,12 @@ begin
 
           KFSize := AStream.Size - KFSize;
 
-          WriteLn('Frame: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * 24.0)+' kbps)');
+          KFInfo[kf].RawSize := ZStream.Size;
+          KFInfo[kf].CompressedSize := KFSize;
+          Header.KFMaxBytesPerSec := max(Header.KFMaxBytesPerSec, round(KFSize * FFramesPerSecond / KFCount));
+          Header.AverageBytesPerSec += KFSize;
+
+          WriteLn('Frame: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * FFramesPerSecond)+' kbps)');
         end;
       end;
     end;
@@ -4604,7 +4661,15 @@ begin
     ZStream.Free;
   end;
 
+  Header.AverageBytesPerSec := round(Header.AverageBytesPerSec * FFramesPerSecond / Length(FFrames));
+  AStream.Position := 0;
+  AStream.WriteBuffer(Header, SizeOf(Header));
+  for kf := 0 to High(FKeyFrames) do
+    AStream.WriteBuffer(KFInfo[kf], SizeOf(KFInfo[0]));
+  AStream.Position := AStream.Size;
+
   StreamSize := AStream.Size - StartPos;
+
   WriteLn('Written: ', StreamSize, #9'Bitrate: ', FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames)) + ' kbpf  '#9'(' + FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames) * FFramesPerSecond)+' kbps)');
 end;
 
