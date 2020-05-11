@@ -3757,6 +3757,9 @@ var
     DCT: TFloatDynArray;
     LocUsed: PPBoolean;
   begin
+    if not InRange(AIndex, 0, FPaletteCount - 1) then
+      Exit;
+
     LocUsed := PPBoolean(AData);
     SetLength(DCT, cTileDCTSize);
 
@@ -4089,6 +4092,9 @@ var
   KMBin: PKModesBin;
   dis: UInt64;
 begin
+  if not InRange(AIndex, 0, FPaletteCount - 1) then
+    Exit;
+
   KMBin := PKModesBin(AData);
 
   DSLen := Length(KMBin^.Dataset[AIndex]);
