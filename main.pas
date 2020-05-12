@@ -1009,11 +1009,11 @@ var
   isKf: Boolean;
   sfr, efr: Integer;
   bmp: TPicture;
+  wasAutoQ: Boolean;
 begin
   FTilePaletteSize := StrToInt(cbxPalSize.Text);
   FPaletteCount := StrToInt(cbxPalCount.Text);
-  if seMaxTiles.Value = round(seQbTiles.Value * EqualQualityTileCount(Length(FFrames) * FTileMapSize)) then
-    seMaxTiles.Value := 0;
+  wasAutoQ := seMaxTiles.Value = round(seQbTiles.Value * EqualQualityTileCount(Length(FFrames) * FTileMapSize));
 
   ProgressRedraw;
 
@@ -1153,7 +1153,7 @@ begin
 
   ProgressRedraw(2);
 
-  if seMaxTiles.Value <= 0 then
+  if wasAutoQ or (seMaxTiles.Value <= 0) then
     seQbTilesEditingDone(nil);
   tbFrameChange(nil);
 end;
@@ -3874,7 +3874,7 @@ begin
 
   // Build KNN
 
-  DS^.KDT := ann_kdtree_create(PPANNFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+  DS^.KDT := ann_kdtree_create(PPANNFloat(DS^.Dataset), Length(DS^.Dataset), cTileDCTSize, 16, ANN_KD_STD);
 
   SetLength(DS^.DistErrCml, FPaletteCount);
   SetLength(DS^.DistErrCnt, FPaletteCount);
