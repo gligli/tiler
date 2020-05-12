@@ -281,8 +281,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 19
         Top = 374
-        Width = 250
-        Caption = 'Use Thomas Knoll dithering (not Yiluoma 2)'
+        Width = 253
+        Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
         Checked = True
         OnChange = chkUseTKChange
         State = cbChecked
@@ -300,8 +300,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 258
-        Width = 158
-        Caption = 'Yiluoma 2 mixed colors count'
+        Width = 161
+        Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
       end
       object Label9: TLabel

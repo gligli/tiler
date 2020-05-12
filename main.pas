@@ -419,7 +419,7 @@ type
     function ColorCompare(r1, g1, b1, r2, g2, b2: Int64): Int64;
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure TerminatePlan(var Plan: TMixingPlan);
-    function DeviseBestMixingPlanYiluoma(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
+    function DeviseBestMixingPlanYliluoma(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
     procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
     procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
@@ -1286,10 +1286,10 @@ begin
   PreparePlan(plan, 4, pal);
 
   SetLength(list, cDitheringListLen);
-  DeviseBestMixingPlanYiluoma(plan, $ffffff, list);
-  DeviseBestMixingPlanYiluoma(plan, $ff8000, list);
-  DeviseBestMixingPlanYiluoma(plan, $808080, list);
-  DeviseBestMixingPlanYiluoma(plan, $000000, list);
+  DeviseBestMixingPlanYliluoma(plan, $ffffff, list);
+  DeviseBestMixingPlanYliluoma(plan, $ff8000, list);
+  DeviseBestMixingPlanYliluoma(plan, $808080, list);
+  DeviseBestMixingPlanYliluoma(plan, $000000, list);
 
 
   for i := 0 to 255 do
@@ -1555,7 +1555,7 @@ begin
   Result += (lumadiff * lumadiff) shl 5;
 end;
 
-function TMainForm.DeviseBestMixingPlanYiluoma(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
+function TMainForm.DeviseBestMixingPlanYliluoma(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
 label
   pal_loop, inner_loop, worst;
 var
@@ -1833,10 +1833,6 @@ begin
     t[1] := s[1] + (e[1] * 9) div 100;
     t[2] := s[2] + (e[2] * 9) div 100;
 
-    //t[0] := EnsureRange(t[0], 0, 255);
-    //t[1] := EnsureRange(t[1], 0, 255);
-    //t[2] := EnsureRange(t[2], 0, 255);
-
     least_penalty := High(Int64);
     chosen := c and (length(Plan.Y2Palette) - 1);
     for index := 0 to length(Plan.Y2Palette) - 1 do
@@ -2049,7 +2045,7 @@ begin
       for x := 0 to (cTileWidth - 1) do
       begin
         map_value := cDitheringMap[(y shl 3) + x];
-        count := DeviseBestMixingPlanYiluoma(Plan, ATile.RGBPixels[y,x], list);
+        count := DeviseBestMixingPlanYliluoma(Plan, ATile.RGBPixels[y,x], list);
         map_value := (map_value * count) shr 6;
         ATile.PalPixels[y, x] := list[map_value];
       end;
