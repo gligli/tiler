@@ -138,6 +138,8 @@ type
     gtReservedAreaEnd = 63
   );
 
+  TFTQuality = (ftFast, ftMedium, ftSlow);
+
   TSpinlock = LongInt;
   PSpinLock = ^TSpinlock;
 
@@ -249,6 +251,7 @@ type
     btnInput: TButton;
     btnGTM: TButton;
     btnRunAll: TButton;
+    cbxFTQ: TComboBox;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
@@ -257,7 +260,6 @@ type
     cbxPalSize: TComboBox;
     cbxDLBPC: TComboBox;
     chkFTGamma: TCheckBox;
-    chkFTFromPal: TCheckBox;
     chkUseWL: TCheckBox;
     chkGamma: TCheckBox;
     chkLowMem: TCheckBox;
@@ -267,7 +269,6 @@ type
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
     chkReload: TCheckBox;
-    chkTransPalette: TCheckBox;
     chkUseDL3: TCheckBox;
     chkUseTK: TCheckBox;
     edInput: TEdit;
@@ -285,6 +286,7 @@ type
     Label13: TLabel;
     Label14: TLabel;
     Label15: TLabel;
+    Label16: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
@@ -346,7 +348,6 @@ type
     procedure btnDebugClick(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
     procedure chkLowMemChange(Sender: TObject);
-    procedure chkTransPaletteChange(Sender: TObject);
     procedure chkUseTKChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -355,6 +356,7 @@ type
     procedure imgPaletteClick(Sender: TObject);
     procedure imgPaletteDblClick(Sender: TObject);
     procedure seEncGammaChange(Sender: TObject);
+    procedure seMaxTilesEditingDone(Sender: TObject);
     procedure seQbTilesEditingDone(Sender: TObject);
     procedure tbFrameChange(Sender: TObject);
   private
@@ -363,7 +365,6 @@ type
     FColorMap: array[0..cRGBColors - 1, 0..5] of Byte;
     FColorMapLuma: array[0..cRGBColors - 1] of Integer;
     FTiles: array of PTile;
-    FTransPalette: Integer;
     FUseThomasKnoll: Boolean;
     FY2MixedColors: Integer;
     FLowMem: Boolean;
@@ -449,9 +450,9 @@ type
     procedure HMirrorPalTile(var ATile: TTile);
     procedure VMirrorPalTile(var ATile: TTile);
     function GetMaxTPF(AKF: TKeyFrame): Integer;
-    procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean);
+    procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
     procedure TerminateFrameTiling(AKF: TKeyFrame);
-    procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AFTFromPal, AUseWavelets: Boolean);
+    procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
     procedure PrepareTileMirrors(var ATile: TTile);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
@@ -940,12 +941,12 @@ end;
 procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
 var
   Gamma: Integer;
-  FromPal: Boolean;
   UseWavelets: Boolean;
+  FTQuality: TFTQuality;
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(FFrames[AIndex], Gamma, cFTPaletteTol, FromPal, UseWavelets);
+    DoFrameTiling(FFrames[AIndex], Gamma, cFTPaletteTol, UseWavelets, FTQuality);
   end;
 
 var
@@ -955,8 +956,8 @@ begin
     Exit;
 
   Gamma := IfThen(chkFTGamma.Checked, 0, -1);
-  FromPal := chkFTFromPal.Checked;
   UseWavelets := chkUseWL.Checked;
+  FTQuality := TFTQuality(cbxFTQ.ItemIndex);
 
   for i := 0 to High(FKeyFrames) do
     FKeyFrames[i].FramesLeft := -1;
@@ -966,11 +967,6 @@ begin
   ProgressRedraw(1);
 
   tbFrameChange(nil);
-end;
-
-procedure TMainForm.chkTransPaletteChange(Sender: TObject);
-begin
-  FTransPalette := Ord(chkTransPalette.State);
 end;
 
 procedure TMainForm.chkUseTKChange(Sender: TObject);
@@ -1427,9 +1423,12 @@ begin
 end;
 
 procedure TMainForm.seQbTilesEditingDone(Sender: TObject);
+var
+  RawTileCount: Integer;
 begin
   if Length(FFrames) * FTileMapSize = 0 then Exit;
-  seMaxTiles.Value := round(seQbTiles.Value * EqualQualityTileCount(Length(FFrames) * FTileMapSize));
+  RawTileCount := Length(FFrames) * FTileMapSize;
+  seMaxTiles.Value := min(round(seQbTiles.Value * EqualQualityTileCount(RawTileCount)), RawTileCount);
 end;
 
 procedure TMainForm.seEncGammaChange(Sender: TObject);
@@ -1438,6 +1437,15 @@ begin
   gGamma[1] := seVisGamma.Value;
   InitLuts(FTilePaletteSize, FPaletteCount);
   tbFrameChange(nil);
+end;
+
+procedure TMainForm.seMaxTilesEditingDone(Sender: TObject);
+var
+  RawTileCount: Integer;
+begin
+  if Length(FFrames) * FTileMapSize = 0 then Exit;
+  RawTileCount := Length(FFrames) * FTileMapSize;
+  seMaxTiles.Value := EnsureRange(seMaxTiles.Value, 1, RawTileCount);
 end;
 
 procedure TMainForm.tbFrameChange(Sender: TObject);
@@ -3727,7 +3735,8 @@ begin
     Result := Max(Result, GetFrameTileCount(FFrames[frame]));
 end;
 
-procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean);
+procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean;
+  AFTQuality: TFTQuality);
 var
   TRSize, i, frame, sy, sx: Integer;
   frm: TFrame;
@@ -3816,7 +3825,7 @@ begin
 
   HighestCorr := 0.0;
   Corrs := nil;
-  if FTransPalette > 0 then
+  if AFTQuality > ftFast then
     Corrs := BuildPalletteCorrTriangle;
 
   SetLength(usedCount, FPaletteCount);
@@ -3830,12 +3839,12 @@ begin
   begin
     frm := FFrames[AKF.StartFrame + frame];
 
-    if FTransPalette > 0 then
+    if AFTQuality > ftFast then
     begin
       for palIdx := 0 to FPaletteCount - 1 do
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
-            if (FTransPalette < 2) or IsAllowedPalette(Corrs, palIdx, frm.TileMap[sy, sx].PalIdx) then
+            if (AFTQuality = ftSlow) or IsAllowedPalette(Corrs, palIdx, frm.TileMap[sy, sx].PalIdx) then
               UseOne(@frm.TileMap[sy, sx], palIdx);
     end
     else
@@ -3896,8 +3905,8 @@ begin
   AKF.TileDS := nil;
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AFTFromPal, AUseWavelets: Boolean
-  );
+procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean;
+  AFTQuality: TFTQuality);
 var
   sy, sx: Integer;
   DS: PTileDataset;
@@ -3912,7 +3921,7 @@ begin
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   if AFrame.PKeyFrame.FramesLeft < 0 then
   begin
-    PrepareFrameTiling(AFrame.PKeyFrame, AFTGamma, APalVAR, AUseWavelets);
+    PrepareFrameTiling(AFrame.PKeyFrame, AFTGamma, APalVAR, AUseWavelets, AFTQuality);
     AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
   end;
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
@@ -3927,7 +3936,7 @@ begin
   for sy := 0 to FTileMapHeight - 1 do
     for sx := 0 to FTileMapWidth - 1 do
     begin
-      ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], AFTFromPal, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
+      ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], False, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
       for i := 0 to cTileDCTSize - 1 do
         ANNDCT[i] := DCT[i];
 
@@ -4729,7 +4738,6 @@ begin
   FFramesPerSecond := 24.0;
 
   cbxYilMixChange(nil);
-  chkTransPaletteChange(nil);
   chkUseTKChange(nil);
   chkLowMemChange(nil);
 

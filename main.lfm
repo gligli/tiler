@@ -23,10 +23,10 @@ object MainForm: TMainForm
   Position = poScreenCenter
   LCLVersion = '2.0.8.0'
   object tbFrame: TTrackBar
-    Left = 0
-    Height = 25
-    Top = 485
-    Width = 963
+    Left = -1
+    Height = 23
+    Top = 486
+    Width = 962
     Frequency = 25
     Max = 0
     OnChange = tbFrameChange
@@ -136,7 +136,7 @@ object MainForm: TMainForm
   end
   object pcPages: TPageControl
     Left = -2
-    Height = 446
+    Height = 448
     Top = 40
     Width = 964
     ActivePage = tsSettings
@@ -145,13 +145,13 @@ object MainForm: TMainForm
     TabOrder = 4
     object tsSettings: TTabSheet
       Caption = 'Settings'
-      ClientHeight = 418
+      ClientHeight = 420
       ClientWidth = 956
       PopupMenu = pmProcesses
       object edOutput: TEdit
         Left = 88
         Height = 23
-        Top = 26
+        Top = 30
         Width = 519
         TabOrder = 2
         Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gtm'
@@ -159,26 +159,18 @@ object MainForm: TMainForm
       object seMaxTiles: TSpinEdit
         Left = 248
         Height = 23
-        Top = 80
+        Top = 88
         Width = 71
-        MaxValue = 16777216
+        Increment = 1000
+        MaxValue = 0
+        OnChange = seMaxTilesEditingDone
+        OnEditingDone = seMaxTilesEditingDone
         TabOrder = 7
-      end
-      object chkTransPalette: TCheckBox
-        Left = 8
-        Height = 19
-        Top = 338
-        Width = 244
-        AllowGrayed = True
-        Caption = 'Extended frame tiling palette usage (slow!)'
-        OnChange = chkTransPaletteChange
-        State = cbGrayed
-        TabOrder = 20
       end
       object edReload: TEdit
         Left = 88
         Height = 23
-        Top = 48
+        Top = 52
         Width = 519
         TabOrder = 5
         Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.gts'
@@ -186,7 +178,7 @@ object MainForm: TMainForm
       object btnInput: TButton
         Left = 607
         Height = 23
-        Top = 4
+        Top = 8
         Width = 26
         Caption = '...'
         OnClick = btnInputClick
@@ -195,37 +187,37 @@ object MainForm: TMainForm
       object seTempoSmoo: TFloatSpinEdit
         Left = 248
         Height = 23
-        Top = 276
+        Top = 316
         Width = 71
         Increment = 2.5
         MaxValue = 1000
         MinValue = 0
-        TabOrder = 17
+        TabOrder = 18
         Value = 20
       end
       object seStartFrame: TSpinEdit
         Left = 248
         Height = 23
-        Top = 110
+        Top = 146
         Width = 71
         MaxValue = 100000
-        TabOrder = 9
+        TabOrder = 10
         Value = 507
       end
       object sePalVAR: TFloatSpinEdit
         Left = 248
         Height = 23
-        Top = 232
+        Top = 272
         Width = 71
         Increment = 0.5
         MinValue = 0
-        TabOrder = 15
+        TabOrder = 16
         Value = 95
       end
       object cbxYilMix: TComboBox
         Left = 248
         Height = 23
-        Top = 254
+        Top = 294
         Width = 71
         ItemHeight = 15
         ItemIndex = 2
@@ -237,31 +229,31 @@ object MainForm: TMainForm
           '16'
         )
         OnChange = cbxYilMixChange
-        TabOrder = 16
+        TabOrder = 17
         Text = '4'
       end
       object seFrameCount: TSpinEdit
         Left = 248
         Height = 23
-        Top = 132
+        Top = 168
         Width = 71
         MaxValue = 100000
-        TabOrder = 10
+        TabOrder = 11
         Value = 12
       end
       object chkLowMem: TCheckBox
         Left = 320
         Height = 19
-        Top = 392
+        Top = 400
         Width = 115
         Caption = 'Lower RAM usage'
         OnChange = chkLowMemChange
-        TabOrder = 27
+        TabOrder = 26
       end
       object chkReload: TCheckBox
         Left = 8
         Height = 19
-        Top = 49
+        Top = 53
         Width = 80
         Caption = 'Reload tiles'
         OnChange = chkUseTKChange
@@ -270,7 +262,7 @@ object MainForm: TMainForm
       object chkUseDL3: TCheckBox
         Left = 8
         Height = 19
-        Top = 356
+        Top = 364
         Width = 291
         Caption = 'Use Dennis Lee v3 quantizer (not palette VaR based)'
         Checked = True
@@ -280,7 +272,7 @@ object MainForm: TMainForm
       object chkUseTK: TCheckBox
         Left = 8
         Height = 19
-        Top = 374
+        Top = 382
         Width = 253
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
         Checked = True
@@ -291,7 +283,7 @@ object MainForm: TMainForm
       object Label13: TLabel
         Left = 8
         Height = 15
-        Top = 112
+        Top = 148
         Width = 58
         Caption = 'Start frame'
         ParentColor = False
@@ -299,7 +291,7 @@ object MainForm: TMainForm
       object Label11: TLabel
         Left = 8
         Height = 15
-        Top = 258
+        Top = 298
         Width = 161
         Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
@@ -307,7 +299,7 @@ object MainForm: TMainForm
       object Label9: TLabel
         Left = 8
         Height = 15
-        Top = 280
+        Top = 320
         Width = 157
         Caption = 'Temporal smoothing strength'
         ParentColor = False
@@ -315,7 +307,7 @@ object MainForm: TMainForm
       object Label1: TLabel
         Left = 8
         Height = 15
-        Top = 30
+        Top = 34
         Width = 38
         Caption = 'Output'
         ParentColor = False
@@ -323,7 +315,7 @@ object MainForm: TMainForm
       object Label7: TLabel
         Left = 8
         Height = 15
-        Top = 236
+        Top = 276
         Width = 101
         Caption = 'Palette value at risk'
         ParentColor = False
@@ -331,7 +323,7 @@ object MainForm: TMainForm
       object Label4: TLabel
         Left = 8
         Height = 15
-        Top = 8
+        Top = 12
         Width = 28
         Caption = 'Input'
         ParentColor = False
@@ -339,7 +331,7 @@ object MainForm: TMainForm
       object edInput: TEdit
         Left = 88
         Height = 23
-        Top = 4
+        Top = 8
         Width = 519
         TabOrder = 0
         Text = 'C:\tiler_misc\avengersageofultron-tlr2_h1080p.mov'
@@ -347,7 +339,7 @@ object MainForm: TMainForm
       object Label3: TLabel
         Left = 8
         Height = 15
-        Top = 134
+        Top = 170
         Width = 144
         Caption = 'Frame count (0: automatic)'
         ParentColor = False
@@ -355,7 +347,7 @@ object MainForm: TMainForm
       object Label2: TLabel
         Left = 8
         Height = 15
-        Top = 82
+        Top = 90
         Width = 117
         Caption = 'Tile limit (all; Q based)'
         ParentColor = False
@@ -363,7 +355,7 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 320
         Height = 19
-        Top = 338
+        Top = 364
         Width = 170
         Caption = 'Dithering gamma correction'
         OnChange = chkLowMemChange
@@ -372,23 +364,15 @@ object MainForm: TMainForm
       object chkFTGamma: TCheckBox
         Left = 320
         Height = 19
-        Top = 356
+        Top = 382
         Width = 184
         Caption = 'Frame tiling gamma correction'
         TabOrder = 25
       end
-      object chkFTFromPal: TCheckBox
-        Left = 320
-        Height = 19
-        Top = 374
-        Width = 190
-        Caption = 'Frame tiling from palettized tiles'
-        TabOrder = 26
-      end
       object chkUseWL: TCheckBox
         Left = 8
         Height = 19
-        Top = 392
+        Top = 400
         Width = 287
         Caption = 'Use Haar Wavelets (not Discrete Cosine Transform)'
         Checked = True
@@ -398,7 +382,7 @@ object MainForm: TMainForm
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 309
+        Top = 341
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -406,34 +390,35 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 248
         Height = 23
-        Top = 306
-        Width = 71
-        Increment = 0.1
-        MaxValue = 10
-        MinValue = 0.1
-        OnChange = seEncGammaChange
-        TabOrder = 18
-        Value = 1.8
-      end
-      object seVisGamma: TFloatSpinEdit
-        Left = 318
-        Height = 23
-        Top = 306
+        Top = 338
         Width = 71
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = seEncGammaChange
         TabOrder = 19
+        Value = 1.8
+      end
+      object seVisGamma: TFloatSpinEdit
+        Left = 318
+        Height = 23
+        Top = 338
+        Width = 71
+        Increment = 0.1
+        MaxValue = 10
+        MinValue = 0.1
+        OnChange = seEncGammaChange
+        TabOrder = 20
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
         Left = 318
         Height = 23
-        Top = 80
+        Top = 88
         Width = 71
         Increment = 0.1
         MinValue = 0.1
+        OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
         TabOrder = 8
         Value = 2
@@ -441,7 +426,7 @@ object MainForm: TMainForm
       object btnGTM: TButton
         Left = 607
         Height = 23
-        Top = 26
+        Top = 30
         Width = 26
         Caption = '...'
         OnClick = btnGTMClick
@@ -450,7 +435,7 @@ object MainForm: TMainForm
       object btnGTS: TButton
         Left = 607
         Height = 23
-        Top = 48
+        Top = 52
         Width = 26
         Caption = '...'
         OnClick = btnGTSClick
@@ -459,7 +444,7 @@ object MainForm: TMainForm
       object Label12: TLabel
         Left = 8
         Height = 15
-        Top = 190
+        Top = 230
         Width = 222
         Caption = 'Palettes layout (palette count; palette size)'
         ParentColor = False
@@ -467,7 +452,7 @@ object MainForm: TMainForm
       object cbxPalSize: TComboBox
         Left = 318
         Height = 23
-        Top = 188
+        Top = 228
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -481,13 +466,13 @@ object MainForm: TMainForm
           '64'
         )
         Style = csDropDownList
-        TabOrder = 13
+        TabOrder = 14
         Text = '16'
       end
       object cbxPalCount: TComboBox
         Left = 248
         Height = 23
-        Top = 188
+        Top = 228
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -503,13 +488,13 @@ object MainForm: TMainForm
           '128'
         )
         Style = csDropDownList
-        TabOrder = 12
+        TabOrder = 13
         Text = '128'
       end
       object Label14: TLabel
         Left = 8
         Height = 15
-        Top = 214
+        Top = 254
         Width = 218
         Caption = 'Dennis Lee v3 output bits per component'
         ParentColor = False
@@ -517,7 +502,7 @@ object MainForm: TMainForm
       object cbxDLBPC: TComboBox
         Left = 248
         Height = 23
-        Top = 210
+        Top = 250
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -533,13 +518,13 @@ object MainForm: TMainForm
         )
         OnChange = cbxYilMixChange
         Style = csDropDownList
-        TabOrder = 14
+        TabOrder = 15
         Text = '7'
       end
       object cbxScaling: TComboBox
         Left = 248
         Height = 23
-        Top = 154
+        Top = 190
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -555,16 +540,42 @@ object MainForm: TMainForm
         )
         OnChange = cbxYilMixChange
         Style = csDropDownList
-        TabOrder = 11
+        TabOrder = 12
         Text = '1'
       end
       object Label15: TLabel
         Left = 8
         Height = 15
-        Top = 158
+        Top = 194
         Width = 65
         Caption = 'Scaling ratio'
         ParentColor = False
+      end
+      object Label16: TLabel
+        Left = 8
+        Height = 15
+        Top = 114
+        Width = 139
+        Caption = 'Frame tiling match quality'
+        ParentColor = False
+      end
+      object cbxFTQ: TComboBox
+        Left = 248
+        Height = 23
+        Top = 110
+        Width = 71
+        DropDownCount = 20
+        ItemHeight = 15
+        ItemIndex = 1
+        Items.Strings = (
+          'Fast'
+          'Medium'
+          'Slow'
+        )
+        OnChange = cbxYilMixChange
+        Style = csDropDownList
+        TabOrder = 9
+        Text = 'Medium'
       end
     end
     object tsInput: TTabSheet
