@@ -555,8 +555,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 114
-        Width = 139
-        Caption = 'Frame tiling match quality'
+        Width = 132
+        Caption = 'Frame tiling match effort'
         ParentColor = False
       end
       object cbxFTQ: TComboBox
