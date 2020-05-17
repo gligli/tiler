@@ -3617,7 +3617,7 @@ begin
   pbProgress.Invalidate;
   lblPct.Caption := IntToStr(pbProgress.Position * 100 div pbProgress.Max) + '%';
   lblPct.Invalidate;
-  Application.ProcessMessages;
+  Repaint;
 
   t := GetTickCount;
   if CurFrameIdx >= 0 then
