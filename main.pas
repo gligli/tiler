@@ -3799,13 +3799,6 @@ var
   Corrs: TFloatDynArray2;
   HighestCorr: TFloat;
 
-  function IsAllowedPalette(const Corrs: TFloatDynArray2; palIdx, palIdx2: Integer): Boolean;
-  begin
-    if palIdx2 > palIdx then
-      Exchange(palIdx, palIdx2);
-    Result := Corrs[palIdx, palIdx2] < APalTol * HighestCorr;
-  end;
-
   procedure UseOne(Item: PTileMapItem);
   const
     cBucketSize = 8;
@@ -3850,7 +3843,7 @@ var
           used[Item^.PalIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
         ftMedium:
           for palIdx := 0 to FPaletteCount - 1 do
-            if IsAllowedPalette(Corrs, palIdx, Item^.PalIdx) then
+            if Corrs[palIdx, Item^.PalIdx] < APalTol * HighestCorr then
               used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
         ftSlow:
           for palIdx := 0 to FPaletteCount - 1 do
@@ -3859,22 +3852,18 @@ var
     end;
   end;
 
-  function BuildPalletteCorrTriangle: TFloatDynArray2;
+  function BuildPaletteCorrTriangle: TFloatDynArray2;
   var
     i, j : Integer;
   begin
-    SetLength(Result, FPaletteCount);
+    SetLength(Result, FPaletteCount, FPaletteCount);
     for j := 0 to FPaletteCount - 1 do
-    begin
-      SetLength(Result[j], j + 1);
-      for i := 0 to j do
+      for i := 0 to FPaletteCount - 1 do
       begin
         Result[j, i] := CompareEuclideanDCT(AKF.PaletteCentroids[j], AKF.PaletteCentroids[i]);
-        HighestCorr := Max(HighestCorr, Result[j, i]);
-        //Write(FormatFloat('0.000', Result[j, i]), #9);
+        if not IsNan(Result[j, i]) then
+          HighestCorr := Max(HighestCorr, Result[j, i]);
       end;
-      //WriteLn;
-    end;
   end;
 
   procedure DoBuild(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -3936,8 +3925,8 @@ begin
 
   HighestCorr := 0.0;
   Corrs := nil;
-  if AFTQuality > ftFast then
-    Corrs := BuildPalletteCorrTriangle;
+  if AFTQuality = ftMedium then
+    Corrs := BuildPaletteCorrTriangle;
 
   SetLength(usedCount, FPaletteCount);
   SetLength(used, FPaletteCount, Length(FTiles));
