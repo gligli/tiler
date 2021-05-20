@@ -97,6 +97,9 @@
             <CustomOptions Value="-Xs-
 -FWlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo
 -OWALL"/>
+            <ExecuteBefore>
+              <Command Value="xcopy /D /F tools\nm.exe $(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\"/>
+            </ExecuteBefore>
           </Other>
         </CompilerOptions>
       </Item3>
