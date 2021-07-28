@@ -1,8 +1,10 @@
 # GliGli's TileMotion video codec
 
-The goal of this project is to find a novel way to **encode a video stream** so that the **decoder is computationally cheap** and **trivially simple to write**.
-So far, the encoder is mostly FreePascal code with some x64 SSE3 assembler (additional libraries and tools being mostly C/C++) and has a GUI to showcase it.<br><br>
-The current decoder is written **entirely in javascript** and uses **HTML5 Canvas** to decode.
+This project achieved its goal: to find a novel way to **compress an entire video** (as a whole) so that the **decoder is computationally cheap** and **trivially simple to write**.
+
+So far, the **encoder** is mostly FreePascal code with some x64 SSE3 assembler (additional libraries and tools being mostly C/C++) and has a GUI to showcase it.
+
+The **reference decoder** is written entirely in *javascript* and uses *HTML5 Canvas* to decode, proving that minimal code and computing power is necessary.
 
 Upon bitstream format maturity I will probably write a DirectShow plugin or something akin.
 
