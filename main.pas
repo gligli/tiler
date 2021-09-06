@@ -7,9 +7,9 @@ unit main;
 interface
 
 uses
-  LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, typinfo,
-  StdCtrls, ComCtrls, Spin, Menus, Math, types, strutils, kmodes, MTProcs, extern,
-  IntfGraphics, FPimage, FPWritePNG, zstream, Process;
+  windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger,
+  Forms, Controls, Graphics, Dialogs, ExtCtrls, StdCtrls, ComCtrls, Spin, Menus, IntfGraphics, FPimage, FPCanvas, FPWritePNG,
+  MTProcs, kmodes, extern;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -296,6 +296,8 @@ type
     Label9: TLabel;
     lblPct: TLabel;
     odFFInput: TOpenDialog;
+    pbFrameO: TPaintBox;
+    pbFrameI: TPaintBox;
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
@@ -356,6 +358,7 @@ type
     procedure IdleTimerTimer(Sender: TObject);
     procedure imgPaletteClick(Sender: TObject);
     procedure imgPaletteDblClick(Sender: TObject);
+    procedure pbFramePaint(Sender: TObject);
     procedure seEncGammaChange(Sender: TObject);
     procedure seMaxTilesEditingDone(Sender: TObject);
     procedure seQbTilesEditingDone(Sender: TObject);
@@ -469,6 +472,8 @@ type
       AFPS: Double): String;
   public
     { public declarations }
+
+    FLastIOTabSheet: TTabSheet;
   end;
 
   { T8BitPortableNetworkGraphic }
@@ -1397,7 +1402,29 @@ begin
     VK_F9: btnSaveClick(nil);
     VK_F10: btnRunAllClick(nil);
     VK_F11: chkPlay.Checked := not chkPlay.Checked;
-    VK_F12: btnDebugClick(nil);
+    VK_F12:
+      if ssCtrl in Shift then
+      begin
+        btnDebugClick(nil);
+      end
+      else
+      begin
+        if pcPages.ActivePage <> FLastIOTabSheet then
+        begin
+          if Assigned(FLastIOTabSheet) then
+           pcPages.ActivePage := FLastIOTabSheet
+          else
+           pcPages.ActivePage := tsOutput;
+        end
+        else
+        begin
+          if pcPages.ActivePage = tsOutput then
+           pcPages.ActivePage := tsInput
+          else
+           pcPages.ActivePage := tsOutput;
+        end;
+        FLastIOTabSheet := pcPages.ActivePage;
+      end;
     VK_ESCAPE: TerminateProcess(GetCurrentProcess, 1);
   end;
 end;
@@ -1427,6 +1454,16 @@ end;
 procedure TMainForm.imgPaletteDblClick(Sender: TObject);
 begin
   sedPalIdx.Value := -1;
+end;
+
+procedure TMainForm.pbFramePaint(Sender: TObject);
+begin
+  TPaintBox(Sender).Canvas.Brush.Color := clBlack;
+  TPaintBox(Sender).Canvas.Brush.Style := TFPBrushStyle.bsSolid;
+  TPaintBox(Sender).Canvas.FillRect(TPaintBox(Sender).Canvas.ClipRect);
+  TPaintBox(Sender).Canvas.Brush.Color := IfThen(Sender = pbFrameI, $600070, $605000);
+  TPaintBox(Sender).Canvas.Brush.Style := TFPBrushStyle.bsDiagCross;
+  TPaintBox(Sender).Canvas.FillRect(TPaintBox(Sender).Canvas.ClipRect);
 end;
 
 procedure TMainForm.seQbTilesEditingDone(Sender: TObject);
