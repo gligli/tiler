@@ -13,18 +13,35 @@ const GTMHeader = {
   'KFMaxBytesPerSec' : 9
 }; 
 
-const GTMCommand = { // commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  'SkipBlock' : 0, // commandBits -> skip count - 1 (10 bits)
-  'ShortTileIdx' : 1, // data -> tile index (16 bits)
-  'LongTileIdx' : 2, // data -> tile index (32 bits)
-  'LoadPalette' : 3, // data -> palette index (8 bits); palette format (8 bits) (00: RGBA32); RGBA bytes (32bits)
-  // new commands here
-  'FrameEnd' : 28, // commandBits bit 0 -> keyframe end
-  'TileSet' : 29, // data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
-  'SetDimensions' : 30, // data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits); tile count (32 bits);
-  'ExtendedCommand' : 31, // data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
+// Commands Description:
+// =====================
+//
+// SkipBlock:        data -> none; commandBits -> skip count - 1 (10 bits)
+// ShortTileIdx:     data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LongTileIdx:      data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LoadPalette:      data -> palette index (8 bits); palette format (8 bits) (0: RGBA32); RGBA bytes (32bits); commandBits -> none
+//
+// (insert new commands here...)
+//
+// FrameEnd:         data -> none; commandBits bit 0 -> keyframe end
+// TileSet:          data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
+// SetDimensions:    data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
+// ExtendedCommand:  data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
+//
+// ReservedArea:     reserving the MSB for future use (do not use for new commands)
 
-  'ReservedAreaBegin' : 32, // reserving the MSB for future use
+const GTMCommand = {
+  'SkipBlock' : 0,
+  'ShortTileIdx' : 1,
+  'LongTileIdx' : 2,
+  'LoadPalette' : 3,
+
+  'FrameEnd' : 28,
+  'TileSet' : 29,
+  'SetDimensions' : 30,
+  'ExtendedCommand' : 31,
+
+  'ReservedAreaBegin' : 32,
   'ReservedAreaEnd' : 63
 }; 
 

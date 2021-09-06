@@ -12,7 +12,7 @@ Online demo here: <https://gligli.github.io/tiler/demo/>
 
 The project is in **Alpha stage** and located at: <https://github.com/gligli/tiler>
 
-_Author: GliGli_<br>
+_Author: GliGli_
 _License: GNU GPL v3_
 
 ## Encoder steps description:
