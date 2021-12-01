@@ -1112,7 +1112,7 @@ begin
     v := ComputeInterFrameCorrelation(FFrames[i - 1], FFrames[i]);
 
     isCutKf := (v < CShotTransHardThres);
-    isTimeKF := (i - LastKFIdx + 1) >= Ceil(FFramesPerSecond / CShotTransFramerateDivider);
+    isTimeKF := (i - LastKFIdx + 1) > Ceil(FFramesPerSecond / CShotTransFramerateDivider);
     if isCutKf or isTimeKF  then
     begin
       if isCutKf and (kfIdx > 0) then // merge hard transition keyframes with previous one
