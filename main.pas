@@ -1005,11 +1005,8 @@ end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
-  CShotTransMaxTilesPerKF = 24 * 1920 * 1080 div sqr(cTileWidth);
-  CShotTransGracePeriod = 24;
-  CShotTransSAvgFrames = 6;
-  CShotTransSoftThres = 0.9;
-  CShotTransHardThres = 0.5;
+  CShotTransHardThres = 0.25;
+  CShotTransFramerateDivider = 2;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -1031,11 +1028,11 @@ const
   end;
 
 var
-  i, j, Cnt, LastKFIdx: Integer;
-  v, av, ratio: TFloat;
+  i, j, LastKFIdx: Integer;
+  v: TFloat;
   fn: String;
   kfIdx, frc, StartFrame: Integer;
-  isKf: Boolean;
+  isCutKf, isTimeKF: Boolean;
   sfr, efr: Integer;
   bmp: TPicture;
   wasAutoQ: Boolean;
@@ -1070,40 +1067,26 @@ begin
     FFramesPerSecond := 24.0;
   end;
 
+  // automaticaly count frames if needed
+
   if frc <= 0 then
   begin
-    if Pos('%', FInputPath) > 0 then
-    begin
-      i := 0;
-      repeat
-        fn := Format(FInputPath, [i + StartFrame]);
-        Inc(i);
-      until not FileExists(fn);
+    i := 0;
+    repeat
+      fn := Format(FInputPath, [i + StartFrame]);
+      Inc(i);
+    until not FileExists(fn);
 
-      frc := i - 1;
-    end
-    else
-    begin
-      frc := 1;
-    end;
+    frc := i - 1;
 
     seFrameCount.Value := frc;
     seFrameCount.Repaint;
   end;
 
+  // load frames bitmap data
+
   SetLength(FFrames, frc);
   tbFrame.Max := High(FFrames);
-
-  for i := 0 to High(FFrames) do
-  begin
-    fn := Format(FInputPath, [i + StartFrame]);
-    if not FileExists(fn) then
-    begin
-      SetLength(FFrames, 0);
-      tbFrame.Max := 0;
-      raise EFileNotFoundException.Create('File not found: ' + fn);
-    end;
-  end;
 
   bmp := TPicture.Create;
   try
@@ -1123,35 +1106,27 @@ begin
   FKeyFrames[0] := TKeyFrame.Create(FPaletteCount, 0, 0);
   FFrames[0].PKeyFrame := FKeyFrames[0];
 
-  av := -1.0;
   LastKFIdx := 0;
   for i := 1 to High(FFrames) do
   begin
-    Cnt := 0;
     v := ComputeInterFrameCorrelation(FFrames[i - 1], FFrames[i]);
-    if av = -1.0 then
-    begin
-      av := v
-    end
-    else
-    begin
-      av := av * (1.0 - 1.0 / CShotTransSAvgFrames) + v * (1.0 / CShotTransSAvgFrames);
-      Inc(Cnt);
-    end;
 
-    ratio := max(0.01, v) / max(0.01, av);
-    isKf := (ratio < CShotTransHardThres) or
-      (ratio < CShotTransSoftThres) and ((i - LastKFIdx + 1) > CShotTransGracePeriod) or
-      ((i - LastKFIdx + 1) * FTileMapSize > CShotTransMaxTilesPerKF);
-    if isKf then
+    isCutKf := (v < CShotTransHardThres);
+    isTimeKF := (i - LastKFIdx + 1) >= Ceil(FFramesPerSecond / CShotTransFramerateDivider);
+    if isCutKf or isTimeKF  then
     begin
+      if isCutKf and (kfIdx > 0) then // merge hard transition keyframes with previous one
+        for j := i downto 0 do
+          if FFrames[j].PKeyFrame = FKeyFrames[kfIdx] then
+            FFrames[j].PKeyFrame := FKeyFrames[kfIdx - 1]
+          else
+            Break;
+
       Inc(kfIdx);
       FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
-
-      av := -1.0;
       LastKFIdx := i;
 
-      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'Ratio: ', FloatToStr(ratio));
+      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'Correl: ', FloatToStr(v), BoolToStr(isCutKf, #9'Cut!', ''));
     end;
 
     FFrames[i].PKeyFrame := FKeyFrames[kfIdx];
