@@ -352,9 +352,7 @@ type
     IdleTimer: TIdleTimer;
     tbFrame: TTrackBar;
 
-    procedure btnGTMClick(Sender: TObject);
-    procedure btnGTSClick(Sender: TObject);
-    procedure btnInputClick(Sender: TObject);
+    // processes
     procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
     procedure btnDoMakeUniqueClick(Sender: TObject);
@@ -364,6 +362,9 @@ type
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
 
+    procedure btnGTMClick(Sender: TObject);
+    procedure btnGTSClick(Sender: TObject);
+    procedure btnInputClick(Sender: TObject);
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
@@ -1005,8 +1006,11 @@ end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
 const
-  CShotTransHardThres = 0.25;
-  CShotTransFramerateDivider = 2;
+  CShotTransMaxTilesPerKF = 24 * 1920 * 1080 div sqr(cTileWidth);
+  CShotTransGracePeriod = 24;
+  CShotTransSAvgFrames = 6;
+  CShotTransSoftThres = 0.9;
+  CShotTransHardThres = 0.5;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -1028,11 +1032,11 @@ const
   end;
 
 var
-  i, j, LastKFIdx: Integer;
-  v: TFloat;
+  i, j, Cnt, LastKFIdx: Integer;
+  v, av, ratio: TFloat;
   fn: String;
   kfIdx, frc, StartFrame: Integer;
-  isCutKf, isTimeKF: Boolean;
+  isKf: Boolean;
   sfr, efr: Integer;
   bmp: TPicture;
   wasAutoQ: Boolean;
@@ -1106,27 +1110,35 @@ begin
   FKeyFrames[0] := TKeyFrame.Create(FPaletteCount, 0, 0);
   FFrames[0].PKeyFrame := FKeyFrames[0];
 
+  av := -1.0;
   LastKFIdx := 0;
   for i := 1 to High(FFrames) do
   begin
+    Cnt := 0;
     v := ComputeInterFrameCorrelation(FFrames[i - 1], FFrames[i]);
-
-    isCutKf := (v < CShotTransHardThres);
-    isTimeKF := (i - LastKFIdx + 1) > Ceil(FFramesPerSecond / CShotTransFramerateDivider);
-    if isCutKf or isTimeKF  then
+    if av = -1.0 then
     begin
-      if isCutKf and (kfIdx > 0) then // merge hard transition keyframes with previous one
-        for j := i downto 0 do
-          if FFrames[j].PKeyFrame = FKeyFrames[kfIdx] then
-            FFrames[j].PKeyFrame := FKeyFrames[kfIdx - 1]
-          else
-            Break;
+      av := v
+    end
+    else
+    begin
+      av := av * (1.0 - 1.0 / CShotTransSAvgFrames) + v * (1.0 / CShotTransSAvgFrames);
+      Inc(Cnt);
+    end;
 
+    ratio := max(0.01, v) / max(0.01, av);
+    isKf := (ratio < CShotTransHardThres) or
+      (ratio < CShotTransSoftThres) and ((i - LastKFIdx + 1) > CShotTransGracePeriod) or
+      ((i - LastKFIdx + 1) * FTileMapSize > CShotTransMaxTilesPerKF);
+    if isKf then
+    begin
       Inc(kfIdx);
       FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
+
+      av := -1.0;
       LastKFIdx := i;
 
-      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'Correl: ', FloatToStr(v), BoolToStr(isCutKf, #9'Cut!', ''));
+      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'Ratio: ', FloatToStr(ratio));
     end;
 
     FFrames[i].PKeyFrame := FKeyFrames[kfIdx];
