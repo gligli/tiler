@@ -4208,8 +4208,13 @@ end;
 function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
 var
   x, y: Integer;
+  hsv: array[0..3, 0..2] of Word;
+  ph, ps, pv: Byte;
 begin
   Result := 0;
+
+  // tile pixels
+
   for y := 0 to cTileWidth - 1 do
     for x := 0 to cTileWidth - 1 do
     begin
@@ -4217,8 +4222,39 @@ begin
       Inc(Result);
     end;
 
-  PalSigni := GetTilePalZoneThres(ATile, sqr(cTileWidth) div 4, @DataLine[Result]);
-  Inc(Result, sqr(cTileWidth) div 4);
+  // HSV for 4x4 quadrants
+
+  FillChar(hsv, SizeOf(hsv), 0);
+  for y := 0 to cTileWidth div 2 - 1 do
+    for x := 0 to cTileWidth div 2 - 1 do
+    begin
+      RGBToHSV(ATile.RGBPixels[y, x], ph, ps, pv);
+      hsv[0, 0] += ph; hsv[0, 1] += ps; hsv[0, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y, x + cTileWidth div 2], ph, ps, pv);
+      hsv[1, 0] += ph; hsv[1, 1] += ps; hsv[1, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x], ph, ps, pv);
+      hsv[2, 0] += ph; hsv[2, 1] += ps; hsv[2, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x + cTileWidth div 2], ph, ps, pv);
+      hsv[3, 0] += ph; hsv[3, 1] += ps; hsv[3, 2] += pv;
+    end;
+
+  for y := 0 to 3 do
+  begin
+    DataLine[Result] := hsv[y, 0] shr 8;
+    Inc(Result);
+    DataLine[Result] := hsv[y, 1] shr 8;
+    Inc(Result);
+    DataLine[Result] := hsv[y, 2] shr 8;
+    Inc(Result);
+  end;
+
+  // count of most used index per 4x4 quadrant
+
+  PalSigni := GetTilePalZoneThres(ATile, sqr(cTileWidth) div 16, @DataLine[Result]);
+  Inc(Result, sqr(cTileWidth) div 16);
 
   Assert(Result = cKModesFeatureCount);
 end;
