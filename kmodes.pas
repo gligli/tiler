@@ -361,8 +361,7 @@ asm
     movdqu xmm4, oword ptr [rcx + $40]
 
     movdqa xmm11, xmm0
-    psubb xmm11, xmm6
-    pabsb xmm11, xmm11
+    psadbw xmm11, xmm6
 
     movdqa xmm5, xmm1
     psadbw xmm5, xmm7
@@ -502,8 +501,7 @@ asm
     movdqu xmm4, oword ptr [rcx + $40]
 
     movdqa xmm11, xmm0
-    psubb xmm11, xmm6
-    pabsb xmm11, xmm11
+    psadbw xmm11, xmm6
 
     movdqa xmm5, xmm1
     psadbw xmm5, xmm7
