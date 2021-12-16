@@ -789,6 +789,10 @@ object MainForm: TMainForm
       ShortCut = 120
       OnClick = btnSaveClick
     end
+    object MenuItem8: TMenuItem
+      Caption = 'Generate PNGs'
+      OnClick = btnGeneratePNGsClick
+    end
   end
   object odFFInput: TOpenDialog
     Left = 824

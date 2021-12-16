@@ -181,7 +181,7 @@ type
     PaletteIndexes: TIntegerDynArray;
     PaletteRGB: TIntegerDynArray;
 
-    Active, HMirror, VMirror: Boolean;
+    Active: Boolean;
     UseCount, TmpIndex, MergeIndex, OriginalReloadedIndex, DitheringPalIndex: Integer;
   end;
 
@@ -312,6 +312,7 @@ type
     Label7: TLabel;
     Label9: TLabel;
     lblPct: TLabel;
+    MenuItem8: TMenuItem;
     odFFInput: TOpenDialog;
     pbFrameO: TPaintBox;
     pbFrameI: TPaintBox;
@@ -376,6 +377,7 @@ type
     procedure IdleTimerTimer(Sender: TObject);
     procedure imgPaletteClick(Sender: TObject);
     procedure imgPaletteDblClick(Sender: TObject);
+    procedure btnGeneratePNGsClick(Sender: TObject);
     procedure pbFramePaint(Sender: TObject);
     procedure seEncGammaChange(Sender: TObject);
     procedure seMaxTilesEditingDone(Sender: TObject);
@@ -478,7 +480,6 @@ type
     procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
     procedure FinishFrameTiling(AKF: TKeyFrame);
     procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
-    procedure PrepareTileMirrors(var ATile: TTile);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -1460,6 +1461,33 @@ begin
   sedPalIdx.Value := -1;
 end;
 
+procedure TMainForm.btnGeneratePNGsClick(Sender: TObject);
+var
+  palPict: TPortableNetworkGraphic;
+  i: Integer;
+begin
+  palPict := TFastPortableNetworkGraphic.Create;
+
+  palPict.Width := FScreenWidth;
+  palPict.Height := FScreenHeight;
+  palPict.PixelFormat := pf24bit;
+
+  try
+    for i := 0 to High(FFrames) do
+    begin
+      Render(i, True, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked, chkGamma.Checked, sedPalIdx.Value, sePage.Value);
+      imgDest.Repaint;
+
+      palPict.Canvas.Draw(0, 0, imgDest.Picture.Bitmap);
+      palPict.SaveToFile(Format('%s_output_%.4d.png', [ChangeFileExt(edOutput.Text, ''), i]));
+    end;
+  finally
+    palPict.Free;
+  end;
+
+  tbFrameChange(nil);
+end;
+
 procedure TMainForm.pbFramePaint(Sender: TObject);
 begin
   TPaintBox(Sender).Canvas.Brush.Color := clBlack;
@@ -2208,6 +2236,7 @@ var
     GTile: PTile;
   begin
     FillChar(dlInput^, dlCnt * 3, 0);
+    FillChar(dlPal[0, 0], SizeOf(dlPal), $ff);
 
     // find width and height of a rectangular area to arrange tiles
 
@@ -2469,8 +2498,7 @@ begin
     Freemem(dlInput);
   end;
 
-  if APalIdx mod (FPaletteCount div 2) = 0 then
-    Write('.');
+  Write('.');
 end;
 
 procedure TMainForm.FinishQuantizePalette(AKeyFrame: TKeyFrame);
@@ -2555,8 +2583,6 @@ begin
         AFrame.Tiles[sx + sy * FTileMapWidth].PaletteIndexes := system.Copy(AFrame.PKeyFrame.PaletteIndexes[PalIdx]);
 
         Move(OrigTile^.PalPixels[0, 0], AFrame.Tiles[sx + sy * FTileMapWidth].PalPixels[0, 0], SizeOf(TPalPixels));
-
-        PrepareTileMirrors(OrigTile^);
       end;
     end;
 
@@ -3357,12 +3383,12 @@ procedure TMainForm.Render(AFrameIndex: Integer; playing, dithered, mirrored, re
       Inc(psl, sx * cTileWidth);
 
       tym := ty;
-      if (vmir and mirrored) xor tilePtr^.VMirror then tym := cTileWidth - 1 - tym;
+      if vmir and mirrored then tym := cTileWidth - 1 - tym;
 
       for tx := 0 to cTileWidth - 1 do
       begin
         txm := tx;
-        if (hmir and mirrored) xor tilePtr^.HMirror then txm := cTileWidth - 1 - txm;
+        if hmir and mirrored then txm := cTileWidth - 1 - txm;
 
         r := 255; g := 0; b := 255;
         if dithered and Assigned(pal) then
@@ -3950,7 +3976,7 @@ var
             DS^.TRToPalIdx[di] := AIndex;
             DS^.TRToAttrs[di] := Ord(hmir) or (Ord(vmir) shl 1);
 
-            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir xor T^.HMirror, vmir xor T^.VMirror, AFTGamma, AKF.PaletteRGB[AIndex], DCT);
+            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir, vmir, AFTGamma, AKF.PaletteRGB[AIndex], DCT);
             for j := 0 to cTileDCTSize - 1 do
               DS^.Dataset[di, j] := DCT[j];
             Inc(di);
@@ -4085,28 +4111,6 @@ begin
   if AFrame.PKeyFrame.FramesLeft <= 0 then
     FinishFrameTiling(AFrame.PKeyFrame);
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
-end;
-
-procedure TMainForm.PrepareTileMirrors(var ATile: TTile);
-var
-  bestV, v: Integer;
-  hf, vf: Boolean;
-begin
-  bestV := -1;
-  for vf := False to True do
-    for hf := False to True do
-    begin
-      v := GetTileZoneSum(ATile, IfThen(hf, cTileWidth div 2), IfThen(vf, cTileWidth div 2), cTileWidth div 2, cTileWidth div 2);
-      if v > bestV then
-      begin
-        ATile.HMirror := hf;
-        ATile.VMirror := vf;
-        bestV := v;
-      end;
-    end;
-
-  if ATile.HMirror then HMirrorPalTile(ATile);
-  if ATile.VMirror then VMirrorPalTile(ATile);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat);
@@ -4789,7 +4793,7 @@ begin
               BlkSkipCount := 0;
 
               tmi := @frm.SmoothedTileMap[yx div FTileMapWidth, yx mod FTileMapWidth];
-              DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror xor FTiles[tmi^.GlobalTileIndex]^.VMirror, tmi^.HMirror xor FTiles[tmi^.GlobalTileIndex]^.HMirror);
+              DoTMI(tmi^.PalIdx, tmi^.GlobalTileIndex, tmi^.VMirror, tmi^.HMirror);
               Inc(cs);
             end;
           end;
