@@ -25,6 +25,7 @@ type
   TByteDynArray2 = array of TByteDynArray;
   TByteDynArray3 = array of TByteDynArray2;
   TUInt64DynArray = array of UInt64;
+  TUInt64DynArray2 = array of TUInt64DynArray;
 
   TGMMD = record
     clust: PInteger;
@@ -73,6 +74,8 @@ type
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline; overload;
+function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer; overload;
 
 implementation
@@ -234,8 +237,6 @@ begin
   Result := Cnt;
 end;
 
-{$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
-
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline; overload;
 var
   i: Integer;
@@ -248,6 +249,21 @@ begin
     Result += abs(Int64(a[i]) - Int64(b[i]));
   end;
 end;
+
+function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 0 to count - 1 do
+  begin
+    if a[i] <> b[i] then
+      Result += UInt64(1) shl cDissimSubMatchingSize;
+    Result += abs(Int64(a[i]) - Int64(b[i]));
+  end;
+end;
+
+{$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
 
 function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer; overload;
 var
@@ -277,19 +293,6 @@ end;
 //  for i := 0 to count - 1 do
 //    Result += MatchingDissim(a[i], b);
 //end;
-
-function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
-var
-  i: Integer;
-begin
-  Result := 0;
-  for i := 0 to count - 1 do
-  begin
-    if a[i] <> b[i] then
-      Result += UInt64(1) shl cDissimSubMatchingSize;
-    Result += abs(Int64(a[i]) - Int64(b[i]));
-  end;
-end;
 
 function GetMinMatchingDissim(a: PPByte; b: PByte; rowCount, colCount: Integer; out bestDissim: UInt64): Integer; overload;
 var
