@@ -21,7 +21,7 @@ object MainForm: TMainForm
   OnKeyDown = FormKeyDown
   PopupMenu = pmProcesses
   Position = poScreenCenter
-  LCLVersion = '2.2.0.2'
+  LCLVersion = '2.2.0.4'
   object tbFrame: TTrackBar
     Left = -1
     Height = 23
@@ -465,6 +465,7 @@ object MainForm: TMainForm
           '32'
           '64'
           '128'
+          '256'
         )
         Style = csDropDownList
         TabOrder = 13
