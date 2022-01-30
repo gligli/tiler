@@ -479,7 +479,7 @@ type
     procedure FinishGlobalFT;
     procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
     procedure FinishFrameTiling(AKF: TKeyFrame);
-    procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
+    procedure DoFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -890,16 +890,25 @@ var
 
   procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
+      Exit;
+
     PrepareDitherTiles(FKeyFrames[AIndex], Gamma, UseWavelets);
   end;
 
   procedure DoQuantize(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
+    if not InRange(AIndex, 0, Length(FKeyFrames) * FPaletteCount - 1) then
+      Exit;
+
     QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, UseDL3, PalVAR, DLBPC);
   end;
 
   procedure DoFinish(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
     FinishDitherTiles(FFrames[AIndex], Gamma, UseWavelets);
   end;
 
@@ -943,6 +952,9 @@ var
 
   procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
+    if not InRange(AIndex, 0, High(FTiles) div TilesAtATime) then
+      Exit;
+
     MakeTilesUnique(AIndex * TilesAtATime, Min(Length(FTiles) - AIndex * TilesAtATime, TilesAtATime));
   end;
 
@@ -974,7 +986,10 @@ var
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    DoFrameTiling(FFrames[AIndex], Gamma, cFTPaletteTol, UseWavelets, FTQuality);
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
+      Exit;
+
+    DoFrameTiling(FKeyFrames[AIndex], Gamma, cFTPaletteTol, UseWavelets, FTQuality);
   end;
 
 var
@@ -993,7 +1008,7 @@ begin
   ProgressRedraw(-1, esFrameTiling);
   PrepareGlobalFT;
   ProgressRedraw(1);
-  ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames));
   FinishGlobalFT;
   ProgressRedraw(2);
 
@@ -1017,6 +1032,9 @@ const
   var
     bmp: TPicture;
   begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
     bmp := TPicture.Create;
     try
       EnterCriticalSection(FCS);
@@ -1353,6 +1371,9 @@ var
   var
     i: Integer;
   begin
+    if not InRange(AIndex, 0, FTileMapHeight - 1) then
+      Exit;
+
     for i := cSmoothingPrevFrame to High(FFrames) do
       DoTemporalSmoothing(FFrames[i], FFrames[i - cSmoothingPrevFrame], AIndex, smoo);
   end;
@@ -2573,6 +2594,7 @@ begin
         // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
 
         PalIdx := OrigTile^.DitheringPalIndex;
+        Assert(InRange(PalIdx, 0, FPaletteCount - 1));
         DitherTile(OrigTile^, AFrame.PKeyFrame.MixingPlans[PalIdx]);
 
         // now that the palette is chosen, keep only one version of the tile
@@ -4056,61 +4078,63 @@ begin
   AKF.TileDS := nil;
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean;
+procedure TMainForm.DoFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean;
   AFTQuality: TFTQuality);
-var
-  sy, sx: Integer;
-  DS: PTilingDataset;
-  tmiO: PTileMapItem;
 
-  i, bestIdx: Integer;
-  DCT: TFloatDynArray;
-  ANNDCT: TANNFloatDynArray;
-  bestErr: TANNFloat;
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    i, bestIdx: Integer;
+    sy, sx: Integer;
+    tmiO: PTileMapItem;
+
+    Frame: TFrame;
+    DS: PTilingDataset;
+    DCT: TFloatDynArray;
+    ANNDCT: TANNFloatDynArray;
+    bestErr: TANNFloat;
+  begin
+    if not InRange(AIndex, AKF.StartFrame, AKF.EndFrame) then
+      Exit;
+
+    Frame := FFrames[AIndex];
+    DS := Frame.PKeyFrame.TileDS;
+
+    // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
+
+    SetLength(DCT, cTileDCTSize);
+    SetLength(ANNDCT, cTileDCTSize);
+
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
+      begin
+        ComputeTilePsyVisFeatures(Frame.Tiles[sy * FTileMapWidth + sx], False, AUseWavelets, False, False, False, False, AFTGamma, Frame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
+        for i := 0 to cTileDCTSize - 1 do
+          ANNDCT[i] := DCT[i];
+
+        bestIdx := ann_kdtree_search(DS^.KDT, @ANNDCT[0], 0.0, @bestErr);
+
+        tmiO := @FFrames[Frame.Index].TileMap[sy, sx];
+
+        tmiO^.GlobalTileIndex := DS^.TRToTileIdx[bestIdx];
+        tmiO^.PalIdx :=  DS^.TRToPalIdx[bestIdx];
+        tmiO^.HMirror := (DS^.TRToAttrs[bestIdx] and 1) <> 0;
+        tmiO^.VMirror := (DS^.TRToAttrs[bestIdx] and 2) <> 0;
+
+        DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
+        Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
+      end;
+
+    InterLockedDecrement(Frame.PKeyFrame.FramesLeft);
+    WriteLn('Frame: ', Frame.Index, #9'FramesLeft: ', AKF.FramesLeft);
+  end;
 
 begin
-  EnterCriticalSection(AFrame.PKeyFrame.CS);
-  if AFrame.PKeyFrame.FramesLeft < 0 then
-  begin
-    PrepareFrameTiling(AFrame.PKeyFrame, AFTGamma, APalVAR, AUseWavelets, AFTQuality);
-    AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
-  end;
-  LeaveCriticalSection(AFrame.PKeyFrame.CS);
+  PrepareFrameTiling(AKF, AFTGamma, APalVAR, AUseWavelets, AFTQuality);
+  AKF.FramesLeft := AKF.FrameCount;
 
-  DS := AFrame.PKeyFrame.TileDS;
+  ProcThreadPool.DoParallelLocalProc(@DoFrame, AKF.StartFrame, AKF.EndFrame);
 
-  // map frame tilemap items to reduced tiles and mirrors and choose best corresponding palette
-
-  SetLength(DCT, cTileDCTSize);
-  SetLength(ANNDCT, cTileDCTSize);
-
-  for sy := 0 to FTileMapHeight - 1 do
-    for sx := 0 to FTileMapWidth - 1 do
-    begin
-      ComputeTilePsyVisFeatures(AFrame.Tiles[sy * FTileMapWidth + sx], False, AUseWavelets, False, False, False, False, AFTGamma, AFrame.Tiles[sy * FTileMapWidth + sx].PaletteRGB, DCT);
-      for i := 0 to cTileDCTSize - 1 do
-        ANNDCT[i] := DCT[i];
-
-      bestIdx := ann_kdtree_search(DS^.KDT, @ANNDCT[0], 0.0, @bestErr);
-
-      tmiO := @FFrames[AFrame.Index].TileMap[sy, sx];
-
-      tmiO^.GlobalTileIndex := DS^.TRToTileIdx[bestIdx];
-      tmiO^.PalIdx :=  DS^.TRToPalIdx[bestIdx];
-      tmiO^.HMirror := (DS^.TRToAttrs[bestIdx] and 1) <> 0;
-      tmiO^.VMirror := (DS^.TRToAttrs[bestIdx] and 2) <> 0;
-
-      DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
-      Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
-    end;
-
-  WriteLn('Frame: ', AFrame.Index, #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft);
-
-  EnterCriticalSection(AFrame.PKeyFrame.CS);
-  Dec(AFrame.PKeyFrame.FramesLeft);
-  if AFrame.PKeyFrame.FramesLeft <= 0 then
-    FinishFrameTiling(AFrame.PKeyFrame);
-  LeaveCriticalSection(AFrame.PKeyFrame.CS);
+  FinishFrameTiling(AKF);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat);
@@ -4454,6 +4478,7 @@ procedure TMainForm.ReloadPreviousTiling(AFN: String);
 var
   SigniDataset: TByteDynArray3;
   Dataset: TByteDynArray2;
+  ParallelCount: PtrUInt;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -4461,11 +4486,14 @@ var
     DataLine: TByteDynArray;
     dis: UInt64;
   begin
+    if not InRange(AIndex, 0, ParallelCount - 1) then
+      Exit;
+
     SetLength(DataLine, cKModesFeatureCount);
 
-    bin := Length(FTiles) div PtrUInt(AData);
+    bin := Length(FTiles) div ParallelCount;
     last := (AIndex + 1) * bin - 1;
-    if AIndex >= PtrUInt(AData) - 1 then
+    if AIndex >= ParallelCount - 1 then
       last := High(FTiles);
 
     for i := bin * AIndex to last do
@@ -4494,7 +4522,6 @@ var
   signi, i, y, x: Integer;
   fs: TFileStream;
   T: TTile;
-  cnt: PtrUInt;
   SigniIndices: TIntegerDynArray2;
   TilingPaletteSize: Integer;
 begin
@@ -4537,8 +4564,8 @@ begin
 
     ProgressRedraw(1);
 
-    cnt := ProcThreadPool.MaxThreadCount * 10;
-    ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, cnt - 1, Pointer(cnt));
+    ParallelCount := ProcThreadPool.MaxThreadCount * 10;
+    ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, ParallelCount - 1);
 
     ProgressRedraw(4);
 
