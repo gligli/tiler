@@ -2207,17 +2207,17 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-        ComputeTilePsyVisFeatures(GTile^, False, AUseWavelets, False, False, False, False, ADitheringGamma, nil, Dataset[di]);
+        ComputeTilePsyVisFeatures(GTile^, False, AUseWavelets, True, False, False, False, ADitheringGamma, nil, Dataset[di]);
         Inc(di);
       end;
   assert(di = Length(Dataset));
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
-   Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
+   Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 1);
    yakmo_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
    SetLength(Dataset, 0); // free up some memmory
-   Write('.');
+   WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo start');
    yakmo_train_on_data(Yakmo, @Clusters[0]);
    yakmo_get_centroids(Yakmo, @AKeyFrame.PaletteCentroids[0]);
    yakmo_destroy(Yakmo);
@@ -2238,7 +2238,7 @@ begin
       end;
   assert(di = Length(Clusters));
 
-  Write('.');
+  WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo end');
 end;
 
 procedure TMainForm.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseDLv3: Boolean; PalVAR: TFloat; DLv3BPC: Integer);
@@ -2814,7 +2814,7 @@ begin
   y := (r * 0.17697 + g * 0.81240 + b * 0.01063) / 0.17697;
   z := (r * 0.00000 + g * 0.01000 + b * 0.99000) / 0.17697;
 
-{$if true}
+{$if True}
   // Illuminant D50
   x /= 96.6797 / 100;
   y /= 100.000 / 100;
@@ -4461,14 +4461,17 @@ begin
 
   // save raw tiles
 
-  fs := TFileStream.Create(OutFN, fmCreate or fmShareDenyWrite);
-  try
-    fs.WriteByte(FTilePaletteSize);
-    for i := 0 to High(FTiles) do
-      if FTiles[i]^.Active then
-        fs.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
-  finally
-    fs.Free;
+  if DirectoryExists(ExtractFilePath(OutFN)) then
+  begin
+    fs := TFileStream.Create(OutFN, fmCreate or fmShareDenyWrite);
+    try
+      fs.WriteByte(FTilePaletteSize);
+      for i := 0 to High(FTiles) do
+        if FTiles[i]^.Active then
+          fs.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+    finally
+      fs.Free;
+    end;
   end;
 
   ProgressRedraw(5);
