@@ -201,6 +201,7 @@ object MainForm: TMainForm
         Height = 23
         Top = 272
         Width = 71
+        Enabled = False
         Increment = 0.5
         TabOrder = 16
         Value = 95
@@ -256,6 +257,7 @@ object MainForm: TMainForm
         Width = 291
         Caption = 'Use Dennis Lee v3 quantizer (not palette VaR based)'
         Checked = True
+        Enabled = False
         State = cbChecked
         TabOrder = 21
       end
@@ -304,6 +306,7 @@ object MainForm: TMainForm
         Top = 276
         Width = 101
         Caption = 'Palette value at risk'
+        Enabled = False
       end
       object Label4: TLabel
         Left = 8

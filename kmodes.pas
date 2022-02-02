@@ -1025,9 +1025,6 @@ begin
     begin
       Inc(itr);
 
-      if Log then
-        DbgOut(['Itr: ', itr]);
-
       moves := KModesIter(Seed, ncost);
 
       converged := (ncost >= cost) or (moves = 0);
@@ -1036,7 +1033,7 @@ begin
       totalmoves += moves;
 
       if Log then
-        DebugLn([#9'Moves: ', moves, #9'Cost: ', cost]);
+        WriteLn('Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost);
     end;
 
     all[init_no].Labels := Copy(membship);

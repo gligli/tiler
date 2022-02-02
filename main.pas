@@ -208,8 +208,8 @@ type
   PTilingDataset = ^TTilingDataset;
 
   TCountIndexArray = packed record
-    Count, Index, Luma: Integer;
-    Hue, Sat, Val, Dummy: Byte;
+    Count, Index: Integer;
+    Hue, Sat, Val, Luma: Byte;
   end;
 
   PCountIndexArray = ^TCountIndexArray;
@@ -386,8 +386,7 @@ type
   private
     FKeyFrames: array of TKeyFrame;
     FFrames: array of TFrame;
-    FColorMap: array[0..cRGBColors - 1, 0..5] of Byte;
-    FColorMapLuma: array[0..cRGBColors - 1] of Integer;
+    FColorMap: array[0..cRGBColors - 1, 0..6] of Byte;
     FTiles: array of PTile;
     FUseThomasKnoll: Boolean;
     FY2MixedColors: Integer;
@@ -2168,15 +2167,10 @@ begin
     Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
 end;
 
-function CompareCMULHS(Item1,Item2:Pointer):Integer;
+function CompareCMIntraPalette(Item1,Item2:Pointer):Integer;
 begin
-  Result := CompareValue(PCountIndexArray(Item1)^.Luma, PCountIndexArray(Item2)^.Luma);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Val, PCountIndexArray(Item2)^.Val);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
+  Result := Integer(CompareValue(PCountIndexArray(Item1)^.Luma, PCountIndexArray(Item2)^.Luma)) shl 8;
+  Result += CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
 end;
 
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
@@ -2287,7 +2281,7 @@ var
       end;
     end;
 
-    // copy tile date into area
+    // copy tile data into area
 
     dx := 0;
     dy := 0;
@@ -2324,6 +2318,7 @@ var
     // call Dennis Lee v3 method
 
     dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FTilePaletteSize, DLv3BPC, @dlPal);
+    //DoExternalSColorQ(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FTilePaletteSize, @dlPal);
 
     // retrieve palette data
 
@@ -2336,152 +2331,12 @@ var
       CMItem^.Index := col;
       CMItem^.Count := 1;
       CMItem^.Hue := FColorMap[col, 3]; CMItem^.Sat := FColorMap[col, 4]; CMItem^.Val := FColorMap[col, 5];
-      CMItem^.Luma := FColorMapLuma[col];
+      CMItem^.Luma := FColorMap[col, 6];
       CMUsage[i] := CMItem;
     end;
 
     CMPal.Clear;
     CMPal.Assign(CMUsage);
-  end;
-
-  procedure DoValueAtRiskBased(PalIdx: Integer);
-  var
-    col, i, bestI, LastUsed, CmlPct, AtCmlPct, acc, r, g, b, rr, gg, bb, sy, sx, ty, tx: Integer;
-    GTile: PTile;
-    CMItem: PCountIndexArray;
-    TrueColorUsage: TCardinalDynArray;
-    diff, best, PrevBest: Int64;
-    ciI, ciJ: PCountIndexArray;
-  begin
-    SetLength(TrueColorUsage, cRGBColors);
-    FillDWord(TrueColorUsage[0], Length(TrueColorUsage), 0);
-
-    // get color usage stats
-
-    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-    begin
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-
-          if GTile^.Active and (GTile^.DitheringPalIndex = PalIdx) then
-          begin
-{$if cBitsPerComp = 8}
-            for ty := 0 to cTileWidth - 1 do
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                col := GTile^.RGBPixels[ty, tx];
-                Inc(TrueColorUsage[col]);
-              end;
-{$else}
-            DitherTileFloydSteinberg(GTile^, FSPixels);
-            for ty := 0 to cTileWidth - 1 do
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                col := FSPixels[ty, tx];
-                Inc(TrueColorUsage[col]);
-              end;
-{$endif}
-
-            Inc(AKeyFrame.PaletteUseCount[PalIdx].UseCount);
-          end;
-        end;
-    end;
-
-    CMUsage.Count := Length(TrueColorUsage);
-    for i := 0 to High(TrueColorUsage) do
-    begin
-      New(CMItem);
-      CMItem^.Count := TrueColorUsage[i];
-      CMItem^.Index := i;
-      CMItem^.Hue := FColorMap[i, 3]; CMItem^.Sat := FColorMap[i, 4]; CMItem^.Val := FColorMap[i, 5];
-      CMItem^.Luma := FColorMapLuma[CMItem^.Index];
-      CMUsage[i] := CMItem;
-    end;
-
-    // sort colors by use count
-
-    CMUsage.Sort(@CompareCMUCntHLS);
-
-    LastUsed := -1;
-    for i := CMUsage.Count - 1 downto 0 do    //TODO: rev algo
-      if PCountIndexArray(CMUsage[i])^.Count <> 0 then
-      begin
-        LastUsed := i;
-        Break;
-      end;
-
-    CmlPct := 0;
-    acc := AKeyFrame.FrameCount * FTileMapSize * sqr(cTileWidth);
-    acc := round(acc * PalVAR);
-    for i := 0 to CMUsage.Count - 1 do
-    begin
-      acc -= PCountIndexArray(CMUsage[i])^.Count;
-      if acc <= 0 then
-      begin
-        CmlPct := i;
-        Break;
-      end;
-    end;
-    AtCmlPct := PCountIndexArray(CMUsage[CmlPct])^.Count;
-
-    WriteLn('Frame: ', AKeyFrame.StartFrame, #9'LastUsed: ', LastUsed, #9'CmlPct: ', CmlPct, #9'AtCmlPct: ', AtCmlPct);
-
-    CmlPct := max(CmlPct, min(LastUsed + 1, FTilePaletteSize * FPaletteCount)); // ensure enough colors
-
-    // prune colors that are too close to each other
-
-    for i := LastUsed + 1 to CMUsage.Count - 1 do
-      Dispose(PCountIndexArray(CMUsage[i]));
-    CMUsage.Count := LastUsed + 1;
-
-    best := High(Int64);
-    repeat
-      bestI := -1;
-      PrevBest := best;
-      best := High(Int64);
-
-      ciJ := PCountIndexArray(CMUsage[0]);
-      rr := FColorMap[ciJ^.Index, 0]; gg := FColorMap[ciJ^.Index, 1]; bb := FColorMap[ciJ^.Index, 2];
-      for i := 1 to CMUsage.Count - 1 do
-      begin
-        ciI := PCountIndexArray(CMUsage[i]);
-        r := FColorMap[ciI^.Index, 0]; g := FColorMap[ciI^.Index, 1]; b := FColorMap[ciI^.Index, 2];
-        diff := ColorCompare(r, g, b, rr, gg, bb);
-        if diff < best then
-        begin
-          best := diff;
-          bestI := i;
-        end;
-        rr := r; gg := g; bb := b;
-        ciJ := ciI;
-      end;
-
-      if bestI > 0 then
-      begin
-        ciI := PCountIndexArray(CMUsage[bestI]);
-        ciJ := PCountIndexArray(CMUsage[bestI - 1]);
-
-        acc := ciI^.Count + ciJ^.Count;
-        ciI^.Hue := (ciI^.Hue * ciI^.Count + ciJ^.Hue * ciJ^.Count) div acc;
-        ciI^.Sat := (ciI^.Sat * ciI^.Count + ciJ^.Sat * ciJ^.Count) div acc;
-        ciI^.Val := (ciI^.Val * ciI^.Count + ciJ^.Val * ciJ^.Count) div acc;
-        ciI^.Luma := (ciI^.Luma * ciI^.Count + ciJ^.Luma * ciJ^.Count) div acc;
-        ciI^.Count := acc;
-
-        ciI^.Index := HSVToRGB(ciI^.Hue, ciI^.Sat, ciI^.Val);
-
-        Dispose(PCountIndexArray(CMUsage[bestI - 1]));
-        CMUsage.Delete(bestI - 1);
-      end;
-
-    until (CMUsage.Count <= CmlPct) or (best = PrevBest);
-
-
-    CMPal.Clear;
-    for i := 0 to FTilePaletteSize - 1 do
-      CMPal.Add(CMUsage[round(gPalettePattern[PalIdx, i] * (CMUsage.Count - 1))]);
   end;
 
 begin
@@ -2494,14 +2349,11 @@ begin
   CMUsage := TFPList.Create;
   CMPal := TFPList.Create;
   try
-    if UseDLv3 then
-      DoDennisLeeV3(APalIdx)
-    else
-      DoValueAtRiskBased(APalIdx);
+    DoDennisLeeV3(APalIdx);
 
     // split most used colors into tile palettes
 
-    CMPal.Sort(@CompareCMULHS);
+    CMPal.Sort(@CompareCMIntraPalette);
 
     SetLength(AKeyFrame.PaletteIndexes[APalIdx], FTilePaletteSize);
     for i := 0 to FTilePaletteSize - 1 do
@@ -4319,7 +4171,7 @@ begin
   if DSLen <= KMBin^.ClusterCount[AIndex] then
     Exit;
 
-  KModes := TKModes.Create(4, 0, False);
+  KModes := TKModes.Create(4, 0, True);
   try
     ActualNbTiles := KModes.ComputeKModes(KMBin^.Dataset[AIndex], round(KMBin^.ClusterCount[AIndex]), -KMBin^.StartingPoint[AIndex], FTilePaletteSize, LocClusters, LocCentroids);
     Assert(Length(LocCentroids) = ActualNbTiles);
@@ -4912,7 +4764,7 @@ end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
 var
-  col, i, sr: Integer;
+  col, i, sr, luma: Integer;
   es: TEncoderStep;
 begin
   FormatSettings.DecimalSeparator := '.';
@@ -4954,7 +4806,9 @@ begin
 
     FromRGB(col, FColorMap[i, 0], FColorMap[i, 1], FColorMap[i, 2]);
     RGBToHSV(col, FColorMap[i, 3], FColorMap[i, 4], FColorMap[i, 5]);
-    FColorMapLuma[i] := (FColorMap[i, 0] * cRedMul + FColorMap[i, 1] * cGreenMul + FColorMap[i, 2] * cBlueMul) div cLumaDiv;
+    luma := (FColorMap[i, 0] * cRedMul + FColorMap[i, 1] * cGreenMul + FColorMap[i, 2] * cBlueMul) div cLumaDiv;
+    Assert(InRange(luma, 0, 255));
+    FColorMap[i, 6] := luma;
   end;
 end;
 

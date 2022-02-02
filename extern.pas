@@ -55,6 +55,8 @@ procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount:
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
 
+procedure DoExternalSColorQ(inbuf: PByte; width, height, quant_to: Integer; userpal: PDLUserPal);
+
 procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
 function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
 function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
@@ -496,6 +498,81 @@ begin
     end;
   finally
     SL.Free;
+  end;
+end;
+
+procedure DoExternalSColorQ(inbuf: PByte; width, height, quant_to: Integer; userpal: PDLUserPal);
+var
+  InTmpFN, OutTmpFN, Output, ErrOut: String;
+  FS: TFileStream;
+  rr, gg, bb: Byte;
+  i, j, ppos, RetCode: Integer;
+  found: Boolean;
+  Process: TProcess;
+begin
+  InTmpFN := GetTempFileName('', 'in-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.rgb');
+  OutTmpFN := GetTempFileName('', 'out-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.rgb');
+
+  FS := TFileStream.Create(InTmpFN, fmCreate or fmShareDenyNone);
+  try
+    FS.WriteBuffer(inbuf^, width * height * 3);
+  finally
+    FS.Free;
+  end;
+
+  Process := TProcess.Create(nil);
+  Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
+  Process.Executable := 'scolorq\spatial_color_quant.exe';
+
+  Process.Parameters.Add(InTmpFN);
+  Process.Parameters.Add(IntToStr(width));
+  Process.Parameters.Add(IntToStr(height));
+  Process.Parameters.Add(IntToStr(quant_to));
+  Process.Parameters.Add(OutTmpFN);
+  //Process.Parameters.Add('0.0');
+  //Process.Parameters.Add('5');
+  Process.ShowWindow := swoHIDE;
+  Process.Priority := ppIdle;
+
+  RetCode := 0;
+  internalRuncommand(Process, Output, ErrOut, RetCode, False); // destroys Process
+
+  FS := TFileStream.Create(OutTmpFN, fmOpenRead or fmShareDenyNone);
+  try
+    ppos := 0;
+    for i := 0 to width * height - 1 do
+    begin
+      rr := FS.ReadByte;
+      gg := FS.ReadByte;
+      bb := FS.ReadByte;
+
+      found := False;
+      for j := 0 to ppos - 1 do
+      begin
+        if (userpal^[0][j] = rr) and (userpal^[1][j] = gg) and (userpal^[2][j] = bb) then
+        begin
+          found := True;
+          Break;
+        end;
+      end;
+
+      if not found and (ppos < quant_to) then
+      begin
+        userpal^[0][ppos] := rr;
+        userpal^[1][ppos] := gg;
+        userpal^[2][ppos] := bb;
+        Inc(ppos);
+      end;
+    end;
+
+    for i := ppos to quant_to - 1 do
+    begin
+      userpal^[0][i] := $ff;
+      userpal^[1][i] := $00;
+      userpal^[2][i] := $ff;
+    end;
+  finally
+    FS.Free;
   end;
 end;
 
