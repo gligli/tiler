@@ -176,7 +176,7 @@ function unpackData() {
     return;
   }
   
-  let maxSize = Math.round(gtmLzmaBytesPerSecond / (1000 / gtmFrameLength));
+  let maxSize = Math.max(Math.round(gtmLzmaBytesPerSecond * gtmFrameLength / 1000),  65536); // 65536 -> low-res threshold
   
   let res = LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, maxSize);
 
