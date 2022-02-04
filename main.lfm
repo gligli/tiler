@@ -247,7 +247,6 @@ object MainForm: TMainForm
         Top = 53
         Width = 80
         Caption = 'Reload tiles'
-        OnChange = chkUseTKChange
         TabOrder = 4
       end
       object chkUseDL3: TCheckBox
@@ -342,7 +341,6 @@ object MainForm: TMainForm
         Top = 364
         Width = 170
         Caption = 'Dithering gamma correction'
-        OnChange = chkLowMemChange
         TabOrder = 24
       end
       object chkFTGamma: TCheckBox

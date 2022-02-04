@@ -3183,8 +3183,6 @@ begin
         end;
     end;
 
-    DitherFloydSteinberg(AFrame.FSPixels);
-
     for i := 0 to (FTileMapSize - 1) do
     begin
       Move(TilesRGBPixels[i], AFrame.Tiles[i].RGBPixels, SizeOf(TRGBPixels));
