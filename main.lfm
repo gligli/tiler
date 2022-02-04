@@ -196,20 +196,21 @@ object MainForm: TMainForm
         MaxValue = 100000
         TabOrder = 10
       end
-      object sePalVAR: TFloatSpinEdit
+      object seAddlTiles: TFloatSpinEdit
         Left = 248
         Height = 23
-        Top = 272
+        Top = 294
         Width = 71
-        Enabled = False
-        Increment = 0.5
-        TabOrder = 16
-        Value = 95
+        DecimalPlaces = 1
+        Increment = 0.05
+        MaxValue = 10
+        TabOrder = 17
+        Value = 0.3
       end
       object cbxYilMix: TComboBox
         Left = 248
         Height = 23
-        Top = 294
+        Top = 272
         Width = 71
         ItemHeight = 15
         ItemIndex = 2
@@ -221,7 +222,7 @@ object MainForm: TMainForm
           '16'
         )
         OnChange = cbxYilMixChange
-        TabOrder = 17
+        TabOrder = 16
         Text = '4'
       end
       object seFrameCount: TSpinEdit
@@ -281,7 +282,7 @@ object MainForm: TMainForm
       object Label11: TLabel
         Left = 8
         Height = 15
-        Top = 298
+        Top = 276
         Width = 160
         Caption = 'Yliluoma 2 mixed colors count'
       end
@@ -302,10 +303,9 @@ object MainForm: TMainForm
       object Label7: TLabel
         Left = 8
         Height = 15
-        Top = 276
-        Width = 101
-        Caption = 'Palette value at risk'
-        Enabled = False
+        Top = 298
+        Width = 196
+        Caption = 'Frame tiling additional tiles threshold'
       end
       object Label4: TLabel
         Left = 8
@@ -402,7 +402,7 @@ object MainForm: TMainForm
         OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
         TabOrder = 8
-        Value = 2
+        Value = 3
       end
       object btnGTM: TButton
         Left = 607

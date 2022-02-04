@@ -187,7 +187,7 @@ type
   PTileMapItem = ^TTileMapItem;
 
   TTileMapItem = record
-    GlobalTileIndex, TmpIndex: Integer;
+    GlobalTileIndex: Integer;
     PalIdx: Integer;
     HMirror, VMirror, Smoothed: Boolean;
   end;
@@ -325,7 +325,7 @@ type
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
     sePage: TSpinEdit;
-    sePalVAR: TFloatSpinEdit;
+    seAddlTiles: TFloatSpinEdit;
     seStartFrame: TSpinEdit;
     seTempoSmoo: TFloatSpinEdit;
     seEncGamma: TFloatSpinEdit;
@@ -386,6 +386,7 @@ type
     FFrames: array of TFrame;
     FColorMap: array[0..cRGBColors - 1, 0..6] of Byte;
     FTiles: array of PTile;
+    FAdditionalTiles: TThreadList;
     FUseThomasKnoll: Boolean;
     FY2MixedColors: Integer;
     FLowMem: Boolean;
@@ -453,7 +454,7 @@ type
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure PrepareDitherTiles(AKeyFrame: TKeyFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
-    procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseDLv3: Boolean; PalVAR: TFloat; DLv3BPC: Integer);
+    procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseDLv3: Boolean; DLv3BPC: Integer);
     procedure FinishQuantizePalette(AKeyFrame: TKeyFrame);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
     procedure FinishDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
@@ -476,7 +477,8 @@ type
     procedure FinishGlobalFT;
     procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
     procedure FinishFrameTiling(AKF: TKeyFrame);
-    procedure DoFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
+    procedure DoFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean;
+      AFTQuality: TFTQuality; AAddlTilesThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -846,13 +848,13 @@ begin
 
   for i := 0 to sz - 1 do
   begin
-    ya[i + sz * 0] := a.FSPixels[i * 3 + 0];
-    ya[i + sz * 1] := a.FSPixels[i * 3 + 1];
-    ya[i + sz * 2] := a.FSPixels[i * 3 + 2];
+    ya[i + sz * 0] := a.FSPixels[i * 3 + 0] * cRedMul;
+    ya[i + sz * 1] := a.FSPixels[i * 3 + 1] * cGreenMul;
+    ya[i + sz * 2] := a.FSPixels[i * 3 + 2] * cBlueMul;
 
-    yb[i + sz * 0] := b.FSPixels[i * 3 + 0];
-    yb[i + sz * 1] := b.FSPixels[i * 3 + 1];
-    yb[i + sz * 2] := b.FSPixels[i * 3 + 2];
+    yb[i + sz * 0] := b.FSPixels[i * 3 + 0] * cRedMul;
+    yb[i + sz * 1] := b.FSPixels[i * 3 + 1] * cGreenMul;
+    yb[i + sz * 2] := b.FSPixels[i * 3 + 2] * cBlueMul;
   end;
 
   Result := PearsonCorrelation(ya, yb);
@@ -887,7 +889,6 @@ var
   UseWavelets: Boolean;
   UseDL3: Boolean;
   DLBPC: Integer;
-  PalVAR: TFloat;
   i: Integer;
 
   procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -903,7 +904,7 @@ var
     if not InRange(AIndex, 0, Length(FKeyFrames) * FPaletteCount - 1) then
       Exit;
 
-    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, UseDL3, PalVAR, DLBPC);
+    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, UseDL3, DLBPC);
   end;
 
   procedure DoFinish(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -922,7 +923,6 @@ begin
   UseWavelets := chkUseWL.Checked;
   UseDL3 := chkUseDL3.Checked;
   DLBPC := StrToInt(cbxDLBPC.Text);
-  PalVAR := sePalVAR.Value / 100;
 
   ProgressRedraw(-1, esDither);
   ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames));
@@ -985,17 +985,19 @@ var
   Gamma: Integer;
   UseWavelets: Boolean;
   FTQuality: TFTQuality;
+  AddlTilesThres: TFloat;
 
   procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    DoFrameTiling(FKeyFrames[AIndex], Gamma, cFTPaletteTol, UseWavelets, FTQuality);
+    DoFrameTiling(FKeyFrames[AIndex], Gamma, cFTPaletteTol, UseWavelets, FTQuality, AddlTilesThres);
   end;
 
 var
   i: Integer;
+  ATList: TList;
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
@@ -1003,15 +1005,33 @@ begin
   Gamma := IfThen(chkFTGamma.Checked, 0, -1);
   UseWavelets := chkUseWL.Checked;
   FTQuality := TFTQuality(cbxFTQ.ItemIndex);
+  AddlTilesThres := seAddlTiles.Value;
 
   for i := 0 to High(FKeyFrames) do
     FKeyFrames[i].FramesLeft := -1;
 
-  ProgressRedraw(-1, esFrameTiling);
-  PrepareGlobalFT;
-  ProgressRedraw(1);
-  ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames));
-  FinishGlobalFT;
+  FAdditionalTiles := TThreadList.Create;
+  try
+    ProgressRedraw(-1, esFrameTiling);
+    PrepareGlobalFT;
+    ProgressRedraw(1);
+    ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames));
+    FinishGlobalFT;
+
+    ATList := FAdditionalTiles.LockList;
+    try
+      SetLength(FTiles, Length(FTiles) + ATList.Count);
+      for i := 0 to ATList.Count - 1 do
+        FTiles[i + Length(FTiles) - ATList.Count] := ATList[i];
+
+      WriteLn('AdditionalTiles: ', ATList.Count);
+    finally
+      FAdditionalTiles.UnlockList;
+    end;
+  finally
+    FreeAndNil(FAdditionalTiles);
+  end;
+
   ProgressRedraw(2);
 
   tbFrameChange(nil);
@@ -1027,7 +1047,7 @@ const
   CShotTransMaxTilesPerKF = 24 * 1920 * 1080 div sqr(cTileWidth);
   CShotTransGracePeriod = 24;
   CShotTransSAvgFrames = 6;
-  CShotTransSoftThres = 0.9;
+  CShotTransSoftThres = 0.96;
   CShotTransHardThres = 0.5;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -1053,8 +1073,8 @@ const
   end;
 
 var
-  i, j, Cnt, LastKFIdx: Integer;
-  v, av, ratio: TFloat;
+  i, j, LastKFIdx: Integer;
+  r, ratio, prevRatio, softRatio: TFloat;
   fn: String;
   kfIdx, frc, StartFrame: Integer;
   isKf: Boolean;
@@ -1131,35 +1151,31 @@ begin
   FKeyFrames[0] := TKeyFrame.Create(FPaletteCount, 0, 0);
   FFrames[0].PKeyFrame := FKeyFrames[0];
 
-  av := -1.0;
+  prevRatio := 1.0;
+  softRatio := 1.0;
   LastKFIdx := 0;
   for i := 1 to High(FFrames) do
   begin
-    Cnt := 0;
-    v := ComputeInterFrameCorrelation(FFrames[i - 1], FFrames[i]);
-    if av = -1.0 then
-    begin
-      av := v
-    end
-    else
-    begin
-      av := av * (1.0 - 1.0 / CShotTransSAvgFrames) + v * (1.0 / CShotTransSAvgFrames);
-      Inc(Cnt);
-    end;
+    r := ComputeInterFrameCorrelation(FFrames[i - 1], FFrames[i]);
 
-    ratio := max(0.01, v) / max(0.01, av);
+    ratio := prevRatio * (1.0 - 1.0 / CShotTransSAvgFrames) + r * (1.0 / CShotTransSAvgFrames);
+    prevRatio := ratio;
+
+    softRatio -= 1.0 - ratio;
+
     isKf := (ratio < CShotTransHardThres) or
-      (ratio < CShotTransSoftThres) and ((i - LastKFIdx + 1) > CShotTransGracePeriod) or
+      (softRatio < CShotTransSoftThres) and ((i - LastKFIdx + 1) > CShotTransGracePeriod) or
       ((i - LastKFIdx + 1) * FTileMapSize > CShotTransMaxTilesPerKF);
     if isKf then
     begin
       Inc(kfIdx);
       FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
 
-      av := -1.0;
-      LastKFIdx := i;
+      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'HardRatio: ', FloatToStr(ratio), #9'SoftRatio: ', FloatToStr(softRatio));
 
-      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'Ratio: ', FloatToStr(ratio));
+      prevRatio := 1.0;
+      softRatio := 1.0;
+      LastKFIdx := i;
     end;
 
     FFrames[i].PKeyFrame := FKeyFrames[kfIdx];
@@ -2242,7 +2258,7 @@ begin
   WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo end');
 end;
 
-procedure TMainForm.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseDLv3: Boolean; PalVAR: TFloat; DLv3BPC: Integer);
+procedure TMainForm.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseDLv3: Boolean; DLv3BPC: Integer);
 var
   col, i: Integer;
   CMPal: TFPList;
@@ -2539,7 +2555,7 @@ end;
 
 procedure TMainForm.LoadTiles;
 var
-  i,j,x,y: Integer;
+  i, j, x, y, idx: Integer;
   tileCnt: Integer;
 begin
   // free memory from a prev run
@@ -3152,12 +3168,11 @@ begin
   for j := 0 to (FTileMapHeight - 1) do
     for i := 0 to (FTileMapWidth - 1) do
     begin
-      AFrame.TileMap[j, i].GlobalTileIndex := FTileMapWidth * j + i;
+      AFrame.TileMap[j, i].GlobalTileIndex := j * FTileMapWidth + i;
       AFrame.TileMap[j, i].HMirror := False;
       AFrame.TileMap[j, i].VMirror := False;
       AFrame.TileMap[j, i].PalIdx := -1;
       AFrame.TileMap[j, i].Smoothed := False;
-      AFrame.TileMap[j, i].TmpIndex := -1;
       AFrame.SmoothedTileMap[j, i] := AFrame.TileMap[j, i];
     end;
 
@@ -3192,9 +3207,7 @@ begin
     begin
       Move(TilesRGBPixels[i], AFrame.Tiles[i].RGBPixels, SizeOf(TRGBPixels));
 
-      for ty := 0 to (cTileWidth - 1) do
-        for tx := 0 to (cTileWidth - 1) do
-          AFrame.Tiles[i].PalPixels[ty, tx] := 0;
+      FillByte(AFrame.Tiles[i].PalPixels[0, 0], sqr(cTileWidth), 0);
 
       AFrame.Tiles[i].Active := True;
       AFrame.Tiles[i].UseCount := 1;
@@ -3908,12 +3921,12 @@ begin
 end;
 
 procedure TMainForm.DoFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean;
-  AFTQuality: TFTQuality);
+  AFTQuality: TFTQuality; AAddlTilesThres: TFloat);
 
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     i, bestIdx: Integer;
-    sy, sx: Integer;
+    y, x: Integer;
     tmiO: PTileMapItem;
 
     Frame: TFrame;
@@ -3921,6 +3934,8 @@ procedure TMainForm.DoFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalVAR: TF
     DCT: TFloatDynArray;
     ANNDCT: TANNFloatDynArray;
     bestErr: TANNFloat;
+
+    ATList: TList;
   begin
     if not InRange(AIndex, AKF.StartFrame, AKF.EndFrame) then
       Exit;
@@ -3933,24 +3948,41 @@ procedure TMainForm.DoFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalVAR: TF
     SetLength(DCT, cTileDCTSize);
     SetLength(ANNDCT, cTileDCTSize);
 
-    for sy := 0 to FTileMapHeight - 1 do
-      for sx := 0 to FTileMapWidth - 1 do
+    for y := 0 to FTileMapHeight - 1 do
+      for x := 0 to FTileMapWidth - 1 do
       begin
-        ComputeTilePsyVisFeatures(Frame.Tiles[sy * FTileMapWidth + sx], False, AUseWavelets, False, False, False, False, AFTGamma, nil, DCT);
+        ComputeTilePsyVisFeatures(Frame.Tiles[y * FTileMapWidth + x], False, AUseWavelets, False, False, False, False, AFTGamma, nil, DCT);
         for i := 0 to cTileDCTSize - 1 do
           ANNDCT[i] := DCT[i];
 
         bestIdx := ann_kdtree_search(DS^.KDT, @ANNDCT[0], 0.0, @bestErr);
 
-        tmiO := @FFrames[Frame.Index].TileMap[sy, sx];
+        tmiO := @FFrames[Frame.Index].TileMap[y, x];
 
-        tmiO^.GlobalTileIndex := DS^.TRToTileIdx[bestIdx];
-        tmiO^.PalIdx :=  DS^.TRToPalIdx[bestIdx];
-        tmiO^.HMirror := (DS^.TRToAttrs[bestIdx] and 1) <> 0;
-        tmiO^.VMirror := (DS^.TRToAttrs[bestIdx] and 2) <> 0;
+        if bestErr < AAddlTilesThres then
+        begin
+          tmiO^.GlobalTileIndex := DS^.TRToTileIdx[bestIdx];
+          tmiO^.PalIdx :=  DS^.TRToPalIdx[bestIdx];
+          tmiO^.HMirror := (DS^.TRToAttrs[bestIdx] and 1) <> 0;
+          tmiO^.VMirror := (DS^.TRToAttrs[bestIdx] and 2) <> 0;
 
-        DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
-        Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
+          DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
+          Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
+        end
+        else
+        begin
+          ATList := FAdditionalTiles.LockList;
+          try
+            ATList.Add(New(PTile));
+            CopyTile(Frame.Tiles[y * FTileMapWidth + x], PTile(ATList[ATList.Count - 1])^);
+
+            tmiO^.GlobalTileIndex := Length(FTiles) + ATList.Count - 1;
+            tmiO^.HMirror := False;
+            tmiO^.VMirror := False;
+          finally
+            FAdditionalTiles.UnlockList;
+          end;
+        end;
       end;
 
     InterLockedDecrement(Frame.PKeyFrame.FramesLeft);
