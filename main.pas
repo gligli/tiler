@@ -58,7 +58,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 5, 2, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 3, 2, 2, 2, 2);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -466,7 +466,7 @@ type
     procedure FinishMergeTiles;
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
     procedure DoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-    procedure DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
+    procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     procedure ReloadPreviousTiling(AFN: String);
 
@@ -483,6 +483,7 @@ type
     procedure DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat);
 
     procedure SaveStream(AStream: TStream);
+    procedure SaveRawTiles(OutFN: String);
 
     function DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; AScale: Double; out
       AFPS: Double): String;
@@ -874,7 +875,7 @@ begin
   end
   else
   begin
-    DoGlobalTiling(edReload.Text, seMaxTiles.Value, cRandomKModesCount);
+    DoGlobalTiling(seMaxTiles.Value, cRandomKModesCount);
   end;
 
   tbFrameChange(nil);
@@ -1360,6 +1361,10 @@ begin
   end;
 
   ProgressRedraw(1);
+
+  SaveRawTiles(edReload.Text);
+
+  ProgressRedraw(2);
 
   tbFrameChange(nil);
 end;
@@ -4182,9 +4187,8 @@ begin
   end;
 end;
 
-procedure TMainForm.DoGlobalTiling(OutFN: String; DesiredNbTiles, RestartCount: Integer);
+procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
-  fs: TFileStream;
   acc, i, j, disCnt, signi, ActiveTileCnt: Integer;
   dis: TIntegerDynArray;
   best: TIntegerDynArray;
@@ -4276,29 +4280,6 @@ begin
   MakeTilesUnique(0, Length(FTiles));
 
   ProgressRedraw(3);
-
-  // put most probable tiles first
-
-  ReindexTiles;
-
-  ProgressRedraw(4);
-
-  // save raw tiles
-
-  if DirectoryExists(ExtractFilePath(OutFN)) then
-  begin
-    fs := TFileStream.Create(OutFN, fmCreate or fmShareDenyWrite);
-    try
-      fs.WriteByte(FTilePaletteSize);
-      for i := 0 to High(FTiles) do
-        if FTiles[i]^.Active then
-          fs.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
-    finally
-      fs.Free;
-    end;
-  end;
-
-  ProgressRedraw(5);
 end;
 
 procedure TMainForm.ReloadPreviousTiling(AFN: String);
@@ -4351,6 +4332,7 @@ var
   T: TTile;
   SigniIndices: TIntegerDynArray2;
   TilingPaletteSize: Integer;
+  hasUseCount: Boolean;
 begin
   fs := TFileStream.Create(AFN, fmOpenRead or fmShareDenyNone);
   try
@@ -4360,8 +4342,12 @@ begin
     SetLength(SigniIndices, High(Word) + 1, 0);
     SetLength(Dataset, fs.Size div sqr(cTileWidth), cKModesFeatureCount);
 
+    hasUseCount := fs.Size mod sqr(cTileWidth) = 2;
+    if hasUseCount then
+      fs.ReadByte; // version
+
     TilingPaletteSize := sqr(cTileWidth);
-    if fs.Size mod sqr(cTileWidth) <> 0 then
+    if hasUseCount or (fs.Size mod sqr(cTileWidth) <> 0) then
       TilingPaletteSize := fs.ReadByte;
 
     for i := 0 to High(Dataset) do
@@ -4786,6 +4772,31 @@ begin
   StreamSize := AStream.Size - StartPos;
 
   WriteLn('Written: ', StreamSize, #9'Bitrate: ', FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames)) + ' kbpf  '#9'(' + FormatFloat('0.00', StreamSize / 1024.0 * 8.0 / Length(FFrames) * FFramesPerSecond)+' kbps)');
+end;
+
+procedure TMainForm.SaveRawTiles(OutFN: String);
+var
+  fs: TFileStream;
+  i: Integer;
+begin
+  // save raw tiles
+
+  if DirectoryExists(ExtractFilePath(OutFN)) then
+  begin
+    fs := TFileStream.Create(OutFN, fmCreate or fmShareDenyWrite);
+    try
+      fs.WriteByte(0); // version
+      fs.WriteByte(FTilePaletteSize);
+      for i := 0 to High(FTiles) do
+        if FTiles[i]^.Active then
+        begin
+          fs.WriteDWord(FTiles[i]^.UseCount);
+          fs.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+        end;
+    finally
+      fs.Free;
+    end;
+  end;
 end;
 
 function TMainForm.DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; AScale: Double; out AFPS: Double): String;
