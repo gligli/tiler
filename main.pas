@@ -58,7 +58,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 3, 2, 2, 2, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 4, 2, 2, 2, 2);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -3893,7 +3893,8 @@ begin
 
   // Build KNN
 
-  DS^.KDT := ann_kdtree_create(@DS^.Dataset[0], Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+  if Length(DS^.Dataset) > 0  then
+    DS^.KDT := ann_kdtree_create(@DS^.Dataset[0], Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
 
   SetLength(DS^.DistErrCml, FPaletteCount);
   SetLength(DS^.DistErrCnt, FPaletteCount);
@@ -3915,7 +3916,8 @@ begin
     end;
   WriteLn('Frame: ', AKF.StartFrame, #9'ResidualErr: ', FloatToStr(resDist));
 
-  ann_kdtree_destroy(AKF.TileDS^.KDT);
+  if Length(AKF.TileDS^.Dataset) > 0 then
+    ann_kdtree_destroy(AKF.TileDS^.KDT);
   AKF.TileDS^.KDT := nil;
   SetLength(AKF.TileDS^.Dataset, 0);
   SetLength(AKF.TileDS^.TRToPalIdx, 0);
@@ -3997,7 +3999,8 @@ begin
   PrepareFrameTiling(AKF, AFTGamma, APalVAR, AUseWavelets, AFTQuality);
   AKF.FramesLeft := AKF.FrameCount;
 
-  ProcThreadPool.DoParallelLocalProc(@DoFrame, AKF.StartFrame, AKF.EndFrame);
+  if Length(AKF.TileDS^.Dataset) > 0 then
+    ProcThreadPool.DoParallelLocalProc(@DoFrame, AKF.StartFrame, AKF.EndFrame);
 
   FinishFrameTiling(AKF);
 end;
@@ -4316,6 +4319,12 @@ begin
   MakeTilesUnique(0, Length(FTiles));
 
   ProgressRedraw(3);
+
+  // put most probable tiles first and remove unused tiles
+
+  ReindexTiles;
+
+  ProgressRedraw(4);
 end;
 
 procedure TMainForm.ReloadPreviousTiling(AFN: String);
@@ -4485,15 +4494,21 @@ begin
     for y := 0 to (FTileMapHeight - 1) do
       for x := 0 to (FTileMapWidth - 1) do
       begin
-        Frame^.SmoothedTileMap[y,x].GlobalTileIndex := IdxMap[Frame^.SmoothedTileMap[y,x].GlobalTileIndex];
+        idx := Frame^.SmoothedTileMap[y,x].GlobalTileIndex;
+        if idx >= 0 then
+          Frame^.SmoothedTileMap[y,x].GlobalTileIndex := IdxMap[idx];
 
-        idx := IdxMap[Frame^.TileMap[y,x].GlobalTileIndex];
-        Frame^.TileMap[y,x].GlobalTileIndex := idx;
+        idx := Frame^.TileMap[y,x].GlobalTileIndex;
+        if idx >= 0 then
+        begin
+          idx := IdxMap[idx];
 
-        if FTiles[idx]^.KFSoleIndex < 0 then
-          FTiles[idx]^.KFSoleIndex := Frame^.PKeyFrame.StartFrame
-        else if FTiles[idx]^.KFSoleIndex <> Frame^.PKeyFrame.StartFrame then
-          FTiles[idx]^.KFSoleIndex := MaxInt;
+          Frame^.TileMap[y,x].GlobalTileIndex := idx;
+          if FTiles[idx]^.KFSoleIndex < 0 then
+            FTiles[idx]^.KFSoleIndex := Frame^.PKeyFrame.StartFrame
+          else if FTiles[idx]^.KFSoleIndex <> Frame^.PKeyFrame.StartFrame then
+            FTiles[idx]^.KFSoleIndex := MaxInt;
+        end;
       end;
   end;
 
