@@ -1206,6 +1206,10 @@ begin
 
   ProgressRedraw(2);
 
+  // free up frame memory
+  for i := 0 to High(FFrames) do
+    SetLength(FFrames[i].FSPixels, 0);
+
   if wasAutoQ or (seMaxTiles.Value <= 0) then
     seQbTilesEditingDone(nil);
   tbFrameChange(nil);
@@ -2269,7 +2273,7 @@ var
 
   procedure DoDennisLeeV3(PalIdx: Integer);
   var
-    i, j, sy, sx, dx, dy, ty, k, tileCnt, tileFx, tileFy, best: Integer;
+    i, j, sy, sx, dx, dy, ty, tx, k, tileCnt, tileFx, tileFy, best: Integer;
     dlPal: TDLUserPal;
     GTile: PTile;
   begin
@@ -2318,12 +2322,15 @@ var
           if GTile^.Active and (GTile^.DitheringPalIndex = PalIdx) then
           begin
             j := ((dy * cTileWidth) * tileFx * cTileWidth + (dx * cTileWidth)) * 3;
-            k := ((sy * cTileWidth) * FScreenWidth + (sx * cTileWidth)) * 3;
+            k := sy * FTileMapWidth + sx;
             for ty := 0 to cTileWidth - 1 do
             begin
-              Move(FFrames[i].FSPixels[k], dlInput[j], cTileWidth * 3);
-              Inc(j, tileFx * cTileWidth * 3);
-              Inc(k, FScreenWidth * 3);
+              for tx := 0 to cTileWidth - 1 do
+              begin
+                FromRGB(FFrames[i].Tiles[k].RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
+                Inc(j, 3);
+              end;
+              Inc(j, (tileFx - 1) * cTileWidth * 3);
             end;
 
             Inc(dx);
@@ -2460,9 +2467,6 @@ begin
         Move(OrigTile^.PalPixels[0, 0], AFrame.Tiles[sx + sy * FTileMapWidth].PalPixels[0, 0], SizeOf(TPalPixels));
       end;
     end;
-
-  // free up frame memory
-  SetLength(AFrame.FSPixels, 0);
 
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   Dec(AFrame.PKeyFrame.FramesLeft);
