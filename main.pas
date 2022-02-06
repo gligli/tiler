@@ -466,7 +466,7 @@ type
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
-    procedure DoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     procedure ReloadPreviousTiling(AFN: String);
@@ -4155,60 +4155,63 @@ begin
 end;
 
 type
-  TKModesBin = record
-    Dataset: TByteDynArray3;
-    TileIndices: TIntegerDynArray2;
-    StartingPoint: TIntegerDynArray;
-    ClusterCount: TFloatDynArray;
+  TKMeansBin = record
+    Dataset: TFloatDynArray2;
+    TileIndices: TIntegerDynArray;
+    ClusterCount: Integer;
   end;
 
-  PKModesBin = ^TKModesBin;
+  PKMeansBin = ^TKMeansBin;
+  TKMeansBinArray = array of TKMeansBin;
+  PKMeansBinArray = ^TKMeansBinArray;
 
-procedure TMainForm.DoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TMainForm.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  KModes: TKModes;
-  LocCentroids: TByteDynArray2;
+  Yakmo: PYakmo;
+  LocCentroids: TFloatDynArray2;
   LocClusters: TIntegerDynArray;
-  i, j, di, DSLen: Integer;
-  ActualNbTiles: Integer;
+  i, j, k, di, DSLen: Integer;
   ToMergeIdxs: TIntegerDynArray;
-  ToMerge: TByteDynArray2;
-  KMBin: PKModesBin;
-  dis: UInt64;
+  ToMerge: TFloatDynArray2;
+  best, v: TFloat;
+  KMBin: PKMeansBin;
 begin
   if not InRange(AIndex, 0, FPaletteCount - 1) then
     Exit;
 
-  KMBin := PKModesBin(AData);
+  KMBin := @PKMeansBinArray(AData)^[AIndex];
+  DSLen := Length(KMBin^.Dataset);
 
-  DSLen := Length(KMBin^.Dataset[AIndex]);
-
-  if DSLen <= KMBin^.ClusterCount[AIndex] then
+  if DSLen <= KMBin^.ClusterCount then
     Exit;
 
-  KModes := TKModes.Create(4, 0, True);
-  try
-    ActualNbTiles := KModes.ComputeKModes(KMBin^.Dataset[AIndex], round(KMBin^.ClusterCount[AIndex]), -KMBin^.StartingPoint[AIndex], FTilePaletteSize, LocClusters, LocCentroids);
-    Assert(Length(LocCentroids) = ActualNbTiles);
-    Assert(MaxIntValue(LocClusters) = ActualNbTiles - 1);
-  finally
-    KModes.Free;
-  end;
+  SetLength(LocClusters, DSLen);
+  SetLength(LocCentroids, KMBin^.ClusterCount, cTileDCTSize);
+
+  Yakmo := yakmo_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 1);
+  yakmo_load_train_data(Yakmo, DSLen, cTileDCTSize, @KMBin^.Dataset[0]);
+  if KMBin^.ClusterCount > 1 then
+    yakmo_train_on_data(Yakmo, @LocClusters[0]);
+  yakmo_get_centroids(Yakmo, @LocCentroids[0]);
+  yakmo_destroy(Yakmo);
+
+  Assert(Length(LocCentroids) = KMBin^.ClusterCount);
+  Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
 
   SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
   // build a list of this centroid tiles
 
-  for j := 0 to round(KMBin^.ClusterCount[AIndex]) - 1 do
+  for j := 0 to KMBin^.ClusterCount - 1 do
   begin
     di := 0;
-    for i := 0 to High(KMBin^.TileIndices[AIndex]) do
+    for i := 0 to High(KMBin^.TileIndices) do
     begin
       if LocClusters[i] = j then
       begin
-        ToMerge[di] := KMBin^.Dataset[AIndex, i];
-        ToMergeIdxs[di] := KMBin^.TileIndices[AIndex, i];
+        ToMerge[di] := KMBin^.Dataset[i];
+        ToMergeIdxs[di] := KMBin^.TileIndices[i];
         Inc(di);
       end;
     end;
@@ -4217,42 +4220,67 @@ begin
 
     if di >= 2 then
     begin
-      i := GetMinMatchingDissim(ToMerge, LocCentroids[j], di, dis);
+      i := -1;
+      best := MaxSingle;
+      for k := 0 to di - 1 do
+      begin
+        v := CompareEuclideanDCT(ToMerge[k], LocCentroids[j]);
+        if v < best then
+        begin
+          i := k;
+          best := v;
+        end;
+      end;
+
       SpinEnter(@FLock);
       MergeTiles(ToMergeIdxs, di, ToMergeIdxs[i], nil, nil);
       SpinLeave(@FLock);
     end;
   end;
+
+  // free up memory
+
+  SetLength(KMBin^.Dataset, 0);
+  SetLength(KMBin^.TileIndices, 0);
 end;
+
 
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
-  acc, i, j, disCnt, signi, ActiveTileCnt: Integer;
-  dis: TIntegerDynArray;
-  best: TIntegerDynArray;
+  KMBins: TKMeansBinArray;
+  i, j, disCnt, signi, ActiveTileCnt: Integer;
+  cnt: TIntegerDynArray;
   share: TFloat;
-  Line: TByteDynArray;
-  KMBin: TKModesBin;
+  Line: TFloatDynArray;
+  acc: TFloat;
 begin
-  SetLength(KMBin.TileIndices, FPaletteCount);
-  SetLength(KMBin.StartingPoint, FPaletteCount);
-  SetLength(KMBin.ClusterCount, FPaletteCount);
-  SetLength(dis, FPaletteCount);
-  SetLength(best, FPaletteCount);
 
-  // prepare KModes dataset, one line per tile, 64 palette indexes per line plus 16 additional features
-  // also choose KModes starting point
+  // prepare KMeans dataset, one line per tile, psychovisual model as features
+  // also choose KMeans starting point
 
-  SetLength(KMBin.Dataset, FPaletteCount, Length(FTiles) shr 4, cKModesFeatureCount);
-  SetLength(Line, cKModesFeatureCount);
+  SetLength(KMBins, FPaletteCount);
+  SetLength(cnt, FPaletteCount);
+  SetLength(Line, cTileDCTSize);
+
+  ActiveTileCnt := GetGlobalTileCount;
+
+  // precompute dataset size
+
+  FillDWord(cnt[0], FPaletteCount, 0);
+  for i := 0 to High(FTiles) do
+  begin
+    if not FTiles[i]^.Active then
+      Continue;
+    signi :=FTiles[i]^.DitheringPalIndex;
+    Inc(cnt[signi]);
+  end;
 
   for i := 0 to FPaletteCount - 1 do
-    SetLength(KMBin.TileIndices[i], Length(FTiles));
-
-  FillDWord(dis[0], FPaletteCount, 0);
-  FillDWord(KMBin.StartingPoint[0], FPaletteCount, DWORD(-RestartCount));
-  FillDWord(best[0], FPaletteCount, DWORD(MaxInt));
-  ActiveTileCnt := GetGlobalTileCount;
+  begin
+    SetLength(KMBins[i].TileIndices, cnt[i]);
+    SetLength(KMBins[i].Dataset, cnt[i], cTileDCTSize);
+  end;
+  FillDWord(cnt[0], FPaletteCount, 0);
 
   // bin tiles by PalSigni (highest number of pixels the same color from the tile)
 
@@ -4261,53 +4289,31 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    WriteTileDatasetLine(FTiles[i]^, Line, j);
-
     signi :=FTiles[i]^.DitheringPalIndex;
-    if dis[signi] >= Length(KMBin.Dataset[signi]) then
-      SetLength(KMBin.Dataset[signi], ActiveTileCnt, cKModesFeatureCount);
-    Move(Line[0], KMBin.Dataset[signi, dis[signi], 0], cKModesFeatureCount);
-    KMBin.TileIndices[signi, dis[signi]] := i;
 
-    acc := 0;
-    for j := 0 to cKModesFeatureCount - 1 do
-      acc += KMBin.Dataset[signi, dis[signi], j];
-    if acc <= best[signi] then
-    begin
-      KMBin.StartingPoint[signi] := dis[signi];
-      best[signi] := acc;
-    end;
+    ComputeTilePsyVisFeatures(FTiles[i]^, False, True, False, False, False, False, -1, nil, KMBins[signi].Dataset[cnt[signi]]);
+    KMBins[signi].TileIndices[cnt[signi]] := i;
 
-    Inc(dis[signi]);
-  end;
-
-  for i := 0 to FPaletteCount - 1 do
-  begin
-    SetLength(KMBin.Dataset[i], dis[i]);
-    SetLength(KMBin.TileIndices[i], dis[i]);
+    Inc(cnt[signi]);
   end;
 
   // share DesiredNbTiles among bins, proportional to amount of tiles
 
-  FillQWord(KMBin.ClusterCount[0], FPaletteCount, 0);
   disCnt := 0;
   for i := 0 to FPaletteCount - 1 do
-    disCnt += EqualQualityTileCount(dis[i]);
+    disCnt += EqualQualityTileCount(cnt[i]);
   share := DesiredNbTiles / disCnt;
 
   for i := 0 to FPaletteCount - 1 do
-    KMBin.ClusterCount[i] := ceil(EqualQualityTileCount(dis[i]) * share);
-
-  //for i := 0 to FPaletteCount - 1 do
-  //  WriteLn('EntropyBin # ', i, #9'RawTiles: ', dis[i], #9'FinalTiles: ', round(KMBin.ClusterCount[i]));
+    KMBins[i].ClusterCount := ceil(EqualQualityTileCount(cnt[i]) * share);
 
   InitMergeTiles;
 
   ProgressRedraw(1);
 
-  // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
+  // run the KMeans algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ProcThreadPool.DoParallel(@DoKModes, 0, FPaletteCount - 1, @KMBin);
+  ProcThreadPool.DoParallel(@DoGlobalKMeans, 0, FPaletteCount - 1, @KMBins);
 
   ProgressRedraw(2);
 
