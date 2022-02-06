@@ -113,6 +113,9 @@
             <ExecuteBefore>
               <Command Value="xcopy /D /F tools\nm.exe $(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\"/>
             </ExecuteBefore>
+            <ExecuteAfter>
+              <Command Value="$(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\strip.exe $(OutputFile)"/>
+            </ExecuteAfter>
           </Other>
         </CompilerOptions>
       </Item3>
