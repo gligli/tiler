@@ -58,7 +58,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, 3, 1, 4, 2, 2, 2, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 2, 2, 2, 2);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -415,7 +415,6 @@ type
     function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
 
-    procedure LoadFrame(var AFrame: TFrame; ABitmap: TBitmap);
     procedure ClearAll;
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
     procedure Render(AFrameIndex: Integer; playing, dithered, mirrored, reduced, gamma: Boolean; palIdx: Integer;
@@ -448,6 +447,7 @@ type
     procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
     procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
+    procedure LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; ABitmap: TBitmap);
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: TFrame): Integer;
@@ -1064,7 +1064,7 @@ const
       bmp.LoadFromFile(Format(FInputPath, [AIndex + PtrUInt(AData)]));
       LeaveCriticalSection(FCS);
 
-      LoadFrame(FFrames[AIndex], bmp.Bitmap);
+      LoadFrame(FFrames[AIndex], AIndex, bmp.Bitmap);
 
       FFrames[AIndex].Index := AIndex;
     finally
@@ -1144,6 +1144,8 @@ begin
 
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(StartFrame));
 
+  ProgressRedraw(1);
+
   // find keyframes
 
   kfIdx := 0;
@@ -1200,11 +1202,11 @@ begin
     FKeyFrames[j].FrameCount := efr - sfr + 1;
   end;
 
-  ProgressRedraw(1);
+  ProgressRedraw(2);
 
   LoadTiles;
 
-  ProgressRedraw(2);
+  ProgressRedraw(3);
 
   // free up frame memory
   for i := 0 to High(FFrames) do
@@ -2577,15 +2579,12 @@ begin
     FillChar(FTiles[i]^, SizeOf(TTile), 0);
   end;
 
-  // copy frame tiles to global tiles, point tilemap on proper global tiles
+  // copy frame tiles to global tiles
   for i := 0 to High(FFrames) do
   begin
     tileCnt := i * FTileMapSize;
     for j := 0 to FTileMapSize - 1 do
       CopyTile(FFrames[i].Tiles[j], FTiles[tileCnt + j]^);
-    for y := 0 to (FTileMapHeight - 1) do
-      for x := 0 to (FTileMapWidth - 1) do
-        Inc(FFrames[i].TileMap[y, x].GlobalTileIndex, tileCnt);
   end;
 end;
 
@@ -3154,7 +3153,7 @@ begin
     end;
 end;
 
-procedure TMainForm.LoadFrame(var AFrame: TFrame; ABitmap: TBitmap);
+procedure TMainForm.LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; ABitmap: TBitmap);
 var
   i, j, col, ti, tx, ty: Integer;
   pcol: PInteger;
@@ -3172,7 +3171,7 @@ begin
   for j := 0 to (FTileMapHeight - 1) do
     for i := 0 to (FTileMapWidth - 1) do
     begin
-      AFrame.TileMap[j, i].GlobalTileIndex := j * FTileMapWidth + i;
+      AFrame.TileMap[j, i].GlobalTileIndex := AFrameIndex * FTileMapSize + j * FTileMapWidth + i;
       AFrame.TileMap[j, i].HMirror := False;
       AFrame.TileMap[j, i].VMirror := False;
       AFrame.TileMap[j, i].PalIdx := -1;
