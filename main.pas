@@ -394,7 +394,7 @@ type
     FFramesPerSecond: Double;
 
     FProgressStep: TEncoderStep;
-    FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
+    FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Int64;
 
     FTileMapWidth: Integer;
     FTileMapHeight: Integer;
@@ -3524,7 +3524,7 @@ const
   cProgressMul = 100;
 var
   esLen: Integer;
-  t: Integer;
+  t: Int64;
 begin
   pbProgress.Max := (Ord(High(TEncoderStep)) + 1) * cProgressMul;
 
@@ -3541,7 +3541,7 @@ begin
     FProgressStep := ProgressStep;
     pbProgress.Position := Ord(FProgressStep) * cProgressMul;
     Screen.Cursor := crHourGlass;
-    FProgressPrevTime := GetTickCount;
+    FProgressPrevTime := GetTickCount64;
   end;
 
   if (CurFrameIdx < 0) and (ProgressStep = esNone) then
@@ -3550,7 +3550,7 @@ begin
     FOldProgressPosition := 0;
     FProgressStep := esNone;
     FProgressPosition := 0;
-    FProgressPrevTime := GetTickCount;
+    FProgressPrevTime := GetTickCount64;
     FProgressStartTime := FProgressPrevTime;
   end;
 
@@ -3560,7 +3560,7 @@ begin
   lblPct.Invalidate;
   Repaint;
 
-  t := GetTickCount;
+  t := GetTickCount64;
   if CurFrameIdx >= 0 then
   begin
     WriteLn('Step: ', Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), 3), ' / ', FProgressPosition,
@@ -4170,11 +4170,11 @@ var
   Yakmo: PYakmo;
   LocCentroids: TFloatDynArray2;
   LocClusters: TIntegerDynArray;
-  i, j, k, di, DSLen: Integer;
+  lineIdx, clusterIdx, clusterLineCount, DSLen, tx, ty, k: Integer;
   ToMergeIdxs: TIntegerDynArray;
-  ToMerge: TFloatDynArray2;
-  best, v: TFloat;
   KMBin: PKMeansBin;
+  YUVPixels: array[0 .. cTileDCTSize - 1] of TFloat;
+  MixingPlan: TMixingPlan;
 begin
   if not InRange(AIndex, 0, FPaletteCount - 1) then
     Exit;
@@ -4198,42 +4198,48 @@ begin
   Assert(Length(LocCentroids) = KMBin^.ClusterCount);
   Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
 
-  SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
   // build a list of this centroid tiles
 
-  for j := 0 to KMBin^.ClusterCount - 1 do
+  for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
   begin
-    di := 0;
-    for i := 0 to High(KMBin^.TileIndices) do
+    clusterLineCount := 0;
+    for lineIdx := 0 to High(KMBin^.TileIndices) do
     begin
-      if LocClusters[i] = j then
+      if LocClusters[lineIdx] = clusterIdx then
       begin
-        ToMerge[di] := KMBin^.Dataset[i];
-        ToMergeIdxs[di] := KMBin^.TileIndices[i];
-        Inc(di);
+        ToMergeIdxs[clusterLineCount] := KMBin^.TileIndices[lineIdx];
+        Inc(clusterLineCount);
       end;
     end;
 
     // choose a tile from the centroids
 
-    if di >= 2 then
+    if clusterLineCount >= 2 then
     begin
-      i := -1;
-      best := MaxSingle;
-      for k := 0 to di - 1 do
-      begin
-        v := CompareEuclideanDCT(ToMerge[k], LocCentroids[j]);
-        if v < best then
+      // reverse PsyV model to retrieve plaintext RGB tile from centroid
+      for k := 0 to cTileDCTSize - 1 do
+        if IsNan(LocCentroids[clusterIdx, k]) then
+          LocCentroids[clusterIdx, k] := 0.0;
+      for k := 0 to 2 do
+        DeWaveletGS(@LocCentroids[clusterIdx, k * Sqr(cTileWidth)], @YUVPixels[k * Sqr(cTileWidth)], cTileWidth, cTileWidth, 2);
+      k := 0;
+      for ty := 0 to cTileWidth - 1 do
+        for tx := 0 to cTileWidth - 1 do
         begin
-          i := k;
-          best := v;
+          FTiles[ToMergeIdxs[0]]^.RGBPixels[ty, tx] := YUVToRGB(YUVPixels[k + 0 * Sqr(cTileWidth)], YUVPixels[k + 1 * Sqr(cTileWidth)], YUVPixels[k + 2 * Sqr(cTileWidth)]);
+          Inc(k);
         end;
-      end;
 
+      // dither centroid tile
+      PreparePlan(MixingPlan, FY2MixedColors, FFrames[ToMergeIdxs[0] div FTileMapSize].PKeyFrame.PaletteRGB[AIndex]);
+      DitherTile(FTiles[ToMergeIdxs[0]]^, MixingPlan);
+      TerminatePlan(MixingPlan);
+
+      // apply to cluster
       SpinEnter(@FLock);
-      MergeTiles(ToMergeIdxs, di, ToMergeIdxs[i], nil, nil);
+      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[0], nil, nil);
       SpinLeave(@FLock);
     end;
   end;
@@ -4248,11 +4254,9 @@ end;
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
   KMBins: TKMeansBinArray;
-  i, j, disCnt, signi, ActiveTileCnt: Integer;
+  i, disCnt, signi: Integer;
   cnt: TIntegerDynArray;
   share: TFloat;
-  Line: TFloatDynArray;
-  acc: TFloat;
 begin
 
   // prepare KMeans dataset, one line per tile, psychovisual model as features
@@ -4260,9 +4264,6 @@ begin
 
   SetLength(KMBins, FPaletteCount);
   SetLength(cnt, FPaletteCount);
-  SetLength(Line, cTileDCTSize);
-
-  ActiveTileCnt := GetGlobalTileCount;
 
   // precompute dataset size
 
