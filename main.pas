@@ -448,6 +448,7 @@ type
     procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
     procedure LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; ABitmap: TBitmap);
+    procedure FindKeyFrames;
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: TFrame): Integer;
@@ -1038,12 +1039,6 @@ begin
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
-const
-  CShotTransMaxTilesPerKF = 24 * 1920 * 1080 div sqr(cTileWidth);
-  CShotTransGracePeriod = 24;
-  CShotTransSAvgFrames = 6;
-  CShotTransSoftThres = 0.96;
-  CShotTransHardThres = 0.5;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -1068,12 +1063,8 @@ const
   end;
 
 var
-  i, j, LastKFIdx: Integer;
-  r, ratio, prevRatio, softRatio: TFloat;
+  i, StartFrame, frc: Integer;
   fn: String;
-  kfIdx, frc, StartFrame: Integer;
-  isKf: Boolean;
-  sfr, efr: Integer;
   bmp: TPicture;
   wasAutoQ: Boolean;
 begin
@@ -1141,61 +1132,7 @@ begin
 
   ProgressRedraw(1);
 
-  // find keyframes
-
-  kfIdx := 0;
-  SetLength(FKeyFrames, Length(FFrames));
-  FKeyFrames[0] := TKeyFrame.Create(FPaletteCount, 0, 0);
-  FFrames[0].PKeyFrame := FKeyFrames[0];
-
-  prevRatio := 1.0;
-  softRatio := 1.0;
-  LastKFIdx := 0;
-  for i := 1 to High(FFrames) do
-  begin
-    r := ComputeInterFrameCorrelation(FFrames[i - 1], FFrames[i]);
-
-    ratio := prevRatio * (1.0 - 1.0 / CShotTransSAvgFrames) + r * (1.0 / CShotTransSAvgFrames);
-    prevRatio := ratio;
-
-    softRatio -= 1.0 - ratio;
-
-    isKf := (ratio < CShotTransHardThres) or
-      (softRatio < CShotTransSoftThres) and ((i - LastKFIdx + 1) > CShotTransGracePeriod) or
-      ((i - LastKFIdx + 1) * FTileMapSize > CShotTransMaxTilesPerKF);
-    if isKf then
-    begin
-      Inc(kfIdx);
-      FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
-
-      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'HardRatio: ', FloatToStr(ratio), #9'SoftRatio: ', FloatToStr(softRatio));
-
-      prevRatio := 1.0;
-      softRatio := 1.0;
-      LastKFIdx := i;
-    end;
-
-    FFrames[i].PKeyFrame := FKeyFrames[kfIdx];
-  end;
-
-  SetLength(FKeyFrames, kfIdx + 1);
-
-  for j := 0 to High(FKeyFrames) do
-  begin
-    sfr := High(Integer);
-    efr := Low(Integer);
-
-    for i := 0 to High(FFrames) do
-      if FFrames[i].PKeyFrame = FKeyFrames[j] then
-      begin
-        sfr := Min(sfr, i);
-        efr := Max(efr, i);
-      end;
-
-    FKeyFrames[j].StartFrame := sfr;
-    FKeyFrames[j].EndFrame := efr;
-    FKeyFrames[j].FrameCount := efr - sfr + 1;
-  end;
+  FindKeyFrames;
 
   ProgressRedraw(2);
 
@@ -2556,7 +2493,7 @@ end;
 
 procedure TMainForm.LoadTiles;
 var
-  i, j, x, y, idx: Integer;
+  i, j: Integer;
   tileCnt: Integer;
 begin
   // free memory from a prev run
@@ -3218,6 +3155,90 @@ begin
 
   finally
     ABitmap.EndUpdate;
+  end;
+end;
+
+procedure TMainForm.FindKeyFrames;
+var
+  Correlations: TFloatDynArray;
+
+  procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex]);
+  end;
+
+const
+  CShotTransMaxTilesPerKF = 24 * 1920 * 1080 div sqr(cTileWidth);
+  CShotTransGracePeriod = 24;
+  CShotTransSAvgFrames = 6;
+  CShotTransSoftThres = 0.96;
+  CShotTransHardThres = 0.5;
+var
+  i, j, LastKFIdx: Integer;
+  r, ratio, prevRatio, softRatio: TFloat;
+  kfIdx: Integer;
+  isKf: Boolean;
+  sfr, efr: Integer;
+begin
+  // compute interframe correlations
+
+  SetLength(Correlations, Length(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
+
+  // find keyframes
+
+  kfIdx := 0;
+  SetLength(FKeyFrames, Length(FFrames));
+  FKeyFrames[0] := TKeyFrame.Create(FPaletteCount, 0, 0);
+  FFrames[0].PKeyFrame := FKeyFrames[0];
+
+  prevRatio := 1.0;
+  softRatio := 1.0;
+  LastKFIdx := 0;
+  for i := 1 to High(FFrames) do
+  begin
+    r := Correlations[i];
+
+    ratio := prevRatio * (1.0 - 1.0 / CShotTransSAvgFrames) + r * (1.0 / CShotTransSAvgFrames);
+    prevRatio := ratio;
+
+    softRatio -= 1.0 - ratio;
+
+    isKf := (ratio < CShotTransHardThres) or
+      (softRatio < CShotTransSoftThres) and ((i - LastKFIdx + 1) > CShotTransGracePeriod) or
+      ((i - LastKFIdx + 1) * FTileMapSize > CShotTransMaxTilesPerKF);
+    if isKf then
+    begin
+      Inc(kfIdx);
+      FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
+
+      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'HardRatio: ', FloatToStr(ratio), #9'SoftRatio: ', FloatToStr(softRatio));
+
+      prevRatio := 1.0;
+      softRatio := 1.0;
+      LastKFIdx := i;
+    end;
+
+    FFrames[i].PKeyFrame := FKeyFrames[kfIdx];
+  end;
+
+  SetLength(FKeyFrames, kfIdx + 1);
+
+  for j := 0 to High(FKeyFrames) do
+  begin
+    sfr := High(Integer);
+    efr := Low(Integer);
+
+    for i := 0 to High(FFrames) do
+      if FFrames[i].PKeyFrame = FKeyFrames[j] then
+      begin
+        sfr := Min(sfr, i);
+        efr := Max(efr, i);
+      end;
+
+    FKeyFrames[j].StartFrame := sfr;
+    FKeyFrames[j].EndFrame := efr;
+    FKeyFrames[j].FrameCount := efr - sfr + 1;
   end;
 end;
 
