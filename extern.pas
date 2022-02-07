@@ -77,6 +77,8 @@ procedure yakmo_load_train_data(ay: PYakmo; rowCount: Cardinal; colCount: Cardin
 procedure yakmo_train_on_data(ay: PYakmo; pointToCluster: PInteger); stdcall; external 'yakmo.dll';
 procedure yakmo_get_centroids(ay: PYakmo; centroids: PPFloat); stdcall; external 'yakmo.dll';
 
+function NumberOfProcessors: Integer;
+function HalfNumberOfProcessors: Integer;
 function InvariantFormatSettings: TFormatSettings;
 function internalRuncommand(p:TProcess;var outputstring:string;
                             var stderrstring:string; var exitstatus:integer; PrintOut: Boolean):integer;
@@ -86,6 +88,7 @@ implementation
 var
   GTempAutoInc : Integer = 0;
   GInvariantFormatSettings: TFormatSettings;
+  GNumberOfProcessors: Integer = 0;
 
 const
   READ_BYTES = 65536; // not too small to avoid fragmentation when reading large files.
@@ -693,12 +696,26 @@ begin
   Result := GetLineInt(lines[1]);
 end;
 
+function NumberOfProcessors: Integer;
+begin
+  Result := GNumberOfProcessors;
+end;
+
+function HalfNumberOfProcessors: Integer;
+begin
+  Result := max(1, GNumberOfProcessors div 2);
+end;
+
 function InvariantFormatSettings: TFormatSettings;
 begin
   Result := GInvariantFormatSettings;
 end;
 
+var
+  SystemInfo: SYSTEM_INFO;
 initialization
   GetLocaleFormatSettings(LOCALE_INVARIANT, GInvariantFormatSettings);
+  GetSystemInfo(SystemInfo);
+  GNumberOfProcessors := SystemInfo.dwNumberOfProcessors;
 end.
 

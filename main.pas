@@ -848,13 +848,8 @@ begin
 
   for i := 0 to sz - 1 do
   begin
-    ya[i + sz * 0] := a.FSPixels[i * 3 + 0] * cRedMul;
-    ya[i + sz * 1] := a.FSPixels[i * 3 + 1] * cGreenMul;
-    ya[i + sz * 2] := a.FSPixels[i * 3 + 2] * cBlueMul;
-
-    yb[i + sz * 0] := b.FSPixels[i * 3 + 0] * cRedMul;
-    yb[i + sz * 1] := b.FSPixels[i * 3 + 1] * cGreenMul;
-    yb[i + sz * 2] := b.FSPixels[i * 3 + 2] * cBlueMul;
+    RGBToLAB(a.FSPixels[i * 3 + 0], a.FSPixels[i * 3 + 1], a.FSPixels[i * 3 + 2], -1, ya[i + sz * 0], ya[i + sz * 1], ya[i + sz * 2]);
+    RGBToLAB(b.FSPixels[i * 3 + 0], b.FSPixels[i * 3 + 1], b.FSPixels[i * 3 + 2], -1, yb[i + sz * 0], yb[i + sz * 1], yb[i + sz * 2]);
   end;
 
   Result := PearsonCorrelation(ya, yb);
@@ -4190,6 +4185,7 @@ begin
 
   Yakmo := yakmo_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 1);
   yakmo_load_train_data(Yakmo, DSLen, cTileDCTSize, @KMBin^.Dataset[0]);
+  SetLength(KMBin^.Dataset, 0);   // free up memory (dataset copied in Yakmo)
   if KMBin^.ClusterCount > 1 then
     yakmo_train_on_data(Yakmo, @LocClusters[0]);
   yakmo_get_centroids(Yakmo, @LocCentroids[0]);
@@ -4246,7 +4242,6 @@ begin
 
   // free up memory
 
-  SetLength(KMBin^.Dataset, 0);
   SetLength(KMBin^.TileIndices, 0);
 end;
 
@@ -4314,7 +4309,7 @@ begin
 
   // run the KMeans algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ProcThreadPool.DoParallel(@DoGlobalKMeans, 0, FPaletteCount - 1, @KMBins);
+  ProcThreadPool.DoParallel(@DoGlobalKMeans, 0, FPaletteCount - 1, @KMBins, HalfNumberOfProcessors);
 
   ProgressRedraw(2);
 
