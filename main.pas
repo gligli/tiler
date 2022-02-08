@@ -218,10 +218,6 @@ type
     LumaPal: array of Integer;
     Y2Palette: array of array[0..3] of Integer;
     Y2MixedColors: Integer;
-    // dynamic
-    CacheLock: TSpinlock;
-    ListCache: TList;
-    CountCache: TIntegerDynArray;
   end;
 
   TKeyFrame = class;
@@ -278,14 +274,12 @@ type
     chkFTGamma: TCheckBox;
     chkUseWL: TCheckBox;
     chkGamma: TCheckBox;
-    chkLowMem: TCheckBox;
     chkDitheringGamma: TCheckBox;
     chkReduced: TCheckBox;
     chkMirrored: TCheckBox;
     chkDithered: TCheckBox;
     chkPlay: TCheckBox;
     chkReload: TCheckBox;
-    chkUseDL3: TCheckBox;
     chkUseTK: TCheckBox;
     edInput: TEdit;
     edOutput: TEdit;
@@ -367,7 +361,6 @@ type
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
     procedure cbxYilMixChange(Sender: TObject);
-    procedure chkLowMemChange(Sender: TObject);
     procedure chkUseTKChange(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
@@ -389,7 +382,6 @@ type
     FAdditionalTiles: TThreadList;
     FUseThomasKnoll: Boolean;
     FY2MixedColors: Integer;
-    FLowMem: Boolean;
     FInputPath: String;
     FFramesPerSecond: Double;
 
@@ -455,7 +447,7 @@ type
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure PrepareDitherTiles(AKeyFrame: TKeyFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
-    procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseDLv3: Boolean; DLv3BPC: Integer);
+    procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; DLv3BPC: Integer);
     procedure FinishQuantizePalette(AKeyFrame: TKeyFrame);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
     procedure FinishDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
@@ -883,7 +875,6 @@ procedure TMainForm.btnDitherClick(Sender: TObject);
 var
   Gamma: Integer;
   UseWavelets: Boolean;
-  UseDL3: Boolean;
   DLBPC: Integer;
   i: Integer;
 
@@ -900,7 +891,7 @@ var
     if not InRange(AIndex, 0, Length(FKeyFrames) * FPaletteCount - 1) then
       Exit;
 
-    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, UseDL3, DLBPC);
+    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, DLBPC);
   end;
 
   procedure DoFinish(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -917,7 +908,6 @@ begin
 
   Gamma := IfThen(chkDitheringGamma.Checked, 0, -1);
   UseWavelets := chkUseWL.Checked;
-  UseDL3 := chkUseDL3.Checked;
   DLBPC := StrToInt(cbxDLBPC.Text);
 
   ProgressRedraw(-1, esDither);
@@ -1365,11 +1355,6 @@ begin
   FY2MixedColors := StrToIntDef(cbxYilMix.Text, 16);
 end;
 
-procedure TMainForm.chkLowMemChange(Sender: TObject);
-begin
-  FLowMem := chkLowMem.Checked;
-end;
-
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
 var
   k: Word;
@@ -1551,14 +1536,6 @@ begin
   SetLength(Plan.LumaPal, Length(pal));
   SetLength(Plan.Y2Palette, Length(pal));
 
-  if not FLowMem then
-  begin
-    SpinLeave(@Plan.CacheLock);
-    SetLength(Plan.CountCache, 1 shl 24);
-    FillDWord(Plan.CountCache[0], 1 shl 24, $ffffffff);
-    Plan.ListCache := TList.Create;
-  end;
-
   for i := 0 to High(pal) do
   begin
     col := pal[i];
@@ -1579,14 +1556,6 @@ procedure TMainForm.TerminatePlan(var Plan: TMixingPlan);
 var
   i: Integer;
 begin
-  if not FLowMem then
-  begin
-    for i := 0 to Plan.ListCache.Count - 1 do
-      Freemem(Plan.ListCache[i]);
-    Plan.ListCache.Free;
-    SetLength(Plan.CountCache, 0);
-  end;
-
   SetLength(Plan.LumaPal, 0);
   SetLength(Plan.Y2Palette, 0);
 end;
@@ -1633,20 +1602,6 @@ var
   cachePos: Integer;
   pb: PByte;
 begin
-  if not FLowMem then
-  begin
-    SpinEnter(@Plan.CacheLock);
-    cachePos := Plan.CountCache[col];
-    if cachePos >= 0 then
-    begin
-      Result := PByte(Plan.ListCache[cachePos])[0];
-      Move(PByte(Plan.ListCache[cachePos])[1], List[0], Result);
-      SpinLeave(@Plan.CacheLock);
-      Exit;
-    end;
-    SpinLeave(@Plan.CacheLock);
-  end;
-
   FromRGB(col, r, g, b);
 
 {$if defined(ASM_DBMP) and defined(CPUX86_64)}
@@ -1858,21 +1813,6 @@ begin
     add rsp, 16 * 6
   end;
 {$endif}
-
-  if not FLowMem then
-  begin
-    SpinEnter(@Plan.CacheLock);
-    if Plan.CountCache[col] < 0 then
-    begin
-      cachePos := Plan.ListCache.Count;
-      pb := GetMem(Result + 1);
-      pb[0] := Result;
-      Move(List[0], pb[1], Result);
-      Plan.ListCache.Add(pb);
-      Plan.CountCache[col] := cachePos;
-    end;
-    SpinLeave(@Plan.CacheLock);
-  end;
 end;
 
 procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
@@ -2057,49 +1997,12 @@ begin
   begin
     SetLength(list, cDitheringLen);
 
-    if FLowMem then
+    for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
     begin
-     for y := 0 to (cTileWidth - 1) do
-       for x := 0 to (cTileWidth - 1) do
-       begin
-         map_value := cDitheringMap[(y * cTileWidth) + x];
-         DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
-         ATile.PalPixels[y, x] := list[map_value];
-       end;
-    end
-    else
-    begin
-      for y := 0 to (cTileWidth - 1) do
-        for x := 0 to (cTileWidth - 1) do
-        begin
-          col := ATile.RGBPixels[y, x];
-          map_value := cDitheringMap[(y shl 3) + x];
-          SpinEnter(@Plan.CacheLock);
-          cachePos := Plan.CountCache[col];
-          if cachePos >= 0 then
-          begin
-            ATile.PalPixels[y, x] := PByte(Plan.ListCache[cachePos])[map_value];
-            SpinLeave(@Plan.CacheLock);
-          end
-          else
-          begin
-            SpinLeave(@Plan.CacheLock);
-
-            DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
-            ATile.PalPixels[y, x] := list[map_value];
-
-            SpinEnter(@Plan.CacheLock);
-            if Plan.CountCache[col] < 0 then
-            begin
-              cachePos := Plan.ListCache.Count;
-              pb := GetMem(cDitheringLen);
-              Move(List[0], pb^, cDitheringLen);
-              Plan.ListCache.Add(pb);
-              Plan.CountCache[col] := cachePos;
-            end;
-            SpinLeave(@Plan.CacheLock);
-          end;
-        end;
+      map_value := cDitheringMap[(y * cTileWidth) + x];
+      DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
+      ATile.PalPixels[y, x] := list[map_value];
     end;
   end
   else
@@ -2196,7 +2099,7 @@ begin
   WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo end');
 end;
 
-procedure TMainForm.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseDLv3: Boolean; DLv3BPC: Integer);
+procedure TMainForm.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; DLv3BPC: Integer);
 var
   col, i: Integer;
   CMPal: TFPList;
@@ -2369,7 +2272,7 @@ end;
 procedure TMainForm.FinishDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
 var
   i, PalIdx: Integer;
-  cnt, mx, sx, sy: Integer;
+  sx, sy: Integer;
   OrigTile: PTile;
 begin
   EnterCriticalSection(AFrame.PKeyFrame.CS);
@@ -2406,19 +2309,10 @@ begin
   Dec(AFrame.PKeyFrame.FramesLeft);
   if AFrame.PKeyFrame.FramesLeft <= 0 then
   begin
-    mx := 0;
-    cnt := 0;
     for i := 0 to FPaletteCount - 1 do
-    begin
-      if not FLowMem then
-      begin
-        mx := Max(AFrame.PKeyFrame.MixingPlans[i].ListCache.Count, mx);
-        cnt += AFrame.PKeyFrame.MixingPlans[i].ListCache.Count;
-      end;
       TerminatePlan(AFrame.PKeyFrame.MixingPlans[i]);
-    end;
 
-    WriteLn('Frame: ', AFrame.PKeyFrame.StartFrame, #9'CacheCnt: ', cnt, #9'CacheMax: ', mx);
+    WriteLn('Frame: ', AFrame.PKeyFrame.StartFrame);
   end;
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
 end;
@@ -4934,7 +4828,6 @@ begin
 
   cbxYilMixChange(nil);
   chkUseTKChange(nil);
-  chkLowMemChange(nil);
 
   for es := Succ(Low(TEncoderStep)) to High(TEncoderStep) do
   begin
