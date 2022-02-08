@@ -65,7 +65,7 @@ var
 begin
   LastError := FastGetLastError;
 
-  Result := scalable_calloc(1,Size);
+  Result := scalable_calloc(1, Size);
 
   if LastError <> FastGetLastError then
     SetLastError(LastError);
@@ -101,9 +101,6 @@ var
   LastError: Cardinal;
 begin
   Result := 0;
-  if P = nil then
-    Exit;
-
   LastError := FastGetLastError;
 
   scalable_free(P);
@@ -117,9 +114,6 @@ var
   LastError: Cardinal;
 begin
   Result := 0;
-  if P = nil then
-    Exit;
-
   LastError := FastGetLastError;
 
   scalable_free(P);
@@ -133,9 +127,6 @@ var
   LastError: Cardinal;
 begin
   Result := 0;
-  if P = nil then
-    Exit;
-
   LastError := FastGetLastError;
 
   Result := scalable_msize(P);
@@ -156,6 +147,7 @@ begin
   TbbMemMgr.FreememSize := @TbbFreeMemSize;
   TbbMemMgr.ReallocMem := @TbbReallocMem;
   TbbMemMgr.MemSize := @TbbMemSize;
+  TbbMemMgr.NeedLock := False;
 
   SetMemoryManager(TbbMemMgr);
 end;
