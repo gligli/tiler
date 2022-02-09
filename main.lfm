@@ -205,7 +205,7 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 10
         TabOrder = 17
-        Value = 0.3
+        Value = 0.4
       end
       object cbxYilMix: TComboBox
         Left = 248

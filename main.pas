@@ -435,8 +435,8 @@ type
     function ColorCompare(r1, g1, b1, r2, g2, b2: Int64): Int64;
     procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
     procedure TerminatePlan(var Plan: TMixingPlan);
-    function DeviseBestMixingPlanYliluoma(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
-    procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
+    function DeviseBestMixingPlanYliluoma(var Plan: TMixingPlan; col: Integer; var List: array of Byte): Integer;
+    procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: array of Byte);
     procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
     procedure LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; ABitmap: TBitmap);
@@ -459,7 +459,7 @@ type
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
-    procedure DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     procedure ReloadPreviousTiling(AFN: String);
@@ -1589,7 +1589,7 @@ begin
   Result += (lumadiff * lumadiff) shl 5;
 end;
 
-function TMainForm.DeviseBestMixingPlanYliluoma(var Plan: TMixingPlan; col: Integer; List: TByteDynArray): Integer;
+function TMainForm.DeviseBestMixingPlanYliluoma(var Plan: TMixingPlan; col: Integer; var List: array of Byte): Integer;
 label
   pal_loop, inner_loop, worst;
 var
@@ -1815,7 +1815,7 @@ begin
 {$endif}
 end;
 
-procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: TByteDynArray);
+procedure TMainForm.DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: array of Byte);
 var
   index, chosen, c: Integer;
   src : array[0..2] of Byte;
@@ -1989,33 +1989,30 @@ procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 var
   col, x, y: Integer;
   count, map_value: Integer;
-  list: TByteDynArray;
+  TKList: array[0 .. cDitheringLen - 1] of Byte;
+  YilList: array[0 .. cDitheringListLen - 1] of Byte;
   cachePos: Integer;
   pb: PByte;
 begin
   if FUseThomasKnoll then
   begin
-    SetLength(list, cDitheringLen);
-
     for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
     begin
       map_value := cDitheringMap[(y * cTileWidth) + x];
-      DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
-      ATile.PalPixels[y, x] := list[map_value];
+      DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], TKList);
+      ATile.PalPixels[y, x] := TKList[map_value];
     end;
   end
   else
   begin
-    SetLength(list, cDitheringListLen);
-
     for y := 0 to (cTileWidth - 1) do
       for x := 0 to (cTileWidth - 1) do
       begin
         map_value := cDitheringMap[(y shl 3) + x];
-        count := DeviseBestMixingPlanYliluoma(Plan, ATile.RGBPixels[y,x], list);
+        count := DeviseBestMixingPlanYliluoma(Plan, ATile.RGBPixels[y,x], YilList);
         map_value := (map_value * count) shr 6;
-        ATile.PalPixels[y, x] := list[map_value];
+        ATile.PalPixels[y, x] := YilList[map_value];
       end;
   end;
 end;
@@ -4065,31 +4062,31 @@ begin
 end;
 
 type
-  TKMeansBin = record
-    Dataset: TFloatDynArray2;
+  TKModesBin = record
+    Dataset: TByteDynArray2;
     TileIndices: TIntegerDynArray;
     ClusterCount: Integer;
+    StartingPoint: Integer;
   end;
 
-  PKMeansBin = ^TKMeansBin;
-  TKMeansBinArray = array of TKMeansBin;
-  PKMeansBinArray = ^TKMeansBinArray;
+  PKModesBin = ^TKModesBin;
+  TKModesBinArray = array of TKModesBin;
+  PKModesBinArray = ^TKModesBinArray;
 
-procedure TMainForm.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TMainForm.DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  Yakmo: PYakmo;
-  LocCentroids: TFloatDynArray2;
+  KModes: TKModes;
+  LocCentroids: TByteDynArray2;
   LocClusters: TIntegerDynArray;
   lineIdx, clusterIdx, clusterLineCount, DSLen, tx, ty, k: Integer;
   ToMergeIdxs: TIntegerDynArray;
-  KMBin: PKMeansBin;
-  YUVPixels: array[0 .. cTileDCTSize - 1] of TFloat;
-  MixingPlan: TMixingPlan;
+  KMBin: PKModesBin;
+  pal: TIntegerDynArray;
 begin
   if not InRange(AIndex, 0, FPaletteCount - 1) then
     Exit;
 
-  KMBin := @PKMeansBinArray(AData)^[AIndex];
+  KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := Length(KMBin^.Dataset);
 
   if DSLen <= KMBin^.ClusterCount then
@@ -4098,13 +4095,14 @@ begin
   SetLength(LocClusters, DSLen);
   SetLength(LocCentroids, KMBin^.ClusterCount, cTileDCTSize);
 
-  Yakmo := yakmo_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 1);
-  yakmo_load_train_data(Yakmo, DSLen, cTileDCTSize, @KMBin^.Dataset[0]);
-  SetLength(KMBin^.Dataset, 0);   // free up memory (dataset copied in Yakmo)
-  if KMBin^.ClusterCount > 1 then
-    yakmo_train_on_data(Yakmo, @LocClusters[0]);
-  yakmo_get_centroids(Yakmo, @LocCentroids[0]);
-  yakmo_destroy(Yakmo);
+  KModes := TKModes.Create(2, 0, True);
+  try
+    KMBin^.ClusterCount := KModes.ComputeKModes(KMBin^.Dataset, round(KMBin^.ClusterCount), -KMBin^.StartingPoint, FTilePaletteSize, LocClusters, LocCentroids);
+    Assert(Length(LocCentroids) = KMBin^.ClusterCount);
+    Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
+  finally
+    KModes.Free;
+  end;
 
   Assert(Length(LocCentroids) = KMBin^.ClusterCount);
   Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
@@ -4129,24 +4127,16 @@ begin
 
     if clusterLineCount >= 2 then
     begin
-      // reverse PsyV model to retrieve plaintext RGB tile from centroid
-      for k := 0 to cTileDCTSize - 1 do
-        if IsNan(LocCentroids[clusterIdx, k]) then
-          LocCentroids[clusterIdx, k] := 0.0;
-      for k := 0 to 2 do
-        DeWaveletGS(@LocCentroids[clusterIdx, k * Sqr(cTileWidth)], @YUVPixels[k * Sqr(cTileWidth)], cTileWidth, cTileWidth, 2);
+      // retrieve plaintext RGB tile from centroid
       k := 0;
+      pal := FFrames[ToMergeIdxs[0] div FTileMapSize].PKeyFrame.PaletteRGB[AIndex];
       for ty := 0 to cTileWidth - 1 do
         for tx := 0 to cTileWidth - 1 do
         begin
-          FTiles[ToMergeIdxs[0]]^.RGBPixels[ty, tx] := YUVToRGB(YUVPixels[k + 0 * Sqr(cTileWidth)], YUVPixels[k + 1 * Sqr(cTileWidth)], YUVPixels[k + 2 * Sqr(cTileWidth)]);
+          FTiles[ToMergeIdxs[0]]^.PalPixels[ty, tx] := LocCentroids[clusterIdx, k];
+          FTiles[ToMergeIdxs[0]]^.RGBPixels[ty, tx] := pal[LocCentroids[clusterIdx, k]];
           Inc(k);
         end;
-
-      // dither centroid tile
-      PreparePlan(MixingPlan, FY2MixedColors, FFrames[ToMergeIdxs[0] div FTileMapSize].PKeyFrame.PaletteRGB[AIndex]);
-      DitherTile(FTiles[ToMergeIdxs[0]]^, MixingPlan);
-      TerminatePlan(MixingPlan);
 
       // apply to cluster
       SpinEnter(@FLock);
@@ -4163,17 +4153,19 @@ end;
 
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
-  KMBins: TKMeansBinArray;
-  i, disCnt, signi: Integer;
+  KMBins: TKModesBinArray;
+  acc, i, j, disCnt, signi, dummy: Integer;
   cnt: TIntegerDynArray;
+  best: TIntegerDynArray;
   share: TFloat;
 begin
 
-  // prepare KMeans dataset, one line per tile, psychovisual model as features
-  // also choose KMeans starting point
+  // prepare KModes dataset, one line per tile, psychovisual model as features
+  // also choose KModes starting point
 
   SetLength(KMBins, FPaletteCount);
   SetLength(cnt, FPaletteCount);
+  SetLength(best, FPaletteCount);
 
   // precompute dataset size
 
@@ -4192,6 +4184,7 @@ begin
     SetLength(KMBins[i].Dataset, cnt[i], cTileDCTSize);
   end;
   FillDWord(cnt[0], FPaletteCount, 0);
+  FillDWord(best[0], FPaletteCount, 0);
 
   // bin tiles by PalSigni (highest number of pixels the same color from the tile)
 
@@ -4202,8 +4195,17 @@ begin
 
     signi :=FTiles[i]^.DitheringPalIndex;
 
-    ComputeTilePsyVisFeatures(FTiles[i]^, False, True, False, False, False, False, -1, nil, KMBins[signi].Dataset[cnt[signi]]);
+    WriteTileDatasetLine(FTiles[i]^, KMBins[signi].Dataset[cnt[signi]], dummy);
     KMBins[signi].TileIndices[cnt[signi]] := i;
+
+    acc := 0;
+    for j := 0 to cKModesFeatureCount - 1 do
+      acc += KMBins[signi].Dataset[cnt[signi], j];
+    if acc <= best[signi] then
+    begin
+      KMBins[signi].StartingPoint := cnt[signi];
+      best[signi] := acc;
+    end;
 
     Inc(cnt[signi]);
   end;
@@ -4224,7 +4226,7 @@ begin
 
   // run the KMeans algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ProcThreadPool.DoParallel(@DoGlobalKMeans, 0, FPaletteCount - 1, @KMBins, HalfNumberOfProcessors);
+  ProcThreadPool.DoParallel(@DoGlobalKModes, 0, FPaletteCount - 1, @KMBins);
 
   ProgressRedraw(2);
 
