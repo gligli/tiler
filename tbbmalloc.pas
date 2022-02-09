@@ -28,8 +28,6 @@ const
   // Call allocator-specific commands.
   function scalable_allocation_command(cmd: Integer; param: Pointer): Integer; cdecl; external CTbbMallocDll;
 
-  procedure InstallTbbMalloc;
-
 implementation
 
 uses
@@ -40,11 +38,6 @@ procedure scalable_free (ptr: Pointer); cdecl; external CTbbMallocDll;
 function scalable_realloc (ptr: Pointer; size: PtrInt): Pointer; cdecl; external CTbbMallocDll;
 function scalable_calloc (nobj: PtrInt; size: PtrInt): Pointer; cdecl; external CTbbMallocDll;
 function scalable_msize (ptr: Pointer): PtrInt; cdecl; external CTbbMallocDll;
-function scalable_posix_memalign (memptr: PPointer; alignment: PtrInt; size: PtrInt): Integer; cdecl; external CTbbMallocDll;
-function scalable_aligned_malloc (size: PtrInt; alignment: PtrInt): Pointer; cdecl; external CTbbMallocDll;
-function scalable_aligned_realloc (ptr: Pointer; size: PtrInt; alignment: PtrInt): Pointer; cdecl; external CTbbMallocDll;
-procedure scalable_aligned_free (ptr: Pointer); cdecl; external CTbbMallocDll;
-
 
 function FastGetLastError: Cardinal; assembler;
 asm
@@ -55,9 +48,6 @@ asm
   mov rax, gs:[$68]
   {$ENDIF WIN64}
 end;
-
-var
-  TbbMemMgr: TMemoryManager;
 
 function TbbAllocMem(Size: PtrUInt): Pointer;
 var
@@ -135,24 +125,36 @@ begin
     SetLastError(LastError);
 end;
 
-procedure InstallTbbMalloc;
+function TbbGetHeapStatus:THeapStatus;
+var res: THeapStatus;
 begin
-  scalable_allocation_mode(TBBMALLOC_USE_HUGE_PAGES, 1);
-
-  FillChar(TbbMemMgr,sizeof(TbbMemMgr), 0);
-
-  TbbMemMgr.AllocMem := @TbbAllocMem;
-  TbbMemMgr.GetMem := @TbbGetMem;
-  TbbMemMgr.FreeMem := @TbbFreeMem;
-  TbbMemMgr.FreememSize := @TbbFreeMemSize;
-  TbbMemMgr.ReallocMem := @TbbReallocMem;
-  TbbMemMgr.MemSize := @TbbMemSize;
-  TbbMemMgr.NeedLock := False;
-
-  SetMemoryManager(TbbMemMgr);
+  fillchar(res, sizeof(res), 0);
+  Result := res;
 end;
 
-initialization
-  InstallTbbMalloc;
+function TbbGetFPCHeapStatus:TFPCHeapStatus;
+begin
+  fillchar(Result, sizeof(Result), 0);
+end;
 
+Const
+ TbbMemMgr : TMemoryManager =
+    (
+      NeedLock : false;
+      GetMem : @TbbGetMem;
+      FreeMem : @TbbFreeMem;
+      FreememSize : @TbbFreeMemSize;
+      AllocMem : @TbbAllocMem;
+      ReallocMem : @TbbReallocMem;
+      MemSize : @TbbMemSize;
+      InitThread : nil;
+      DoneThread : nil;
+      RelocateHeap : nil;
+      GetHeapStatus : @TbbGetHeapStatus;
+      GetFPCHeapStatus: @TbbGetFPCHeapStatus;
+    );
+
+initialization
+  scalable_allocation_mode(TBBMALLOC_USE_HUGE_PAGES, 1);
+  SetMemoryManager(TbbMemMgr);
 end.
