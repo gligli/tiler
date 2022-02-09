@@ -79,6 +79,7 @@ procedure yakmo_get_centroids(ay: PYakmo; centroids: PPFloat); stdcall; external
 
 function NumberOfProcessors: Integer;
 function HalfNumberOfProcessors: Integer;
+function QuarterNumberOfProcessors: Integer;
 function InvariantFormatSettings: TFormatSettings;
 function internalRuncommand(p:TProcess;var outputstring:string;
                             var stderrstring:string; var exitstatus:integer; PrintOut: Boolean):integer;
@@ -704,6 +705,11 @@ end;
 function HalfNumberOfProcessors: Integer;
 begin
   Result := max(1, GNumberOfProcessors div 2);
+end;
+
+function QuarterNumberOfProcessors: Integer;
+begin
+  Result := max(1, GNumberOfProcessors div 4);
 end;
 
 function InvariantFormatSettings: TFormatSettings;

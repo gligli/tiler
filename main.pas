@@ -1001,7 +1001,7 @@ begin
     ProgressRedraw(-1, esFrameTiling);
     PrepareGlobalFT;
     ProgressRedraw(1);
-    ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames), nil, QuarterNumberOfProcessors);
     FinishGlobalFT;
 
     ATList := FAdditionalTiles.LockList;
