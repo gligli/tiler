@@ -62,11 +62,11 @@ function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String
 function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
 
-function ann_kdtree_create(pa: PPANNFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; cdecl; external 'ANN.dll';
-procedure ann_kdtree_destroy(akd: PANNkdtree); cdecl; external 'ANN.dll';
-function ann_kdtree_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; cdecl; external 'ANN.dll';
-function ann_kdtree_pri_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; cdecl; external 'ANN.dll';
-function ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PANNFloat; cnt: Integer; q: PANNFloat; eps: TANNFloat): Integer; cdecl; external 'ANN.dll';
+function ann_kdtree_create(pa: PPANNFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; external 'ANN.dll';
+procedure ann_kdtree_destroy(akd: PANNkdtree); external 'ANN.dll';
+function ann_kdtree_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; external 'ANN.dll';
+function ann_kdtree_pri_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; external 'ANN.dll';
+function ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PANNFloat; cnt: Integer; q: PANNFloat; eps: TANNFloat): Integer; external 'ANN.dll';
 
 function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
