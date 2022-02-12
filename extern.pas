@@ -12,6 +12,7 @@ type
 
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
+  TFloatDynArray3 = array of TFloatDynArray2;
   TDoubleDynArray2 = array of TDoubleDynArray;
   PFloat = ^TFloat;
   PPFloat = ^PFloat;

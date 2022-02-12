@@ -3199,7 +3199,8 @@ var
   TMItem: TTileMapItem;
   Frame: TFrame;
   pal: TIntegerDynArray;
-  oriCorr, chgCorr: TIntegerDynArray;
+  oriCorr, chgCorr: TFloatDynArray3;
+  q: TFloat;
 begin
   if Length(FFrames) <= 0 then
     Exit;
@@ -3214,6 +3215,12 @@ begin
     Exit;
 
   try
+    if not playing then
+    begin
+      SetLength(oriCorr, FTileMapHeight, FTileMapWidth, cTileDCTSize);
+      SetLength(chgCorr, FTileMapHeight, FTileMapWidth, cTileDCTSize);
+    end;
+
     if not playing then
     begin
       pnLbl.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
@@ -3249,6 +3256,8 @@ begin
         begin
           tilePtr :=  @Frame.Tiles[sy * FTileMapWidth + sx];
           DrawTile(imgSource.Picture.Bitmap, sx, sy, tilePtr, nil, False, False);
+          if not playing then
+            ComputeTilePsyVisFeatures(tilePtr^, False, True, False, False, False, False, Ord(gamma) * 2 - 1, nil, oriCorr[sy, sx]);
         end;
     finally
       imgSource.Picture.Bitmap.EndUpdate;
@@ -3292,6 +3301,8 @@ begin
             end;
 
             DrawTile(imgDest.Picture.Bitmap, sx, sy, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
+            if not playing then
+              ComputeTilePsyVisFeatures(tilePtr^, Assigned(pal), True, False, False, TMItem.HMirror, TMItem.VMirror, Ord(gamma) * 2 - 1, pal, chgCorr[sy, sx]);
           end;
         end;
     finally
@@ -3319,23 +3330,13 @@ begin
 
     if not playing then
     begin
-      SetLength(oriCorr, FScreenHeight * FScreenWidth * 2);
-      SetLength(chgCorr, FScreenHeight * FScreenWidth * 2);
+      q := 0.0;
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+          q += CompareEuclideanDCT(oriCorr[sy, sx], chgCorr[sy, sx]);
+      q /= FTileMapSize;
 
-      for j := 0 to FScreenHeight - 1 do
-      begin
-        Move(PInteger(imgSource.Picture.Bitmap.ScanLine[j])^, oriCorr[j * FScreenWidth], FScreenWidth * SizeOf(Integer));
-        Move(PInteger(imgDest.Picture.Bitmap.ScanLine[j])^, chgCorr[j * FScreenWidth], FScreenWidth * SizeOf(Integer));
-      end;
-
-      for j := 0 to FScreenHeight - 1 do
-        for i := 0 to FScreenWidth - 1 do
-        begin
-          oriCorr[FScreenWidth * FScreenHeight + i * FScreenHeight + j] := oriCorr[j * FScreenWidth + i];
-          chgCorr[FScreenWidth * FScreenHeight + i * FScreenHeight + j] := chgCorr[j * FScreenWidth + i];
-        end;
-
-      lblCorrel.Caption := FormatFloat('0.0000000', ComputeCorrelationBGR(oriCorr, chgCorr));
+      lblCorrel.Caption := FormatFloat('0.0000000', q);
     end;
   finally
     Repaint;
