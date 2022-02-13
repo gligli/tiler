@@ -2227,40 +2227,44 @@ var
           if FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex]^.DitheringPalIndex = APalIdx then
             Inc(di, Sqr(cTileWidth));
 
-    SetLength(Dataset, di, cFeatureCount);
-
-    // build a dataset of RGB pixels
-
-    di := 0;
-    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-          if GTile^.DitheringPalIndex = APalIdx then
-          begin
-            for ty := 0 to cTileWidth - 1 do
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
-                Dataset[di, 0] := rr; Dataset[di, 1] := gg; Dataset[di, 2] := bb;
-                Inc(di);
-              end;
-          end;
-        end;
-
-    // use KMeans to quantize to FTilePaletteSize elements
-
-    Yakmo := yakmo_create(FTilePaletteSize, 1, MaxInt, 1, 0, 0, 0);
-    yakmo_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
-
-    SetLength(Dataset, 0); // free up some memmory
-    SetLength(Clusters, di);
     SetLength(Centroids, FTilePaletteSize, cFeatureCount);
 
-    yakmo_train_on_data(Yakmo, @Clusters[0]);
-    yakmo_get_centroids(Yakmo, @Centroids[0]);
-    yakmo_destroy(Yakmo);
+    if di >= FTilePaletteSize then
+    begin
+      SetLength(Dataset, di, cFeatureCount);
+      SetLength(Clusters, di);
+
+      // build a dataset of RGB pixels
+
+      di := 0;
+      for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+            if GTile^.DitheringPalIndex = APalIdx then
+            begin
+              for ty := 0 to cTileWidth - 1 do
+                for tx := 0 to cTileWidth - 1 do
+                begin
+                  FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
+                  Dataset[di, 0] := rr; Dataset[di, 1] := gg; Dataset[di, 2] := bb;
+                  Inc(di);
+                end;
+            end;
+          end;
+
+      // use KMeans to quantize to FTilePaletteSize elements
+
+      Yakmo := yakmo_create(FTilePaletteSize, 1, MaxInt, 1, 0, 0, 0);
+      yakmo_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
+
+      SetLength(Dataset, 0); // free up some memmory
+
+      yakmo_train_on_data(Yakmo, @Clusters[0]);
+      yakmo_get_centroids(Yakmo, @Centroids[0]);
+      yakmo_destroy(Yakmo);
+    end;
 
     // retrieve palette data
 
