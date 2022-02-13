@@ -274,6 +274,7 @@ type
     cbxPalSize: TComboBox;
     cbxDLBPC: TComboBox;
     chkFTGamma: TCheckBox;
+    chkUseKMQuant: TCheckBox;
     chkUseWL: TCheckBox;
     chkGamma: TCheckBox;
     chkDitheringGamma: TCheckBox;
@@ -449,7 +450,7 @@ type
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure PrepareDitherTiles(AKeyFrame: TKeyFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
-    procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; DLv3BPC: Integer);
+    procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer);
     procedure FinishQuantizePalette(AKeyFrame: TKeyFrame);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
     procedure FinishDitherTiles(AFrame: TFrame; ADitheringGamma: Integer; AUseWavelets: Boolean);
@@ -877,6 +878,7 @@ procedure TMainForm.btnDitherClick(Sender: TObject);
 var
   Gamma: Integer;
   UseWavelets: Boolean;
+  UseYakmo: Boolean;
   DLBPC: Integer;
   i: Integer;
 
@@ -893,7 +895,7 @@ var
     if not InRange(AIndex, 0, Length(FKeyFrames) * FPaletteCount - 1) then
       Exit;
 
-    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, DLBPC);
+    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, UseYakmo, DLBPC);
   end;
 
   procedure DoFinish(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -910,6 +912,7 @@ begin
 
   Gamma := IfThen(chkDitheringGamma.Checked, 0, -1);
   UseWavelets := chkUseWL.Checked;
+  UseYakmo := chkUseKMQuant.Checked;
   DLBPC := StrToInt(cbxDLBPC.Text);
 
   ProgressRedraw(-1, esDither);
@@ -2098,93 +2101,97 @@ begin
   WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo end');
 end;
 
-procedure TMainForm.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; DLv3BPC: Integer);
+procedure TMainForm.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer);
 var
   col, i: Integer;
   CMPal: TFPList;
   CMItem: PCountIndexArray;
 
-  dlCnt: Integer;
-  dlInput: PByte;
-
-  procedure DoDennisLeeV3(PalIdx: Integer);
+  procedure DoDennisLeeV3;
   var
+    dlCnt: Integer;
+    dlInput: PByte;
     i, j, sy, sx, dx, dy, ty, tx, k, tileCnt, tileFx, tileFy, best: Integer;
     dlPal: TDLUserPal;
     GTile: PTile;
   begin
-    FillChar(dlInput^, dlCnt * 3, 0);
-    FillChar(dlPal[0, 0], SizeOf(dlPal), $ff);
+    dlCnt := AKeyFrame.FrameCount * FScreenWidth * FScreenHeight;
+    dlInput := GetMem(dlCnt * 3);
+    try
+      FillChar(dlInput^, dlCnt * 3, 0);
+      FillChar(dlPal[0, 0], SizeOf(dlPal), $ff);
 
-    // find width and height of a rectangular area to arrange tiles
+      // find width and height of a rectangular area to arrange tiles
 
-    tileCnt := 0;
-    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-          if GTile^.Active and (GTile^.DitheringPalIndex = PalIdx) then
-            Inc(tileCnt);
-        end;
-
-    best := MaxInt;
-    tileFx := 0;
-    tileFy := 0;
-    j := 0;
-    k := 0;
-    for i := 1 to tileCnt do
-    begin
-      DivMod(tileCnt, i, j, k);
-      if (k = 0) and (abs(i - j) < best) then
-      begin
-        best := abs(i - j);
-        tileFx := i;
-        tileFy := j;
-      end;
-    end;
-
-    // copy tile data into area
-
-    dx := 0;
-    dy := 0;
-    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-    begin
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
-
-          if GTile^.Active and (GTile^.DitheringPalIndex = PalIdx) then
+      tileCnt := 0;
+      for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
           begin
-            j := ((dy * cTileWidth) * tileFx * cTileWidth + (dx * cTileWidth)) * 3;
-            k := sy * FTileMapWidth + sx;
-            for ty := 0 to cTileWidth - 1 do
-            begin
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                FromRGB(FFrames[i].Tiles[k].RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
-                Inc(j, 3);
-              end;
-              Inc(j, (tileFx - 1) * cTileWidth * 3);
-            end;
-
-            Inc(dx);
-            if dx >= tileFx then
-            begin
-              dx := 0;
-              Inc(dy);
-            end;
-
-            Inc(AKeyFrame.PaletteUseCount[PalIdx].UseCount);
+            GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+            if GTile^.Active and (GTile^.DitheringPalIndex = APalIdx) then
+              Inc(tileCnt);
           end;
+
+      best := MaxInt;
+      tileFx := 0;
+      tileFy := 0;
+      j := 0;
+      k := 0;
+      for i := 1 to tileCnt do
+      begin
+        DivMod(tileCnt, i, j, k);
+        if (k = 0) and (abs(i - j) < best) then
+        begin
+          best := abs(i - j);
+          tileFx := i;
+          tileFy := j;
         end;
+      end;
+
+      // copy tile data into area
+
+      dx := 0;
+      dy := 0;
+      for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+      begin
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+
+            if GTile^.Active and (GTile^.DitheringPalIndex = APalIdx) then
+            begin
+              j := ((dy * cTileWidth) * tileFx * cTileWidth + (dx * cTileWidth)) * 3;
+              k := sy * FTileMapWidth + sx;
+              for ty := 0 to cTileWidth - 1 do
+              begin
+                for tx := 0 to cTileWidth - 1 do
+                begin
+                  FromRGB(FFrames[i].Tiles[k].RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
+                  Inc(j, 3);
+                end;
+                Inc(j, (tileFx - 1) * cTileWidth * 3);
+              end;
+
+              Inc(dx);
+              if dx >= tileFx then
+              begin
+                dx := 0;
+                Inc(dy);
+              end;
+
+              Inc(AKeyFrame.PaletteUseCount[APalIdx].UseCount);
+            end;
+          end;
+      end;
+
+      // call Dennis Lee v3 method
+
+      dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FTilePaletteSize, DLv3BPC, @dlPal);
+    finally
+      Freemem(dlInput);
     end;
-
-    // call Dennis Lee v3 method
-
-    dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FTilePaletteSize, DLv3BPC, @dlPal);
-    //DoExternalSColorQ(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FTilePaletteSize, @dlPal);
 
     // retrieve palette data
 
@@ -2202,16 +2209,80 @@ var
     end;
   end;
 
+  procedure DoYakmo;
+  const
+    cFeatureCount = 3;
+  var
+    i, di, sy, sx, ty, tx: Integer;
+    rr, gg, bb: Byte;
+    GTile: PTile;
+    Dataset, Centroids: TFloatDynArray2;
+    Clusters: TIntegerDynArray;
+    Yakmo: PYakmo;
+  begin
+    SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize * Sqr(cTileWidth), cFeatureCount);
+
+    // build a dataset of RGB pixels
+
+    di := 0;
+    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          GTile := FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex];
+          if GTile^.DitheringPalIndex = APalIdx then
+          begin
+            for ty := 0 to cTileWidth - 1 do
+              for tx := 0 to cTileWidth - 1 do
+              begin
+                FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
+                Dataset[di, 0] := rr; Dataset[di, 1] := gg; Dataset[di, 2] := bb;
+                //RGBToHSV(GTile^.RGBPixels[ty, tx], Dataset[di, 3], Dataset[di, 4], Dataset[di, 5]);
+                Inc(di);
+              end;
+          end;
+        end;
+
+    // use KMeans to quantize to FTilePaletteSize elements
+
+    Yakmo := yakmo_create(FTilePaletteSize, 1, MaxInt, 1, 0, 0, 0);
+    yakmo_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
+
+    SetLength(Dataset, 0); // free up some memmory
+    SetLength(Clusters, di);
+    SetLength(Centroids, FTilePaletteSize, cFeatureCount);
+
+    yakmo_train_on_data(Yakmo, @Clusters[0]);
+    yakmo_get_centroids(Yakmo, @Centroids[0]);
+    yakmo_destroy(Yakmo);
+
+    // retrieve palette data
+
+    CMPal.Count := FTilePaletteSize;
+    for i := 0 to FTilePaletteSize - 1 do
+    begin
+      col := ToRGB(Round(Centroids[i, 0]), Round(Centroids[i, 1]), Round(Centroids[i, 2]));
+
+      New(CMItem);
+      CMItem^.Index := col;
+      CMItem^.Count := 1;
+      CMItem^.Hue := FColorMap[col, 3]; CMItem^.Sat := FColorMap[col, 4]; CMItem^.Val := FColorMap[col, 5];
+      CMItem^.Luma := FColorMap[col, 6];
+      CMPal[i] := CMItem;
+    end;
+  end;
+
 begin
   Assert(FPaletteCount <= Length(gPalettePattern));
 
   AKeyFrame.PaletteUseCount[APalIdx].UseCount := 0;
 
-  dlCnt := AKeyFrame.FrameCount * FScreenWidth * FScreenHeight;
-  dlInput := GetMem(dlCnt * 3);
   CMPal := TFPList.Create;
   try
-    DoDennisLeeV3(APalIdx);
+    if UseYakmo then
+      DoYakmo
+    else
+      DoDennisLeeV3;
 
     // split most used colors into tile palettes
 
@@ -2225,7 +2296,6 @@ begin
       Dispose(PCountIndexArray(CMPal[i]));
   finally
     CMPal.Free;
-    Freemem(dlInput);
   end;
 
   Write('.');

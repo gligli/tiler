@@ -244,13 +244,13 @@ object MainForm: TMainForm
       object chkUseTK: TCheckBox
         Left = 8
         Height = 19
-        Top = 382
+        Top = 384
         Width = 254
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
         Checked = True
         OnChange = chkUseTKChange
         State = cbChecked
-        TabOrder = 21
+        TabOrder = 22
       end
       object Label13: TLabel
         Left = 8
@@ -318,40 +318,40 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 320
         Height = 19
-        Top = 382
+        Top = 366
         Width = 170
         Caption = 'Dithering gamma correction'
-        TabOrder = 23
+        TabOrder = 24
       end
       object chkFTGamma: TCheckBox
         Left = 320
         Height = 19
-        Top = 400
+        Top = 384
         Width = 184
         Caption = 'Frame tiling gamma correction'
-        TabOrder = 24
+        TabOrder = 25
       end
       object chkUseWL: TCheckBox
         Left = 8
         Height = 19
-        Top = 400
+        Top = 402
         Width = 288
         Caption = 'Use Haar Wavelets (not Discrete Cosine Transform)'
         Checked = True
         State = cbChecked
-        TabOrder = 22
+        TabOrder = 23
       end
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 357
+        Top = 341
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
       end
       object seEncGamma: TFloatSpinEdit
         Left = 248
         Height = 23
-        Top = 354
+        Top = 338
         Width = 71
         Increment = 0.1
         MaxValue = 10
@@ -363,7 +363,7 @@ object MainForm: TMainForm
       object seVisGamma: TFloatSpinEdit
         Left = 318
         Height = 23
-        Top = 354
+        Top = 338
         Width = 71
         Increment = 0.1
         MaxValue = 10
@@ -534,6 +534,17 @@ object MainForm: TMainForm
         Style = csDropDownList
         TabOrder = 9
         Text = 'Medium'
+      end
+      object chkUseKMQuant: TCheckBox
+        Left = 8
+        Height = 19
+        Top = 366
+        Width = 294
+        Caption = 'Use Yakmo KMeans as quantizer (not Dennis Lee v3)'
+        Checked = True
+        OnChange = chkUseTKChange
+        State = cbChecked
+        TabOrder = 21
       end
     end
     object tsInput: TTabSheet
