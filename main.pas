@@ -2220,7 +2220,14 @@ var
     Clusters: TIntegerDynArray;
     Yakmo: PYakmo;
   begin
-    SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize * Sqr(cTileWidth), cFeatureCount);
+    di := 0;
+    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+          if FTiles[FFrames[i].TileMap[sy, sx].GlobalTileIndex]^.DitheringPalIndex = APalIdx then
+            Inc(di, Sqr(cTileWidth));
+
+    SetLength(Dataset, di, cFeatureCount);
 
     // build a dataset of RGB pixels
 
@@ -2237,7 +2244,6 @@ var
               begin
                 FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
                 Dataset[di, 0] := rr; Dataset[di, 1] := gg; Dataset[di, 2] := bb;
-                //RGBToHSV(GTile^.RGBPixels[ty, tx], Dataset[di, 3], Dataset[di, 4], Dataset[di, 5]);
                 Inc(di);
               end;
           end;
