@@ -58,7 +58,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 2, 2, 2, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 3, 2, 2, 2, 2);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -205,6 +205,15 @@ type
   end;
 
   PTilingDataset = ^TTilingDataset;
+
+  TKModesDataset = record
+    Dataset: TByteDynArray2;
+    TileIndices: TIntegerDynArray;
+    ClusterCount: Integer;
+    StartingPoint: Integer;
+  end;
+
+  PKModesDataset = ^TKModesDataset;
 
   TCountIndexArray = packed record
     Count, Index: Integer;
@@ -462,7 +471,7 @@ type
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
     function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
-    procedure DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure DoGlobalKModes(KMBin: PKModesDataset);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     procedure ReloadPreviousTiling(AFN: String);
@@ -1558,8 +1567,6 @@ begin
 end;
 
 procedure TMainForm.TerminatePlan(var Plan: TMixingPlan);
-var
-  i: Integer;
 begin
   SetLength(Plan.LumaPal, 0);
   SetLength(Plan.Y2Palette, 0);
@@ -1992,12 +1999,10 @@ end;
 
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 var
-  col, x, y: Integer;
+  x, y: Integer;
   count, map_value: Integer;
   TKList: array[0 .. cDitheringLen - 1] of Byte;
   YilList: array[0 .. cDitheringListLen - 1] of Byte;
-  cachePos: Integer;
-  pb: PByte;
 begin
   if FUseThomasKnoll then
   begin
@@ -4161,32 +4166,15 @@ begin
   Assert(Result = cKModesFeatureCount);
 end;
 
-type
-  TKModesBin = record
-    Dataset: TByteDynArray2;
-    TileIndices: TIntegerDynArray;
-    ClusterCount: Integer;
-    StartingPoint: Integer;
-  end;
-
-  PKModesBin = ^TKModesBin;
-  TKModesBinArray = array of TKModesBin;
-  PKModesBinArray = ^TKModesBinArray;
-
-procedure TMainForm.DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+procedure TMainForm.DoGlobalKModes(KMBin: PKModesDataset);
 var
   KModes: TKModes;
   LocCentroids: TByteDynArray2;
   LocClusters: TIntegerDynArray;
-  lineIdx, clusterIdx, clusterLineCount, DSLen, tx, ty, k: Integer;
+  lineIdx, clusterIdx, frameIdx, sx, sy, clusterLineCount, DSLen, tx, ty, k: Integer;
   ToMergeIdxs: TIntegerDynArray;
-  KMBin: PKModesBin;
   pal: TIntegerDynArray;
 begin
-  if not InRange(AIndex, 0, FPaletteCount - 1) then
-    Exit;
-
-  KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := Length(KMBin^.Dataset);
 
   if DSLen <= KMBin^.ClusterCount then
@@ -4195,7 +4183,7 @@ begin
   SetLength(LocClusters, DSLen);
   SetLength(LocCentroids, KMBin^.ClusterCount, cTileDCTSize);
 
-  KModes := TKModes.Create(2, 0, True);
+  KModes := TKModes.Create(0, 0, True);
   try
     KMBin^.ClusterCount := KModes.ComputeKModes(KMBin^.Dataset, round(KMBin^.ClusterCount), -KMBin^.StartingPoint, FTilePaletteSize, LocClusters, LocCentroids);
     Assert(Length(LocCentroids) = KMBin^.ClusterCount);
@@ -4227,9 +4215,12 @@ begin
 
     if clusterLineCount >= 2 then
     begin
+      DivMod(ToMergeIdxs[0], FTileMapSize, frameIdx, k);
+      DivMod(k, FTileMapWidth, sy, sx);
+
       // retrieve plaintext RGB tile from centroid
       k := 0;
-      pal := FFrames[ToMergeIdxs[0] div FTileMapSize].PKeyFrame.PaletteRGB[AIndex];
+      pal := FFrames[frameIdx].PKeyFrame.PaletteRGB[FFrames[frameIdx].TileMap[sy, sx].PalIdx];
       for ty := 0 to cTileWidth - 1 do
         for tx := 0 to cTileWidth - 1 do
         begin
@@ -4253,72 +4244,40 @@ end;
 
 procedure TMainForm.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 var
-  KMBins: TKModesBinArray;
-  acc, i, j, disCnt, signi, dummy: Integer;
-  cnt: TIntegerDynArray;
-  best: TIntegerDynArray;
-  share: TFloat;
+  KMBin: TKModesDataset;
+  cnt, best, acc, i, j, dummy: Integer;
 begin
 
   // prepare KModes dataset, one line per tile, psychovisual model as features
   // also choose KModes starting point
 
-  SetLength(KMBins, FPaletteCount);
-  SetLength(cnt, FPaletteCount);
-  SetLength(best, FPaletteCount);
+  cnt := GetGlobalTileCount;
 
-  // precompute dataset size
+  KMBin.ClusterCount := DesiredNbTiles;
+  SetLength(KMBin.TileIndices, cnt);
+  SetLength(KMBin.Dataset, cnt, cTileDCTSize);
 
-  FillDWord(cnt[0], FPaletteCount, 0);
-  for i := 0 to High(FTiles) do
-  begin
-    if not FTiles[i]^.Active then
-      Continue;
-    signi :=FTiles[i]^.DitheringPalIndex;
-    Inc(cnt[signi]);
-  end;
-
-  for i := 0 to FPaletteCount - 1 do
-  begin
-    SetLength(KMBins[i].TileIndices, cnt[i]);
-    SetLength(KMBins[i].Dataset, cnt[i], cTileDCTSize);
-  end;
-  FillDWord(cnt[0], FPaletteCount, 0);
-  FillDWord(best[0], FPaletteCount, 0);
-
-  // bin tiles by PalSigni (highest number of pixels the same color from the tile)
-
+  cnt := 0;
+  best := 0;
   for i := 0 to High(FTiles) do
   begin
     if not FTiles[i]^.Active then
       Continue;
 
-    signi :=FTiles[i]^.DitheringPalIndex;
-
-    WriteTileDatasetLine(FTiles[i]^, KMBins[signi].Dataset[cnt[signi]], dummy);
-    KMBins[signi].TileIndices[cnt[signi]] := i;
+    WriteTileDatasetLine(FTiles[i]^, KMBin.Dataset[cnt], dummy);
+    KMBin.TileIndices[cnt] := i;
 
     acc := 0;
     for j := 0 to cKModesFeatureCount - 1 do
-      acc += KMBins[signi].Dataset[cnt[signi], j];
-    if acc <= best[signi] then
+      acc += KMBin.Dataset[cnt, j];
+    if acc <= best then
     begin
-      KMBins[signi].StartingPoint := cnt[signi];
-      best[signi] := acc;
+      KMBin.StartingPoint := cnt;
+      best := acc;
     end;
 
-    Inc(cnt[signi]);
+    Inc(cnt);
   end;
-
-  // share DesiredNbTiles among bins, proportional to amount of tiles
-
-  disCnt := 0;
-  for i := 0 to FPaletteCount - 1 do
-    disCnt += EqualQualityTileCount(cnt[i]);
-  share := DesiredNbTiles / disCnt;
-
-  for i := 0 to FPaletteCount - 1 do
-    KMBins[i].ClusterCount := ceil(EqualQualityTileCount(cnt[i]) * share);
 
   InitMergeTiles;
 
@@ -4326,23 +4285,17 @@ begin
 
   // run the KMeans algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
-  ProcThreadPool.DoParallel(@DoGlobalKModes, 0, FPaletteCount - 1, @KMBins);
+  DoGlobalKModes(@KMBin);
 
   ProgressRedraw(2);
 
   FinishMergeTiles;
 
-  // ensure inter block tile unicity
-
-  MakeTilesUnique(0, Length(FTiles));
-
-  ProgressRedraw(3);
-
-  // put most probable tiles first and remove unused tiles
+  // put most probable tiles first
 
   ReindexTiles;
 
-  ProgressRedraw(4);
+  ProgressRedraw(3);
 end;
 
 procedure TMainForm.ReloadPreviousTiling(AFN: String);
