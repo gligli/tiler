@@ -242,8 +242,7 @@ type
     FramesLeft: Integer;
     TileDS: PTilingDataset;
     CS: TRTLCriticalSection;
-    FinishEvent: THandle;
-    FinishFrame: Integer;
+    FTDoPrepareEvent, FTDoFinishEvent, FTPreparedEvent: THandle;
     MixingPlans: array of TMixingPlan;
     PaletteRGB: TIntegerDynArray2;
     PaletteCentroids: TFloatDynArray2;
@@ -473,8 +472,7 @@ type
     procedure FinishGlobalFT;
     procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
     procedure FinishFrameTiling(AKF: TKeyFrame);
-    procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean;
-      AFTQuality: TFTQuality; AAddlTilesThres: TFloat);
+    procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AUseWavelets: Boolean; AAddlTilesThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -765,6 +763,9 @@ begin
   FrameCount := AEndFrame - AStartFrame + 1;
   FramesLeft := -1;
   InitializeCriticalSection(CS);
+  FTDoPrepareEvent := CreateEvent(nil, True, False, nil);
+  FTDoFinishEvent := CreateEvent(nil, True, False, nil);
+  FTPreparedEvent := CreateEvent(nil, True, False, nil);
   SetLength(MixingPlans, APaletteCount);
   SetLength(PaletteRGB, APaletteCount);
 end;
@@ -773,6 +774,9 @@ destructor TKeyFrame.Destroy;
 begin
   inherited Destroy;
   DeleteCriticalSection(CS);
+  CloseHandle(FTDoPrepareEvent);
+  CloseHandle(FTDoFinishEvent);
+  CloseHandle(FTPreparedEvent);
 end;
 
 { T8BitPortableNetworkGraphic }
@@ -985,16 +989,64 @@ var
   FTQuality: TFTQuality;
   AddlTilesThres: TFloat;
 
-  procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    if not InRange(AIndex, 0, High(FFrames)) then
-      Exit;
+  procedure DoBoth(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 
-    DoFrameTiling(FFrames[AIndex], Gamma, cFTPaletteTol, UseWavelets, FTQuality, AddlTilesThres);
+    procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    var
+      KF: TKeyFrame;
+    begin
+      if not InRange(AIndex, 0, High(FKeyFrames)) then
+        Exit;
+
+      KF := FKeyFrames[AIndex];
+
+      WaitForSingleObject(KF.FTDoPrepareEvent, INFINITE);
+
+      PrepareFrameTiling(KF, Gamma, cFTPaletteTol, UseWavelets, FTQuality);
+
+      SetEvent(KF.FTPreparedEvent);
+      WaitForSingleObject(KF.FTDoFinishEvent, INFINITE);
+
+      FinishFrameTiling(KF);
+    end;
+
+    procedure DoFrm(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    var
+      Frame: TFrame;
+    begin
+      if not InRange(AIndex, 0, High(FFrames)) then
+        Exit;
+
+      Frame := FFrames[AIndex];
+
+      EnterCriticalSection(Frame.PKeyFrame.CS);
+      if Frame.PKeyFrame.FramesLeft < 0 then
+      begin
+        Frame.PKeyFrame.FramesLeft := Frame.PKeyFrame.FrameCount;
+        SetEvent(Frame.PKeyFrame.FTDoPrepareEvent); // signal DoPrepare thread to start preparing KF
+      end;
+      LeaveCriticalSection(Frame.PKeyFrame.CS);
+
+      WaitForSingleObject(Frame.PKeyFrame.FTPreparedEvent, INFINITE); // wait for KF prepared
+
+      DoFrameTiling(Frame, Gamma, UseWavelets, AddlTilesThres);
+
+      EnterCriticalSection(Frame.PKeyFrame.CS);
+      Dec(Frame.PKeyFrame.FramesLeft);
+      if Frame.PKeyFrame.FramesLeft <= 0 then
+        SetEvent(Frame.PKeyFrame.FTDoFinishEvent); // signal DoPrepare thread to start finishing KF
+      LeaveCriticalSection(Frame.PKeyFrame.CS);
+    end;
+
+  begin
+    case AIndex of
+      0: ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames), nil, NumberOfProcessors);
+      1: ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FFrames), nil, NumberOfProcessors);
+    end;
   end;
 
 var
-  i: Integer;
+  i, mtcSave: Integer;
   ATList: TList;
 begin
   if Length(FKeyFrames) = 0 then
@@ -1013,7 +1065,15 @@ begin
     ProgressRedraw(-1, esFrameTiling);
     PrepareGlobalFT;
     ProgressRedraw(1);
-    ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FFrames));
+
+    mtcSave := ProcThreadPool.MaxThreadCount;
+    try
+      ProcThreadPool.MaxThreadCount := NumberOfProcessors * 2;
+      ProcThreadPool.DoParallelLocalProc(@DoBoth, 0, 1);
+    finally
+      ProcThreadPool.MaxThreadCount := mtcSave;
+    end;
+
     FinishGlobalFT;
 
     ATList := FAdditionalTiles.LockList;
@@ -3928,100 +3988,68 @@ begin
   AKF.TileDS := nil;
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; APalVAR: TFloat; AUseWavelets: Boolean;
-  AFTQuality: TFTQuality; AAddlTilesThres: TFloat);
+procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AUseWavelets: Boolean; AAddlTilesThres: TFloat);
 
-  procedure DoFrame;
-  var
-    i, bestIdx: Integer;
-    y, x: Integer;
-    tmiO: PTileMapItem;
+var
+  i, bestIdx: Integer;
+  y, x: Integer;
+  tmiO: PTileMapItem;
 
-    DS: PTilingDataset;
-    DCT: TFloatDynArray;
-    ANNDCT: TANNFloatDynArray;
-    bestErr: TANNFloat;
+  DS: PTilingDataset;
+  DCT: TFloatDynArray;
+  ANNDCT: TANNFloatDynArray;
+  bestErr: TANNFloat;
 
-    ATList: TList;
-  begin
-    DS := AFrame.PKeyFrame.TileDS;
+  ATList: TList;
+begin
+  DS := AFrame.PKeyFrame.TileDS;
 
-    // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
+  if Length(DS^.Dataset) <= 0 then
+    Exit;
 
-    SetLength(DCT, cTileDCTSize);
-    SetLength(ANNDCT, cTileDCTSize);
+  // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
-    for y := 0 to FTileMapHeight - 1 do
-      for x := 0 to FTileMapWidth - 1 do
+  SetLength(DCT, cTileDCTSize);
+  SetLength(ANNDCT, cTileDCTSize);
+
+  for y := 0 to FTileMapHeight - 1 do
+    for x := 0 to FTileMapWidth - 1 do
+    begin
+      ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x], False, AUseWavelets, False, False, False, False, AFTGamma, nil, DCT);
+      for i := 0 to cTileDCTSize - 1 do
+        ANNDCT[i] := DCT[i];
+
+      bestIdx := ann_kdtree_search(DS^.KDT, @ANNDCT[0], 0.0, @bestErr);
+
+      tmiO := @FFrames[AFrame.Index].TileMap[y, x];
+
+      if bestErr < AAddlTilesThres then
       begin
-        ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x], False, AUseWavelets, False, False, False, False, AFTGamma, nil, DCT);
-        for i := 0 to cTileDCTSize - 1 do
-          ANNDCT[i] := DCT[i];
+        tmiO^.GlobalTileIndex := DS^.TRToTileIdx[bestIdx];
+        tmiO^.PalIdx :=  DS^.TRToPalIdx[bestIdx];
+        tmiO^.HMirror := (DS^.TRToAttrs[bestIdx] and 1) <> 0;
+        tmiO^.VMirror := (DS^.TRToAttrs[bestIdx] and 2) <> 0;
 
-        bestIdx := ann_kdtree_search(DS^.KDT, @ANNDCT[0], 0.0, @bestErr);
+        DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
+        Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
+      end
+      else
+      begin
+        ATList := FAdditionalTiles.LockList;
+        try
+          ATList.Add(New(PTile));
+          CopyTile(AFrame.Tiles[y * FTileMapWidth + x], PTile(ATList[ATList.Count - 1])^);
 
-        tmiO := @FFrames[AFrame.Index].TileMap[y, x];
-
-        if bestErr < AAddlTilesThres then
-        begin
-          tmiO^.GlobalTileIndex := DS^.TRToTileIdx[bestIdx];
-          tmiO^.PalIdx :=  DS^.TRToPalIdx[bestIdx];
-          tmiO^.HMirror := (DS^.TRToAttrs[bestIdx] and 1) <> 0;
-          tmiO^.VMirror := (DS^.TRToAttrs[bestIdx] and 2) <> 0;
-
-          DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
-          Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
-        end
-        else
-        begin
-          ATList := FAdditionalTiles.LockList;
-          try
-            ATList.Add(New(PTile));
-            CopyTile(AFrame.Tiles[y * FTileMapWidth + x], PTile(ATList[ATList.Count - 1])^);
-
-            tmiO^.GlobalTileIndex := Length(FTiles) + ATList.Count - 1;
-            tmiO^.HMirror := False;
-            tmiO^.VMirror := False;
-          finally
-            FAdditionalTiles.UnlockList;
-          end;
+          tmiO^.GlobalTileIndex := Length(FTiles) + ATList.Count - 1;
+          tmiO^.HMirror := False;
+          tmiO^.VMirror := False;
+        finally
+          FAdditionalTiles.UnlockList;
         end;
       end;
+    end;
 
-    WriteLn('Frame: ', AFrame.Index, #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft - 1);
-  end;
-
-begin
-  EnterCriticalSection(AFrame.PKeyFrame.CS);
-  if AFrame.PKeyFrame.FramesLeft < 0 then
-  begin
-    PrepareFrameTiling(AFrame.PKeyFrame, AFTGamma, APalVAR, AUseWavelets, AFTQuality);
-    AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
-    AFrame.PKeyFrame.FinishEvent := CreateEvent(nil, False, False, nil);
-    AFrame.PKeyFrame.FinishFrame := AFrame.Index;
-  end;
-  LeaveCriticalSection(AFrame.PKeyFrame.CS);
-
-  if Length(AFrame.PKeyFrame.TileDS^.Dataset) > 0 then
-    DoFrame;
-
-  EnterCriticalSection(AFrame.PKeyFrame.CS);
-  Dec(AFrame.PKeyFrame.FramesLeft);
-  if AFrame.PKeyFrame.FramesLeft <= 0 then
-  begin
-    SetEvent(AFrame.PKeyFrame.FinishEvent);
-  end;
-  LeaveCriticalSection(AFrame.PKeyFrame.CS);
-
-  // free dataset in the same thread (context) that created it
-  // Workaround for ANN.DLL
-  if AFrame.Index = AFrame.PKeyFrame.FinishFrame then
-  begin
-    WaitForSingleObject(AFrame.PKeyFrame.FinishEvent, INFINITE);
-    CloseHandle(AFrame.PKeyFrame.FinishEvent);
-
-    FinishFrameTiling(AFrame.PKeyFrame);
-  end;
+  WriteLn('Frame: ', AFrame.Index, #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft - 1);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat);
