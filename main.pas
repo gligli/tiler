@@ -461,7 +461,7 @@ type
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
-    function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
+    function WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer): Integer;
     procedure DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
@@ -3675,20 +3675,24 @@ var
   var
     j: Integer;
     PB: PByte;
+    PF: ^TANNFloat;
   begin
     PB := @T^.PalPixels[0, 0];
-    for j := 0 to sqr(cTileWidth) - 1 do
+    PF := @FGlobalDS.Dataset[di, 0];
+    for j := 0 to Sqr(cTileWidth) - 1 do
     begin
-      FGlobalDS.Dataset[di, j] := PB^;
+      PF^ := PB^;
       Inc(PB);
+      Inc(PF);
     end;
+
     FGlobalDS.TRToTileIdx[di] := TileIdx;
     FGlobalDS.TRToAttrs[di] := Ord(HMirror) or (Ord(VMirror) shl 1);
     Inc(di);
   end;
 
 begin
-  SetLength(FGlobalDS.Dataset, GetGlobalTileCount * 4, sqr(cTileWidth));
+  SetLength(FGlobalDS.Dataset, GetGlobalTileCount * 4, Sqr(cTileWidth));
   SetLength(FGlobalDS.TRToTileIdx, Length(FGlobalDS.Dataset));
   SetLength(FGlobalDS.TRToAttrs, Length(FGlobalDS.Dataset));
 
@@ -3709,7 +3713,7 @@ begin
     end;
   end;
 
-  FGlobalDS.KDT := ann_kdtree_create(PPANNFloat(FGlobalDS.Dataset), Length(FGlobalDS.Dataset), sqr(cTileWidth), 1, ANN_KD_STD);
+  FGlobalDS.KDT := ann_kdtree_create(@FGlobalDS.Dataset[0], Length(FGlobalDS.Dataset), Sqr(cTileWidth), 32, ANN_KD_STD);
 end;
 
 procedure TMainForm.FinishGlobalFT;
@@ -3717,8 +3721,8 @@ begin
   ann_kdtree_destroy(FGlobalDS.KDT);
   FGlobalDS.KDT := nil;
   SetLength(FGlobalDS.Dataset, 0);
-  SetLength(FGlobalDS.TRToPalIdx, 0);
   SetLength(FGlobalDS.TRToTileIdx, 0);
+  SetLength(FGlobalDS.TRToAttrs, 0);
 end;
 
 procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean;
@@ -3740,47 +3744,44 @@ var
     palIdx: Integer;
     idxs: array[0 .. cBucketSize - 1] of Integer;
     errs: array[0 .. cBucketSize - 1] of TANNFloat;
-    Line: array[0 .. sqr(cTileWidth) - 1] of TANNFloat;
+    Line: array[0 .. Sqr(cTileWidth) - 1] of TANNFloat;
     PB: PByte;
-    last: TFloat;
+    PF: ^TANNFloat;
+    wasUsed: Boolean;
   begin
     SpinEnter(@FLock);
-    if used[Item^.PalIdx, Item^.GlobalTileIndex, -1] then
-    begin
-      SpinLeave(@FLock);
-      Exit;
-    end;
+    wasUsed := used[Item^.PalIdx, Item^.GlobalTileIndex, -1];
     used[Item^.PalIdx, Item^.GlobalTileIndex, -1] := True;
     SpinLeave(@FLock);
 
-    PB := @FTiles[Item^.GlobalTileIndex]^.PalPixels[0, 0];
-    for i := 0 to sqr(cTileWidth) - 1 do
+    if not wasUsed then
     begin
-      Line[i] := PB^;
-      Inc(PB);
-    end;
+      PB := @FTiles[Item^.GlobalTileIndex]^.PalPixels[0, 0];
+      PF := @Line[0];
+      for i := 0 to High(Line) do
+      begin
+        PF^ := PB^;
+        Inc(PB);
+        Inc(PF);
+      end;
 
-    ann_kdtree_search_multi(FGlobalDS.KDT, @idxs[0], @errs[0], cBucketSize, @Line[0], 0.0);
+      ann_kdtree_search_multi(FGlobalDS.KDT, @idxs[0], @errs[0], cBucketSize, @Line[0], 0.0);
 
-    last := Infinity;
-    for i := 0 to cBucketSize - 1 do
-    begin
-      if errs[i] = last then
-        Continue;
-      last := errs[i];
+      for i := 0 to cBucketSize - 1 do
+      begin
+        idx := idxs[i];
 
-      idx := idxs[i];
-
-      case AFTQuality of
-        ftFast:
-          used[Item^.PalIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
-        ftMedium:
-          for palIdx := 0 to FPaletteCount - 1 do
-            if Corrs[palIdx, Item^.PalIdx] < APalTol * HighestCorr then
+        case AFTQuality of
+          ftFast:
+            used[Item^.PalIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
+          ftMedium:
+            for palIdx := 0 to FPaletteCount - 1 do
+              if Corrs[palIdx, Item^.PalIdx] < APalTol * HighestCorr then
+                used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
+          ftSlow:
+            for palIdx := 0 to FPaletteCount - 1 do
               used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
-        ftSlow:
-          for palIdx := 0 to FPaletteCount - 1 do
-            used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
+        end;
       end;
     end;
   end;
@@ -3802,51 +3803,49 @@ var
   procedure DoBuild(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     frm: TFrame;
-    idx, sy, sx: Integer;
+    sy, sx: Integer;
   begin
-    if not InRange(AIndex, 0, AKF.FrameCount * FTileMapHeight - 1) then
+    if not InRange(AIndex, 0, AKF.FrameCount - 1) then
       Exit;
 
-    DivMod(AIndex, FTileMapHeight, idx, sy);
-    frm := FFrames[AKF.StartFrame + idx];
-    for sx := 0 to FTileMapWidth - 1 do
-      UseOne(@frm.TileMap[sy, sx]);
+    frm := FFrames[AKF.StartFrame + AIndex];
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
+        UseOne(@frm.TileMap[sy, sx]);
   end;
 
   procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    di, dend, i, j: Integer;
-    vmir, hmir: Boolean;
+    di, dend, i, j, idx, hvmir: Integer;
     T: PTile;
     DCT: TFloatDynArray;
   begin
-    if not InRange(AIndex, 0, FPaletteCount - 1) then
+    if not InRange(AIndex, 0, FPaletteCount * 4 - 1) then
       Exit;
 
     SetLength(DCT, cTileDCTSize);
 
-    SpinEnter(@FLock);
     di := 0;
     for i := 0 to AIndex - 1 do
       Inc(di, usedCount[i]);
     dend := di + usedCount[AIndex];
-    SpinLeave(@FLock);
+
+    idx := AIndex shr 2;
+    hvmir := AIndex and 3;
 
     for i := 0 to High(FTiles) do
-      for vmir := False to True do
-        for hmir := False to True do
-          if used[AIndex, i, (Ord(vmir) shl 1) or Ord(hmir)] then
-          begin
-            T := FTiles[i];
-            DS^.TRToTileIdx[di] := i;
-            DS^.TRToPalIdx[di] := AIndex;
-            DS^.TRToAttrs[di] := Ord(hmir) or (Ord(vmir) shl 1);
+      if used[idx, i, hvmir] then
+      begin
+        T := FTiles[i];
+        DS^.TRToTileIdx[di] := i;
+        DS^.TRToPalIdx[di] := idx;
+        DS^.TRToAttrs[di] := hvmir;
 
-            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hmir, vmir, AFTGamma, AKF.PaletteRGB[AIndex], DCT);
-            for j := 0 to cTileDCTSize - 1 do
-              DS^.Dataset[di, j] := DCT[j];
-            Inc(di);
-          end;
+        ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[idx], DCT);
+        for j := 0 to cTileDCTSize - 1 do
+          DS^.Dataset[di, j] := DCT[j];
+        Inc(di);
+      end;
 
     Assert(di = dend);
   end;
@@ -3861,25 +3860,27 @@ begin
   if AFTQuality = ftMedium then
     Corrs := BuildPaletteCorrTriangle;
 
-  SetLength(usedCount, FPaletteCount);
+  SetLength(usedCount, FPaletteCount * 4);
   SetLength(used, FPaletteCount, Length(FTiles));
   for palIdx := 0 to FPaletteCount - 1 do
     FillByte(used[palIdx, 0], Length(FTiles) * SizeOf(used[0, 0]), 0);
 
   // Build an indicator table of used tiles
 
-  ProcThreadPool.DoParallelLocalProc(@DoBuild, 0, AKF.FrameCount * FTileMapHeight - 1);
+  ProcThreadPool.DoParallelLocalProc(@DoBuild, 0, AKF.FrameCount - 1);
 
   // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
   KNNSize := 0;
   for palIdx := 0 to FPaletteCount - 1 do
   begin
-    usedCount[palIdx] := 0;
+    for j := 0 to 3 do
+      usedCount[palIdx * 4 + j] := 0;
     for i := 0 to High(FTiles) do
       for j := 0 to 3 do
-        Inc(usedCount[palIdx], Ord(used[palIdx, i, j]));
-    KNNSize += usedCount[palIdx];
+        Inc(usedCount[palIdx * 4 + j], Ord(used[palIdx, i, j]));
+    for j := 0 to 3 do
+      KNNSize += usedCount[palIdx * 4 + j];
   end;
 
   SetLength(DS^.TRToTileIdx, KNNSize);
@@ -3887,12 +3888,12 @@ begin
   SetLength(DS^.TRToAttrs, KNNSize);
   SetLength(DS^.Dataset, KNNSize, cTileDCTSize);
 
-  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount - 1, @used[0]);
+  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount * 4 - 1);
 
   // Build KNN
 
   if Length(DS^.Dataset) > 0  then
-    DS^.KDT := ann_kdtree_create(@DS^.Dataset[0], Length(DS^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+    DS^.KDT := ann_kdtree_create(@DS^.Dataset[0], Length(DS^.Dataset), cTileDCTSize, 32, ANN_KD_STD);
 
   SetLength(DS^.DistErrCml, FPaletteCount);
   SetLength(DS^.DistErrCnt, FPaletteCount);
@@ -3918,8 +3919,11 @@ begin
     ann_kdtree_destroy(AKF.TileDS^.KDT);
   AKF.TileDS^.KDT := nil;
   SetLength(AKF.TileDS^.Dataset, 0);
-  SetLength(AKF.TileDS^.TRToPalIdx, 0);
   SetLength(AKF.TileDS^.TRToTileIdx, 0);
+  SetLength(AKF.TileDS^.TRToPalIdx, 0);
+  SetLength(AKF.TileDS^.TRToAttrs, 0);
+  SetLength(AKF.TileDS^.DistErrCml, 0);
+  SetLength(AKF.TileDS^.DistErrCnt, 0);
   Dispose(AKF.TileDS);
   AKF.TileDS := nil;
 end;
@@ -3993,7 +3997,7 @@ begin
   begin
     PrepareFrameTiling(AFrame.PKeyFrame, AFTGamma, APalVAR, AUseWavelets, AFTQuality);
     AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
-    AFrame.PKeyFrame.FinishEvent := CreateEvent(nil, False, False, Nil);
+    AFrame.PKeyFrame.FinishEvent := CreateEvent(nil, False, False, nil);
     AFrame.PKeyFrame.FinishFrame := AFrame.Index;
   end;
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
@@ -4116,7 +4120,7 @@ begin
   end;
 end;
 
-function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
+function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer): Integer;
 var
   x, y: Integer;
   hsv: array[0..3, 0..2] of Word;
@@ -4328,7 +4332,7 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    WriteTileDatasetLine(FTiles[i]^, DataLine, dummy);
+    WriteTileDatasetLine(FTiles[i]^, @DataLine[0], dummy);
     bin := GetTileBin(FTiles[i]);
 
     KMBins[bin].TileIndices[cnt[bin]] := i;
@@ -4409,7 +4413,7 @@ var
     begin
       if FTiles[i]^.Active then
       begin
-        WriteTileDatasetLine(FTiles[i]^, DataLine, signi);
+        WriteTileDatasetLine(FTiles[i]^, @DataLine[0], signi);
         if Length(SigniDataset[signi]) > 0 then
         begin
           tidx := GetMinMatchingDissim(SigniDataset[signi], DataLine, Length(SigniDataset[signi]), dis);
@@ -4459,7 +4463,7 @@ begin
         for x := 0 to cTileWidth - 1 do
           T.PalPixels[y, x] := (T.PalPixels[y, x] * FTilePaletteSize) div TilingPaletteSize;
 
-      WriteTileDatasetLine(T, Dataset[i], signi);
+      WriteTileDatasetLine(T, @Dataset[i, 0], signi);
 
       SetLength(SigniIndices[signi], Length(SigniIndices[signi]) + 1);
       SigniIndices[signi][High(SigniIndices[signi])] := i;
