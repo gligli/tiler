@@ -198,6 +198,7 @@ function renderEnd() {
 
 function drawTilemapItem(idx, attrs) {
   let palIdx = attrs >>> 2;
+  let toff = (attrs & 3) * CTileWidth * CTileWidth;
   let tile = gtmTiles[idx];
   let palR = gtmPaletteR[palIdx];
   let palG = gtmPaletteG[palIdx];
@@ -207,62 +208,16 @@ function drawTilemapItem(idx, attrs) {
   let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
   let p = (y * gtmWidth * CTileWidth + x) * 4;
   var data = gtmTMImageData.data
-  
-  if (attrs & 1)
-  {
-    if (attrs & 2)
-    {
-      // HV mirrored
-      for (let ty = CTileWidth - 1; ty >= 0; ty--) {
-        for (let tx = CTileWidth - 1; tx >= 0; tx--) {
-          let v = tile[tx + CTileWidth * ty];
-          data[p++] = palR[v]; 
-          data[p++] = palG[v]; 
-          data[p++] = palB[v]; 
-          data[p++] = palA[v]; 
-        }
-        p += (gtmWidth - 1) * CTileWidth * 4;
-      }
-    } else {
-      // H mirrored
-      for (let ty = 0; ty < CTileWidth; ty++) {
-        for (let tx = CTileWidth - 1; tx >= 0; tx--) {
-          let v = tile[tx + CTileWidth * ty];
-          data[p++] = palR[v]; 
-          data[p++] = palG[v]; 
-          data[p++] = palB[v]; 
-          data[p++] = palA[v]; 
-        }
-        p += (gtmWidth - 1) * CTileWidth * 4;
-      }
-    }
-  } else {
-    if (attrs & 2)
-    {
-      // V mirrored
-      for (let ty = CTileWidth - 1; ty >= 0; ty--) {
-        for (let tx = 0; tx < CTileWidth; tx++) {
-          let v = tile[tx + CTileWidth * ty];
-          data[p++] = palR[v]; 
-          data[p++] = palG[v]; 
-          data[p++] = palB[v]; 
-          data[p++] = palA[v]; 
-        }
-        p += (gtmWidth - 1) * CTileWidth * 4;
-      }
-    } else {
-      // standard
-      for (let ty = 0; ty < CTileWidth; ty++) {
-        for (let tx = 0; tx < CTileWidth; tx++) {
-          let v = tile[tx + CTileWidth * ty];
-          data[p++] = palR[v]; 
-          data[p++] = palG[v]; 
-          data[p++] = palB[v]; 
-          data[p++] = palA[v]; 
-        }
-        p += (gtmWidth - 1) * CTileWidth * 4;
-      }
-    }
+    
+  for (let ty = 0; ty < CTileWidth; ty++) {
+	for (let tx = 0; tx < CTileWidth; tx++) {
+	  let v = tile[toff++];
+	  data[p++] = palR[v]; 
+	  data[p++] = palG[v]; 
+	  data[p++] = palB[v]; 
+	  data[p++] = palA[v]; 
+	}
+	p += (gtmWidth - 1) * CTileWidth * 4;
   }
   gtmTMPos++;
 }
@@ -319,10 +274,21 @@ function decodeFrame() {
           gtmPalSize = cmd[1];
           
           for (let p = tstart; p <= tend; p++) {
-            gtmTiles[p] = new Array(CTileWidth * CTileWidth);
-            for (let i = 0; i < CTileWidth * CTileWidth; i++) {
-              gtmTiles[p][i] = readByte();
-            }
+            gtmTiles[p] = new Uint8Array(CTileWidth * CTileWidth * 4);
+			let tile = gtmTiles[p];
+			let offh = CTileWidth * CTileWidth * 1;
+			let offv = CTileWidth * CTileWidth * 2;
+			let offhv = CTileWidth * CTileWidth * 3;
+            
+			for (let ty = 0; ty < CTileWidth; ty++) {
+				for (let tx = 0; tx < CTileWidth; tx++) {
+					let b = readByte();
+					tile[ty * CTileWidth + tx] = b;
+					tile[offh + ty * CTileWidth + (CTileWidth - 1 - tx)] = b;
+					tile[offv + (CTileWidth - 1 - ty) * CTileWidth + tx] = b;
+					tile[offhv + (CTileWidth - 1 - ty) * CTileWidth + (CTileWidth - 1 - tx)] = b;
+				}
+			}
           }
           break;
         
@@ -349,10 +315,10 @@ function decodeFrame() {
         case GTMCommand.LoadPalette:
           let palIdx = readByte();
           readByte(); // palette format
-          gtmPaletteR[palIdx] = new Array(gtmPalSize);
-          gtmPaletteG[palIdx] = new Array(gtmPalSize);
-          gtmPaletteB[palIdx] = new Array(gtmPalSize);
-          gtmPaletteA[palIdx] = new Array(gtmPalSize);
+          gtmPaletteR[palIdx] = new Uint8Array(gtmPalSize);
+          gtmPaletteG[palIdx] = new Uint8Array(gtmPalSize);
+          gtmPaletteB[palIdx] = new Uint8Array(gtmPalSize);
+          gtmPaletteA[palIdx] = new Uint8Array(gtmPalSize);
           for (let i = 0; i < gtmPalSize; i++) {
             gtmPaletteR[palIdx][i] = readByte();
             gtmPaletteG[palIdx][i] = readByte();
