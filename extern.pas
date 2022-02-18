@@ -49,6 +49,74 @@ type
 
   TYakmoCallback = procedure(cbData: Pointer); stdcall;
 
+  flann_index_t = Pointer;
+
+  flann_algorithm_t = (
+  	FLANN_INDEX_LINEAR = 0,
+  	FLANN_INDEX_KDTREE = 1,
+  	FLANN_INDEX_KMEANS = 2,
+  	FLANN_INDEX_COMPOSITE = 3,
+  	FLANN_INDEX_KDTREE_SINGLE = 4,
+  	FLANN_INDEX_HIERARCHICAL = 5,
+  	FLANN_INDEX_LSH = 6,
+  	FLANN_INDEX_KDTREE_CUDA = 7, // available if compiled with CUDA
+  	FLANN_INDEX_SAVED = 254,
+  	FLANN_INDEX_AUTOTUNED = 255
+  );
+
+  flann_centers_init_t = (
+  	FLANN_CENTERS_RANDOM = 0,
+  	FLANN_CENTERS_GONZALES = 1,
+  	FLANN_CENTERS_KMEANSPP = 2
+  );
+
+  flann_log_level_t = (
+  	FLANN_LOG_NONE = 0,
+  	FLANN_LOG_FATAL = 1,
+  	FLANN_LOG_ERROR = 2,
+  	FLANN_LOG_WARN = 3,
+  	FLANN_LOG_INFO = 4,
+  	FLANN_LOG_DEBUG = 5
+  );
+
+  TFLANNParameters = record
+    algorithm: flann_algorithm_t; (* the algorithm to use *)
+
+    (* search time parameters *)
+    checks: Integer;                (* how many leafs (features) to check in one search *)
+    eps: Single;     (* eps parameter for eps-knn search *)
+    sorted: Integer;     (* indicates if results returned by radius search should be sorted or not *)
+    max_neighbors: Integer;  (* limits the maximum number of neighbors should be returned by radius search *)
+    cores: Integer;      (* number of paralel cores to use for searching *)
+
+    (*  kdtree index parameters *)
+    trees: Integer;                 (* number of randomized trees to use (for kdtree) *)
+    leaf_max_size: Integer;
+
+    (* kmeans index parameters *)
+    branching: Integer;             (* branching factor (for kmeans tree) *)
+    iterations: Integer;            (* max iterations to perform in one kmeans cluetering (kmeans tree) *)
+    centers_init: flann_centers_init_t;  (* algorithm used for picking the initial cluster centers for kmeans tree *)
+    cb_index: Single;            (* cluster boundary index. Used when searching the kmeans tree *)
+
+    (* autotuned index parameters *)
+    target_precision: Single;    (* precision desired (used for autotuning, -1 otherwise) *)
+    build_weight: Single;        (* build tree time weighting factor *)
+    memory_weight: Single;       (* index memory weigthing factor *)
+    sample_fraction: Single;     (* what fraction of the dataset to use for autotuning *)
+
+    (* LSH parameters *)
+    table_number_: Cardinal; (** The number of hash tables to use *)
+    key_size_: Cardinal;     (** The length of the key in the hash tables *)
+    multi_probe_level_: Cardinal; (** Number of levels to use in multi-probe LSH, 0 for standard LSH *)
+
+    (* other parameters *)
+    log_level: flann_log_level_t;    (* determines the verbosity of each flann function *)
+    random_seed: LongInt;            (* random seed to use *)
+  end;
+
+  PFLANNParameters = ^TFLANNParameters;
+
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
@@ -69,6 +137,12 @@ function ann_kdtree_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: P
 function ann_kdtree_pri_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; external 'ANN.dll';
 function ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PANNFloat; cnt: Integer; q: PANNFloat; eps: TANNFloat): Integer; external 'ANN.dll';
 
+procedure DEFAULT_FLANN_PARAMETERS; cdecl; external 'flann.dll';
+function flann_build_index(dataset: PSingle; rows, cols: Integer; speedup: PSingle; flann_params: PFLANNParameters): flann_index_t; cdecl; external 'flann.dll';
+function flann_free_index(index_id: flann_index_t; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
+function flann_find_nearest_neighbors_index(index_id: flann_index_t; testset: PFloat; trows: Integer; indices: PInteger; dists: PFloat; nn: Integer; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
+
+
 function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 
@@ -84,6 +158,28 @@ function QuarterNumberOfProcessors: Integer;
 function InvariantFormatSettings: TFormatSettings;
 function internalRuncommand(p:TProcess;var outputstring:string;
                             var stderrstring:string; var exitstatus:integer; PrintOut: Boolean):integer;
+
+const
+  CDefaultFLANNParameters: TFLANNParameters = (
+      algorithm: FLANN_INDEX_KDTREE;
+      checks: 128; eps: 0.0;
+      sorted: 0; max_neighbors: -1; cores: 1;
+      trees: 16; leaf_max_size: 4;
+      branching: 32; iterations: 11; centers_init: FLANN_CENTERS_KMEANSPP; cb_index: 0.2;
+      target_precision: 0.001; build_weight: 0.01; memory_weight: 0; sample_fraction: 0.1;
+      table_number_: 0; key_size_: 0; multi_probe_level_: 0;
+      log_level: FLANN_LOG_NONE; random_seed: 0
+  );
+
+  //struct FLANNParameters DEFAULT_FLANN_PARAMETERS = {
+  //    FLANN_INDEX_KDTREE,
+  //    32, 0.0f,
+  //    0, -1, 0,
+  //    4, 4,
+  //    32, 11, FLANN_CENTERS_RANDOM, 0.2f,
+  //    0.9f, 0.01f, 0, 0.1f,
+  //    FLANN_LOG_NONE, 0
+  //};
 
 implementation
 
