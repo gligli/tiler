@@ -200,8 +200,8 @@ type
     TRToPalIdx: TByteDynArray;
     TRToAttrs: TByteDynArray;
     KDT: PANNkdtree;
-    DistErrCml: TFloatDynArray;
-    DistErrCnt: TIntegerDynArray;
+    DistErrCml: TFloat;
+    DistErrCnt: Integer;
   end;
 
   PTilingDataset = ^TTilingDataset;
@@ -240,7 +240,7 @@ type
   TKeyFrame = class
     StartFrame, EndFrame, FrameCount: Integer;
     FramesLeft: Integer;
-    TileDS: PTilingDataset;
+    TileDS: array of PTilingDataset;
     CS: TRTLCriticalSection;
     FTDoPrepareEvent, FTDoFinishEvent, FTPreparedEvent: THandle;
     MixingPlans: array of TMixingPlan;
@@ -430,7 +430,7 @@ type
     procedure WaveletGS(Data: PFloat; Output: PFloat; dx, dy, depth: cardinal);
     procedure DeWaveletGS(wl: PFloat; pic: PFloat; dx, dy, depth: longint);
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseWavelets, UseLAB, QWeighting, HMirror,
-      VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; var DCT: TFloatDynArray); inline;
+      VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; var DCT: array of TFloat); inline;
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -2913,8 +2913,8 @@ BEGIN
    move(tempx[y*cTileWidth],pic[y*cTileWidth],dx*sizeof(TFloat)); //Copy to Pic
 END;
 
-procedure TMainForm.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseWavelets, UseLAB, QWeighting, HMirror, VMirror: Boolean;
-  GammaCor: Integer; const pal: TIntegerDynArray; var DCT: TFloatDynArray);
+procedure TMainForm.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseWavelets, UseLAB, QWeighting, HMirror,
+  VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; var DCT: array of TFloat);
 const
   cUVRatio: array[0..cTileWidth-1,0..cTileWidth-1] of TFloat = (
     (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),
@@ -3788,9 +3788,7 @@ end;
 procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean;
   AFTQuality: TFTQuality);
 var
-  KNNSize, i, j: Integer;
-  palIdx: Integer;
-  DS: PTilingDataset;
+  DS: array of PTilingDataset;
   used: array of array of array[-1..3] of Boolean;
   usedCount: TIntegerDynArray;
   Corrs: TFloatDynArray2;
@@ -3876,51 +3874,45 @@ var
 
   procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    di, dend, i, j, idx, hvmir: Integer;
+    di, ti, j, hvmir, palIdx2: Integer;
     T: PTile;
-    DCT: TFloatDynArray;
+    DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   begin
-    if not InRange(AIndex, 0, FPaletteCount * 4 - 1) then
+    if not InRange(AIndex, 0, FPaletteCount - 1) then
       Exit;
 
-    SetLength(DCT, cTileDCTSize);
-
     di := 0;
-    for i := 0 to AIndex - 1 do
-      Inc(di, usedCount[i]);
-    dend := di + usedCount[AIndex];
+    for ti := 0 to High(FTiles) do
+      for hvmir := 0 to 3 do
+        if used[AIndex, ti, hvmir] then
+          for palIdx2 := 0 to FPaletteCount - 1 do
+            if Corrs[AIndex, palIdx2] < APalTol then
+            begin
+              T := FTiles[ti];
+              DS[AIndex]^.TRToTileIdx[di] := ti;
+              DS[AIndex]^.TRToPalIdx[di] := palIdx2;
+              DS[AIndex]^.TRToAttrs[di] := hvmir;
 
-    idx := AIndex shr 2;
-    hvmir := AIndex and 3;
+              ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[palIdx2], DCT);
+              for j := 0 to cTileDCTSize - 1 do
+                DS[AIndex]^.Dataset[di, j] := DCT[j];
+              Inc(di);
+            end;
 
-    for i := 0 to High(FTiles) do
-      if used[idx, i, hvmir] then
-      begin
-        T := FTiles[i];
-        DS^.TRToTileIdx[di] := i;
-        DS^.TRToPalIdx[di] := idx;
-        DS^.TRToAttrs[di] := hvmir;
+    Assert(di = usedCount[AIndex]);
 
-        ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[idx], DCT);
-        for j := 0 to cTileDCTSize - 1 do
-          DS^.Dataset[di, j] := DCT[j];
-        Inc(di);
-      end;
-
-    Assert(di = dend);
+    if Length(DS[AIndex]^.Dataset) > 0  then
+      DS[AIndex]^.KDT := ann_kdtree_create(@DS[AIndex]^.Dataset[0], Length(DS[AIndex]^.Dataset), cTileDCTSize, 32, ANN_KD_STD);
   end;
 
+var
+  KNNSize, ti, hvmir: Integer;
+  palIdx, palIdx2: Integer;
 begin
-  DS := New(PTilingDataset);
-  FillChar(DS^, SizeOf(TTilingDataset), 0);
-  AKF.TileDS := DS;
-
   HighestCorr := 0.0;
-  Corrs := nil;
-  if AFTQuality = ftMedium then
-    Corrs := BuildPaletteCorrTriangle;
+  Corrs := BuildPaletteCorrTriangle;
 
-  SetLength(usedCount, FPaletteCount * 4);
+  SetLength(usedCount, FPaletteCount);
   SetLength(used, FPaletteCount, Length(FTiles));
   for palIdx := 0 to FPaletteCount - 1 do
     FillByte(used[palIdx, 0], Length(FTiles) * SizeOf(used[0, 0]), 0);
@@ -3931,32 +3923,40 @@ begin
 
   // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
-  KNNSize := 0;
+  FillDWord(usedCount[0], FPaletteCount, 0);
+  for palIdx := 0 to FPaletteCount - 1 do
+    for ti := 0 to High(FTiles) do
+      for hvmir := 0 to 3 do
+        if used[palIdx, ti, hvmir] then
+          for palIdx2 := 0 to FPaletteCount - 1 do
+            if Corrs[palIdx, palIdx2] < APalTol then
+              Inc(usedCount[palIdx]);
+
+  SetLength(DS, FPaletteCount);
+  AKF.TileDS := DS;
   for palIdx := 0 to FPaletteCount - 1 do
   begin
-    for j := 0 to 3 do
-      usedCount[palIdx * 4 + j] := 0;
-    for i := 0 to High(FTiles) do
-      for j := 0 to 3 do
-        Inc(usedCount[palIdx * 4 + j], Ord(used[palIdx, i, j]));
-    for j := 0 to 3 do
-      KNNSize += usedCount[palIdx * 4 + j];
+    KNNSize := usedCount[palIdx];
+
+    DS[palIdx] := New(PTilingDataset);
+    FillChar(DS[palIdx]^, SizeOf(TTilingDataset), 0);
+
+    SetLength(DS[palIdx]^.TRToTileIdx, KNNSize);
+    SetLength(DS[palIdx]^.TRToPalIdx, KNNSize);
+    SetLength(DS[palIdx]^.TRToAttrs, KNNSize);
+    SetLength(DS[palIdx]^.Dataset, KNNSize, cTileDCTSize);
+
+    DS[palIdx]^.DistErrCml := 0.0;
+    DS[palIdx]^.DistErrCnt := 0;
   end;
 
-  SetLength(DS^.TRToTileIdx, KNNSize);
-  SetLength(DS^.TRToPalIdx, KNNSize);
-  SetLength(DS^.TRToAttrs, KNNSize);
-  SetLength(DS^.Dataset, KNNSize, cTileDCTSize);
-
-  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount * 4 - 1);
+  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount - 1);
 
   // Build KNN
 
-  if Length(DS^.Dataset) > 0  then
-    DS^.KDT := ann_kdtree_create(@DS^.Dataset[0], Length(DS^.Dataset), cTileDCTSize, 32, ANN_KD_STD);
-
-  SetLength(DS^.DistErrCml, FPaletteCount);
-  SetLength(DS^.DistErrCnt, FPaletteCount);
+  KNNSize := 0;
+  for palIdx := 0 to FPaletteCount - 1 do
+    KNNSize += usedCount[palIdx];
 
   WriteLn('Frame: ', AKF.StartFrame, #9'KNNSize: ', KNNSize);
 end;
@@ -3968,34 +3968,36 @@ var
 begin
   resDist := 0.0;
   for i := 0 to FPaletteCount - 1 do
-    if AKF.TileDS^.DistErrCnt[i] <> 0 then
+    if AKF.TileDS[i]^.DistErrCnt <> 0 then
     begin
       //WriteLn(AKF.StartFrame, #9, i, #9, FloatToStr(AKF.TileDS^.DistErrCml[i] / AKF.TileDS^.DistErrCnt[i]));
-      resDist += AKF.TileDS^.DistErrCml[i];
+      resDist += AKF.TileDS[i]^.DistErrCml;
     end;
   WriteLn('Frame: ', AKF.StartFrame, #9'ResidualErr: ', FloatToStr(resDist));
 
-  if Length(AKF.TileDS^.Dataset) > 0 then
-    ann_kdtree_destroy(AKF.TileDS^.KDT);
-  AKF.TileDS^.KDT := nil;
-  SetLength(AKF.TileDS^.Dataset, 0);
-  SetLength(AKF.TileDS^.TRToTileIdx, 0);
-  SetLength(AKF.TileDS^.TRToPalIdx, 0);
-  SetLength(AKF.TileDS^.TRToAttrs, 0);
-  SetLength(AKF.TileDS^.DistErrCml, 0);
-  SetLength(AKF.TileDS^.DistErrCnt, 0);
-  Dispose(AKF.TileDS);
+  for i := 0 to FPaletteCount - 1 do
+  begin
+    if Length(AKF.TileDS[i]^.Dataset) > 0 then
+      ann_kdtree_destroy(AKF.TileDS[i]^.KDT);
+    AKF.TileDS[i]^.KDT := nil;
+    SetLength(AKF.TileDS[i]^.Dataset, 0);
+    SetLength(AKF.TileDS[i]^.TRToTileIdx, 0);
+    SetLength(AKF.TileDS[i]^.TRToAttrs, 0);
+    Dispose(AKF.TileDS[i]);
+  end;
+
+  SetLength(AKF.TileDS, 0);
   AKF.TileDS := nil;
 end;
 
 procedure TMainForm.DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AUseWavelets: Boolean; AAddlTilesThres: TFloat);
 
 var
-  i, bestIdx: Integer;
+  i, bestIdx, PalIdx: Integer;
   y, x: Integer;
   tmiO: PTileMapItem;
 
-  DS: PTilingDataset;
+  DS: array of PTilingDataset;
   DCT: TFloatDynArray;
   ANNDCT: TANNFloatDynArray;
   bestErr: TANNFloat;
@@ -4003,9 +4005,6 @@ var
   ATList: TList;
 begin
   DS := AFrame.PKeyFrame.TileDS;
-
-  if Length(DS^.Dataset) <= 0 then
-    Exit;
 
   // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
@@ -4019,19 +4018,24 @@ begin
       for i := 0 to cTileDCTSize - 1 do
         ANNDCT[i] := DCT[i];
 
-      bestIdx := ann_kdtree_search(DS^.KDT, @ANNDCT[0], 0.0, @bestErr);
+      PalIdx := AFrame.TileMap[y, x].PalIdx;
+
+      if Length(DS[PalIdx]^.Dataset) <= 0 then
+        Continue;
+
+      bestIdx := ann_kdtree_search(DS[PalIdx]^.KDT, @ANNDCT[0], 0.0, @bestErr);
 
       tmiO := @FFrames[AFrame.Index].TileMap[y, x];
 
       if bestErr < AAddlTilesThres then
       begin
-        tmiO^.GlobalTileIndex := DS^.TRToTileIdx[bestIdx];
-        tmiO^.PalIdx :=  DS^.TRToPalIdx[bestIdx];
-        tmiO^.HMirror := (DS^.TRToAttrs[bestIdx] and 1) <> 0;
-        tmiO^.VMirror := (DS^.TRToAttrs[bestIdx] and 2) <> 0;
+        tmiO^.GlobalTileIndex := DS[PalIdx]^.TRToTileIdx[bestIdx];
+        tmiO^.PalIdx := DS[PalIdx]^.TRToPalIdx[bestIdx];
+        tmiO^.HMirror := (DS[PalIdx]^.TRToAttrs[bestIdx] and 1) <> 0;
+        tmiO^.VMirror := (DS[PalIdx]^.TRToAttrs[bestIdx] and 2) <> 0;
 
-        DS^.DistErrCml[tmiO^.PalIdx] += bestErr;
-        Inc(DS^.DistErrCnt[tmiO^.PalIdx]);
+        DS[PalIdx]^.DistErrCml += bestErr;
+        Inc(DS[tmiO^.PalIdx]^.DistErrCnt);
       end
       else
       begin
