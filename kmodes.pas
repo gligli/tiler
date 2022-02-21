@@ -52,6 +52,7 @@ type
     cl_attr_freq: TIntegerDynArray3;
     MaxIter, NumClusters, NumThreads, NumAttrs, NumPoints: Integer;
     Log: Boolean;
+    LogLabel: String;
     FGMMD: TGMMD;
     FPTP: TProcThreadPool;
 
@@ -64,7 +65,7 @@ type
     function InitFarthestFirst(InitPoint: Integer): TByteDynArray2;  // negative init_point means randomly chosen
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
-    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0; aLog: Boolean = False);
+    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = -1; aLog: Boolean = False; aLogLabel: String = '');
     destructor Destroy; override;
     function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
     // negative n_init means use -n_init as starting point
@@ -806,7 +807,7 @@ begin
   end;
 end;
 
-constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolean);
+constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolean; aLogLabel: String);
 begin
   inherited Create;
 
@@ -814,6 +815,7 @@ begin
   Self.MaxIter := aMaxIter;
   Self.NumThreads := aNumThreads;
   Self.Log := aLog;
+  Self.LogLabel := aLogLabel;
 end;
 
 destructor TKModes.Destroy;
@@ -942,7 +944,7 @@ begin
   if NumThreads <= 0 then
     NumThreads := ProcThreadPool.MaxThreadCount;
 
-  if MaxIter <= 0 then
+  if MaxIter < 0 then
     MaxIter := MaxInt;
 
   init := nil;
@@ -1021,7 +1023,9 @@ begin
     cost := High(UInt64);
     totalmoves := 0;
 
-    while (itr <= MaxIter) and not converged do
+    WriteLn(LogLabel, 'Init done');
+
+    while (itr < MaxIter) and not converged do
     begin
       Inc(itr);
 
@@ -1033,7 +1037,7 @@ begin
       totalmoves += moves;
 
       if Log then
-        WriteLn('Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost);
+        WriteLn(LogLabel, 'Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost);
     end;
 
     all[init_no].Labels := Copy(membship);
@@ -1043,7 +1047,7 @@ begin
     all[init_no].TotalMoves := totalmoves;
   end;
 
-  j := -1;
+  j := 0;
   best := High(UInt64);
   for i := 0 to High(all) do
     if all[i].Cost < best then

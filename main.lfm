@@ -151,6 +151,7 @@ object MainForm: TMainForm
         Top = 30
         Width = 519
         TabOrder = 2
+        Text = 'C:\tiler_misc\factory_1080p30.gtm'
       end
       object seMaxTiles: TSpinEdit
         Left = 248
@@ -168,6 +169,7 @@ object MainForm: TMainForm
         Top = 52
         Width = 519
         TabOrder = 5
+        Text = 'C:\tiler_misc\factory_1080p30.gts'
       end
       object btnInput: TButton
         Left = 607
@@ -203,7 +205,7 @@ object MainForm: TMainForm
         Width = 71
         DecimalPlaces = 1
         Increment = 0.05
-        MaxValue = 10
+        MaxValue = 1000
         TabOrder = 17
         Value = 1
       end
@@ -232,6 +234,7 @@ object MainForm: TMainForm
         Width = 71
         MaxValue = 100000
         TabOrder = 11
+        Value = 12
       end
       object chkReload: TCheckBox
         Left = 8
@@ -300,6 +303,7 @@ object MainForm: TMainForm
         Top = 8
         Width = 519
         TabOrder = 0
+        Text = 'C:\tiler_misc\factory_1080p30.y4m'
       end
       object Label3: TLabel
         Left = 8
@@ -383,7 +387,7 @@ object MainForm: TMainForm
         OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
         TabOrder = 8
-        Value = 7
+        Value = 3
       end
       object btnGTM: TButton
         Left = 607
@@ -489,7 +493,7 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 4
+        ItemIndex = 2
         Items.Strings = (
           '0.25'
           '0.375'
@@ -502,7 +506,7 @@ object MainForm: TMainForm
         OnChange = cbxYilMixChange
         Style = csDropDownList
         TabOrder = 12
-        Text = '1'
+        Text = '0.5'
       end
       object Label15: TLabel
         Left = 8

@@ -13,13 +13,15 @@ uses
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
+  TFTQuality = (ftFast, ftMedium, ftSlow);
 
 const
   // tweakable constants
 
   cBitsPerComp = 8;
   cRandomKModesCount = 7;
-  cFTPaletteTol = 0.05;
+  cFTIntraPaletteTol: array[TFTQuality] of TFloat = (0.01, 0.05, 0.2);
+  cFTInterPaletteTol: array[TFTQuality] of TFloat = (0.001, 0.005, 0.02);
 
 {$if true}
   cRedMul = 2126;
@@ -154,8 +156,6 @@ type
     gtReservedAreaBegin = 32,
     gtReservedAreaEnd = 63
   );
-
-  TFTQuality = (ftFast, ftMedium, ftSlow);
 
   TSpinlock = LongInt;
   PSpinLock = ^TSpinlock;
@@ -470,7 +470,7 @@ type
     procedure VMirrorPalTile(var ATile: TTile);
     procedure PrepareGlobalFT;
     procedure FinishGlobalFT;
-    procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean; AFTQuality: TFTQuality);
+    procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean; AFTQuality: TFTQuality);
     procedure FinishFrameTiling(AKF: TKeyFrame);
     procedure DoFrameTiling(AFrame: TFrame; AFTGamma: Integer; AUseWavelets: Boolean; AAddlTilesThres: TFloat);
 
@@ -1002,7 +1002,7 @@ var
 
       WaitForSingleObject(KF.FTDoPrepareEvent, INFINITE);
 
-      PrepareFrameTiling(KF, Gamma, cFTPaletteTol, UseWavelets, FTQuality);
+      PrepareFrameTiling(KF, Gamma, UseWavelets, FTQuality);
 
       SetEvent(KF.FTPreparedEvent);
       WaitForSingleObject(KF.FTDoFinishEvent, INFINITE);
@@ -3469,7 +3469,7 @@ begin
       q := 0.0;
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
-          q += CompareEuclideanDCT(oriCorr[sy, sx], chgCorr[sy, sx]);
+          q += Sqrt(CompareEuclideanDCT(oriCorr[sy, sx], chgCorr[sy, sx]));
       q /= FTileMapSize;
 
       lblCorrel.Caption := FormatFloat('0.0000000', q);
@@ -3772,14 +3772,14 @@ begin
   SetLength(FGlobalDS.TRToAttrs, 0);
 end;
 
-procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; APalTol: TFloat; AUseWavelets: Boolean;
-  AFTQuality: TFTQuality);
+procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean; AFTQuality: TFTQuality
+  );
 var
   DS: array of PTilingDataset;
   used: array of array of array[-1..3] of Boolean;
   usedCount: TIntegerDynArray;
-  Corrs: TFloatDynArray2;
-  HighestCorr: TFloat;
+  PaletteDists: TFloatDynArray2;
+  HighestDist: TFloat;
 
   procedure UseOne(Item: PTileMapItem);
   const
@@ -3815,23 +3815,14 @@ var
       for i := 0 to cBucketSize - 1 do
       begin
         idx := idxs[i];
-
-        case AFTQuality of
-          ftFast:
-            used[Item^.PalIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
-          ftMedium:
-            for palIdx := 0 to FPaletteCount - 1 do
-              if Corrs[palIdx, Item^.PalIdx] < APalTol * HighestCorr then
-                used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
-          ftSlow:
-            for palIdx := 0 to FPaletteCount - 1 do
-              used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
-        end;
+        for palIdx := 0 to FPaletteCount - 1 do
+          if PaletteDists[palIdx, Item^.PalIdx] <= cFTIntraPaletteTol[AFTQuality] * HighestDist then
+            used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
       end;
     end;
   end;
 
-  function BuildPaletteCorrTriangle: TFloatDynArray2;
+  function BuildPaletteDistsTriangle: TFloatDynArray2;
   var
     i, j : Integer;
   begin
@@ -3841,7 +3832,7 @@ var
       begin
         Result[j, i] := CompareEuclideanDCT(AKF.PaletteCentroids[j], AKF.PaletteCentroids[i]);
         if not IsNan(Result[j, i]) then
-          HighestCorr := Max(HighestCorr, Result[j, i]);
+          HighestDist := Max(HighestDist, Result[j, i]);
       end;
   end;
 
@@ -3873,7 +3864,7 @@ var
       for hvmir := 0 to 3 do
         if used[AIndex, ti, hvmir] then
           for palIdx2 := 0 to FPaletteCount - 1 do
-            if Corrs[AIndex, palIdx2] < APalTol then
+            if (PaletteDists[AIndex, palIdx2] <= cFTInterPaletteTol[AFTQuality] * HighestDist) and used[palIdx2, ti, hvmir] then
             begin
               T := FTiles[ti];
               DS[AIndex]^.TRToTileIdx[di] := ti;
@@ -3896,8 +3887,8 @@ var
   KNNSize, ti, hvmir: Integer;
   palIdx, palIdx2: Integer;
 begin
-  HighestCorr := 0.0;
-  Corrs := BuildPaletteCorrTriangle;
+  HighestDist := 0.0;
+  PaletteDists := BuildPaletteDistsTriangle;
 
   SetLength(usedCount, FPaletteCount);
   SetLength(used, FPaletteCount, Length(FTiles));
@@ -3916,7 +3907,7 @@ begin
       for hvmir := 0 to 3 do
         if used[palIdx, ti, hvmir] then
           for palIdx2 := 0 to FPaletteCount - 1 do
-            if Corrs[palIdx, palIdx2] < APalTol then
+            if (PaletteDists[palIdx, palIdx2] <= cFTInterPaletteTol[AFTQuality] * HighestDist) and used[palIdx2, ti, hvmir] then
               Inc(usedCount[palIdx]);
 
   SetLength(DS, FPaletteCount);
@@ -4210,24 +4201,25 @@ var
   KModes: TKModes;
   LocCentroids: TByteDynArray2;
   LocClusters: TIntegerDynArray;
-  lineIdx, clusterIdx, clusterLineCount, DSLen, tx, ty, k: Integer;
+  lineIdx, clusterIdx, clusterLineCount, DSLen, tx, ty, j, k, bestIdx, bestVal, numThreads: Integer;
   ToMergeIdxs: TIntegerDynArray;
   KMBin: PKModesBin;
-  pal: TIntegerDynArray;
+  median: array[0 .. Sqr(cTileWidth) - 1, 0 .. Sqr(cTileWidth) - 1] of Integer;
 begin
   if not InRange(AIndex, 0, FPaletteCount - 1) then
     Exit;
 
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := Length(KMBin^.Dataset);
-
   if DSLen <= KMBin^.ClusterCount then
     Exit;
 
   SetLength(LocClusters, DSLen);
   SetLength(LocCentroids, KMBin^.ClusterCount, cTileDCTSize);
 
-  KModes := TKModes.Create(4, 0, True);
+  numThreads := Ceil(NumberOfProcessors / ProcThreadPool.ThreadCount);
+
+  KModes := TKModes.Create(numThreads, -1, True, 'Bin: ' + IntToStr(AIndex) + #9);
   try
     KMBin^.ClusterCount := KModes.ComputeKModes(KMBin^.Dataset, round(KMBin^.ClusterCount), -KMBin^.StartingPoint, FTilePaletteSize, LocClusters, LocCentroids);
     Assert(Length(LocCentroids) = KMBin^.ClusterCount);
@@ -4255,18 +4247,42 @@ begin
       end;
     end;
 
-    // choose a tile from the centroids
+    // devise a single tile for the cluster
 
     if clusterLineCount >= 2 then
     begin
-      // retrieve plaintext RGB tile from centroid
+      FillChar(median[0, 0], Sizeof(median), 0);
+
+      // build a median of the cluster
+
+      for j := 0 to clusterLineCount - 1 do
+      begin
+        k := 0;
+        for ty := 0 to cTileWidth - 1 do
+          for tx := 0 to cTileWidth - 1 do
+          begin
+            Inc(median[k, FTiles[ToMergeIdxs[j]]^.PalPixels[ty, tx]], FTiles[ToMergeIdxs[j]]^.UseCount);
+            Inc(k);
+          end;
+      end;
+
+      // use it as centroid
+
       k := 0;
-      pal := FFrames[ToMergeIdxs[0] div FTileMapSize].PKeyFrame.PaletteRGB[AIndex];
       for ty := 0 to cTileWidth - 1 do
         for tx := 0 to cTileWidth - 1 do
         begin
-          FTiles[ToMergeIdxs[0]]^.PalPixels[ty, tx] := LocCentroids[clusterIdx, k];
-          FTiles[ToMergeIdxs[0]]^.RGBPixels[ty, tx] := pal[LocCentroids[clusterIdx, k]];
+          bestIdx := -1;
+          bestVal := -1;
+          for j := 0 to FTilePaletteSize - 1 do
+            if median[k, j] > bestVal then
+            begin
+              bestIdx := j;
+              bestVal := median[k, j];
+            end;
+
+          FTiles[ToMergeIdxs[0]]^.PalPixels[ty, tx] := bestIdx;
+          FTiles[ToMergeIdxs[0]]^.RGBPixels[ty, tx] := 0;
           Inc(k);
         end;
 
@@ -4290,7 +4306,7 @@ const
   function GetTileBin(ATile: PTile): Byte;
   var
     tx, ty, rr, gg, bb: Integer;
-    r, g, b, h, s, v: Byte;
+    r, g, b, h, s, v, sh: Byte;
   begin
     rr := 0; gg := 0; bb := 0;
     for ty := 0 to cTileWidth - 1 do
@@ -4303,7 +4319,8 @@ const
 
     RGBToHSV(ToRGB(rr, gg, bb), h, s, v);
 
-    Result := s shr 4;
+    sh := 8 - Round(Log2(cBinCount));
+    Result := (h shr sh) xor (s shr sh) xor (v shr sh);
   end;
 
 var
