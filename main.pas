@@ -1625,8 +1625,6 @@ begin
 end;
 
 procedure TMainForm.TerminatePlan(var Plan: TMixingPlan);
-var
-  i: Integer;
 begin
   SetLength(Plan.LumaPal, 0);
   SetLength(Plan.Y2Palette, 0);
@@ -2059,12 +2057,10 @@ end;
 
 procedure TMainForm.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 var
-  col, x, y: Integer;
+  x, y: Integer;
   count, map_value: Integer;
   TKList: array[0 .. cDitheringLen - 1] of Byte;
   YilList: array[0 .. cDitheringListLen - 1] of Byte;
-  cachePos: Integer;
-  pb: PByte;
 begin
   if FUseThomasKnoll then
   begin
@@ -2577,18 +2573,9 @@ var
   fr, fg, fb: TFloat;
   yy, uu, vv: TFloat;
 begin
-  if GammaCor >= 0 then
-  begin
-    fr := GammaCorrect(GammaCor, r);
-    fg := GammaCorrect(GammaCor, g);
-    fb := GammaCorrect(GammaCor, b);
-  end
-  else
-  begin
-    fr := r / 255.0;
-    fg := g / 255.0;
-    fb := b / 255.0;
-  end;
+  fr := GammaCorrect(GammaCor, r);
+  fg := GammaCorrect(GammaCor, g);
+  fb := GammaCorrect(GammaCor, b);
 
   yy := (cRedMul * fr + cGreenMul * fg + cBlueMul * fb) / cLumaDiv;
   uu := (fb - yy) * (0.5 / (1.0 - cBlueMul / cLumaDiv));
