@@ -1031,35 +1031,29 @@ var
       DivMod(AIndex, FTileMapHeight, idx, y);
       Frame := FFrames[idx];
 
-      ok := True;
-      for i := 0 to FTileMapHeight - 1 do
-        ok := ok and not Frame.FTYDone[i];
-      if ok then
+      EnterCriticalSection(Frame.PKeyFrame.CS);
+      if Frame.PKeyFrame.FramesLeft < 0 then
       begin
-        EnterCriticalSection(Frame.PKeyFrame.CS);
-        if Frame.PKeyFrame.FramesLeft < 0 then
-        begin
-          Frame.PKeyFrame.FramesLeft := Frame.PKeyFrame.FrameCount;
-          SetEvent(Frame.PKeyFrame.FTDoPrepareEvent); // signal DoPrepare thread to start preparing KF
-        end;
-        LeaveCriticalSection(Frame.PKeyFrame.CS);
+        Frame.PKeyFrame.FramesLeft := Frame.PKeyFrame.FrameCount;
+        SetEvent(Frame.PKeyFrame.FTDoPrepareEvent); // signal DoPrepare thread to start preparing KF
       end;
+      LeaveCriticalSection(Frame.PKeyFrame.CS);
 
       WaitForSingleObject(Frame.PKeyFrame.FTPreparedEvent, INFINITE); // wait for KF prepared
 
       DoFrameTiling(Frame, y, Gamma, UseWavelets, AddlTilesThres, FTBlend);
 
+      EnterCriticalSection(Frame.PKeyFrame.CS);
       ok := True;
       for i := 0 to FTileMapHeight - 1 do
         ok := ok and Frame.FTYDone[i];
       if ok then
       begin
-        EnterCriticalSection(Frame.PKeyFrame.CS);
         Dec(Frame.PKeyFrame.FramesLeft);
         if Frame.PKeyFrame.FramesLeft <= 0 then
           SetEvent(Frame.PKeyFrame.FTDoFinishEvent); // signal DoPrepare thread to start finishing KF
-        LeaveCriticalSection(Frame.PKeyFrame.CS);
       end;
+      LeaveCriticalSection(Frame.PKeyFrame.CS);
     end;
 
   begin
@@ -1095,7 +1089,7 @@ begin
 
     mtcSave := ProcThreadPool.MaxThreadCount;
     try
-      ProcThreadPool.MaxThreadCount := NumberOfProcessors * 2;
+      ProcThreadPool.MaxThreadCount := MaxInt;
       ProcThreadPool.DoParallelNested(@DoBoth, 0, 1);
     finally
       ProcThreadPool.MaxThreadCount := mtcSave;
@@ -3968,7 +3962,7 @@ begin
 
   // Build an indicator table of used tiles
 
-  ProcThreadPool.DoParallelNested(@DoBuild, 0, AKF.FrameCount - 1);
+  ProcThreadPool.DoParallelNested(@DoBuild, 0, AKF.FrameCount - 1, nil, NumberOfProcessors);
 
   // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
@@ -3999,7 +3993,7 @@ begin
     DS[palIdx]^.DistErrCnt := 0;
   end;
 
-  ProcThreadPool.DoParallelNested(@DoPsyV, 0, FPaletteCount - 1);
+  ProcThreadPool.DoParallelNested(@DoPsyV, 0, FPaletteCount - 1, nil, NumberOfProcessors);
 
   // Build KNN
 
