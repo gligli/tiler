@@ -146,6 +146,7 @@ object MainForm: TMainForm
       Caption = 'Settings'
       ClientHeight = 420
       ClientWidth = 956
+      ParentBiDiMode = False
       PopupMenu = pmProcesses
       object edOutput: TEdit
         Left = 88
@@ -155,7 +156,7 @@ object MainForm: TMainForm
         TabOrder = 2
       end
       object seMaxTiles: TSpinEdit
-        Left = 248
+        Left = 312
         Height = 23
         Top = 107
         Width = 71
@@ -181,7 +182,7 @@ object MainForm: TMainForm
         TabOrder = 1
       end
       object seTempoSmoo: TFloatSpinEdit
-        Left = 248
+        Left = 312
         Height = 23
         Top = 332
         Width = 71
@@ -191,7 +192,7 @@ object MainForm: TMainForm
         Value = 20
       end
       object seStartFrame: TSpinEdit
-        Left = 248
+        Left = 312
         Height = 23
         Top = 186
         Width = 71
@@ -199,7 +200,7 @@ object MainForm: TMainForm
         TabOrder = 13
       end
       object seAddlTiles: TFloatSpinEdit
-        Left = 248
+        Left = 312
         Height = 23
         Top = 310
         Width = 71
@@ -210,7 +211,7 @@ object MainForm: TMainForm
         Value = 1
       end
       object cbxYilMix: TComboBox
-        Left = 248
+        Left = 312
         Height = 23
         Top = 288
         Width = 71
@@ -228,7 +229,7 @@ object MainForm: TMainForm
         Text = '4'
       end
       object seFrameCount: TSpinEdit
-        Left = 248
+        Left = 312
         Height = 23
         Top = 208
         Width = 71
@@ -238,7 +239,7 @@ object MainForm: TMainForm
       object chkReload: TCheckBox
         Left = 8
         Height = 19
-        Top = 53
+        Top = 54
         Width = 80
         Caption = 'Reload tiles'
         TabOrder = 4
@@ -257,7 +258,7 @@ object MainForm: TMainForm
       object Label13: TLabel
         Left = 8
         Height = 15
-        Top = 188
+        Top = 189
         Width = 58
         Caption = 'Start frame'
       end
@@ -271,28 +272,28 @@ object MainForm: TMainForm
       object Label9: TLabel
         Left = 8
         Height = 15
-        Top = 336
+        Top = 335
         Width = 159
         Caption = 'Temporal smoothing strength'
       end
       object Label1: TLabel
         Left = 8
         Height = 15
-        Top = 34
+        Top = 33
         Width = 38
         Caption = 'Output'
       end
       object Label7: TLabel
         Left = 8
         Height = 15
-        Top = 314
-        Width = 196
-        Caption = 'Frame tiling additional tiles threshold'
+        Top = 313
+        Width = 246
+        Caption = 'Frame tiling additional tiles threshold (0: none)'
       end
       object Label4: TLabel
         Left = 8
         Height = 15
-        Top = 12
+        Top = 11
         Width = 28
         Caption = 'Input'
       end
@@ -306,14 +307,14 @@ object MainForm: TMainForm
       object Label3: TLabel
         Left = 8
         Height = 15
-        Top = 210
+        Top = 211
         Width = 144
         Caption = 'Frame count (0: automatic)'
       end
       object Label2: TLabel
         Left = 8
         Height = 15
-        Top = 109
+        Top = 110
         Width = 118
         Caption = 'Tile limit (all; Q based)'
       end
@@ -351,7 +352,7 @@ object MainForm: TMainForm
         Caption = 'Gamma (encoder; visualization)'
       end
       object seEncGamma: TFloatSpinEdit
-        Left = 248
+        Left = 312
         Height = 23
         Top = 354
         Width = 71
@@ -363,7 +364,7 @@ object MainForm: TMainForm
         Value = 1.8
       end
       object seVisGamma: TFloatSpinEdit
-        Left = 318
+        Left = 382
         Height = 23
         Top = 354
         Width = 71
@@ -375,7 +376,7 @@ object MainForm: TMainForm
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
-        Left = 318
+        Left = 382
         Height = 23
         Top = 107
         Width = 71
@@ -408,12 +409,12 @@ object MainForm: TMainForm
       object Label12: TLabel
         Left = 8
         Height = 15
-        Top = 86
+        Top = 88
         Width = 222
         Caption = 'Palettes layout (palette count; palette size)'
       end
       object cbxPalSize: TComboBox
-        Left = 318
+        Left = 382
         Height = 23
         Top = 84
         Width = 71
@@ -433,7 +434,7 @@ object MainForm: TMainForm
         Text = '16'
       end
       object cbxPalCount: TComboBox
-        Left = 248
+        Left = 312
         Height = 23
         Top = 84
         Width = 71
@@ -463,7 +464,7 @@ object MainForm: TMainForm
         Caption = 'Dennis Lee v3 output bits per component'
       end
       object cbxDLBPC: TComboBox
-        Left = 248
+        Left = 312
         Height = 23
         Top = 266
         Width = 71
@@ -485,7 +486,7 @@ object MainForm: TMainForm
         Text = '7'
       end
       object cbxScaling: TComboBox
-        Left = 248
+        Left = 312
         Height = 23
         Top = 230
         Width = 71
@@ -494,12 +495,14 @@ object MainForm: TMainForm
         ItemIndex = 4
         Items.Strings = (
           '0.25'
-          '0.375'
+          '0.333333'
           '0.5'
-          '0.75'
+          '0.666667'
           '1'
           '1.5'
           '2'
+          '3'
+          '4'
         )
         OnChange = cbxYilMixChange
         Style = csDropDownList
@@ -521,7 +524,7 @@ object MainForm: TMainForm
         Caption = 'Frame tiling match effort'
       end
       object cbxFTQ: TComboBox
-        Left = 248
+        Left = 312
         Height = 23
         Top = 129
         Width = 71
@@ -553,11 +556,11 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 155
-        Width = 182
-        Caption = 'Frame tiling blending search effort'
+        Width = 237
+        Caption = 'Frame tiling blending search effort (-1: none)'
       end
       object seFTBlend: TSpinEdit
-        Left = 248
+        Left = 312
         Height = 23
         Top = 152
         Width = 71
