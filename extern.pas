@@ -135,7 +135,8 @@ function ann_kdtree_create(pa: PPANNFloat; n, dd, bs: Integer; split: TANNsplitR
 procedure ann_kdtree_destroy(akd: PANNkdtree); external 'ANN.dll';
 function ann_kdtree_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; external 'ANN.dll';
 function ann_kdtree_pri_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; external 'ANN.dll';
-function ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PANNFloat; cnt: Integer; q: PANNFloat; eps: TANNFloat): Integer; external 'ANN.dll';
+procedure ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PANNFloat; cnt: Integer; q: PANNFloat; eps: TANNFloat); external 'ANN.dll';
+procedure ann_kdtree_pri_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PANNFloat; cnt: Integer; q: PANNFloat; eps: TANNFloat); external 'ANN.dll';
 
 procedure DEFAULT_FLANN_PARAMETERS; cdecl; external 'flann.dll';
 function flann_build_index(dataset: PSingle; rows, cols: Integer; speedup: PSingle; flann_params: PFLANNParameters): flann_index_t; cdecl; external 'flann.dll';

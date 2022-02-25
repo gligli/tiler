@@ -1,7 +1,6 @@
 unit main;
 
 {$mode objfpc}{$H+}
-{$ModeSwitch nestedprocvars}
 
 {$define ASM_DBMP}
 
@@ -25,7 +24,7 @@ const
   cFTInterPaletteTol: array[TFTQuality] of TFloat = (0.001, 0.005, 0.02);
   cMaxFTBlend = 16;
   cGlobalFTBucketSize = 8;
-  cFrameFTBucketSize = 16;
+  cFrameFTBucketSize = 8;
 
 {$if true}
   cRedMul = 2126;
@@ -196,7 +195,7 @@ type
     TileIdx: Integer;
     PalIdx: Integer;
     HMirror, VMirror, Smoothed: Boolean;
-    Blend: Byte;
+    BlendCur, BlendPrev: Byte;
     BlendX, BlendY: ShortInt;
   end;
 
@@ -478,8 +477,8 @@ type
 
     procedure ReloadPreviousTiling(AFN: String);
 
-    procedure HMirrorPalTile(var ATile: TTile);
-    procedure VMirrorPalTile(var ATile: TTile);
+    function HMirrorPalTile(var ATile: TTile): Boolean;
+    function VMirrorPalTile(var ATile: TTile): Boolean;
     procedure PrepareGlobalFT;
     procedure FinishGlobalFT;
     procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AUseWavelets: Boolean; AFTQuality: TFTQuality);
@@ -491,7 +490,7 @@ type
     procedure ReindexTiles;
     procedure DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat);
 
-    procedure SaveStream(AStream: TStream);
+    procedure SaveStream(AStream: TStream; AFTBlend: Integer);
     procedure SaveRawTiles(OutFN: String);
 
     function DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; AScale: Double; out
@@ -935,7 +934,7 @@ begin
   DLBPC := StrToInt(cbxDLBPC.Text);
 
   ProgressRedraw(-1, esDither);
-  ProcThreadPool.DoParallelNested(@DoPrepare, 0, High(FKeyFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames));
   WriteLn;
   ProgressRedraw(1);
 
@@ -943,7 +942,7 @@ begin
   begin
     SetLength(FKeyFrames[i].PaletteUseCount, FPaletteCount);
   end;
-  ProcThreadPool.DoParallelNested(@DoQuantize, 0, Length(FKeyFrames) * FPaletteCount - 1);
+  ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Length(FKeyFrames) * FPaletteCount - 1);
   WriteLn;
   for i := 0 to High(FKeyFrames) do
   begin
@@ -952,7 +951,7 @@ begin
   end;
   ProgressRedraw(2);
 
-  ProcThreadPool.DoParallelNested(@DoFinish, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoFinish, 0, High(FFrames));
   ProgressRedraw(3);
 
   tbFrameChange(nil);
@@ -978,7 +977,7 @@ begin
 
   ProgressRedraw(-1, esMakeUnique);
 
-  ProcThreadPool.DoParallelNested(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
+  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
 
   ProgressRedraw(1);
 
@@ -1043,23 +1042,23 @@ var
 
       DoFrameTiling(Frame, y, Gamma, UseWavelets, AddlTilesThres, FTBlend);
 
-      EnterCriticalSection(Frame.PKeyFrame.CS);
       ok := True;
       for i := 0 to FTileMapHeight - 1 do
         ok := ok and Frame.FTYDone[i];
       if ok then
       begin
+        EnterCriticalSection(Frame.PKeyFrame.CS);
         Dec(Frame.PKeyFrame.FramesLeft);
         if Frame.PKeyFrame.FramesLeft <= 0 then
           SetEvent(Frame.PKeyFrame.FTDoFinishEvent); // signal DoPrepare thread to start finishing KF
+        LeaveCriticalSection(Frame.PKeyFrame.CS);
       end;
-      LeaveCriticalSection(Frame.PKeyFrame.CS);
     end;
 
   begin
     case AIndex of
-      0: ProcThreadPool.DoParallelNested(@DoPrepare, 0, High(FKeyFrames), nil, NumberOfProcessors);
-      1: ProcThreadPool.DoParallelNested(@DoFrm, 0, Length(FFrames) * FTileMapHeight - 1, nil, NumberOfProcessors);
+      0: ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames), nil, NumberOfProcessors);
+      1: ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, Length(FFrames) * FTileMapHeight - 1, nil, NumberOfProcessors);
     end;
   end;
 
@@ -1090,7 +1089,7 @@ begin
     mtcSave := ProcThreadPool.MaxThreadCount;
     try
       ProcThreadPool.MaxThreadCount := MaxInt;
-      ProcThreadPool.DoParallelNested(@DoBoth, 0, 1);
+      ProcThreadPool.DoParallelLocalProc(@DoBoth, 0, 1);
     finally
       ProcThreadPool.MaxThreadCount := mtcSave;
     end;
@@ -1211,7 +1210,7 @@ begin
     bmp.Free;
   end;
 
-  ProcThreadPool.DoParallelNested(@DoLoadFrame, 0, High(FFrames), Pointer(StartFrame));
+  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(StartFrame));
 
   ProgressRedraw(1);
 
@@ -1392,7 +1391,7 @@ begin
 
   fs := TFileStream.Create(edOutput.Text, fmCreate or fmShareDenyWrite);
   try
-    SaveStream(fs);
+    SaveStream(fs, seFTBlend.Value);
   finally
     fs.Free;
   end;
@@ -1437,7 +1436,7 @@ begin
         FFrames[frm].SmoothedTileMap[j, i] := FFrames[frm].TileMap[j, i];
   ProgressRedraw(1);
 
-  ProcThreadPool.DoParallelNested(@DoSmoothing, 0, FTileMapHeight - 1);
+  ProcThreadPool.DoParallelLocalProc(@DoSmoothing, 0, FTileMapHeight - 1);
   ProgressRedraw(2);
 
   tbFrameChange(nil);
@@ -3103,35 +3102,47 @@ begin
   end;
 end;
 
-procedure TMainForm.VMirrorPalTile(var ATile: TTile);
+function TMainForm.VMirrorPalTile(var ATile: TTile): Boolean; // returns True if tile actually changed
 var
   j, i: Integer;
-  v: Integer;
+  v, sv: Integer;
 begin
   // hardcode vertical mirror into the tile
 
+  Result := False;
   for j := 0 to cTileWidth div 2 - 1  do
     for i := 0 to cTileWidth - 1 do
     begin
       v := ATile.PalPixels[j, i];
-      ATile.PalPixels[j, i] := ATile.PalPixels[cTileWidth - 1 - j, i];
-      ATile.PalPixels[cTileWidth - 1 - j, i] := v;
+      sv := ATile.PalPixels[cTileWidth - 1 - j, i];
+      ATile.PalPixels[j, i] := sv;
+      if v <> sv then
+      begin
+        Result := True;
+        ATile.PalPixels[cTileWidth - 1 - j, i] := v;
+      end;
     end;
 end;
 
-procedure TMainForm.HMirrorPalTile(var ATile: TTile);
+function TMainForm.HMirrorPalTile(var ATile: TTile): Boolean; // returns True if tile actually changed
 var
   i, j: Integer;
-  v: Integer;
+  v, sv: Integer;
 begin
   // hardcode horizontal mirror into the tile
 
+  Result := False;
   for j := 0 to cTileWidth - 1 do
     for i := 0 to cTileWidth div 2 - 1  do
     begin
       v := ATile.PalPixels[j, i];
-      ATile.PalPixels[j, i] := ATile.PalPixels[j, cTileWidth - 1 - i];
-      ATile.PalPixels[j, cTileWidth - 1 - i] := v;
+      sv := ATile.PalPixels[j, cTileWidth - 1 - i];
+      ATile.PalPixels[j, i] := sv;
+      if v <> sv then
+      begin
+        Result := True;
+        ATile.PalPixels[j, cTileWidth - 1 - i] := v;
+      end;
     end;
 end;
 
@@ -3159,7 +3170,8 @@ begin
       AFrame.TileMap[j, i].VMirror := False;
       AFrame.TileMap[j, i].PalIdx := -1;
       AFrame.TileMap[j, i].Smoothed := False;
-      AFrame.TileMap[j, i].Blend := 0;
+      AFrame.TileMap[j, i].BlendCur := 0;
+      AFrame.TileMap[j, i].BlendPrev := 0;
       AFrame.TileMap[j, i].BlendX := 0;
       AFrame.TileMap[j, i].BlendY := 0;
       AFrame.SmoothedTileMap[j, i] := AFrame.TileMap[j, i];
@@ -3237,7 +3249,7 @@ begin
   // compute interframe correlations
 
   SetLength(Correlations, Length(FFrames));
-  ProcThreadPool.DoParallelNested(@DoCorrel, 1, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
 
   // find keyframes
 
@@ -3316,7 +3328,7 @@ end;
 procedure TMainForm.Render(AFrameIndex: Integer; playing, blended, mirrored, reduced, gamma: Boolean; palIdx: Integer;
   ATilePage: Integer);
 
-  procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; psyTile: PTile; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean; prevtilePtr: PTile; prevPal: TIntegerDynArray; prevHmir, prevVmir: Boolean; blend: Integer);
+  procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; psyTile: PTile; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean; prevtilePtr: PTile; prevPal: TIntegerDynArray; prevHmir, prevVmir: Boolean; blendCur, blendPrev: Integer);
   var
     r, g, b, pr, pg, pb, tx, ty, txm, tym, ptxm, ptym, col: Integer;
     psl: PInteger;
@@ -3353,9 +3365,9 @@ procedure TMainForm.Render(AFrameIndex: Integer; playing, blended, mirrored, red
             FromRGB(prevtilePtr^.RGBPixels[ptym, ptxm], pr, pg, pb);
         end;
 
-        r := ilerp(r, pr, blend, 256);
-        g := ilerp(g, pg, blend, 256);
-        b := ilerp(b, pb, blend, 256);
+        r := min((r * blendCur + pr * blendPrev) div (cMaxFTBlend - 1), 255);
+        g := min((g * blendCur + pg * blendPrev) div (cMaxFTBlend - 1), 255);
+        b := min((b * blendCur + pb * blendPrev) div (cMaxFTBlend - 1), 255);
 
         if gamma then
         begin
@@ -3423,7 +3435,7 @@ begin
               tilePtr := FTiles[ti];
               pal := Frame.PKeyFrame.PaletteRGB[Max(0, palIdx)];
 
-              DrawTile(imgTiles.Picture.Bitmap, sx, sy, nil, tilePtr, pal, False, False, nil, nil, False, False, 0);
+              DrawTile(imgTiles.Picture.Bitmap, sx, sy, nil, tilePtr, pal, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
             end;
           end;
       finally
@@ -3437,7 +3449,7 @@ begin
         for sx := 0 to FTileMapWidth - 1 do
         begin
           tilePtr :=  @Frame.Tiles[sy * FTileMapWidth + sx];
-          DrawTile(imgSource.Picture.Bitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, 0);
+          DrawTile(imgSource.Picture.Bitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
           if not playing then
             ComputeTilePsyVisFeatures(tilePtr^, False, True, False, False, False, False, Ord(gamma) * 2 - 1, nil, oriCorr[sy, sx]);
         end;
@@ -3459,7 +3471,7 @@ begin
             TMItem := @Frame.SmoothedTileMap[sy, sx];
 
           prevTMItem := nil;
-          if (Frame.Index > 0) and (TMItem^.Blend > 0) and blended then
+          if (Frame.Index > 0) and (TMItem^.BlendCur < cMaxFTBlend - 1) and (TMItem^.BlendPrev > 0) and blended then
           begin
             prevTMItem := @FFrames[Frame.Index - 1].TileMap[sy + TMItem^.BlendY, sx + TMItem^.BlendX];
             if FFrames[Frame.Index - 1].SmoothedTileMap[sy + TMItem^.BlendY, sx + TMItem^.BlendX].Smoothed then
@@ -3497,11 +3509,11 @@ begin
             if Assigned(prevTMItem) then
             begin
               prevPal := FFrames[Frame.Index - 1].PKeyFrame.PaletteRGB[prevTMItem^.PalIdx];
-              DrawTile(imgDest.Picture.Bitmap, sx, sy, @PsyTile, tilePtr, pal, TMItem^.HMirror, TMItem^.VMirror, prevTilePtr, prevPal, prevTMItem^.HMirror, prevTMItem^.VMirror, TMItem^.Blend);
+              DrawTile(imgDest.Picture.Bitmap, sx, sy, @PsyTile, tilePtr, pal, TMItem^.HMirror, TMItem^.VMirror, prevTilePtr, prevPal, prevTMItem^.HMirror, prevTMItem^.VMirror, TMItem^.BlendCur, TMItem^.BlendPrev);
             end
             else
             begin
-              DrawTile(imgDest.Picture.Bitmap, sx, sy, @PsyTile, tilePtr, pal, TMItem^.HMirror, TMItem^.VMirror, nil, nil, False, False, 0);
+              DrawTile(imgDest.Picture.Bitmap, sx, sy, @PsyTile, tilePtr, pal, TMItem^.HMirror, TMItem^.VMirror, nil, nil, False, False, cMaxFTBlend - 1, 0);
             end;
 
             if not playing then
@@ -3817,15 +3829,19 @@ begin
     if T^.Active then
     begin
       DoOne(i, False, False);
-      HMirrorPalTile(T^);
-      DoOne(i, True, False);
-      VMirrorPalTile(T^);
-      DoOne(i, True, True);
-      HMirrorPalTile(T^);
-      DoOne(i, False, True);
+      if HMirrorPalTile(T^) then
+        DoOne(i, True, False);
+      if VMirrorPalTile(T^) then
+        DoOne(i, True, True);
+      if HMirrorPalTile(T^) then
+        DoOne(i, False, True);
       VMirrorPalTile(T^);
     end;
   end;
+
+  SetLength(FGlobalDS.Dataset, di, Sqr(cTileWidth));
+  SetLength(FGlobalDS.TRToTileIdx, Length(FGlobalDS.Dataset));
+  SetLength(FGlobalDS.TRToAttrs, Length(FGlobalDS.Dataset));
 
   FGlobalDS.KDT := ann_kdtree_create(@FGlobalDS.Dataset[0], Length(FGlobalDS.Dataset), Sqr(cTileWidth), 32, ANN_KD_STD);
 end;
@@ -3875,12 +3891,15 @@ var
         Inc(PF);
       end;
 
-      ann_kdtree_search_multi(FGlobalDS.KDT, @idxs[0], @errs[0], cGlobalFTBucketSize, @Line[0], 0.0);
+      ann_kdtree_pri_search_multi(FGlobalDS.KDT, @idxs[0], @errs[0], cGlobalFTBucketSize, @Line[0], 0.0);
 
       for i := 0 to cGlobalFTBucketSize - 1 do
       begin
         idx := idxs[i];
-        for palIdx := 0 to FPaletteCount - 1 do
+        if idx < 0 then
+          Continue;
+
+         for palIdx := 0 to FPaletteCount - 1 do
           if PaletteDists[palIdx, Item^.PalIdx] <= cFTIntraPaletteTol[AFTQuality] * HighestDist then
             used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
       end;
@@ -3962,7 +3981,7 @@ begin
 
   // Build an indicator table of used tiles
 
-  ProcThreadPool.DoParallelNested(@DoBuild, 0, AKF.FrameCount - 1, nil, NumberOfProcessors);
+  ProcThreadPool.DoParallelLocalProc(@DoBuild, 0, AKF.FrameCount - 1, nil, NumberOfProcessors);
 
   // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
@@ -3993,7 +4012,7 @@ begin
     DS[palIdx]^.DistErrCnt := 0;
   end;
 
-  ProcThreadPool.DoParallelNested(@DoPsyV, 0, FPaletteCount - 1, nil, NumberOfProcessors);
+  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount - 1, nil, NumberOfProcessors);
 
   // Build KNN
 
@@ -4033,34 +4052,137 @@ begin
   AKF.TileDS := nil;
 end;
 
+function ComputeBlendingError(PPlain, PCur, PPrev: PANNFloat; bc, bp: TANNFloat): TANNFloat; inline;
+var
+  i: Integer;
+begin
+  Result := 0.0;
+  for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
+  begin
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+  end;
+end;
+
+
+function ComputeBlendingError_Asm(PPlain_rcx, PCur_rdx, PPrev_r8: PANNFloat; bc_xmm3, bp_stack: TANNFloat): TANNFloat; register; assembler;
+const
+  cDCTSizeOffset = cTileDCTSize * SizeOf(TANNFloat);
+label loop;
+asm
+  push rcx
+  push rdx
+  push r8
+
+  sub rsp, 16 * 14
+  movdqu oword ptr [rsp],       xmm1
+  movdqu oword ptr [rsp + $10], xmm2
+  movdqu oword ptr [rsp + $20], xmm3
+  movdqu oword ptr [rsp + $30], xmm4
+  movdqu oword ptr [rsp + $40], xmm5
+  movdqu oword ptr [rsp + $50], xmm6
+  movdqu oword ptr [rsp + $60], xmm7
+  movdqu oword ptr [rsp + $70], xmm8
+  movdqu oword ptr [rsp + $80], xmm9
+  movdqu oword ptr [rsp + $90], xmm10
+  movdqu oword ptr [rsp + $a0], xmm11
+  movdqu oword ptr [rsp + $b0], xmm12
+  movdqu oword ptr [rsp + $c0], xmm13
+  movdqu oword ptr [rsp + $d0], xmm14
+
+  pshufd xmm1, xmm3, 0
+  pshufd xmm2, dword ptr [bp_stack], 0
+  xorps xmm0, xmm0
+
+  lea rax, byte ptr [rcx + cDCTSizeOffset]
+  loop:
+    movups xmm3,  oword ptr [rcx]
+    movups xmm6,  oword ptr [rcx + $10]
+    movups xmm9,  oword ptr [rcx + $20]
+    movups xmm12, oword ptr [rcx + $30]
+
+    movups xmm4,  oword ptr [rdx]
+    movups xmm7,  oword ptr [rdx + $10]
+    movups xmm10, oword ptr [rdx + $20]
+    movups xmm13, oword ptr [rdx + $30]
+
+    movups xmm5,  oword ptr [r8]
+    movups xmm8,  oword ptr [r8 + $10]
+    movups xmm11, oword ptr [r8 + $20]
+    movups xmm14, oword ptr [r8 + $30]
+
+    mulps xmm4, xmm1
+    mulps xmm5, xmm2
+    addps xmm4, xmm5
+    subps xmm3, xmm4
+    mulps xmm3, xmm3
+    addps xmm0, xmm3
+
+    mulps xmm7, xmm1
+    mulps xmm8, xmm2
+    addps xmm7, xmm8
+    subps xmm6, xmm7
+    mulps xmm6, xmm6
+    addps xmm0, xmm6
+
+    mulps xmm10, xmm1
+    mulps xmm11, xmm2
+    addps xmm10, xmm11
+    subps xmm9, xmm10
+    mulps xmm9, xmm9
+    addps xmm0, xmm9
+
+    mulps xmm13, xmm1
+    mulps xmm14, xmm2
+    addps xmm13, xmm14
+    subps xmm12, xmm13
+    mulps xmm12, xmm12
+    addps xmm0, xmm12
+
+    lea rcx, [rcx + $40]
+    lea rdx, [rdx + $40]
+    lea r8, [r8 + $40]
+
+    cmp rcx, rax
+    jne loop
+
+  haddps xmm0, xmm0
+  haddps xmm0, xmm0
+
+  movdqu xmm1,  oword ptr [rsp]
+  movdqu xmm2,  oword ptr [rsp + $10]
+  movdqu xmm3,  oword ptr [rsp + $20]
+  movdqu xmm4,  oword ptr [rsp + $30]
+  movdqu xmm5,  oword ptr [rsp + $40]
+  movdqu xmm6,  oword ptr [rsp + $50]
+  movdqu xmm7,  oword ptr [rsp + $60]
+  movdqu xmm8,  oword ptr [rsp + $70]
+  movdqu xmm9,  oword ptr [rsp + $80]
+  movdqu xmm10, oword ptr [rsp + $90]
+  movdqu xmm11, oword ptr [rsp + $a0]
+  movdqu xmm12, oword ptr [rsp + $b0]
+  movdqu xmm13, oword ptr [rsp + $c0]
+  movdqu xmm14, oword ptr [rsp + $d0]
+  add rsp, 16 * 14
+
+  pop r8
+  pop rdx
+  pop rcx
+end;
+
 procedure TMainForm.DoFrameTiling(AFrame: TFrame; Y: Integer; AFTGamma: Integer; AUseWavelets: Boolean;
   AAddlTilesThres: TFloat; AFTBlend: Integer);
-
-  function ComputeBlendingError(b: Byte; PPlain, PCur, PPrev: PFloat): TFloat;
-  var
-    i: Integer;
-    alpha: TFloat;
-  begin
-    Result := 0;
-    alpha :=  b / cMaxFTBlend;
-    for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
-    begin
-      Result += Sqr(PPlain^ - lerp(PCur^, PPrev^, alpha)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-      Result += Sqr(PPlain^ - lerp(PCur^, PPrev^, alpha)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-      Result += Sqr(PPlain^ - lerp(PCur^, PPrev^, alpha)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-      Result += Sqr(PPlain^ - lerp(PCur^, PPrev^, alpha)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-      Result += Sqr(PPlain^ - lerp(PCur^, PPrev^, alpha)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-      Result += Sqr(PPlain^ - lerp(PCur^, PPrev^, alpha)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-      Result += Sqr(PPlain^ - lerp(PCur^, PPrev^, alpha)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-      Result += Sqr(PPlain^ - lerp(PCur^, PPrev^, alpha)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-    end;
-  end;
-
 var
   i, bestIdx, PalIdx, bucketIdx, idx: Integer;
-  attrs, b, bestBlend: Byte;
+  attrs, bc, bp, bestBlendCur, bestBlendPrev: Byte;
   x, oy, ox, bestX, bestY: Integer;
-  bestErr, err: TFloat;
+  bestErr, err: TANNFloat;
 
   tmiO, prevTMI: PTileMapItem;
   TmpTMI: TTileMapItem;
@@ -4069,8 +4191,8 @@ var
   idxs: array[0 .. cFrameFTBucketSize - 1] of Integer;
   errs: array[0 .. cFrameFTBucketSize - 1] of TANNFloat;
   DS: array of PTilingDataset;
-  PlainDCT, PrevDCT, DCT: TFloatDynArray;
-  ANNDCT: TANNFloatDynArray;
+  PrevDCT, DCT: TFloatDynArray;
+  ANNDCT, Cur, Prev: TANNFloatDynArray;
 
   ATList: TList;
 
@@ -4088,30 +4210,29 @@ begin
   // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
   SetLength(DCT, cTileDCTSize);
-  SetLength(PlainDCT, cTileDCTSize);
   SetLength(ANNDCT, cTileDCTSize);
   SetLength(PrevDCT, cTileDCTSize);
+  SetLength(Cur, cTileDCTSize);
+  SetLength(Prev, cTileDCTSize);
 
   for x := 0 to FTileMapWidth - 1 do
   begin
     ComputeTilePsyVisFeatures(AFrame.Tiles[Y * FTileMapWidth + x], False, AUseWavelets, False, False, False, False, AFTGamma, nil, DCT);
     for i := 0 to cTileDCTSize - 1 do
-    begin
-      PlainDCT[i] := DCT[i];
       ANNDCT[i] := DCT[i];
-    end;
 
     PalIdx := AFrame.TileMap[Y, x].PalIdx;
 
     if Length(DS[PalIdx]^.Dataset) <= 0 then
       Continue;
 
-    ann_kdtree_search_multi(DS[PalIdx]^.KDT, @idxs[0], @errs[0], cFrameFTBucketSize, @ANNDCT[0], 0.0);
+    ann_kdtree_pri_search_multi(DS[PalIdx]^.KDT, @idxs[0], @errs[0], cFrameFTBucketSize, @ANNDCT[0], 0.0);
 
-    bestBlend := 0;
-    bestX := 0;
-    bestY := 0;
-    if (AFrame.Index > 0) and (AFTBlend >= 0) then
+    bestBlendCur := cMaxFTBlend - 1;
+    bestBlendPrev := 0;
+    bestX := x;
+    bestY := Y;
+    if (AFrame.Index > 0) and (AFTBlend >= 0) and not IsZero(errs[0]) then
     begin
       // try to blend a local tile of the previous frame to improve likeliness
 
@@ -4120,6 +4241,9 @@ begin
       for bucketIdx := 0 to cFrameFTBucketSize - 1 do
       begin
         idx := idxs[bucketIdx];
+        err := errs[bucketIdx];
+        if idx < 0 then
+          Continue;
 
         TmpTMI := FFrames[AFrame.Index].TileMap[Y, x];
 
@@ -4130,6 +4254,8 @@ begin
         TmpTMI.VMirror := (attrs and 2) <> 0;
 
         ComputeTilePsyVisFeatures(FTiles[TmpTMI.TileIdx]^, True, AUseWavelets, False, False, TmpTMI.HMirror, TmpTMI.VMirror, AFTGamma, AFrame.PKeyFrame.PaletteRGB[TmpTMI.PalIdx], DCT);
+        for i := 0 to cTileDCTSize - 1 do
+          Cur[i] := DCT[i];
 
         for oy := Y - AFTBlend to Y + AFTBlend do
         begin
@@ -4161,20 +4287,24 @@ begin
             end;
 
             ComputeTilePsyVisFeatures(prevTile^, True, AUseWavelets, False, False, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PrevDCT);
+            for i := 0 to cTileDCTSize - 1 do
+              Prev[i] := PrevDCT[i];
 
-            for b := 0 to cMaxFTBlend - 1 do
-            begin
-              err := ComputeBlendingError(b, @PlainDCT[0], @DCT[0], @PrevDCT[0]);
-
-              if err < bestErr then
+            for bc := 0 to cMaxFTBlend - 1 do
+              for bp := 0 to cMaxFTBlend - 1 do
               begin
-                bestErr := err;
-                bestIdx := idx;
-                bestBlend := b;
-                bestX := ox;
-                bestY := oy;
+                err := ComputeBlendingError_Asm(@ANNDCT[0], @Cur[0], @Prev[0], bc * (1.0 / (cMaxFTBlend - 1)), bp * (1.0 / (cMaxFTBlend - 1)));
+
+                if err < bestErr then
+                begin
+                  bestErr := err;
+                  bestIdx := idx;
+                  bestBlendCur := bc;
+                  bestBlendPrev := bp;
+                  bestX := ox;
+                  bestY := oy;
+                end;
               end;
-            end;
           end;
         end;
       end;
@@ -4196,7 +4326,8 @@ begin
       tmiO^.PalIdx := DS[PalIdx]^.TRToPalIdx[bestIdx];
       tmiO^.HMirror := (attrs and 1) <> 0;
       tmiO^.VMirror := (attrs and 2) <> 0;
-      tmiO^.Blend := bestBlend shl (8 - Round(Log2(cMaxFTBlend)));
+      tmiO^.BlendCur := bestBlendCur;
+      tmiO^.BlendPrev := bestBlendPrev;
       tmiO^.BlendX := bestX - x;
       tmiO^.BlendY := bestY - Y;
 
@@ -4228,18 +4359,16 @@ procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; 
 const
   cSqrtFactor = 1 / cTileDCTSize;
 var
-  i, sx: Integer;
-  alpha, cmp: TFloat;
-  TMI, PrevTMI, BlendTMI, BlendPrevTMI: PTileMapItem;
-  DCT, PrevDCT, BlendDCT, BlendPrevDCT : TFloatDynArray;
+  sx: Integer;
+  cmp: TFloat;
+  TMI, PrevTMI: PTileMapItem;
+  DCT, PrevDCT: TFloatDynArray;
 begin
   if AFrame.PKeyFrame <> APrevFrame.PKeyFrame then
     Exit;
 
   SetLength(DCT, cTileDCTSize);
-  SetLength(BlendDCT, cTileDCTSize);
   SetLength(PrevDCT, cTileDCTSize);
-  SetLength(BlendPrevDCT, cTileDCTSize);
 
   for sx := 0 to FTileMapWidth - 1 do
   begin
@@ -4248,26 +4377,8 @@ begin
     PrevTMI := @APrevFrame.SmoothedTileMap[Y, sx];
     ComputeTilePsyVisFeatures(FTiles[PrevTMI^.TileIdx]^, True, False, False, True, PrevTMI^.HMirror, PrevTMI^.VMirror, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.PalIdx], PrevDCT);
 
-    if APrevFrame.Index > 0 then
-    begin
-      BlendPrevTMI := @APrevFrame.SmoothedTileMap[Y + PrevTMI^.BlendY, sx + PrevTMI^.BlendX];
-      ComputeTilePsyVisFeatures(FTiles[BlendPrevTMI^.TileIdx]^, True, False, False, True, BlendPrevTMI^.HMirror, BlendPrevTMI^.VMirror, -1, FFrames[APrevFrame.Index - 1].PKeyFrame.PaletteRGB[BlendPrevTMI^.PalIdx], BlendPrevDCT);
-      alpha :=  PrevTMI^.Blend / cMaxFTBlend;
-      for i := 0 to cTileDCTSize - 1 do
-        PrevDCT[i] := lerp(PrevDCT[i], BlendPrevDCT[i], alpha);
-    end;
-
     TMI := @AFrame.SmoothedTileMap[Y, sx];
     ComputeTilePsyVisFeatures(FTiles[TMI^.TileIdx]^, True, False, False, True, TMI^.HMirror, TMI^.VMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.PalIdx], DCT);
-
-    if AFrame.Index > 0 then
-    begin
-      BlendTMI := @AFrame.SmoothedTileMap[Y + TMI^.BlendY, sx + TMI^.BlendX];
-      ComputeTilePsyVisFeatures(FTiles[BlendTMI^.TileIdx]^, True, False, False, True, BlendTMI^.HMirror, BlendTMI^.VMirror, -1, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[BlendTMI^.PalIdx], BlendDCT);
-      alpha :=  TMI^.Blend / cMaxFTBlend;
-      for i := 0 to cTileDCTSize - 1 do
-        DCT[i] := lerp(DCT[i], BlendDCT[i], alpha);
-    end;
 
     cmp := CompareEuclideanDCT(DCT, PrevDCT);
     cmp := sqrt(cmp * cSqrtFactor);
@@ -4277,9 +4388,19 @@ begin
     if cmp <= Strength then
     begin
       if TMI^.TileIdx >= PrevTMI^.TileIdx then // lower tile index means the tile is used more often
-        TMI^ := PrevTMI^
+      begin
+        TMI^.TileIdx := PrevTMI^.TileIdx;
+        TMI^.PalIdx := PrevTMI^.PalIdx;
+        TMI^.HMirror := PrevTMI^.HMirror;
+        TMI^.VMirror := PrevTMI^.VMirror;
+      end
       else
-        PrevTMI^ := TMI^;
+      begin
+        PrevTMI^.TileIdx := TMI^.TileIdx;
+        PrevTMI^.PalIdx := TMI^.PalIdx;
+        PrevTMI^.HMirror := TMI^.HMirror;
+        PrevTMI^.VMirror := TMI^.VMirror;
+      end;
 
       TMI^.Smoothed := True;
     end
@@ -4725,7 +4846,7 @@ begin
     ProgressRedraw(1);
 
     ParallelCount := ProcThreadPool.MaxThreadCount * 10;
-    ProcThreadPool.DoParallelNested(@DoFindBest, 0, ParallelCount - 1);
+    ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, ParallelCount - 1);
 
     ProgressRedraw(4);
 
@@ -4826,7 +4947,7 @@ begin
   WriteLn('ReindexTiles: ', cnt, ' / ', Length(FTiles), ' made intra');
 end;
 
-procedure TMainForm.SaveStream(AStream: TStream);
+procedure TMainForm.SaveStream(AStream: TStream; AFTBlend: Integer);
 const
   CGTMCommandsCount = Ord(High(TGTMCommand)) + 1;
   CGTMCommandsBits = round(ln(CGTMCommandsCount) / ln(2));
@@ -4878,20 +4999,36 @@ var
 
     attrs := (TMI.PalIdx shl 2) or (Ord(TMI.VMirror) shl 1) or Ord(TMI.HMirror);
     blend := 0;
-    if TMI.Blend <> 0 then
-      blend := (Word(TMI.BlendY and $f) shl 12) or (Word(TMI.BlendX and $f) shl 8) or TMI.Blend;
+    if (TMI.BlendCur <> cMaxFTBlend - 1) and (TMI.BlendPrev <> 0) then
+      blend := (Word(TMI.BlendY and $f) shl 12) or (Word(TMI.BlendX and $f) shl 8) or (Word(TMI.BlendPrev and $f) shl 4) or Word(TMI.BlendCur and $f);
 
     if TMI.TileIdx < (1 shl 16) then
     begin
-      DoCmd(gtShortBlendTileIdx, attrs);
-      DoWord(TMI.TileIdx);
-      DoWord(blend);
+      if AFTBlend < 0 then
+      begin
+        DoCmd(gtShortTileIdx, attrs);
+        DoWord(TMI.TileIdx);
+      end
+      else
+      begin
+        DoCmd(gtShortBlendTileIdx, attrs);
+        DoWord(TMI.TileIdx);
+        DoWord(blend);
+      end;
     end
     else
     begin
-      DoCmd(gtLongBlendTileIdx, attrs);
-      DoDWord(TMI.TileIdx);
-      DoWord(blend);
+      if AFTBlend < 0 then
+      begin
+        DoCmd(gtLongTileIdx, attrs);
+        DoDWord(TMI.TileIdx);
+      end
+      else
+      begin
+        DoCmd(gtLongBlendTileIdx, attrs);
+        DoDWord(TMI.TileIdx);
+        DoWord(blend);
+      end;
     end;
   end;
 
@@ -5210,7 +5347,7 @@ begin
   SpinLeave(@FLock);
 
 {$ifdef DEBUG}
-  //ProcThreadPool.MaxThreadCount := 1;
+  ProcThreadPool.MaxThreadCount := 1;
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}
