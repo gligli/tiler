@@ -3,6 +3,7 @@ program tiler;
 {$mode objfpc}{$H+}
 
 uses
+  cmem,
   {$IFDEF UNIX}{$IFDEF UseCThreads}
   cthreads,
   {$ENDIF}{$ENDIF}

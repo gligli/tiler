@@ -87,7 +87,7 @@
             <StackSize Value="16777216"/>
             <TargetCPU Value="x86_64"/>
             <Optimizations>
-              <OptimizationLevel Value="4"/>
+              <OptimizationLevel Value="3"/>
             </Optimizations>
           </CodeGeneration>
           <Linking>
