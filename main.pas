@@ -65,7 +65,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 2, 2, 2, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 3, 2, 2, 2);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -137,8 +137,8 @@ type
   // ShortTileIdx:      data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
   // LongTileIdx:       data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
   // LoadPalette:       data -> palette index (8 bits); palette format (8 bits) (0: RGBA32); RGBA bytes (32bits); commandBits -> none
-  // ShortBlendTileIdx: data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Blend factor (8 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // LongLendTileIdx:   data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Blend factor (8 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+  // ShortBlendTileIdx: data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+  // LongLendTileIdx:   data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
   //
   // (insert new commands here...)
   //
@@ -204,6 +204,7 @@ type
 
     class function Array1DNew(x: Integer; ARGBPixels, APalPixels: Boolean): PTileDynArray; static;
     class procedure Array1DDispose(var AArray: PTileDynArray); static;
+    class procedure Array1DRealloc(var AArray: PTileDynArray; ANewX: integer); static;
     class function New(ARGBPixels, APalPixels: Boolean): PTile; static;
     class procedure Dispose(var ATile: PTile); static;
     procedure CopyFrom(const ATile: TTile);
@@ -832,6 +833,7 @@ var
 begin
   size := SizeOf(TTile) + IfThen(APalPixels, SizeOf(TPalPixels)) + IfThen(ARGBPixels, SizeOf(TRGBPixels));
   data := AllocMem(size * x);
+
   FillByte(data^, size * x, 0);
   SetLength(Result, x);
 
@@ -845,11 +847,60 @@ begin
 end;
 
 class procedure TTileHelper.Array1DDispose(var AArray: PTileDynArray);
+var
+  i: Integer;
+  smallest: Pointer;
 begin
   if Length(AArray) > 0 then
   begin
-    Freemem(AArray[0]);
+    // account for the array having been sorted
+    smallest := AArray[0];
+    for i := 1 to High(AArray) do
+      if AArray[i] < smallest then
+        smallest := AArray[i];
+
+    Freemem(smallest);
     SetLength(AArray, 0);
+  end;
+end;
+
+class procedure TTileHelper.Array1DRealloc(var AArray: PTileDynArray; ANewX: integer);
+var
+  prevLen, i, size: Integer;
+  data: PByte;
+  smallest: PTile;
+  HasPalPixels, HasRGBPixels: Boolean;
+begin
+  Assert(Length(AArray) > 0);
+
+  // account for the array having been sorted
+  smallest := AArray[0];
+  for i := 1 to High(AArray) do
+    if AArray[i] < smallest then
+      smallest := AArray[i];
+
+  prevLen := Length(AArray);
+  HasPalPixels := smallest^.HasPalPixels;
+  HasRGBPixels := smallest^.HasRGBPixels;
+
+  size := SizeOf(TTile) + IfThen(HasPalPixels, SizeOf(TPalPixels)) + IfThen(HasRGBPixels, SizeOf(TRGBPixels));
+  data := PByte(smallest);
+
+  data := ReAllocMem(data, size * ANewX);
+  SetLength(AArray, ANewX);
+
+  // recompute existing array pointers
+  for i := 0 to prevLen - 1 do
+    AArray[i] := PTile(PByte(AArray[i]) - PByte(smallest) + data);
+
+  // init new pointers
+  Inc(data, size * prevLen);
+  for i := prevLen to ANewX - 1 do
+  begin
+    AArray[i] := PTile(data);
+    AArray[i]^.HasPalPixels := HasPalPixels;
+    AArray[i]^.HasRGBPixels := HasRGBPixels;
+    Inc(data, size);
   end;
 end;
 
@@ -1252,6 +1303,7 @@ var
 var
   i, mtcSave: Integer;
   ATList: TList;
+  T: PTile;
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
@@ -1281,13 +1333,19 @@ begin
       ProcThreadPool.MaxThreadCount := mtcSave;
     end;
 
+    ProgressRedraw(2);
+
     FinishGlobalFT;
 
     ATList := FAdditionalTiles.LockList;
     try
-      SetLength(FTiles, Length(FTiles) + ATList.Count);
+      TTile.Array1DRealloc(FTiles, Length(FTiles) + ATList.Count);
       for i := 0 to ATList.Count - 1 do
-        FTiles[i + Length(FTiles) - ATList.Count] := ATList[i];
+      begin
+        T := PTile(ATList[i]);
+        FTiles[i + Length(FTiles) - ATList.Count]^.CopyFrom(T^);
+        TTile.Dispose(T);
+      end;
 
       WriteLn('AdditionalTiles: ', ATList.Count);
     finally
@@ -1297,7 +1355,7 @@ begin
     FreeAndNil(FAdditionalTiles);
   end;
 
-  ProgressRedraw(2);
+  ProgressRedraw(3);
 
   tbFrameChange(nil);
 end;
@@ -4520,13 +4578,19 @@ begin
         ATList.Add(addlTile);
 
         // redither tile (frame tiles don't have the paletted version)
-        PreparePlan(plan, FY2MixedColors, AFrame.PKeyFrame.PaletteRGB[AFrame.TileMap[Y, x].PalIdx]);
+        PreparePlan(plan, FY2MixedColors, AFrame.PKeyFrame.PaletteRGB[tmiO^.PalIdx]);
         DitherTile(addlTile^, plan);
         TerminatePlan(plan);
 
         AccumulateErr;
 
         tmiO^.TileIdx := Length(FTiles) + ATList.Count - 1;
+        tmiO^.HMirror := False;
+        tmiO^.VMirror := False;
+        tmiO^.BlendCur := cMaxFTBlend - 1;
+        tmiO^.BlendPrev := 0;
+        tmiO^.BlendX := 0;
+        tmiO^.BlendY := 0;
       finally
         FAdditionalTiles.UnlockList;
       end;
@@ -5086,6 +5150,7 @@ begin
 
   TTile.Array1DDispose(FTiles);
   FTiles := Tiles;
+  Tiles := nil;
 
   // sort global tiles by use count descending (to make smoothing work better) then by tile index (to make tile indexes compression work better)
 
@@ -5180,38 +5245,36 @@ var
   var
     attrs, blend: Word;
   begin
-    Assert((TMI.PalIdx >= 0) and (TMI.PalIdx < FPaletteCount));
+    Assert((TMI.SmoothedPalIdx >= 0) and (TMI.SmoothedPalIdx < FPaletteCount));
 
-    attrs := (TMI.PalIdx shl 2) or (Ord(TMI.VMirror) shl 1) or Ord(TMI.HMirror);
-    blend := 0;
-    if (TMI.BlendCur <> cMaxFTBlend - 1) and (TMI.BlendPrev <> 0) then
-      blend := (Word(TMI.BlendY and $f) shl 12) or (Word(TMI.BlendX and $f) shl 8) or (Word(TMI.BlendPrev and $f) shl 4) or Word(TMI.BlendCur and $f);
+    attrs := (TMI.SmoothedPalIdx shl 2) or (Ord(TMI.SmoothedVMirror) shl 1) or Ord(TMI.SmoothedHMirror);
+    blend := (Word(TMI.BlendY and $f) shl 12) or (Word(TMI.BlendX and $f) shl 8) or (Word(TMI.BlendPrev and $f) shl 4) or Word(TMI.BlendCur and $f);
 
     if TMI.TileIdx < (1 shl 16) then
     begin
-      if AFTBlend < 0 then
+      if (AFTBlend < 0) or (TMI.BlendPrev = 0) and (TMI.BlendCur = cMaxFTBlend - 1) then
       begin
         DoCmd(gtShortTileIdx, attrs);
-        DoWord(TMI.TileIdx);
+        DoWord(TMI.SmoothedTileIdx);
       end
       else
       begin
         DoCmd(gtShortBlendTileIdx, attrs);
-        DoWord(TMI.TileIdx);
+        DoWord(TMI.SmoothedTileIdx);
         DoWord(blend);
       end;
     end
     else
     begin
-      if AFTBlend < 0 then
+      if (AFTBlend < 0) or (TMI.BlendPrev = 0) and (TMI.BlendCur = cMaxFTBlend - 1) then
       begin
         DoCmd(gtLongTileIdx, attrs);
-        DoDWord(TMI.TileIdx);
+        DoDWord(TMI.SmoothedTileIdx);
       end
       else
       begin
         DoCmd(gtLongBlendTileIdx, attrs);
-        DoDWord(TMI.TileIdx);
+        DoDWord(TMI.SmoothedTileIdx);
         DoWord(blend);
       end;
     end;
@@ -5256,7 +5319,7 @@ var
           for j := StartIdx to PrevIdx do
           begin
             Assert(FTiles[j]^.Active);
-            ZStream.Write(FTiles[j]^.PalPixels[0, 0], sqr(cTileWidth));
+            ZStream.Write(FTiles[j]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
           end;
 
           StartIdx := idx;
@@ -5320,7 +5383,6 @@ var
   kf, fri, yx, yxs, cs, sx, sy: Integer;
   IsKF: Boolean;
   frm: TFrame;
-  TMI: TTileMapItem;
   Header: TGTMHeader;
   KFInfo: array of TGTMKeyFrameInfo;
 begin
@@ -5361,8 +5423,8 @@ begin
     LastKF := 0;
     for kf := 0 to High(FKeyFrames) do
     begin
+      WriteKFIntraTiles(kf); // has to be called before writing palettes
       WriteKFAttributes(FKeyFrames[kf]);
-      WriteKFIntraTiles(kf);
 
       for fri := FKeyFrames[kf].StartFrame to FKeyFrames[kf].EndFrame do
       begin
@@ -5409,15 +5471,7 @@ begin
               BlkSkipCount := 0;
 
               DivMod(yx, FTileMapWidth, sy, sx);
-              TMI := frm.TileMap[sy, sx];
-              if TMI.Smoothed then
-              begin
-                TMI.TileIdx := TMI.SmoothedTileIdx;
-                TMI.PalIdx := TMI.SmoothedPalIdx;
-                TMI.HMirror := TMI.SmoothedHMirror;
-                TMI.VMirror := TMI.SmoothedVMirror;
-              end;
-              DoTMI(TMI);
+              DoTMI(frm.TileMap[sy, sx]);
               Inc(cs);
             end;
           end;
@@ -5484,7 +5538,7 @@ begin
         if FTiles[i]^.Active then
         begin
           fs.WriteDWord(FTiles[i]^.UseCount);
-          fs.Write(FTiles[i]^.PalPixels[0, 0], sqr(cTileWidth));
+          fs.Write(FTiles[i]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
         end;
     finally
       fs.Free;
@@ -5541,7 +5595,7 @@ begin
   SpinLeave(@FLock);
 
 {$ifdef DEBUG}
-  ProcThreadPool.MaxThreadCount := 1;
+  //ProcThreadPool.MaxThreadCount := 1;
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}
