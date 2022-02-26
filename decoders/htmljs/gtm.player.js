@@ -16,26 +16,30 @@ const GTMHeader = {
 // Commands Description:
 // =====================
 //
-// SkipBlock:        data -> none; commandBits -> skip count - 1 (10 bits)
-// ShortTileIdx:     data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LongTileIdx:      data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LoadPalette:      data -> palette index (8 bits); palette format (8 bits) (0: RGBA32); RGBA bytes (32bits); commandBits -> none
+// SkipBlock:         data -> none; commandBits -> skip count - 1 (10 bits)
+// ShortTileIdx:      data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LongTileIdx:       data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LoadPalette:       data -> palette index (8 bits); palette format (8 bits) (0: RGBA32); RGBA bytes (32bits); commandBits -> none
+// ShortBlendTileIdx: data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LongLendTileIdx:   data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
 //
 // (insert new commands here...)
 //
-// FrameEnd:         data -> none; commandBits bit 0 -> keyframe end
-// TileSet:          data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
-// SetDimensions:    data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
-// ExtendedCommand:  data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
+// FrameEnd:          data -> none; commandBits bit 0 -> keyframe end
+// TileSet:           data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
+// SetDimensions:     data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
+// ExtendedCommand:   data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
 //
-// ReservedArea:     reserving the MSB for future use (do not use for new commands)
+// ReservedArea:      reserving the MSB for future use (do not use for new commands)
 
 const GTMCommand = {
   'SkipBlock' : 0,
   'ShortTileIdx' : 1,
   'LongTileIdx' : 2,
   'LoadPalette' : 3,
-
+  'ShortBlendTileIdx' : 4,
+  'LongBlendTileIdx' : 5,
+  
   'FrameEnd' : 28,
   'TileSet' : 29,
   'SetDimensions' : 30,
@@ -61,6 +65,9 @@ var gtmPaletteR = new Array(256);
 var gtmPaletteG = new Array(256);
 var gtmPaletteB = new Array(256);
 var gtmPaletteA = new Array(256);
+var gtmTMIndexes = new Array(2);
+var gtmTMAttrs = new Array(2);
+
 var gtmReady = false;
 var gtmPlaying = true;
 var gtmDataPos = 0;
@@ -72,6 +79,7 @@ var gtmTileCount = 0;
 var gtmPalSize = 0;
 var gtmTMPos = 0;
 var gtmLoopCount = 0;
+var gtmDblBuff = 0;
 
 function gtmPlayFromFile(file, canvasId) {
   gtmCanvasId = canvasId;
@@ -168,6 +176,10 @@ function redimFrame() {
     canvas.fillRect(0, 0, gtmWidth * CTileWidth, gtmHeight * CTileWidth);
 
     gtmTMImageData = canvas.getImageData(0, 0, frame.width, frame.height);
+	gtmTMIndexes[0] = new Uint32Array(gtmWidth * gtmHeight);
+	gtmTMIndexes[1] = new Uint32Array(gtmWidth * gtmHeight);
+	gtmTMAttrs[0] = new Uint16Array(gtmWidth * gtmHeight);
+	gtmTMAttrs[1] = new Uint16Array(gtmWidth * gtmHeight);
   }
 }
 
@@ -197,8 +209,8 @@ function renderEnd() {
 }
 
 function drawTilemapItem(idx, attrs) {
-  let palIdx = attrs >>> 2;
-  let toff = (attrs & 3) * CTileWidth * CTileWidth;
+  let palIdx = attrs >> 2;
+  let tOff = (attrs & 3) * CTileWidth * CTileWidth;
   let tile = gtmTiles[idx];
   let palR = gtmPaletteR[palIdx];
   let palG = gtmPaletteG[palIdx];
@@ -207,11 +219,11 @@ function drawTilemapItem(idx, attrs) {
   let x = (gtmTMPos % gtmWidth) * CTileWidth;
   let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
   let p = (y * gtmWidth * CTileWidth + x) * 4;
-  var data = gtmTMImageData.data
-    
+  var data = gtmTMImageData.data;
+  
   for (let ty = 0; ty < CTileWidth; ty++) {
 	for (let tx = 0; tx < CTileWidth; tx++) {
-	  let v = tile[toff++];
+	  let v = tile[tOff++];
 	  data[p++] = palR[v]; 
 	  data[p++] = palG[v]; 
 	  data[p++] = palB[v]; 
@@ -219,8 +231,58 @@ function drawTilemapItem(idx, attrs) {
 	}
 	p += (gtmWidth - 1) * CTileWidth * 4;
   }
+
+  gtmTMIndexes[gtmDblBuff][gtmTMPos] = idx;
+  gtmTMAttrs[gtmDblBuff][gtmTMPos] = attrs;
   gtmTMPos++;
 }
+
+function drawBlendedTilemapItem(idx, attrs, blend) {
+  let blendOff = (((blend >> 12) & 7) - ((blend >> 12) & 8)) * gtmWidth + (((blend >> 8) & 7) - ((blend >> 8) & 8));
+  let blendPrev = (blend >> 4) & 15;
+  let blendCur = blend & 15;
+  
+  let palIdx = attrs >> 2;
+  let tOff = (attrs & 3) * CTileWidth * CTileWidth;
+  let tile = gtmTiles[idx];
+  let palR = gtmPaletteR[palIdx];
+  let palG = gtmPaletteG[palIdx];
+  let palB = gtmPaletteB[palIdx];
+  let palA = gtmPaletteA[palIdx];
+
+  let prevAttrs = gtmTMAttrs[1 - gtmDblBuff][gtmTMPos + blendOff];
+  let prevIdx = gtmTMIndexes[1 - gtmDblBuff][gtmTMPos + blendOff];
+  
+  let prevPalIdx = prevAttrs >> 2;
+  let prevTOff = (prevAttrs & 3) * CTileWidth * CTileWidth;
+  let prevTile = gtmTiles[prevIdx];
+  let prevPalR = gtmPaletteR[prevPalIdx];
+  let prevPalG = gtmPaletteG[prevPalIdx];
+  let prevPalB = gtmPaletteB[prevPalIdx];
+  
+  let x = (gtmTMPos % gtmWidth) * CTileWidth;
+  let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
+  let p = (y * gtmWidth * CTileWidth + x) * 4;
+  
+  var data = gtmTMImageData.data;
+
+  for (let ty = 0; ty < CTileWidth; ty++) {
+	for (let tx = 0; tx < CTileWidth; tx++) {
+	  let pv = prevTile[prevTOff++];
+	  let cv = tile[tOff++];
+	  data[p++] = Math.min(255, ((palR[cv] * blendCur + prevPalR[pv] * blendPrev) / 15) >> 0);
+	  data[p++] = Math.min(255, ((palG[cv] * blendCur + prevPalG[pv] * blendPrev) / 15) >> 0);
+	  data[p++] = Math.min(255, ((palB[cv] * blendCur + prevPalB[pv] * blendPrev) / 15) >> 0);
+	  data[p++] = palA[cv];
+	}
+	p += (gtmWidth - 1) * CTileWidth * 4;
+  }
+
+  gtmTMIndexes[gtmDblBuff][gtmTMPos] = idx;
+  gtmTMAttrs[gtmDblBuff][gtmTMPos] = attrs;
+  gtmTMPos++;
+}
+
 
 function readByte() {
   return gtmFrameData[gtmDataPos++];
@@ -240,7 +302,7 @@ function readDWord() {
 
 function readCommand() {
   let v = readWord();
-  return [v & ((1 << CShortIdxBits) - 1), v >>> CShortIdxBits];
+  return [v & ((1 << CShortIdxBits) - 1), v >> CShortIdxBits];
 }
 
 function decodeFrame() {
@@ -297,11 +359,17 @@ function decodeFrame() {
             console.error('Incomplete tilemap ' + gtmTMPos + ' <> ' + gtmWidth * gtmHeight + '\n');
           }
           gtmTMPos = 0;
+		  gtmDblBuff = 1 - gtmDblBuff;
           doContinue = false;
           break;
           
         case GTMCommand.SkipBlock:
-          gtmTMPos += cmd[1] + 1;
+		  for(let s = 0; s < cmd[1] + 1; s++)
+          {
+			  gtmTMIndexes[gtmDblBuff][gtmTMPos] = gtmTMIndexes[1 - gtmDblBuff][gtmTMPos];
+			  gtmTMAttrs[gtmDblBuff][gtmTMPos] = gtmTMAttrs[1 - gtmDblBuff][gtmTMPos];
+			  gtmTMPos++;
+		  }
           break;
           
         case GTMCommand.ShortTileIdx:
@@ -325,6 +393,18 @@ function decodeFrame() {
             gtmPaletteB[palIdx][i] = readByte();
             gtmPaletteA[palIdx][i] = readByte();
           }
+          break;
+          
+        case GTMCommand.ShortBlendTileIdx:
+          let idxW = readWord()
+          let blendW = readWord()
+		  drawBlendedTilemapItem(idxW, cmd[1], blendW);
+          break;
+          
+        case GTMCommand.LongBlendTileIdx:
+          let idxDW = readDWord()
+          let blendDW = readWord()
+		  drawBlendedTilemapItem(idxDW, cmd[1], blendDW);
           break;
           
         default:
