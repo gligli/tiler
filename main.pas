@@ -1586,46 +1586,12 @@ begin
 end;
 
 procedure TMainForm.btnDebugClick(Sender: TObject);
-var
-  i, j: Integer;
-  seed: Cardinal;
-  pal: array[0..15] of Integer;
-  list: TByteDynArray;
-  plan: TMixingPlan;
-
-  hh,ss,ll: Byte;
-
-  dlpal: TDLUserPal;
 begin
-  seed := 42;
-  for i := 0 to 15 do
-    pal[i] := RandInt(1 shl 24, seed);
-  PreparePlan(plan, 4, pal);
-
-  SetLength(list, cDitheringListLen);
-  DeviseBestMixingPlanYliluoma(plan, $ffffff, list);
-  DeviseBestMixingPlanYliluoma(plan, $ff8000, list);
-  DeviseBestMixingPlanYliluoma(plan, $808080, list);
-  DeviseBestMixingPlanYliluoma(plan, $000000, list);
-
-
-  for i := 0 to 255 do
-    for j := 0 to 255 do
-    begin
-      hh := 0; ss := 0; ll := 0;
-      RGBToHSV(HSVToRGB(i,j,255), hh, ss, ll);
-      imgDest.Canvas.Pixels[i,j] := SwapRB(HSVToRGB(hh,ss,ll));
-    end;
-
-  imgDest.Picture.Bitmap.BeginUpdate;
-  imgDest.Picture.Bitmap.ScanLine[0];
-  dl3quant(PByte(imgDest.Picture.Bitmap.ScanLine[0]), imgDest.Picture.Bitmap.Width, cBitsPerComp - 2, imgDest.Picture.Bitmap.Height, 64, @dlpal);
-  imgDest.Picture.Bitmap.EndUpdate;
-
-  for i := 0 to 255 do
-    writeln(dlpal[0][i], #9, dlpal[1][i], #9, dlpal[2][i]);
-
-  TerminatePlan(plan);
+  edInput.Text := 'C:\tiler_misc\factory_1080p30.y4m';
+  edOutput.Text := 'C:\tiler\debug.gtm';
+  edReload.Text := '';
+  seFrameCount.Value := IfThen(seFrameCount.Value = 12, 48, 12);
+  cbxScaling.ItemIndex := 2;
 end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
@@ -2846,7 +2812,7 @@ begin
   fg := GammaCorrect(GammaCor, g);
   fb := GammaCorrect(GammaCor, b);
 
-  yy := cRedMul * (fr / cLumaDiv) + cGreenMul * (fg / cLumaDiv) + cBlueMul * (fb / cLumaDiv);
+  yy := fr * (cRedMul / cLumaDiv) + fg * (cGreenMul / cLumaDiv) + fb * (cBlueMul / cLumaDiv);
   uu := (fb - yy) * (0.5 / (1.0 - cBlueMul / cLumaDiv));
   vv := (fr - yy) * (0.5 / (1.0 - cRedMul / cLumaDiv));
 
@@ -3733,7 +3699,7 @@ begin
           end;
 
           prevTMItem.TileIdx := -1;
-          if (Frame.Index > 0) and (TMItem.BlendCur < cMaxFTBlend - 1) and (TMItem.BlendPrev > 0) and blended then
+          if (Frame.Index > 0) and (TMItem.BlendCur < cMaxFTBlend - 1) and (TMItem.BlendPrev > 0) then
           begin
             prevTMItem := FFrames[Frame.Index - 1].TileMap[sy + TMItem.BlendY, sx + TMItem.BlendX];
             if prevTMItem.Smoothed then
@@ -3774,10 +3740,17 @@ begin
               pal := nil;
             end;
 
-            if prevTMItem.TileIdx >= 0 then
+            if blended then
             begin
-              prevPal := FFrames[Frame.Index - 1].PKeyFrame.PaletteRGB[prevTMItem.PalIdx];
-              DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, prevTilePtr, prevPal, prevTMItem.HMirror, prevTMItem.VMirror, TMItem.BlendCur, TMItem.BlendPrev);
+              if prevTMItem.TileIdx >= 0 then
+              begin
+                prevPal := FFrames[Frame.Index - 1].PKeyFrame.PaletteRGB[prevTMItem.PalIdx];
+                DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, prevTilePtr, prevPal, prevTMItem.HMirror, prevTMItem.VMirror, TMItem.BlendCur, TMItem.BlendPrev);
+              end
+              else
+              begin
+                DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, nil, nil, False, False, TMItem.BlendCur, 0);
+              end;
             end
             else
             begin
@@ -3785,7 +3758,7 @@ begin
             end;
 
             if not playing then
-              ComputeTilePsyVisFeatures(PsyTile^, False, True, False, False, TMItem.HMirror, TMItem.VMirror, Ord(gamma) * 2 - 1, nil, chgCorr[sy, sx]);
+              ComputeTilePsyVisFeatures(PsyTile^, False, True, False, False, False, False, Ord(gamma) * 2 - 1, nil, chgCorr[sy, sx]);
           end;
         end;
     finally
@@ -4468,7 +4441,7 @@ begin
     bestBlendPrev := 0;
     bestX := x;
     bestY := Y;
-    if (AFrame.Index > 0) and (AFTBlend >= 0) and not IsZero(errs[0]) then
+    if (AFTBlend >= 0) and not IsZero(errs[0]) then
     begin
       // try to blend a local tile of the previous frame to improve likeliness
 
@@ -4498,49 +4471,70 @@ begin
           if not InRange(oy, 0, FTileMapHeight - 1) then
             Continue;
 
-          while not FFrames[AFrame.Index - 1].FTYDone[oy] do
-            Sleep(10); // wait for previous frame to compute tilemap line
+          if AFrame.Index > 0 then
+            while not FFrames[AFrame.Index - 1].FTYDone[oy] do
+              Sleep(10); // wait for previous frame to compute tilemap line
 
           for ox := x - AFTBlend to x + AFTBlend do
           begin
             if not InRange(ox, 0, FTileMapWidth - 1) then
               Continue;
 
-            prevTile := nil;
-            prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
-            if prevTMI^.TileIdx < Length(FTiles) then
+            if AFrame.Index > 0 then
             begin
-              prevTile := FTiles[prevTMI^.TileIdx];
+              prevTile := nil;
+              prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
+              if prevTMI^.TileIdx < Length(FTiles) then
+              begin
+                prevTile := FTiles[prevTMI^.TileIdx];
+              end
+              else
+              begin
+                ATList := FAdditionalTiles.LockList;
+                try
+                  prevTile := PTile(ATList[prevTMI^.TileIdx - Length(FTiles)]);
+                finally
+                  FAdditionalTiles.UnlockList;
+                end;
+              end;
+
+              ComputeTilePsyVisFeatures(prevTile^, True, AUseWavelets, False, False, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PrevDCT);
+              for i := 0 to cTileDCTSize - 1 do
+                Prev[i] := PrevDCT[i];
+
+              for bc := 0 to cMaxFTBlend - 1 do
+                for bp := 0 to cMaxFTBlend - 1 do
+                begin
+                  err := ComputeBlendingError_Asm(@ANNDCT[0], @Cur[0], @Prev[0], bc * (1.0 / (cMaxFTBlend - 1)), bp * (1.0 / (cMaxFTBlend - 1)));
+
+                  if err < bestErr then
+                  begin
+                    bestErr := err;
+                    bestIdx := idx;
+                    bestBlendCur := bc;
+                    bestBlendPrev := bp;
+                    bestX := ox;
+                    bestY := oy;
+                  end;
+                end;
             end
             else
             begin
-              ATList := FAdditionalTiles.LockList;
-              try
-                prevTile := PTile(ATList[prevTMI^.TileIdx - Length(FTiles)]);
-              finally
-                FAdditionalTiles.UnlockList;
-              end;
-            end;
-
-            ComputeTilePsyVisFeatures(prevTile^, True, AUseWavelets, False, False, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PrevDCT);
-            for i := 0 to cTileDCTSize - 1 do
-              Prev[i] := PrevDCT[i];
-
-            for bc := 0 to cMaxFTBlend - 1 do
-              for bp := 0 to cMaxFTBlend - 1 do
+              for bc := 0 to cMaxFTBlend - 1 do
               begin
-                err := ComputeBlendingError_Asm(@ANNDCT[0], @Cur[0], @Prev[0], bc * (1.0 / (cMaxFTBlend - 1)), bp * (1.0 / (cMaxFTBlend - 1)));
+                err := ComputeBlendingError_Asm(@ANNDCT[0], @Cur[0], @Prev[0], bc * (1.0 / (cMaxFTBlend - 1)), 0.0);
 
                 if err < bestErr then
                 begin
                   bestErr := err;
                   bestIdx := idx;
                   bestBlendCur := bc;
-                  bestBlendPrev := bp;
+                  bestBlendPrev := 0;
                   bestX := ox;
                   bestY := oy;
                 end;
               end;
+            end;
           end;
         end;
       end;
