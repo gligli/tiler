@@ -4390,9 +4390,9 @@ procedure TMainForm.DoFrameTiling(AFrame: TFrame; Y: Integer; AFTGamma: Integer;
   AAddlTilesThres: TFloat; AFTBlend: Integer);
 var
   i, bestIdx, PalIdx, bucketIdx, idx: Integer;
-  attrs, bc, bp, bestBlendCur, bestBlendPrev: Byte;
+  attrs, bestBlendCur, bestBlendPrev: Byte;
   x, oy, ox, bestX, bestY: Integer;
-  bestErr, err: TANNFloat;
+  bestErr: TANNFloat;
 
   tmiO, prevTMI: PTileMapItem;
   TmpTMI: TTileMapItem;
@@ -4415,6 +4415,44 @@ var
     SpinLeave(@FLock);
   end;
 
+  procedure TestBestErr(err: TANNFloat; bc, bp: Integer);
+  begin
+    if err < bestErr then
+    begin
+      bestErr := err;
+      bestIdx := idx;
+      bestBlendCur := bc;
+      bestBlendPrev := bp;
+      bestX := ox;
+      bestY := oy;
+    end;
+  end;
+
+  procedure SearchBlending2P(PPlain, PCur, PPrev: PANNFloat);
+  var
+    bc, bp: Integer;
+    err: TANNFloat;
+  begin
+    for bc := 0 to cMaxFTBlend - 1 do
+      for bp := 0 to cMaxFTBlend - 1 do
+      begin
+        err := ComputeBlendingError_Asm(PPlain, PCur, PPrev, bc * (1.0 / (cMaxFTBlend - 1)), bp * (1.0 / (cMaxFTBlend - 1)));
+        TestBestErr(err, bc, bp);
+      end;
+  end;
+
+  procedure SearchBlending1P(PPlain, PCur: PANNFloat);
+  var
+    bc: Integer;
+    err: TANNFloat;
+  begin
+    for bc := 0 to cMaxFTBlend - 1 do
+    begin
+      err := ComputeBlendingError_Asm(PPlain, PCur, PCur, bc * (1.0 / (cMaxFTBlend - 1)), 0.0);
+      TestBestErr(err, bc, 0);
+    end;
+  end;
+
 begin
   DS := AFrame.PKeyFrame.TileDS;
 
@@ -4428,14 +4466,13 @@ begin
 
   for x := 0 to FTileMapWidth - 1 do
   begin
+    PalIdx := AFrame.TileMap[Y, x].PalIdx;
+    if Length(DS[PalIdx]^.Dataset) <= 0 then
+      Continue;
+
     ComputeTilePsyVisFeatures(AFrame.Tiles[Y * FTileMapWidth + x]^, False, AUseWavelets, False, False, False, False, AFTGamma, nil, DCT);
     for i := 0 to cTileDCTSize - 1 do
       ANNDCT[i] := DCT[i];
-
-    PalIdx := AFrame.TileMap[Y, x].PalIdx;
-
-    if Length(DS[PalIdx]^.Dataset) <= 0 then
-      Continue;
 
     ann_kdtree_pri_search_multi(DS[PalIdx]^.KDT, @idxs[0], @errs[0], cFrameFTBucketSize, @ANNDCT[0], 0.0);
 
@@ -4452,7 +4489,6 @@ begin
       for bucketIdx := 0 to cFrameFTBucketSize - 1 do
       begin
         idx := idxs[bucketIdx];
-        err := errs[bucketIdx];
         if idx < 0 then
           Continue;
 
@@ -4504,38 +4540,11 @@ begin
               for i := 0 to cTileDCTSize - 1 do
                 Prev[i] := PrevDCT[i];
 
-              for bc := 0 to cMaxFTBlend - 1 do
-                for bp := 0 to cMaxFTBlend - 1 do
-                begin
-                  err := ComputeBlendingError_Asm(@ANNDCT[0], @Cur[0], @Prev[0], bc * (1.0 / (cMaxFTBlend - 1)), bp * (1.0 / (cMaxFTBlend - 1)));
-
-                  if err < bestErr then
-                  begin
-                    bestErr := err;
-                    bestIdx := idx;
-                    bestBlendCur := bc;
-                    bestBlendPrev := bp;
-                    bestX := ox;
-                    bestY := oy;
-                  end;
-                end;
+              SearchBlending2P(@ANNDCT[0], @Cur[0], @Prev[0]);
             end
             else
             begin
-              for bc := 0 to cMaxFTBlend - 1 do
-              begin
-                err := ComputeBlendingError_Asm(@ANNDCT[0], @Cur[0], @Prev[0], bc * (1.0 / (cMaxFTBlend - 1)), 0.0);
-
-                if err < bestErr then
-                begin
-                  bestErr := err;
-                  bestIdx := idx;
-                  bestBlendCur := bc;
-                  bestBlendPrev := 0;
-                  bestX := ox;
-                  bestY := oy;
-                end;
-              end;
+              SearchBlending1P(@ANNDCT[0], @Cur[0]);
             end;
           end;
         end;
