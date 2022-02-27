@@ -4131,15 +4131,16 @@ var
   procedure DoBuild(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     frm: TFrame;
-    sy, sx: Integer;
+    idx, sy, sx: Integer;
   begin
-    if not InRange(AIndex, 0, AKF.FrameCount - 1) then
+    if not InRange(AIndex, 0, AKF.FrameCount * FTileMapHeight - 1) then
       Exit;
 
-    frm := FFrames[AKF.StartFrame + AIndex];
-    for sy := 0 to FTileMapHeight - 1 do
-      for sx := 0 to FTileMapWidth - 1 do
-        UseOne(@frm.TileMap[sy, sx]);
+    DivMod(AIndex, FTileMapHeight, idx, sy);
+
+    frm := FFrames[AKF.StartFrame + idx];
+    for sx := 0 to FTileMapWidth - 1 do
+      UseOne(@frm.TileMap[sy, sx]);
   end;
 
   procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -4178,6 +4179,7 @@ var
 var
   KNNSize, ti, hvmir: Integer;
   palIdx, palIdx2: Integer;
+  thres: TFloat;
 begin
   HighestDist := 0.0;
   PaletteDists := BuildPaletteDistsTriangle;
@@ -4189,18 +4191,17 @@ begin
 
   // Build an indicator table of used tiles
 
-  ProcThreadPool.DoParallelLocalProc(@DoBuild, 0, AKF.FrameCount - 1, nil, NumberOfProcessors);
+  ProcThreadPool.DoParallelLocalProc(@DoBuild, 0, AKF.FrameCount * FTileMapHeight - 1, nil, NumberOfProcessors);
 
   // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
   FillDWord(usedCount[0], FPaletteCount, 0);
+  thres := cFTInterPaletteTol[AFTQuality] * HighestDist;
   for palIdx := 0 to FPaletteCount - 1 do
-    for ti := 0 to High(FTiles) do
-      for hvmir := 0 to 3 do
-        if used[palIdx, ti, hvmir] then
-          for palIdx2 := 0 to FPaletteCount - 1 do
-            if (PaletteDists[palIdx, palIdx2] <= cFTInterPaletteTol[AFTQuality] * HighestDist) and used[palIdx2, ti, hvmir] then
-              Inc(usedCount[palIdx]);
+    for palIdx2 := 0 to FPaletteCount - 1 do
+      for ti := 0 to High(FTiles) do
+        for hvmir := 0 to 3 do
+          Inc(usedCount[palIdx], Ord(used[palIdx, ti, hvmir] and used[palIdx2, ti, hvmir] and (PaletteDists[palIdx, palIdx2] <= thres)));
 
   SetLength(DS, FPaletteCount);
   AKF.TileDS := DS;
