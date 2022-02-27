@@ -9,7 +9,7 @@ unit kmodes;
 interface
 
 uses
-  Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows;
+  Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows, extern;
 
 const
   cKModesFeatureCount = 80;
@@ -53,11 +53,13 @@ type
     MaxIter, NumClusters, NumThreads, NumAttrs, NumPoints: Integer;
     Log: Boolean;
     LogLabel: String;
+    Concurrency: PInteger;
     FGMMD: TGMMD;
     FPTP: TProcThreadPool;
 
     procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure FinishGMMD;
+    function GetConcurrentNumThreads: Integer;
 
     function CountClusterMembers(cluster: Integer): Integer;
     function GetMaxClusterMembers(out member_count: Integer): Integer;
@@ -65,7 +67,7 @@ type
     function InitFarthestFirst(InitPoint: Integer): TByteDynArray2;  // negative init_point means randomly chosen
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
-    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = -1; aLog: Boolean = False; aLogLabel: String = '');
+    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = -1; aLog: Boolean = False; aLogLabel: String = ''; aConcurrency: PInteger = nil);
     destructor Destroy; override;
     function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
     // negative n_init means use -n_init as starting point
@@ -725,7 +727,7 @@ var
   var
     UMD: TUMD;
   begin
-    if NumThreads <= 1 then
+    if (NumThreads <= 1) and not Assigned(Concurrency) then
     begin
       UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
     end
@@ -738,7 +740,7 @@ var
       UMD.mindistance := mindistance;
       UMD.used := used;
       UMD.X := X;
-      FPTP.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, NumThreads);
+      FPTP.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, GetConcurrentNumThreads);
     end;
   end;
 
@@ -807,7 +809,8 @@ begin
   end;
 end;
 
-constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolean; aLogLabel: String);
+constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolean; aLogLabel: String;
+  aConcurrency: PInteger);
 begin
   inherited Create;
 
@@ -816,6 +819,7 @@ begin
   Self.NumThreads := aNumThreads;
   Self.Log := aLog;
   Self.LogLabel := aLogLabel;
+  Self.Concurrency := aConcurrency;
 end;
 
 destructor TKModes.Destroy;
@@ -845,6 +849,13 @@ begin
   FGMMD.centroids := nil;
 end;
 
+function TKModes.GetConcurrentNumThreads: Integer;
+begin
+  Result := NumThreads;
+  if Assigned(Concurrency) then
+    Result := max(Result, FPTP.MaxThreadCount - (Concurrency^ - 1) * NumThreads);
+end;
+
 function TKModes.KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
 const
   cBinSize = 960;
@@ -870,14 +881,14 @@ begin
   begin
     last := min((bin + 1) * cBinSize, NumPoints) - 1;
 
-    if NumThreads <= 1 then
+    if (NumThreads <= 1) and not Assigned(Concurrency) then
     begin
       for ipoint := bin * cBinSize to last do
         clust[ipoint] := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis[ipoint]);
     end
     else
     begin
-      FPTP.DoParallel(@DoGMMD, bin * cBinSize, last, nil, NumThreads);
+      FPTP.DoParallel(@DoGMMD, bin * cBinSize, last, nil, GetConcurrentNumThreads);
     end;
 
     for ipoint := bin * cBinSize to last do
@@ -984,7 +995,7 @@ begin
         FillDWord(cl_attr_freq[j, i, 0], ANumModalities, 0);
 
 
-    if NumThreads <= 1 then
+    if (NumThreads <= 1) and not Assigned(Concurrency) then
     begin
       for ipoint := 0 to NumPoints - 1 do
         membship[ipoint] := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
@@ -995,7 +1006,7 @@ begin
       FGMMD.dis := nil;
       FGMMD.X := @X[0];
       FGMMD.centroids := @centroids[0];
-      FPTP.DoParallel(@DoGMMD, 0, NumPoints - 1, nil, NumThreads);
+      FPTP.DoParallel(@DoGMMD, 0, NumPoints - 1, nil, GetConcurrentNumThreads);
       FinishGMMD;
     end;
 

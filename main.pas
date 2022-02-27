@@ -444,6 +444,7 @@ type
 
     FCS: TRTLCriticalSection;
     FLock: TSpinlock;
+    FConcurrentKModesBins: Integer;
 
     FGlobalDS: TTilingDataset;
 
@@ -4769,7 +4770,7 @@ var
   KModes: TKModes;
   LocCentroids: TByteDynArray2;
   LocClusters: TIntegerDynArray;
-  lineIdx, clusterIdx, clusterLineCount, DSLen, tx, ty, j, k, bestIdx, bestVal, numThreads: Integer;
+  lineIdx, clusterIdx, clusterLineCount, DSLen, tx, ty, j, k, bestIdx, bestVal: Integer;
   ToMergeIdxs: TIntegerDynArray;
   KMBin: PKModesBin;
   median: array[0 .. Sqr(cTileWidth) - 1, 0 .. Sqr(cTileWidth) - 1] of Integer;
@@ -4785,15 +4786,14 @@ begin
   SetLength(LocClusters, DSLen);
   SetLength(LocCentroids, KMBin^.ClusterCount, cTileDCTSize);
 
-  numThreads := Ceil(NumberOfProcessors / ProcThreadPool.ThreadCount);
-
-  KModes := TKModes.Create(numThreads, -1, True, 'Bin: ' + IntToStr(AIndex) + #9);
+  KModes := TKModes.Create(1, -1, True, 'Bin: ' + IntToStr(AIndex) + #9, @FConcurrentKModesBins);
   try
     KMBin^.ClusterCount := KModes.ComputeKModes(KMBin^.Dataset, round(KMBin^.ClusterCount), -KMBin^.StartingPoint, FTilePaletteSize, LocClusters, LocCentroids);
     Assert(Length(LocCentroids) = KMBin^.ClusterCount);
     Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
   finally
     KModes.Free;
+    InterLockedDecrement(FConcurrentKModesBins);
   end;
 
   Assert(Length(LocCentroids) = KMBin^.ClusterCount);
@@ -4905,6 +4905,7 @@ begin
   // prepare KModes dataset, one line per tile, psychovisual model as features
   // also choose KModes starting point
 
+  FConcurrentKModesBins := cBinCount;
   SetLength(KMBins, cBinCount);
   SetLength(cnt, Length(KMBins));
   SetLength(best, Length(KMBins));
