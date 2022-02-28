@@ -9,8 +9,8 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger,
-  Forms, Controls, Graphics, Dialogs, ExtCtrls, StdCtrls, ComCtrls, Spin, Menus, IntfGraphics, FPimage, FPCanvas, FPWritePNG, fgl,
-  MTProcs, kmodes, extern, typ, sle;
+  Forms, Controls, Graphics, Dialogs, ExtCtrls, StdCtrls, ComCtrls, Spin, Menus, IntfGraphics,
+  FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, kmodes, extern, typ, sle;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -485,7 +485,7 @@ type
     procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: array of Byte);
     procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
-    procedure LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; ABitmap: TBitmap);
+    procedure LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; const ABitmap: TRawImage);
     procedure FindKeyFrames;
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
@@ -1370,19 +1370,17 @@ procedure TMainForm.btnLoadClick(Sender: TObject);
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    bmp: TPicture;
+    bmp: TPortableNetworkGraphic;
   begin
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    bmp := TPicture.Create;
+    bmp := TPortableNetworkGraphic.Create;
     try
-      EnterCriticalSection(FCS);
-      bmp.Bitmap.PixelFormat:=pf32bit;
+      bmp.PixelFormat:=pf32bit;
       bmp.LoadFromFile(Format(FInputPath, [AIndex + PtrUInt(AData)]));
-      LeaveCriticalSection(FCS);
 
-      LoadFrame(FFrames[AIndex], AIndex, bmp.Bitmap);
+      LoadFrame(FFrames[AIndex], AIndex, bmp.RawImage);
 
       FFrames[AIndex].Index := AIndex;
 
@@ -3362,7 +3360,7 @@ begin
     end;
 end;
 
-procedure TMainForm.LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; ABitmap: TBitmap);
+procedure TMainForm.LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; const ABitmap: TRawImage);
 var
   i, j, col, ti, tx, ty: Integer;
   pcol: PInteger;
@@ -3412,34 +3410,28 @@ begin
       TMI^.BlendY := 0;
     end;
 
-  Assert(ABitmap.Width >= FScreenWidth, 'Wrong video width!');
-  Assert(ABitmap.Height >= FScreenHeight, 'Wrong video height!');
+  Assert(ABitmap.Description.Width >= FScreenWidth, 'Wrong video width!');
+  Assert(ABitmap.Description.Height >= FScreenHeight, 'Wrong video height!');
 
-  ABitmap.BeginUpdate;
-  try
-    pfs := @AFrame.FSPixels[0];
-    for j := 0 to (FScreenHeight - 1) do
-    begin
-      pcol := ABitmap.ScanLine[j];
-      for i := 0 to (FScreenWidth - 1) do
-        begin
-          col := pcol^;
-          Inc(pcol);
+  pfs := @AFrame.FSPixels[0];
+  pcol := PInteger(ABitmap.Data);
+  for j := 0 to (FScreenHeight - 1) do
+  begin
+    for i := 0 to (FScreenWidth - 1) do
+      begin
+        col := pcol^;
+        Inc(pcol);
 
-          ti := FTileMapWidth * (j shr cTileWidthBits) + (i shr cTileWidthBits);
-          tx := i and (cTileWidth - 1);
-          ty := j and (cTileWidth - 1);
-          col := SwapRB(col);
+        ti := FTileMapWidth * (j shr cTileWidthBits) + (i shr cTileWidthBits);
+        tx := i and (cTileWidth - 1);
+        ty := j and (cTileWidth - 1);
+        col := SwapRB(col);
 
-          AFrame.Tiles[ti]^.RGBPixels[ty, tx] := col;
+        AFrame.Tiles[ti]^.RGBPixels[ty, tx] := col;
 
-          FromRGB(col, pfs[0], pfs[1], pfs[2]);
-          Inc(pfs, 3);
-        end;
-    end;
-
-  finally
-    ABitmap.EndUpdate;
+        FromRGB(col, pfs[0], pfs[1], pfs[2]);
+        Inc(pfs, 3);
+      end;
   end;
 end;
 
