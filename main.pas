@@ -10,7 +10,7 @@ interface
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger,
   Forms, Controls, Graphics, Dialogs, ExtCtrls, StdCtrls, ComCtrls, Spin, Menus, IntfGraphics, FPimage, FPCanvas, FPWritePNG, fgl,
-  MTProcs, kmodes, extern;
+  MTProcs, kmodes, extern, typ, sle;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -4262,7 +4262,7 @@ begin
   AKF.TileDS := nil;
 end;
 
-function ComputeBlendingError(PPlain, PCur, PPrev: PANNFloat; bc, bp: TANNFloat): TANNFloat; inline;
+function ComputeBlendingError(PPlain, PCur, PPrev: PFloat; bc, bp: TFloat): TFloat; inline;
 var
   i: Integer;
 begin
@@ -4280,119 +4280,13 @@ begin
   end;
 end;
 
-
-function ComputeBlendingError_Asm(PPlain_rcx, PCur_rdx, PPrev_r8: PANNFloat; bc_xmm3, bp_stack: TANNFloat): TANNFloat; register; assembler;
-const
-  cDCTSizeOffset = cTileDCTSize * SizeOf(TANNFloat);
-label loop;
-asm
-  push rcx
-  push rdx
-  push r8
-
-  sub rsp, 16 * 14
-  movdqu oword ptr [rsp],       xmm1
-  movdqu oword ptr [rsp + $10], xmm2
-  movdqu oword ptr [rsp + $20], xmm3
-  movdqu oword ptr [rsp + $30], xmm4
-  movdqu oword ptr [rsp + $40], xmm5
-  movdqu oword ptr [rsp + $50], xmm6
-  movdqu oword ptr [rsp + $60], xmm7
-  movdqu oword ptr [rsp + $70], xmm8
-  movdqu oword ptr [rsp + $80], xmm9
-  movdqu oword ptr [rsp + $90], xmm10
-  movdqu oword ptr [rsp + $a0], xmm11
-  movdqu oword ptr [rsp + $b0], xmm12
-  movdqu oword ptr [rsp + $c0], xmm13
-  movdqu oword ptr [rsp + $d0], xmm14
-
-  pshufd xmm1, xmm3, 0
-  pshufd xmm2, dword ptr [bp_stack], 0
-  xorps xmm0, xmm0
-
-  lea rax, byte ptr [rcx + cDCTSizeOffset]
-  loop:
-    movups xmm3,  oword ptr [rcx]
-    movups xmm6,  oword ptr [rcx + $10]
-    movups xmm9,  oword ptr [rcx + $20]
-    movups xmm12, oword ptr [rcx + $30]
-
-    movups xmm4,  oword ptr [rdx]
-    movups xmm7,  oword ptr [rdx + $10]
-    movups xmm10, oword ptr [rdx + $20]
-    movups xmm13, oword ptr [rdx + $30]
-
-    movups xmm5,  oword ptr [r8]
-    movups xmm8,  oword ptr [r8 + $10]
-    movups xmm11, oword ptr [r8 + $20]
-    movups xmm14, oword ptr [r8 + $30]
-
-    mulps xmm4, xmm1
-    mulps xmm5, xmm2
-    addps xmm4, xmm5
-    subps xmm3, xmm4
-    mulps xmm3, xmm3
-    addps xmm0, xmm3
-
-    mulps xmm7, xmm1
-    mulps xmm8, xmm2
-    addps xmm7, xmm8
-    subps xmm6, xmm7
-    mulps xmm6, xmm6
-    addps xmm0, xmm6
-
-    mulps xmm10, xmm1
-    mulps xmm11, xmm2
-    addps xmm10, xmm11
-    subps xmm9, xmm10
-    mulps xmm9, xmm9
-    addps xmm0, xmm9
-
-    mulps xmm13, xmm1
-    mulps xmm14, xmm2
-    addps xmm13, xmm14
-    subps xmm12, xmm13
-    mulps xmm12, xmm12
-    addps xmm0, xmm12
-
-    lea rcx, [rcx + $40]
-    lea rdx, [rdx + $40]
-    lea r8, [r8 + $40]
-
-    cmp rcx, rax
-    jne loop
-
-  haddps xmm0, xmm0
-  haddps xmm0, xmm0
-
-  movdqu xmm1,  oword ptr [rsp]
-  movdqu xmm2,  oword ptr [rsp + $10]
-  movdqu xmm3,  oword ptr [rsp + $20]
-  movdqu xmm4,  oword ptr [rsp + $30]
-  movdqu xmm5,  oword ptr [rsp + $40]
-  movdqu xmm6,  oword ptr [rsp + $50]
-  movdqu xmm7,  oword ptr [rsp + $60]
-  movdqu xmm8,  oword ptr [rsp + $70]
-  movdqu xmm9,  oword ptr [rsp + $80]
-  movdqu xmm10, oword ptr [rsp + $90]
-  movdqu xmm11, oword ptr [rsp + $a0]
-  movdqu xmm12, oword ptr [rsp + $b0]
-  movdqu xmm13, oword ptr [rsp + $c0]
-  movdqu xmm14, oword ptr [rsp + $d0]
-  add rsp, 16 * 14
-
-  pop r8
-  pop rdx
-  pop rcx
-end;
-
 procedure TMainForm.DoFrameTiling(AFrame: TFrame; Y: Integer; AFTGamma: Integer; AUseWavelets: Boolean;
   AAddlTilesThres: TFloat; AFTBlend: Integer);
 var
   i, bestIdx, PalIdx, bucketIdx, idx: Integer;
   attrs, bestBlendCur, bestBlendPrev: Byte;
   x, oy, ox, bestX, bestY: Integer;
-  bestErr: TANNFloat;
+  bestErr: TFloat;
 
   tmiO, prevTMI: PTileMapItem;
   TmpTMI: TTileMapItem;
@@ -4402,8 +4296,9 @@ var
   idxs: array[0 .. cFrameFTBucketSize - 1] of Integer;
   errs: array[0 .. cFrameFTBucketSize - 1] of TANNFloat;
   DS: array of PTilingDataset;
-  PrevDCT, DCT: TFloatDynArray;
-  ANNDCT, Cur, Prev: TANNFloatDynArray;
+  DCT: TFloatDynArray;
+  CurPrevDCT: TFloatDynArray2;
+  ANNDCT: TANNFloatDynArray;
 
   ATList: TList;
 
@@ -4428,27 +4323,41 @@ var
     end;
   end;
 
-  procedure SearchBlending2P(PPlain, PCur, PPrev: PANNFloat);
+  procedure SearchBlending2P(Plain: array of ArbFloat; CurPrev: TFloatDynArray2);
   var
-    bc, bp: Integer;
-    err: TANNFloat;
+    term, bc, bp: Integer;
+    fcp: array[0 .. 1] of ArbFloat;
+    fc, fp, err: TFloat;
   begin
-    for bc := 0 to cMaxFTBlend - 1 do
-      for bp := 0 to cMaxFTBlend - 1 do
-      begin
-        err := ComputeBlendingError_Asm(PPlain, PCur, PPrev, bc * (1.0 / (cMaxFTBlend - 1)), bp * (1.0 / (cMaxFTBlend - 1)));
-        TestBestErr(err, bc, bp);
-      end;
+    slegls(CurPrev[2, 0], cTileDCTSize, 2, 2, Plain[0], fcp[0], term);
+    if term = 1 then
+    begin
+      bc := EnsureRange(round(fcp[0] * (cMaxFTBlend - 1)), 0, cMaxFTBlend - 1);
+      fc := bc * (1.0 / (cMaxFTBlend - 1));
+
+      // try to compensate for rounding to 16 levels by sending rounding error to other parameter
+
+      fp := fcp[1] + fcp[0] - fc;
+      bp := EnsureRange(round(fp * (cMaxFTBlend - 1)), 0, cMaxFTBlend - 1);
+      fp := bp * (1.0 / (cMaxFTBlend - 1));
+
+      err := ComputeBlendingError(@Plain[0], @CurPrev[0, 0], @CurPrev[1, 0], fc, fp);
+      TestBestErr(err, bc, bp);
+    end;
   end;
 
-  procedure SearchBlending1P(PPlain, PCur: PANNFloat);
+  procedure SearchBlending1P(Plain, Cur: array of ArbFloat);
   var
-    bc: Integer;
-    err: TANNFloat;
+    term, bc: Integer;
+    fc: ArbFloat;
+    err: TFloat;
   begin
-    for bc := 0 to cMaxFTBlend - 1 do
+    slegls(Cur[0], cTileDCTSize, 1, 1, Plain[0], fc, term);
+    if term = 1 then
     begin
-      err := ComputeBlendingError_Asm(PPlain, PCur, PCur, bc * (1.0 / (cMaxFTBlend - 1)), 0.0);
+      bc := EnsureRange(round(fc * (cMaxFTBlend - 1)), 0, cMaxFTBlend - 1);
+      fc := bc * (1.0 / (cMaxFTBlend - 1));
+      err := ComputeBlendingError(@Plain[0], @Cur[0], @Cur[0], fc, 0.0);
       TestBestErr(err, bc, 0);
     end;
   end;
@@ -4460,9 +4369,7 @@ begin
 
   SetLength(DCT, cTileDCTSize);
   SetLength(ANNDCT, cTileDCTSize);
-  SetLength(PrevDCT, cTileDCTSize);
-  SetLength(Cur, cTileDCTSize);
-  SetLength(Prev, cTileDCTSize);
+  SetLength(CurPrevDCT, 3, cTileDCTSize * 2);
 
   for x := 0 to FTileMapWidth - 1 do
   begin
@@ -4484,8 +4391,8 @@ begin
     begin
       // try to blend a local tile of the previous frame to improve likeliness
 
-      bestIdx := -1;
-      bestErr := MaxSingle;
+      bestIdx := idxs[0];
+      bestErr := errs[0];
       for bucketIdx := 0 to cFrameFTBucketSize - 1 do
       begin
         idx := idxs[bucketIdx];
@@ -4500,9 +4407,9 @@ begin
         TmpTMI.HMirror := (attrs and 1) <> 0;
         TmpTMI.VMirror := (attrs and 2) <> 0;
 
-        ComputeTilePsyVisFeatures(FTiles[TmpTMI.TileIdx]^, True, AUseWavelets, False, False, TmpTMI.HMirror, TmpTMI.VMirror, AFTGamma, AFrame.PKeyFrame.PaletteRGB[TmpTMI.PalIdx], DCT);
+        ComputeTilePsyVisFeatures(FTiles[TmpTMI.TileIdx]^, True, AUseWavelets, False, False, TmpTMI.HMirror, TmpTMI.VMirror, AFTGamma, AFrame.PKeyFrame.PaletteRGB[TmpTMI.PalIdx], CurPrevDCT[0]);
         for i := 0 to cTileDCTSize - 1 do
-          Cur[i] := DCT[i];
+          CurPrevDCT[2, i * 2] := CurPrevDCT[0, i];
 
         for oy := Y - AFTBlend to Y + AFTBlend do
         begin
@@ -4536,15 +4443,15 @@ begin
                 end;
               end;
 
-              ComputeTilePsyVisFeatures(prevTile^, True, AUseWavelets, False, False, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PrevDCT);
+              ComputeTilePsyVisFeatures(prevTile^, True, AUseWavelets, False, False, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], CurPrevDCT[1]);
               for i := 0 to cTileDCTSize - 1 do
-                Prev[i] := PrevDCT[i];
+                CurPrevDCT[2, i * 2 + 1] := CurPrevDCT[1, i];
 
-              SearchBlending2P(@ANNDCT[0], @Cur[0], @Prev[0]);
+              SearchBlending2P(DCT, CurPrevDCT);
             end
             else
             begin
-              SearchBlending1P(@ANNDCT[0], @Cur[0]);
+              SearchBlending1P(DCT, CurPrevDCT[0]);
             end;
           end;
         end;
