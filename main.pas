@@ -25,7 +25,7 @@ const
   cFTInterPaletteTol: array[TFTQuality] of TFloat = (0.001, 0.005, 0.02);
   cMaxFTBlend = 16;
   cGlobalFTBucketSize = 8;
-  cFrameFTBucketSize = 8;
+  cMaxBlendingFTBucketSize = 16;
 
 {$if true}
   cRedMul = 2126;
@@ -4281,16 +4281,15 @@ var
   bestErr: TFloat;
 
   tmiO, prevTMI: PTileMapItem;
-  TmpTMI: TTileMapItem;
   prevTile, addlTile: PTile;
   plan: TMixingPlan;
 
-  idxs: array[0 .. cFrameFTBucketSize - 1] of Integer;
-  errs: array[0 .. cFrameFTBucketSize - 1] of TANNFloat;
   DS: array of PTilingDataset;
-  DCT: TFloatDynArray;
-  CurPrevDCT: TFloatDynArray2;
-  ANNDCT: TANNFloatDynArray;
+  idxs: array[0 .. cMaxBlendingFTBucketSize - 1] of Integer;
+  errs: array[0 .. cMaxBlendingFTBucketSize - 1] of TANNFloat;
+  DCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  ANNDCT: array[0 .. cTileDCTSize - 1] of TANNFloat;
+  CurPrevDCT: array[0 .. 2, 0 .. cTileDCTSize * 2 - 1] of TFloat;
 
   ATList: TList;
 
@@ -4315,13 +4314,13 @@ var
     end;
   end;
 
-  procedure SearchBlending2P(Plain: array of ArbFloat; CurPrev: TFloatDynArray2);
+  procedure SearchBlending2P(Plain: array of ArbFloat);
   var
     term, bc, bp: Integer;
     fcp: array[0 .. 1] of ArbFloat;
     fc, fp, err: TFloat;
   begin
-    slegls(CurPrev[2, 0], cTileDCTSize, 2, 2, Plain[0], fcp[0], term);
+    slegls(CurPrevDCT[2, 0], cTileDCTSize, 2, 2, Plain[0], fcp[0], term);
     if term = 1 then
     begin
       bc := EnsureRange(round(fcp[0] * (cMaxFTBlend - 1)), 0, cMaxFTBlend - 1);
@@ -4333,7 +4332,7 @@ var
       bp := EnsureRange(round(fp * (cMaxFTBlend - 1)), 0, cMaxFTBlend - 1);
       fp := bp * (1.0 / (cMaxFTBlend - 1));
 
-      err := ComputeBlendingError(@Plain[0], @CurPrev[0, 0], @CurPrev[1, 0], fc, fp);
+      err := ComputeBlendingError(@Plain[0], @CurPrevDCT[0, 0], @CurPrevDCT[1, 0], fc, fp);
       TestBestErr(err, bc, bp);
     end;
   end;
@@ -4359,10 +4358,6 @@ begin
 
   // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
-  SetLength(DCT, cTileDCTSize);
-  SetLength(ANNDCT, cTileDCTSize);
-  SetLength(CurPrevDCT, 3, cTileDCTSize * 2);
-
   for x := 0 to FTileMapWidth - 1 do
   begin
     PalIdx := AFrame.TileMap[Y, x].PalIdx;
@@ -4373,7 +4368,7 @@ begin
     for i := 0 to cTileDCTSize - 1 do
       ANNDCT[i] := DCT[i];
 
-    ann_kdtree_pri_search_multi(DS[PalIdx]^.KDT, @idxs[0], @errs[0], cFrameFTBucketSize, @ANNDCT[0], 0.0);
+    ann_kdtree_pri_search_multi(DS[PalIdx]^.KDT, @idxs[0], @errs[0], (AFTBlend + 1) * 2, @ANNDCT[0], 0.0);
 
     bestBlendCur := cMaxFTBlend - 1;
     bestBlendPrev := 0;
@@ -4385,23 +4380,17 @@ begin
 
       bestIdx := idxs[0];
       bestErr := errs[0];
-      for bucketIdx := 0 to cFrameFTBucketSize - 1 do
+      for bucketIdx := 0 to (AFTBlend + 1) * 2 - 1 do
       begin
         idx := idxs[bucketIdx];
         if idx < 0 then
           Continue;
 
-        TmpTMI := FFrames[AFrame.Index].TileMap[Y, x];
-
-        attrs := DS[PalIdx]^.TRToAttrs[idx];
-        TmpTMI.TileIdx := DS[PalIdx]^.TRToTileIdx[idx];
-        TmpTMI.PalIdx := DS[PalIdx]^.TRToPalIdx[idx];
-        TmpTMI.HMirror := (attrs and 1) <> 0;
-        TmpTMI.VMirror := (attrs and 2) <> 0;
-
-        ComputeTilePsyVisFeatures(FTiles[TmpTMI.TileIdx]^, True, AUseWavelets, False, False, TmpTMI.HMirror, TmpTMI.VMirror, AFTGamma, AFrame.PKeyFrame.PaletteRGB[TmpTMI.PalIdx], CurPrevDCT[0]);
         for i := 0 to cTileDCTSize - 1 do
+        begin
+          CurPrevDCT[0, i] := DS[PalIdx]^.Dataset[idx, i];
           CurPrevDCT[2, i * 2] := CurPrevDCT[0, i];
+        end;
 
         for oy := Y - AFTBlend to Y + AFTBlend do
         begin
@@ -4439,7 +4428,7 @@ begin
               for i := 0 to cTileDCTSize - 1 do
                 CurPrevDCT[2, i * 2 + 1] := CurPrevDCT[1, i];
 
-              SearchBlending2P(DCT, CurPrevDCT);
+              SearchBlending2P(DCT);
             end
             else
             begin
