@@ -215,6 +215,7 @@ type
     procedure ClearRGBPixels;
     procedure ClearPixels;
     procedure ExtractPalPixels(var AArray: array of TANNFloat);
+    procedure LoadPalPixels(const AArray: TANNFloatDynArray);
     function ComparePalPixelsTo(const ATile: TTile): Integer;
 
     property RGBPixels[y, x: Integer]: Integer read GetRGBPixels write SetRGBPixels;
@@ -502,7 +503,7 @@ type
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
-    function WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer): Integer;
+    function WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer; UseRGB: Boolean): Integer;
     procedure DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
@@ -972,6 +973,23 @@ begin
   for i := 0 to Sqr(cTileWidth) - 1 do
   begin
     PF^ := PB^;
+    Inc(PB);
+    Inc(PF);
+  end;
+end;
+
+procedure TTileHelper.LoadPalPixels(const AArray: TANNFloatDynArray);
+var
+  i: Integer;
+  PB: PByte;
+  PF: ^TANNFloat;
+begin
+  Assert(HasPalPixels);
+  PB := @GetPalPixelsPtr^[0, 0];
+  PF := @AArray[0];
+  for i := 0 to Sqr(cTileWidth) - 1 do
+  begin
+    PB^ := Round(PF^);
     Inc(PB);
     Inc(PF);
   end;
@@ -1610,7 +1628,8 @@ begin
 
   ProgressRedraw(1);
 
-  SaveRawTiles(edReload.Text);
+  if not chkReload.Checked then
+    SaveRawTiles(edReload.Text);
 
   ProgressRedraw(2);
 
@@ -4484,13 +4503,10 @@ var
   sx: Integer;
   cmp: TFloat;
   TMI, PrevTMI: PTileMapItem;
-  DCT, PrevDCT: TFloatDynArray;
+  DCT, PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
 begin
   if AFrame.PKeyFrame <> APrevFrame.PKeyFrame then
     Exit;
-
-  SetLength(DCT, cTileDCTSize);
-  SetLength(PrevDCT, cTileDCTSize);
 
   for sx := 0 to FTileMapWidth - 1 do
   begin
@@ -4579,7 +4595,7 @@ begin
   end;
 end;
 
-function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer): Integer;
+function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer; UseRGB: Boolean): Integer;
 var
   x, y: Integer;
   hsv: array[0..3, 0..2] of Word;
@@ -4596,33 +4612,36 @@ begin
       Inc(Result);
     end;
 
-  // HSV for 4x4 quadrants
-
-  FillChar(hsv, SizeOf(hsv), 0);
-  for y := 0 to cTileWidth div 2 - 1 do
-    for x := 0 to cTileWidth div 2 - 1 do
-    begin
-      RGBToHSV(ATile.RGBPixels[y, x], ph, ps, pv);
-      hsv[0, 0] += ph; hsv[0, 1] += ps; hsv[0, 2] += pv;
-
-      RGBToHSV(ATile.RGBPixels[y, x + cTileWidth div 2], ph, ps, pv);
-      hsv[1, 0] += ph; hsv[1, 1] += ps; hsv[1, 2] += pv;
-
-      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x], ph, ps, pv);
-      hsv[2, 0] += ph; hsv[2, 1] += ps; hsv[2, 2] += pv;
-
-      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x + cTileWidth div 2], ph, ps, pv);
-      hsv[3, 0] += ph; hsv[3, 1] += ps; hsv[3, 2] += pv;
-    end;
-
-  for y := 0 to 3 do
+  if UseRGB then
   begin
-    DataLine[Result] := hsv[y, 0] shr 8; // to 4 bits from 8 bits * sqr(cTileWidth div 2)=16
-    Inc(Result);
-    DataLine[Result] := hsv[y, 1] shr 8;
-    Inc(Result);
-    DataLine[Result] := hsv[y, 2] shr 8;
-    Inc(Result);
+    // HSV for 4x4 quadrants
+
+    FillChar(hsv, SizeOf(hsv), 0);
+    for y := 0 to cTileWidth div 2 - 1 do
+      for x := 0 to cTileWidth div 2 - 1 do
+      begin
+        RGBToHSV(ATile.RGBPixels[y, x], ph, ps, pv);
+        hsv[0, 0] += ph; hsv[0, 1] += ps; hsv[0, 2] += pv;
+
+        RGBToHSV(ATile.RGBPixels[y, x + cTileWidth div 2], ph, ps, pv);
+        hsv[1, 0] += ph; hsv[1, 1] += ps; hsv[1, 2] += pv;
+
+        RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x], ph, ps, pv);
+        hsv[2, 0] += ph; hsv[2, 1] += ps; hsv[2, 2] += pv;
+
+        RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x + cTileWidth div 2], ph, ps, pv);
+        hsv[3, 0] += ph; hsv[3, 1] += ps; hsv[3, 2] += pv;
+      end;
+
+    for y := 0 to 3 do
+    begin
+      DataLine[Result] := hsv[y, 0] shr 8; // to 4 bits from 8 bits * sqr(cTileWidth div 2)=16
+      Inc(Result);
+      DataLine[Result] := hsv[y, 1] shr 8;
+      Inc(Result);
+      DataLine[Result] := hsv[y, 2] shr 8;
+      Inc(Result);
+    end;
   end;
 
   // count of most used index per 4x4 quadrant
@@ -4630,7 +4649,7 @@ begin
   PalSigni := GetTilePalZoneThres(ATile, sqr(cTileWidth) div 16, @DataLine[Result]);
   Inc(Result, sqr(cTileWidth) div 16);
 
-  Assert(Result = cKModesFeatureCount);
+  Assert(Result <= cKModesFeatureCount);
 end;
 
 type
@@ -4819,7 +4838,7 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    WriteTileDatasetLine(FTiles[i]^, @DataLine[0], dummy);
+    WriteTileDatasetLine(FTiles[i]^, @DataLine[0], dummy, True);
     bin := GetTileBin(FTiles[i]);
 
     KMBins[bin].TileIndices[cnt[bin]] := i;
@@ -4876,20 +4895,18 @@ end;
 
 procedure TMainForm.ReloadPreviousTiling(AFN: String);
 var
-  SigniDataset: TByteDynArray3;
-  Dataset: TByteDynArray2;
   ParallelCount: PtrUInt;
+  KNNDataset: TANNFloatDynArray2;
+  KDT: PANNkdtree;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    last, bin, signi, i, tidx: Integer;
-    DataLine: TByteDynArray;
-    dis: UInt64;
+    last, bin, i, tidx: Integer;
+    DataLine: array[0 .. sqr(cTileWidth) - 1] of TANNFloat;
+    err: TANNFloat;
   begin
     if not InRange(AIndex, 0, ParallelCount - 1) then
       Exit;
-
-    SetLength(DataLine, cKModesFeatureCount);
 
     bin := Length(FTiles) div ParallelCount;
     last := (AIndex + 1) * bin - 1;
@@ -4900,17 +4917,9 @@ var
     begin
       if FTiles[i]^.Active then
       begin
-        WriteTileDatasetLine(FTiles[i]^, @DataLine[0], signi);
-        if Length(SigniDataset[signi]) > 0 then
-        begin
-          tidx := GetMinMatchingDissim(SigniDataset[signi], DataLine, Length(SigniDataset[signi]), dis);
-          FTiles[i]^.CopyPalPixels(SigniDataset[signi, tidx]);
-        end
-        else
-        begin
-          tidx := GetMinMatchingDissim(Dataset, DataLine, Length(Dataset), dis);
-          FTiles[i]^.CopyPalPixels(Dataset[tidx]);
-        end;
+        FTiles[i]^.ExtractPalPixels(DataLine);
+        tidx := ann_kdtree_pri_search(KDT, @DataLine[0], 0.0, @err);
+        FTiles[i]^.LoadPalPixels(KNNDataset[tidx]);
       end;
 
       if i mod 10000 = 0 then
@@ -4919,66 +4928,60 @@ var
   end;
 
 var
-  signi, i, y, x: Integer;
+  i, y, x, Version, TileCount: Integer;
   fs: TFileStream;
-  T: TTile;
-  SigniIndices: TIntegerDynArray2;
+  T: PTile;
   TilingPaletteSize: Integer;
-  hasUseCount: Boolean;
   PalPixels: TPalPixels;
 begin
   fs := TFileStream.Create(AFN, fmOpenRead or fmShareDenyNone);
+  T := TTile.New(False, True);
+  KDT := nil;
   try
-    FillChar(T, SizeOf(T), 0);
-    T.Active := True;
+    T^.Active := True;
 
-    SetLength(SigniIndices, High(Word) + 1, 0);
-    SetLength(Dataset, fs.Size div sqr(cTileWidth), cKModesFeatureCount);
-
-    hasUseCount := fs.Size mod sqr(cTileWidth) = 2;
-    if hasUseCount then
-      fs.ReadByte; // version
+    Version := -1;
+    if fs.Size mod (sqr(cTileWidth) + SizeOf(Integer)) = 2 then
+      Version := fs.ReadByte; // Version
 
     TilingPaletteSize := sqr(cTileWidth);
-    if hasUseCount or (fs.Size mod sqr(cTileWidth) <> 0) then
+    if (Version >= 0) or (fs.Size mod sqr(cTileWidth) <> 0) then
       TilingPaletteSize := fs.ReadByte;
 
-    for i := 0 to High(Dataset) do
+    TileCount := fs.Size div sqr(cTileWidth);
+    if Version >=0 then
+      TileCount := fs.Size div (sqr(cTileWidth) + SizeOf(Integer));
+
+    SetLength(KNNDataset, TileCount, Sqr(cTileWidth));
+
+    for i := 0 to High(KNNDataset) do
     begin
+      if Version >= 0 then
+        T^.UseCount := fs.ReadDWord;
       fs.ReadBuffer(PalPixels[0, 0], SizeOf(TPalPixels));
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
           PalPixels[y, x] := (PalPixels[y, x] * FTilePaletteSize) div TilingPaletteSize;
-      T.CopyPalPixels(PalPixels);
-
-      WriteTileDatasetLine(T, @Dataset[i, 0], signi);
-
-      SetLength(SigniIndices[signi], Length(SigniIndices[signi]) + 1);
-      SigniIndices[signi][High(SigniIndices[signi])] := i;
+      T^.CopyPalPixels(PalPixels);
+      T^.ExtractPalPixels(KNNDataset[i]);
     end;
 
-    SetLength(SigniDataset, High(Word) + 1, 0);
-    for signi := 0 to High(Word) do
-      if Length(SigniIndices[signi]) > 0 then
-      begin
-        SetLength(SigniDataset[signi], Length(SigniIndices[signi]));
-        for i := 0 to High(SigniIndices[signi]) do
-          SigniDataset[signi, i] := Dataset[SigniIndices[signi, i]];
-      end;
-
-    SetLength(SigniIndices, 0);
+    KDT := ann_kdtree_create(@KNNDataset[0], TileCount, sqr(cTileWidth), 32, ANN_KD_SUGGEST);
 
     ProgressRedraw(1);
 
     ParallelCount := ProcThreadPool.MaxThreadCount * 10;
     ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, ParallelCount - 1);
 
-    ProgressRedraw(4);
+    ProgressRedraw(3);
 
     MakeTilesUnique(0, Length(FTiles));
 
-    ProgressRedraw(5);
+    ProgressRedraw(4);
   finally
+    if Assigned(KDT) then
+      ann_kdtree_destroy(KDT);
+    TTile.Dispose(T);
     fs.Free;
   end;
 end;
