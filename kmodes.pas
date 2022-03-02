@@ -13,7 +13,6 @@ uses
 
 const
   cKModesFeatureCount = 80;
-  cDissimSubMatchingSize = 11;
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
 
@@ -246,11 +245,7 @@ var
 begin
   Result := 0;
   for i := 0 to High(a) do
-  begin
-    if a[i] <> b[i] then
-      Result += UInt64(1) shl cDissimSubMatchingSize;
     Result += abs(Int64(a[i]) - Int64(b[i]));
-  end;
 end;
 
 function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
@@ -259,11 +254,7 @@ var
 begin
   Result := 0;
   for i := 0 to count - 1 do
-  begin
-    if a[i] <> b[i] then
-      Result += UInt64(1) shl cDissimSubMatchingSize;
     Result += abs(Int64(a[i]) - Int64(b[i]));
-  end;
 end;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
@@ -385,34 +376,7 @@ asm
     psadbw xmm5, xmm10
     paddw xmm11, xmm5
 
-    pcmpeqb xmm0, xmm6
-    pcmpeqb xmm1, xmm7
-    pcmpeqb xmm2, xmm8
-    pcmpeqb xmm3, xmm9
-    pcmpeqb xmm4, xmm10
-
-    pmovmskb edi, xmm0
-    mov rsi, rdi
-    pmovmskb edi, xmm1
-    rol rsi, 16
-    or rsi, rdi
-    pmovmskb edi, xmm2
-    rol rsi, 16
-    or rsi, rdi
-    pmovmskb edi, xmm3
-    rol rsi, 16
-    or rsi, rdi
-    not rsi
-    popcnt rsi, rsi
-
-    pmovmskb edi, xmm4
-    not di
-    popcnt di, di
-    add rsi, rdi
-
-    shl rsi, cDissimSubMatchingSize
-    pextrw r10d, xmm11, 0
-    add rsi, r10
+    pextrw esi, xmm11, 0
     pextrw r10d, xmm11, 4
     add rsi, r10
 
@@ -525,34 +489,7 @@ asm
     psadbw xmm5, xmm10
     paddw xmm11, xmm5
 
-    pcmpeqb xmm0, xmm6
-    pcmpeqb xmm1, xmm7
-    pcmpeqb xmm2, xmm8
-    pcmpeqb xmm3, xmm9
-    pcmpeqb xmm4, xmm10
-
-    pmovmskb edi, xmm0
-    mov rsi, rdi
-    pmovmskb edi, xmm1
-    rol rsi, 16
-    or rsi, rdi
-    pmovmskb edi, xmm2
-    rol rsi, 16
-    or rsi, rdi
-    pmovmskb edi, xmm3
-    rol rsi, 16
-    or rsi, rdi
-    not rsi
-    popcnt rsi, rsi
-
-    pmovmskb edi, xmm4
-    not di
-    popcnt di, di
-    add rsi, rdi
-
-    shl rsi, cDissimSubMatchingSize
-    pextrw r10d, xmm11, 0
-    add rsi, r10
+    pextrw esi, xmm11, 0
     pextrw r10d, xmm11, 4
     add rsi, r10
 

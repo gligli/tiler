@@ -429,7 +429,6 @@ object MainForm: TMainForm
           '32'
           '64'
         )
-        Style = csDropDownList
         TabOrder = 8
         Text = '16'
       end
@@ -452,7 +451,6 @@ object MainForm: TMainForm
           '128'
           '256'
         )
-        Style = csDropDownList
         TabOrder = 7
         Text = '128'
       end

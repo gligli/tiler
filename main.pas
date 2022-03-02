@@ -503,7 +503,7 @@ type
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
-    function WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer; UseRGB: Boolean): Integer;
+    function WriteTileDatasetLine(const ATile: TTile; DataLine: PByte): Integer;
     procedure DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
@@ -1413,8 +1413,8 @@ var
   bmp: TPicture;
   wasAutoQ: Boolean;
 begin
-  FTilePaletteSize := StrToInt(cbxPalSize.Text);
-  FPaletteCount := StrToInt(cbxPalCount.Text);
+  FTilePaletteSize := EnsureRange(StrToInt(cbxPalSize.Text), 2, 64);
+  FPaletteCount := EnsureRange(StrToInt(cbxPalCount.Text), 1, 256);
   wasAutoQ := seMaxTiles.Value = round(seQbTiles.Value * EqualQualityTileCount(Length(FFrames) * FTileMapSize));
 
   ProgressRedraw;
@@ -4595,7 +4595,7 @@ begin
   end;
 end;
 
-function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer; UseRGB: Boolean): Integer;
+function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: PByte): Integer;
 var
   x, y: Integer;
   hsv: array[0..3, 0..2] of Word;
@@ -4612,41 +4612,38 @@ begin
       Inc(Result);
     end;
 
-  if UseRGB then
-  begin
-    // HSV for 4x4 quadrants
+  // HSV for 4x4 quadrants
 
-    FillChar(hsv, SizeOf(hsv), 0);
-    for y := 0 to cTileWidth div 2 - 1 do
-      for x := 0 to cTileWidth div 2 - 1 do
-      begin
-        RGBToHSV(ATile.RGBPixels[y, x], ph, ps, pv);
-        hsv[0, 0] += ph; hsv[0, 1] += ps; hsv[0, 2] += pv;
-
-        RGBToHSV(ATile.RGBPixels[y, x + cTileWidth div 2], ph, ps, pv);
-        hsv[1, 0] += ph; hsv[1, 1] += ps; hsv[1, 2] += pv;
-
-        RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x], ph, ps, pv);
-        hsv[2, 0] += ph; hsv[2, 1] += ps; hsv[2, 2] += pv;
-
-        RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x + cTileWidth div 2], ph, ps, pv);
-        hsv[3, 0] += ph; hsv[3, 1] += ps; hsv[3, 2] += pv;
-      end;
-
-    for y := 0 to 3 do
+  FillChar(hsv, SizeOf(hsv), 0);
+  for y := 0 to cTileWidth div 2 - 1 do
+    for x := 0 to cTileWidth div 2 - 1 do
     begin
-      DataLine[Result] := hsv[y, 0] shr 8; // to 4 bits from 8 bits * sqr(cTileWidth div 2)=16
-      Inc(Result);
-      DataLine[Result] := hsv[y, 1] shr 8;
-      Inc(Result);
-      DataLine[Result] := hsv[y, 2] shr 8;
-      Inc(Result);
+      RGBToHSV(ATile.RGBPixels[y, x], ph, ps, pv);
+      hsv[0, 0] += ph; hsv[0, 1] += ps; hsv[0, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y, x + cTileWidth div 2], ph, ps, pv);
+      hsv[1, 0] += ph; hsv[1, 1] += ps; hsv[1, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x], ph, ps, pv);
+      hsv[2, 0] += ph; hsv[2, 1] += ps; hsv[2, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x + cTileWidth div 2], ph, ps, pv);
+      hsv[3, 0] += ph; hsv[3, 1] += ps; hsv[3, 2] += pv;
     end;
+
+  for y := 0 to 3 do
+  begin
+    DataLine[Result] := hsv[y, 0] shr 8; // to 4 bits from 8 bits * sqr(cTileWidth div 2)=16
+    Inc(Result);
+    DataLine[Result] := hsv[y, 1] shr 8;
+    Inc(Result);
+    DataLine[Result] := hsv[y, 2] shr 8;
+    Inc(Result);
   end;
 
   // count of most used index per 4x4 quadrant
 
-  PalSigni := GetTilePalZoneThres(ATile, sqr(cTileWidth) div 16, @DataLine[Result]);
+  GetTilePalZoneThres(ATile, sqr(cTileWidth) div 16, @DataLine[Result]);
   Inc(Result, sqr(cTileWidth) div 16);
 
   Assert(Result <= cKModesFeatureCount);
@@ -4794,7 +4791,7 @@ const
 
 var
   KMBins: TKModesBinArray;
-  acc, i, j, disCnt, bin, dummy: Integer;
+  acc, i, j, disCnt, bin: Integer;
   cnt: TIntegerDynArray;
   best: TIntegerDynArray;
   DataLine: TByteDynArray;
@@ -4838,7 +4835,7 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    WriteTileDatasetLine(FTiles[i]^, @DataLine[0], dummy, True);
+    WriteTileDatasetLine(FTiles[i]^, @DataLine[0]);
     bin := GetTileBin(FTiles[i]);
 
     KMBins[bin].TileIndices[cnt[bin]] := i;
