@@ -64,7 +64,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 3, 2, 2, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 3, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -1143,6 +1143,8 @@ begin
   else
   begin
     DoGlobalTiling(seMaxTiles.Value, cRandomKModesCount);
+
+    SaveRawTiles(edReload.Text);
   end;
 
   tbFrameChange(nil);
@@ -1627,11 +1629,6 @@ begin
   end;
 
   ProgressRedraw(1);
-
-  if not chkReload.Checked then
-    SaveRawTiles(edReload.Text);
-
-  ProgressRedraw(2);
 
   tbFrameChange(nil);
 end;
@@ -4370,7 +4367,7 @@ begin
     for i := 0 to cTileDCTSize - 1 do
       ANNDCT[i] := DCT[i];
 
-    ann_kdtree_pri_search_multi(DS^.KDT, @idxs[0], @errs[0], (AFTBlend + 1) * 2, @ANNDCT[0], 0.0);
+    ann_kdtree_pri_search_multi(DS^.KDT, @idxs[0], @errs[0], max(1, (AFTBlend + 1) * 2), @ANNDCT[0], 0.0);
 
     bestBlendCur := cMaxFTBlend - 1;
     bestBlendPrev := 0;
