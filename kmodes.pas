@@ -988,6 +988,8 @@ begin
         WriteLn(LogLabel, 'Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost);
     end;
 
+    WriteLn(LogLabel, 'Finished at Iteration: ', itr);
+
     all[init_no].Labels := Copy(membship);
     all[init_no].Centroids := Copy(centroids);
     all[init_no].Cost := cost;
