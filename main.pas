@@ -1788,7 +1788,7 @@ begin
   TPaintBox(Sender).Canvas.Brush.Color := clBlack;
   TPaintBox(Sender).Canvas.Brush.Style := TFPBrushStyle.bsSolid;
   TPaintBox(Sender).Canvas.FillRect(TPaintBox(Sender).Canvas.ClipRect);
-  TPaintBox(Sender).Canvas.Brush.Color := IfThen(Sender = pbFrameI, $600070, $605000);
+  TPaintBox(Sender).Canvas.Brush.Color := IfThen(Sender = pbFrameI, $300038, $302800);
   TPaintBox(Sender).Canvas.Brush.Style := TFPBrushStyle.bsDiagCross;
   TPaintBox(Sender).Canvas.FillRect(TPaintBox(Sender).Canvas.ClipRect);
 end;
