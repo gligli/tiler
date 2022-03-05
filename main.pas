@@ -318,7 +318,7 @@ type
     chkUseWL: TCheckBox;
     chkGamma: TCheckBox;
     chkDitheringGamma: TCheckBox;
-    chkReduced: TCheckBox;
+    chkSmoothed: TCheckBox;
     chkMirrored: TCheckBox;
     chkBlended: TCheckBox;
     chkPlay: TCheckBox;
@@ -455,7 +455,7 @@ type
 
     procedure ClearAll;
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
-    procedure Render(AFrameIndex: Integer; playing, blended, mirrored, reduced, gamma: Boolean; palIdx: Integer;
+    procedure Render(AFrameIndex: Integer; playing, blended, mirrored, smoothed, gamma: Boolean; palIdx: Integer;
       ATilePage: Integer);
     procedure ReframeUI(AWidth, AHeight: Integer);
 
@@ -1770,7 +1770,7 @@ begin
   try
     for i := 0 to High(FFrames) do
     begin
-      Render(i, True, chkBlended.Checked, chkMirrored.Checked, chkReduced.Checked, chkGamma.Checked, sedPalIdx.Value, sePage.Value);
+      Render(i, True, chkBlended.Checked, chkMirrored.Checked, chkSmoothed.Checked, chkGamma.Checked, sedPalIdx.Value, sePage.Value);
       imgDest.Repaint;
 
       palPict.Canvas.Draw(0, 0, imgDest.Picture.Bitmap);
@@ -1823,7 +1823,7 @@ procedure TMainForm.tbFrameChange(Sender: TObject);
 begin
   IdleTimer.Interval := round(1000 / FFramesPerSecond);
   Screen.Cursor := crDefault;
-  Render(tbFrame.Position, chkPlay.Checked, chkBlended.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, sedPalIdx.Value, sePage.Value);
+  Render(tbFrame.Position, chkPlay.Checked, chkBlended.Checked, chkMirrored.Checked, chkSmoothed.Checked,  chkGamma.Checked, sedPalIdx.Value, sePage.Value);
 end;
 
 function TMainForm.PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
@@ -3419,7 +3419,7 @@ begin
       TMI^.SmoothedHMirror := False;
       TMI^.SmoothedVMirror := False;
 
-      TMI^.BlendCur := 0;
+      TMI^.BlendCur := cMaxFTBlend - 1;
       TMI^.BlendPrev := 0;
       TMI^.BlendX := 0;
       TMI^.BlendY := 0;
@@ -3552,7 +3552,7 @@ begin
   TTile.Array1DDispose(FTiles);
 end;
 
-procedure TMainForm.Render(AFrameIndex: Integer; playing, blended, mirrored, reduced, gamma: Boolean; palIdx: Integer;
+procedure TMainForm.Render(AFrameIndex: Integer; playing, blended, mirrored, smoothed, gamma: Boolean; palIdx: Integer;
   ATilePage: Integer);
 
   procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; psyTile: PTile; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean; prevtilePtr: PTile; prevPal: TIntegerDynArray; prevHmir, prevVmir: Boolean; blendCur, blendPrev: Integer);
@@ -3699,10 +3699,18 @@ begin
         begin
           frmIdx := Frame.Index;
           TMItem := FFrames[frmIdx].TileMap[sy, sx];
-          while TMItem.Smoothed do
+          if smoothed then
           begin
-            Dec(frmIdx);
-            TMItem := FFrames[frmIdx].TileMap[sy, sx];
+            while TMItem.Smoothed do
+            begin
+              Dec(frmIdx);
+              TMItem := FFrames[frmIdx].TileMap[sy, sx];
+            end;
+          end
+          else
+          begin
+            if TMItem.Smoothed then
+              Continue;
           end;
 
           prevTMItem.TileIdx := -1;
@@ -3734,17 +3742,9 @@ begin
             end;
 
             prevTilePtr := nil;
-            if reduced then
-            begin
-              tilePtr := FTiles[TMItem.TileIdx];
-              if prevTMItem.TileIdx >= 0 then
-                prevTilePtr := FTiles[prevTMItem.TileIdx]
-            end
-            else
-            begin
-              tilePtr := Frame.Tiles[sy * FTileMapWidth + sx];
-              pal := nil;
-            end;
+            tilePtr := FTiles[TMItem.TileIdx];
+            if prevTMItem.TileIdx >= 0 then
+              prevTilePtr := FTiles[prevTMItem.TileIdx];
 
             if blended then
             begin
