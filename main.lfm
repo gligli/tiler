@@ -189,7 +189,7 @@ object MainForm: TMainForm
         Increment = 2.5
         MaxValue = 1000
         TabOrder = 19
-        Value = 20
+        Value = 10
       end
       object seStartFrame: TSpinEdit
         Left = 312
@@ -204,11 +204,9 @@ object MainForm: TMainForm
         Height = 23
         Top = 310
         Width = 71
-        DecimalPlaces = 1
-        Increment = 0.05
         MaxValue = 1000
         TabOrder = 18
-        Value = 1
+        Value = 10
       end
       object cbxYilMix: TComboBox
         Left = 312
@@ -319,30 +317,20 @@ object MainForm: TMainForm
         Caption = 'Tile limit (all; Q based)'
       end
       object chkDitheringGamma: TCheckBox
-        Left = 616
+        Left = 312
         Height = 19
         Top = 382
         Width = 170
         Caption = 'Dithering gamma correction'
-        TabOrder = 25
+        TabOrder = 24
       end
       object chkFTGamma: TCheckBox
-        Left = 616
+        Left = 312
         Height = 19
         Top = 400
         Width = 184
         Caption = 'Frame tiling gamma correction'
-        TabOrder = 26
-      end
-      object chkUseWL: TCheckBox
-        Left = 312
-        Height = 19
-        Top = 382
-        Width = 288
-        Caption = 'Use Haar Wavelets (not Discrete Cosine Transform)'
-        Checked = True
-        State = cbChecked
-        TabOrder = 24
+        TabOrder = 25
       end
       object Label10: TLabel
         Left = 8

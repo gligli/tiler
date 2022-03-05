@@ -25,8 +25,10 @@ const
   cMaxFTBlend = 16;
   cGlobalFTBucketSize = 8;
   cMaxBlendingFTBucketSize = 16;
+  cUseWavelets = False;
+  cFTQWeighting = False;
 
-{$if true}
+{$if false}
   cRedMul = 2126;
   cGreenMul = 7152;
   cBlueMul = 722;
@@ -315,7 +317,6 @@ type
     cbxDLBPC: TComboBox;
     chkFTGamma: TCheckBox;
     chkUseKMQuant: TCheckBox;
-    chkUseWL: TCheckBox;
     chkGamma: TCheckBox;
     chkDitheringGamma: TCheckBox;
     chkSmoothed: TCheckBox;
@@ -1153,7 +1154,6 @@ end;
 procedure TMainForm.btnDitherClick(Sender: TObject);
 var
   Gamma: Integer;
-  UseWavelets: Boolean;
   UseYakmo: Boolean;
   DLBPC: Integer;
   i: Integer;
@@ -1163,7 +1163,7 @@ var
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    PrepareDitherTiles(FKeyFrames[AIndex], Gamma, UseWavelets);
+    PrepareDitherTiles(FKeyFrames[AIndex], Gamma, cUseWavelets);
   end;
 
   procedure DoQuantize(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -1179,7 +1179,7 @@ var
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    FinishDitherTiles(FFrames[AIndex], Gamma, UseWavelets);
+    FinishDitherTiles(FFrames[AIndex], Gamma, cUseWavelets);
   end;
 
 begin
@@ -1187,7 +1187,6 @@ begin
     Exit;
 
   Gamma := IfThen(chkDitheringGamma.Checked, 0, -1);
-  UseWavelets := chkUseWL.Checked;
   UseYakmo := chkUseKMQuant.Checked;
   DLBPC := StrToInt(cbxDLBPC.Text);
 
@@ -1249,7 +1248,6 @@ end;
 procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
 var
   Gamma: Integer;
-  UseWavelets: Boolean;
   FTQuality: TFTQuality;
   FTBlend: Integer;
   AddlTilesThres: TFloat;
@@ -1267,7 +1265,7 @@ var
 
       WaitForSingleObject(KF.FTDoPrepareEvent, INFINITE);
 
-      PrepareFrameTiling(KF, Gamma, UseWavelets, FTQuality);
+      PrepareFrameTiling(KF, Gamma, cUseWavelets, FTQuality);
 
       SetEvent(KF.FTPreparedEvent);
       WaitForSingleObject(KF.FTDoFinishEvent, INFINITE);
@@ -1297,7 +1295,7 @@ var
 
       WaitForSingleObject(Frame.PKeyFrame.FTPreparedEvent, INFINITE); // wait for KF prepared
 
-      DoFrameTiling(Frame, y, Gamma, UseWavelets, AddlTilesThres, FTBlend);
+      DoFrameTiling(Frame, y, Gamma, cUseWavelets, AddlTilesThres, FTBlend);
 
       SpinEnter(@FLock);
       Frame.FTYDone[y] := True;
@@ -1329,7 +1327,6 @@ begin
     Exit;
 
   Gamma := IfThen(chkFTGamma.Checked, 0, -1);
-  UseWavelets := chkUseWL.Checked;
   FTQuality := TFTQuality(cbxFTQ.ItemIndex);
   FTBlend := seFTBlend.Value;
   AddlTilesThres := seAddlTiles.Value;
@@ -2387,7 +2384,7 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        ComputeTilePsyVisFeatures(GTile^, False, AUseWavelets, True, False, False, False, ADitheringGamma, nil, Dataset[di]);
+        ComputeTilePsyVisFeatures(GTile^, False, AUseWavelets, True, True, False, False, ADitheringGamma, nil, Dataset[di]);
         Inc(di);
       end;
   assert(di = Length(Dataset));
@@ -4172,7 +4169,7 @@ var
             DS^.TRToPalIdx[di] := AIndex;
             DS^.TRToAttrs[di] := hvmir;
 
-            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, False, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[AIndex], DCT);
+            ComputeTilePsyVisFeatures(T^, True, AUseWavelets, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[AIndex], DCT);
             for j := 0 to cTileDCTSize - 1 do
               DS^.Dataset[di, j] := DCT[j];
             Inc(di);
@@ -4363,7 +4360,7 @@ begin
     if Length(DS^.Dataset) <= 0 then
       Continue;
 
-    ComputeTilePsyVisFeatures(AFrame.Tiles[Y * FTileMapWidth + x]^, False, AUseWavelets, False, False, False, False, AFTGamma, nil, DCT);
+    ComputeTilePsyVisFeatures(AFrame.Tiles[Y * FTileMapWidth + x]^, False, AUseWavelets, False, cFTQWeighting, False, False, AFTGamma, nil, DCT);
     for i := 0 to cTileDCTSize - 1 do
       ANNDCT[i] := DCT[i];
 
@@ -4423,7 +4420,7 @@ begin
                 end;
               end;
 
-              ComputeTilePsyVisFeatures(prevTile^, True, AUseWavelets, False, False, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], CurPrevDCT[1]);
+              ComputeTilePsyVisFeatures(prevTile^, True, AUseWavelets, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], CurPrevDCT[1]);
               for i := 0 to cTileDCTSize - 1 do
                 CurPrevDCT[2, i * 2 + 1] := CurPrevDCT[1, i];
 
