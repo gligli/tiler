@@ -1853,7 +1853,7 @@ end;
 
 procedure TMainForm.PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
 var
-  i, col, r, g, b: Integer;
+  i, r, g, b: Integer;
 begin
   FillChar(Plan, SizeOf(Plan), 0);
 
@@ -1863,10 +1863,7 @@ begin
 
   for i := 0 to High(pal) do
   begin
-    col := pal[i];
-    r := col and $ff;
-    g := (col shr 8) and $ff;
-    b := (col shr 16) and $ff;
+    FromRGB(pal[i], r, g, b);
 
     Plan.LumaPal[i] := r*cRedMul + g*cGreenMul + b*cBlueMul;
 
@@ -2318,35 +2315,24 @@ begin
   if FUseThomasKnoll then
   begin
     for y := 0 to (cTileWidth - 1) do
-    for x := 0 to (cTileWidth - 1) do
-    begin
-      map_value := cDitheringMap[(y * cTileWidth) + x];
-      DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], TKList);
-      ATile.PalPixels[y, x] := TKList[map_value];
-    end;
+      for x := 0 to (cTileWidth - 1) do
+      begin
+        map_value := cDitheringMap[(y * cTileWidth) + x];
+        DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], TKList);
+        ATile.PalPixels[y, x] := TKList[map_value];
+      end;
   end
   else
   begin
     for y := 0 to (cTileWidth - 1) do
       for x := 0 to (cTileWidth - 1) do
       begin
-        map_value := cDitheringMap[(y shl 3) + x];
-        count := DeviseBestMixingPlanYliluoma(Plan, ATile.RGBPixels[y,x], YilList);
+        map_value := cDitheringMap[(y * cTileWidth) + x];
+        count := DeviseBestMixingPlanYliluoma(Plan, ATile.RGBPixels[y, x], YilList);
         map_value := (map_value * count) shr 6;
         ATile.PalPixels[y, x] := YilList[map_value];
       end;
   end;
-end;
-
-function CompareCMUCntHLS(Item1,Item2:Pointer):Integer;
-begin
-  Result := PCountIndexArray(Item2)^.Count - PCountIndexArray(Item1)^.Count;
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Hue, PCountIndexArray(Item2)^.Hue);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Val, PCountIndexArray(Item2)^.Val);
-  if Result = 0 then
-    Result := CompareValue(PCountIndexArray(Item1)^.Sat, PCountIndexArray(Item2)^.Sat);
 end;
 
 function CompareCMIntraPalette(Item1,Item2:Pointer):Integer;
@@ -2558,7 +2544,8 @@ var
           for sx := 0 to FTileMapWidth - 1 do
           begin
             GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-            if GTile^.DitheringPalIndex = APalIdx then
+
+            if GTile^.Active and (GTile^.DitheringPalIndex = APalIdx) then
             begin
               for ty := 0 to cTileWidth - 1 do
                 for tx := 0 to cTileWidth - 1 do
@@ -2567,6 +2554,8 @@ var
                   Dataset[di, 0] := rr; Dataset[di, 1] := gg; Dataset[di, 2] := bb;
                   Inc(di);
                 end;
+
+              Inc(AKeyFrame.PaletteUseCount[APalIdx].UseCount);
             end;
           end;
 
@@ -2632,7 +2621,7 @@ end;
 
 procedure TMainForm.FinishQuantizePalette(AKeyFrame: TKeyFrame);
 var
-  i, di, sy, sx, PalIdx: Integer;
+  i, sy, sx, PalIdx: Integer;
   PalIdxLUT: TIntegerDynArray;
   TmpCentroids: TFloatDynArray2;
   GTile: PTile;
@@ -2652,14 +2641,12 @@ begin
     PalIdxLUT[AKeyFrame.PaletteUseCount[PalIdx].PalIdx] := PalIdx;
   end;
 
-  di := 0;
   for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
         GTile^.DitheringPalIndex := PalIdxLUT[GTile^.DitheringPalIndex];
-        Inc(di);
       end;
 
   TmpCentroids := Copy(AKeyFrame.PaletteCentroids);
