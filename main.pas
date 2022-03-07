@@ -2159,7 +2159,7 @@ begin
     t[2] := s[2] + (e[2] * 9) div 100;
 
     least_penalty := High(Int64);
-    chosen := c and (length(Plan.Y2Palette) - 1);
+    chosen := c mod length(Plan.Y2Palette);
     for index := 0 to length(Plan.Y2Palette) - 1 do
     begin
       penalty := ColorCompare(t[0], t[1], t[2], Plan.Y2Palette[index][0], Plan.Y2Palette[index][1], Plan.Y2Palette[index][2]);

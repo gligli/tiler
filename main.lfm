@@ -368,13 +368,13 @@ object MainForm: TMainForm
         Height = 23
         Top = 107
         Width = 71
-        Increment = 0.5
+        Increment = 0.1
         MaxValue = 100
         MinValue = 0.5
         OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
         TabOrder = 10
-        Value = 3
+        Value = 1
       end
       object btnGTM: TButton
         Left = 607
