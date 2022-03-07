@@ -4459,6 +4459,10 @@ begin
         DitherTile(addlTile^, plan);
         TerminatePlan(plan);
 
+        // recompute error from dithered tile
+        ComputeTilePsyVisFeatures(addlTile^, True, False, cFTQWeighting, False, False, AFTGamma, AFrame.PKeyFrame.PaletteRGB[tmiO^.PalIdx], CurPrevDCT[1]);
+        bestErr := CompareEuclideanDCT(DCT, CurPrevDCT[1]);
+
         AccumulateErr;
 
         tmiO^.TileIdx := Length(FTiles) + ATList.Count - 1;
