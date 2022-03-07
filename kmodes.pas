@@ -245,7 +245,7 @@ var
 begin
   Result := 0;
   for i := 0 to High(a) do
-    Result += abs(Int64(a[i]) - Int64(b[i]));
+    Result += sqr(Int64(a[i]) - Int64(b[i]));
 end;
 
 function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
@@ -254,7 +254,7 @@ var
 begin
   Result := 0;
   for i := 0 to count - 1 do
-    Result += abs(Int64(a[i]) - Int64(b[i]));
+    Result += sqr(Int64(a[i]) - Int64(b[i]));
 end;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
@@ -321,7 +321,7 @@ asm
   push r10
   push rdx
 
-  sub rsp, 16 * 12
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -332,14 +332,12 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
-  movdqu oword ptr [rsp + $a0], xmm10
-  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm6, oword ptr [item_rcx]
-  movdqu xmm7, oword ptr [item_rcx + $10]
-  movdqu xmm8, oword ptr [item_rcx + $20]
-  movdqu xmm9, oword ptr [item_rcx + $30]
-  movdqu xmm10, oword ptr [item_rcx + $40]
+  movdqu xmm5, oword ptr [item_rcx]
+  movdqu xmm6, oword ptr [item_rcx + $10]
+  movdqu xmm7, oword ptr [item_rcx + $20]
+  movdqu xmm8, oword ptr [item_rcx + $30]
+  movdqu xmm9, oword ptr [item_rcx + $40]
 
   lea rbx, [list_rdx + 8 * r8]
 
@@ -357,27 +355,35 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    movdqa xmm11, xmm0
-    psadbw xmm11, xmm6
+    psubb xmm0, xmm5
+    pabsb xmm0, xmm0
+    pmaddubsw xmm0, xmm0
 
-    movdqa xmm5, xmm1
-    psadbw xmm5, xmm7
-    paddw xmm11, xmm5
+    psubb xmm1, xmm6
+    pabsb xmm1, xmm1
+    pmaddubsw xmm1, xmm1
+    paddusw xmm0, xmm1
 
-    movdqa xmm5, xmm2
-    psadbw xmm5, xmm8
-    paddw xmm11, xmm5
+    psubb xmm2, xmm7
+    pabsb xmm2, xmm2
+    pmaddubsw xmm2, xmm2
+    paddusw xmm0, xmm2
 
-    movdqa xmm5, xmm3
-    psadbw xmm5, xmm9
-    paddw xmm11, xmm5
+    psubb xmm3, xmm8
+    pabsb xmm3, xmm3
+    pmaddubsw xmm3, xmm3
+    paddusw xmm0, xmm3
 
-    movdqa xmm5, xmm4
-    psadbw xmm5, xmm10
-    paddw xmm11, xmm5
+    psubb xmm4, xmm9
+    pabsb xmm4, xmm4
+    pmaddubsw xmm4, xmm4
+    paddusw xmm0, xmm4
 
-    pextrw esi, xmm11, 0
-    pextrw r10d, xmm11, 4
+    phaddsw xmm0, xmm0
+    phaddsw xmm0, xmm0
+
+    pextrw esi, xmm0, 0
+    pextrw r10d, xmm0, 1
     add rsi, r10
 
     cmp rsi, r8
@@ -402,9 +408,7 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  movdqu xmm10, oword ptr [rsp + $a0]
-  movdqu xmm11, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  add rsp, 16 * 10
 
   mov qword ptr [pbest_r9], r8
 
@@ -433,7 +437,7 @@ asm
   push r9
   push r10
 
-  sub rsp, 16 * 12
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -444,14 +448,12 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
-  movdqu oword ptr [rsp + $a0], xmm10
-  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm6, oword ptr [item_rcx]
-  movdqu xmm7, oword ptr [item_rcx + $10]
-  movdqu xmm8, oword ptr [item_rcx + $20]
-  movdqu xmm9, oword ptr [item_rcx + $30]
-  movdqu xmm10, oword ptr [item_rcx + $40]
+  movdqu xmm5, oword ptr [item_rcx]
+  movdqu xmm6, oword ptr [item_rcx + $10]
+  movdqu xmm7, oword ptr [item_rcx + $20]
+  movdqu xmm8, oword ptr [item_rcx + $30]
+  movdqu xmm9, oword ptr [item_rcx + $40]
 
   mov eax, count
   lea rbx, [list_rdx + 8 * rax]
@@ -470,27 +472,35 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    movdqa xmm11, xmm0
-    psadbw xmm11, xmm6
+    psubb xmm0, xmm5
+    pabsb xmm0, xmm0
+    pmaddubsw xmm0, xmm0
 
-    movdqa xmm5, xmm1
-    psadbw xmm5, xmm7
-    paddw xmm11, xmm5
+    psubb xmm1, xmm6
+    pabsb xmm1, xmm1
+    pmaddubsw xmm1, xmm1
+    paddusw xmm0, xmm1
 
-    movdqa xmm5, xmm2
-    psadbw xmm5, xmm8
-    paddw xmm11, xmm5
+    psubb xmm2, xmm7
+    pabsb xmm2, xmm2
+    pmaddubsw xmm2, xmm2
+    paddusw xmm0, xmm2
 
-    movdqa xmm5, xmm3
-    psadbw xmm5, xmm9
-    paddw xmm11, xmm5
+    psubb xmm3, xmm8
+    pabsb xmm3, xmm3
+    pmaddubsw xmm3, xmm3
+    paddusw xmm0, xmm3
 
-    movdqa xmm5, xmm4
-    psadbw xmm5, xmm10
-    paddw xmm11, xmm5
+    psubb xmm4, xmm9
+    pabsb xmm4, xmm4
+    pmaddubsw xmm4, xmm4
+    paddusw xmm0, xmm4
 
-    pextrw esi, xmm11, 0
-    pextrw r10d, xmm11, 4
+    phaddsw xmm0, xmm0
+    phaddsw xmm0, xmm0
+
+    pextrw esi, xmm0, 0
+    pextrw r10d, xmm0, 1
     add rsi, r10
 
     mov rax, qword ptr [mindist_r9]
@@ -521,9 +531,7 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  movdqu xmm10, oword ptr [rsp + $a0]
-  movdqu xmm11, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  add rsp, 16 * 10
 
   pop r10
   pop r9
