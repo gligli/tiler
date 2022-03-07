@@ -206,7 +206,7 @@ object MainForm: TMainForm
         Width = 71
         MaxValue = 1000
         TabOrder = 18
-        Value = 10
+        Value = 25
       end
       object cbxYilMix: TComboBox
         Left = 312
