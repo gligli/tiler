@@ -104,7 +104,7 @@ object MainForm: TMainForm
     Alignment = taRightJustify
     Anchors = [akRight, akBottom]
     AutoSize = False
-    Caption = '0.0000000'
+    Caption = '  0.000000'
   end
   object Label5: TLabel
     Left = 816
