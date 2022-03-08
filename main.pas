@@ -3385,7 +3385,7 @@ begin
       TMI^.VMirror := False;
 
       TMI^.Smoothed := False;
-      TMI^.SmoothedTileIdx := TMI^.TileIdx;
+      TMI^.SmoothedTileIdx := -1;
       TMI^.SmoothedPalIdx := -1;
       TMI^.SmoothedHMirror := False;
       TMI^.SmoothedVMirror := False;
