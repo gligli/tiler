@@ -204,9 +204,10 @@ object MainForm: TMainForm
         Height = 23
         Top = 310
         Width = 71
+        Increment = 0.1
         MaxValue = 1000
         TabOrder = 18
-        Value = 25
+        Value = 2.5
       end
       object cbxYilMix: TComboBox
         Left = 312
@@ -285,8 +286,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 313
-        Width = 246
-        Caption = 'Frame tiling additional tiles threshold (0: none)'
+        Width = 242
+        Caption = 'Smoothing additional tiles threshold (0: none)'
       end
       object Label4: TLabel
         Left = 8
