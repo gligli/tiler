@@ -4964,6 +4964,8 @@ begin
   t2 := PPTile(Item2)^;
   Result := CompareValue(t2^.UseCount, t1^.UseCount);
   if Result = 0 then
+    Result := CompareValue(t1^.DitheringPalIndex, t2^.DitheringPalIndex);
+  if Result = 0 then
     Result := CompareValue(t1^.TmpIndex, t2^.TmpIndex);
 end;
 
