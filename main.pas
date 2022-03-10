@@ -451,7 +451,7 @@ type
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
     function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-    function ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
+    function ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
 
     procedure ClearAll;
     procedure ProgressRedraw(CurFrameIdx: Integer = -1; ProgressStep: TEncoderStep = esNone);
@@ -1105,7 +1105,7 @@ begin
   Result := CompareEuclidean(ya, yb) / (Length(a) * cLumaDiv * 256.0);
 end;
 
-function TMainForm.ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
+function TMainForm.ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
 var
   sz, i: Integer;
   ya, yb: TDoubleDynArray;
@@ -1122,6 +1122,7 @@ begin
   end;
 
   Result := PearsonCorrelation(ya, yb);
+  EuclideanDist := CompareEuclidean(ya, yb) / Length(a.FSPixels);
 end;
 
 { TMainForm }
@@ -1576,7 +1577,7 @@ end;
 
 procedure TMainForm.btnDebugClick(Sender: TObject);
 begin
-  edInput.Text := 'C:\tiler_misc\factory_1080p30.y4m';
+  edInput.Text := 'C:\tiler_misc\tractor_1080p25.y4m';
   edOutput.Text := 'C:\tiler\debug.gtm';
   edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value = 12, 48, 12);
@@ -3439,21 +3440,21 @@ end;
 procedure TMainForm.FindKeyFrames;
 var
   Correlations: TFloatDynArray;
+  EuclideanDist: TFloatDynArray;
 
   procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex]);
+    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex], EuclideanDist[AIndex]);
   end;
 
 const
-  CShotTransMaxTilesPerKF = 24 * 1920 * 1080 div sqr(cTileWidth);
-  CShotTransGracePeriod = 24;
-  CShotTransSAvgFrames = 6;
-  CShotTransSoftThres = 0.96;
-  CShotTransHardThres = 0.5;
+  CShotTransMaxTilesPerKF = 96 * 1920 * 1080 div sqr(cTileWidth); // limiter for the amount of data in a keyframe
+  CShotTransEuclideanHiThres = 1.0; // frame equivalent accumulated distance
+  CShotTransCorrelLoThres = 0.75; // interframe pearson correlation low limit
+  CShotTransGracePeriod = 12; // minimum frames between keyframes
 var
   i, j, LastKFIdx: Integer;
-  r, ratio, prevRatio, softRatio: TFloat;
+  correl, euclidean: TFloat;
   kfIdx: Integer;
   isKf: Boolean;
   sfr, efr: Integer;
@@ -3461,46 +3462,42 @@ begin
   // compute interframe correlations
 
   SetLength(Correlations, Length(FFrames));
+  SetLength(EuclideanDist, Length(FFrames));
+  Correlations[0] := 0.0;
+  EuclideanDist[0] := MaxSingle;
   ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
 
   // find keyframes
 
-  kfIdx := 0;
   SetLength(FKeyFrames, Length(FFrames));
-  FKeyFrames[0] := TKeyFrame.Create(FPaletteCount, 0, 0);
-  FFrames[0].PKeyFrame := FKeyFrames[0];
-
-  prevRatio := 1.0;
-  softRatio := 1.0;
-  LastKFIdx := 0;
-  for i := 1 to High(FFrames) do
+  kfIdx := 0;
+  euclidean := 0.0;
+  LastKFIdx := Low(Integer);
+  for i := 0 to High(FFrames) do
   begin
-    r := Correlations[i];
+    correl := Correlations[i];
+    euclidean += EuclideanDist[i];
 
-    ratio := prevRatio * (1.0 - 1.0 / CShotTransSAvgFrames) + r * (1.0 / CShotTransSAvgFrames);
-    prevRatio := ratio;
+    isKf := (correl < CShotTransCorrelLoThres) or (euclidean > CShotTransEuclideanHiThres) or
+      ((i - LastKFIdx) * FTileMapSize > CShotTransMaxTilesPerKF);
 
-    softRatio -= 1.0 - ratio;
+    isKf := isKf and ((i - LastKFIdx) > CShotTransGracePeriod);
 
-    isKf := (ratio < CShotTransHardThres) or
-      (softRatio < CShotTransSoftThres) and ((i - LastKFIdx + 1) > CShotTransGracePeriod) or
-      ((i - LastKFIdx + 1) * FTileMapSize > CShotTransMaxTilesPerKF);
     if isKf then
     begin
-      Inc(kfIdx);
       FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
+      Inc(kfIdx);
 
-      WriteLn('KF: ', kfIdx, #9'Frame: -> ', i, #9'HardRatio: ', FloatToStr(ratio), #9'SoftRatio: ', FloatToStr(softRatio));
+      WriteLn('KF: ', kfIdx, #9'Frame: ', i, #9'Correlation: ', FloatToStr(correl), #9'Euclidean: ', FloatToStr(euclidean));
 
-      prevRatio := 1.0;
-      softRatio := 1.0;
+      euclidean := 0.0;
       LastKFIdx := i;
     end;
 
-    FFrames[i].PKeyFrame := FKeyFrames[kfIdx];
+    FFrames[i].PKeyFrame := FKeyFrames[kfIdx - 1];
   end;
 
-  SetLength(FKeyFrames, kfIdx + 1);
+  SetLength(FKeyFrames, kfIdx);
 
   for j := 0 to High(FKeyFrames) do
   begin
@@ -4258,7 +4255,7 @@ end;
 
 procedure TMainForm.DoFrameTiling(AFrame: TFrame; Y: Integer; AFTGamma: Integer; AFTBlend: Integer);
 var
-  i, bestIdx, bucketIdx, idx: Integer;
+  i, bestIdx, bucketIdx, idx, bucketSize: Integer;
   attrs, bestBlendCur, bestBlendPrev: Byte;
   x, oy, ox, bestX, bestY: Integer;
   bestErr: TFloat;
@@ -4335,6 +4332,7 @@ var
 
 begin
   DS := AFrame.PKeyFrame.TileDS;
+  bucketSize := max(1, (AFTBlend + 1) * 2);
 
   // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
@@ -4347,7 +4345,7 @@ begin
     for i := 0 to cTileDCTSize - 1 do
       ANNDCT[i] := DCT[i];
 
-    ann_kdtree_pri_search_multi(DS^.KDT, @idxs[0], @errs[0], max(1, (AFTBlend + 1) * 2), @ANNDCT[0], 0.0);
+    ann_kdtree_pri_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @ANNDCT[0], 0.0);
 
     bestBlendCur := cMaxFTBlend - 1;
     bestBlendPrev := 0;
@@ -4359,7 +4357,7 @@ begin
 
       bestIdx := idxs[0];
       bestErr := errs[0];
-      for bucketIdx := 0 to (AFTBlend + 1) * 2 - 1 do
+      for bucketIdx := 0 to bucketSize - 1 do
       begin
         idx := idxs[bucketIdx];
         if idx < 0 then
