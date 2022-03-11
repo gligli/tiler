@@ -115,6 +115,7 @@
             </ExecuteBefore>
             <ExecuteAfter>
               <Command Value="$(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\strip.exe $(OutputFile)"/>
+              <CompileReasons Run="False"/>
             </ExecuteAfter>
           </Other>
         </CompilerOptions>

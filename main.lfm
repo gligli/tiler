@@ -142,6 +142,7 @@ object MainForm: TMainForm
     Anchors = [akTop, akLeft, akRight, akBottom]
     TabIndex = 0
     TabOrder = 4
+    OnChange = tbFrameChange
     object tsSettings: TTabSheet
       Caption = 'Settings'
       ClientHeight = 420

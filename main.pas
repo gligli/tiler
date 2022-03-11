@@ -2774,7 +2774,7 @@ begin
       if PTile(sortList[i - 1])^.ComparePalPixelsTo(PTile(sortList[i])^) <> 0 then
         DoOneMerge;
 
-    i := sortList.Count - 1;
+    i := sortList.Count;
     DoOneMerge;
 
   finally
@@ -3608,7 +3608,8 @@ var
   prevTMItem, TMItem: TTileMapItem;
   Frame: TFrame;
   prevPal, pal: TIntegerDynArray;
-  oriCorr, chgCorr: TFloatDynArray3;
+  chgDCT: TFloatDynArray3;
+  DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   q: TFloat;
 begin
   if Length(FFrames) <= 0 then
@@ -3624,14 +3625,139 @@ begin
   PsyTile := TTile.New(True, False);
   try
     if not playing then
+      SetLength(chgDCT, FTileMapHeight, FTileMapWidth, cTileDCTSize);
+
+    // Global
+
+    pnLbl.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
+
+    // "Input" tab
+
+    if pcPages.ActivePage = tsInput then
     begin
-      SetLength(oriCorr, FTileMapHeight, FTileMapWidth, cTileDCTSize);
-      SetLength(chgCorr, FTileMapHeight, FTileMapWidth, cTileDCTSize);
+      imgSource.Picture.Bitmap.BeginUpdate;
+      try
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            tilePtr :=  Frame.Tiles[sy * FTileMapWidth + sx];
+            DrawTile(imgSource.Picture.Bitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
+          end;
+      finally
+        imgSource.Picture.Bitmap.EndUpdate;
+      end;
     end;
 
-    if not playing then
+    // "Output" tab
+
+    if (pcPages.ActivePage = tsOutput) or not playing then
     begin
-      pnLbl.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
+      imgDest.Picture.Bitmap.BeginUpdate;
+      try
+        imgDest.Picture.Bitmap.Canvas.Brush.Color := clFuchsia;
+        imgDest.Picture.Bitmap.Canvas.Brush.Style := bsDiagCross;
+        imgDest.Picture.Bitmap.Canvas.Clear;
+
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            frmIdx := Frame.Index;
+            TMItem := FFrames[frmIdx].TileMap[sy, sx];
+            if smoothed then
+            begin
+              while TMItem.Smoothed do
+              begin
+                Dec(frmIdx);
+                TMItem := FFrames[frmIdx].TileMap[sy, sx];
+              end;
+            end
+            else
+            begin
+              if TMItem.Smoothed then
+                Continue;
+            end;
+
+            prevTMItem.TileIdx := -1;
+            if (frmIdx > 0) and (TMItem.BlendCur < cMaxFTBlend - 1) and (TMItem.BlendPrev > 0) then
+            begin
+              prevFrmIdx := frmIdx - 1;
+              prevTMItem := FFrames[prevFrmIdx].TileMap[sy + TMItem.BlendY, sx + TMItem.BlendX];
+              while TMItem.Smoothed do
+              begin
+                Dec(prevFrmIdx);
+                TMItem := FFrames[prevFrmIdx].TileMap[sy + TMItem.BlendY, sx + TMItem.BlendX];
+              end;
+            end;
+
+            if InRange(TMItem.TileIdx, 0, High(FTiles)) then
+            begin
+              pal := nil;
+              if palIdx < 0 then
+              begin
+                if not InRange(TMItem.PalIdx, 0, High(Frame.PKeyFrame.PaletteRGB)) then
+                  Continue;
+                pal := Frame.PKeyFrame.PaletteRGB[TMItem.PalIdx]
+              end
+              else
+              begin
+                if palIdx <> TMItem.PalIdx then
+                  Continue;
+                pal := Frame.PKeyFrame.PaletteRGB[palIdx];
+              end;
+
+              prevTilePtr := nil;
+              tilePtr := FTiles[TMItem.TileIdx];
+              if prevTMItem.TileIdx >= 0 then
+                prevTilePtr := FTiles[prevTMItem.TileIdx];
+
+              if blended then
+              begin
+                if prevTMItem.TileIdx >= 0 then
+                begin
+                  prevPal := FFrames[prevFrmIdx].PKeyFrame.PaletteRGB[prevTMItem.PalIdx];
+                  DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, prevTilePtr, prevPal, prevTMItem.HMirror, prevTMItem.VMirror, TMItem.BlendCur, TMItem.BlendPrev);
+                end
+                else
+                begin
+                  DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, nil, nil, False, False, TMItem.BlendCur, 0);
+                end;
+              end
+              else
+              begin
+                DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, nil, nil, False, False, cMaxFTBlend - 1, 0);
+              end;
+
+              if not playing then
+                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, Ord(gamma) * 2 - 1, nil, chgDCT[sy, sx]);
+            end;
+          end;
+      finally
+        imgDest.Picture.Bitmap.EndUpdate;
+      end;
+    end;
+
+    // "Palettes / Tiles" tab
+
+    if pcPages.ActivePage = tsTilesPal then
+    begin
+      imgPalette.Picture.Bitmap.BeginUpdate;
+      try
+        for j := 0 to imgPalette.Picture.Bitmap.Height - 1 do
+        begin
+          p := imgPalette.Picture.Bitmap.ScanLine[j];
+          for i := 0 to imgPalette.Picture.Bitmap.Width - 1 do
+          begin
+            if Assigned(Frame.PKeyFrame.PaletteRGB[j]) then
+              p^ := SwapRB(Frame.PKeyFrame.PaletteRGB[j, i])
+            else
+              p^ := clFuchsia;
+
+            Inc(p);
+          end;
+        end;
+      finally
+        imgPalette.Picture.Bitmap.EndUpdate;
+      end;
 
       imgTiles.Picture.Bitmap.BeginUpdate;
       try
@@ -3657,128 +3783,16 @@ begin
       end;
     end;
 
-    imgSource.Picture.Bitmap.BeginUpdate;
-    try
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          tilePtr :=  Frame.Tiles[sy * FTileMapWidth + sx];
-          DrawTile(imgSource.Picture.Bitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
-          if not playing then
-            ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, False, Ord(gamma) * 2 - 1, nil, oriCorr[sy, sx]);
-        end;
-    finally
-      imgSource.Picture.Bitmap.EndUpdate;
-    end;
-
-    imgDest.Picture.Bitmap.BeginUpdate;
-    try
-      imgDest.Picture.Bitmap.Canvas.Brush.Color := clFuchsia;
-      imgDest.Picture.Bitmap.Canvas.Brush.Style := bsDiagCross;
-      imgDest.Picture.Bitmap.Canvas.Clear;
-
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          frmIdx := Frame.Index;
-          TMItem := FFrames[frmIdx].TileMap[sy, sx];
-          if smoothed then
-          begin
-            while TMItem.Smoothed do
-            begin
-              Dec(frmIdx);
-              TMItem := FFrames[frmIdx].TileMap[sy, sx];
-            end;
-          end
-          else
-          begin
-            if TMItem.Smoothed then
-              Continue;
-          end;
-
-          prevTMItem.TileIdx := -1;
-          if (frmIdx > 0) and (TMItem.BlendCur < cMaxFTBlend - 1) and (TMItem.BlendPrev > 0) then
-          begin
-            prevFrmIdx := frmIdx - 1;
-            prevTMItem := FFrames[prevFrmIdx].TileMap[sy + TMItem.BlendY, sx + TMItem.BlendX];
-            while TMItem.Smoothed do
-            begin
-              Dec(prevFrmIdx);
-              TMItem := FFrames[prevFrmIdx].TileMap[sy + TMItem.BlendY, sx + TMItem.BlendX];
-            end;
-          end;
-
-          if InRange(TMItem.TileIdx, 0, High(FTiles)) then
-          begin
-            pal := nil;
-            if palIdx < 0 then
-            begin
-              if not InRange(TMItem.PalIdx, 0, High(Frame.PKeyFrame.PaletteRGB)) then
-                Continue;
-              pal := Frame.PKeyFrame.PaletteRGB[TMItem.PalIdx]
-            end
-            else
-            begin
-              if palIdx <> TMItem.PalIdx then
-                Continue;
-              pal := Frame.PKeyFrame.PaletteRGB[palIdx];
-            end;
-
-            prevTilePtr := nil;
-            tilePtr := FTiles[TMItem.TileIdx];
-            if prevTMItem.TileIdx >= 0 then
-              prevTilePtr := FTiles[prevTMItem.TileIdx];
-
-            if blended then
-            begin
-              if prevTMItem.TileIdx >= 0 then
-              begin
-                prevPal := FFrames[prevFrmIdx].PKeyFrame.PaletteRGB[prevTMItem.PalIdx];
-                DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, prevTilePtr, prevPal, prevTMItem.HMirror, prevTMItem.VMirror, TMItem.BlendCur, TMItem.BlendPrev);
-              end
-              else
-              begin
-                DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, nil, nil, False, False, TMItem.BlendCur, 0);
-              end;
-            end
-            else
-            begin
-              DrawTile(imgDest.Picture.Bitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, nil, nil, False, False, cMaxFTBlend - 1, 0);
-            end;
-
-            if not playing then
-              ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, Ord(gamma) * 2 - 1, nil, chgCorr[sy, sx]);
-          end;
-        end;
-    finally
-      imgDest.Picture.Bitmap.EndUpdate;
-    end;
-
-    imgPalette.Picture.Bitmap.BeginUpdate;
-    try
-      for j := 0 to imgPalette.Picture.Bitmap.Height - 1 do
-      begin
-        p := imgPalette.Picture.Bitmap.ScanLine[j];
-        for i := 0 to imgPalette.Picture.Bitmap.Width - 1 do
-        begin
-          if Assigned(Frame.PKeyFrame.PaletteRGB[j]) then
-            p^ := SwapRB(Frame.PKeyFrame.PaletteRGB[j, i])
-          else
-            p^ := clFuchsia;
-
-          Inc(p);
-        end;
-      end;
-    finally
-      imgPalette.Picture.Bitmap.EndUpdate;
-    end;
-
     if not playing then
     begin
       q := 0.0;
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
-          q += CompareEuclideanDCT(oriCorr[sy, sx], chgCorr[sy, sx]);
+        begin
+          tilePtr :=  Frame.Tiles[sy * FTileMapWidth + sx];
+          ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, False, Ord(gamma) * 2 - 1, nil, DCT);
+          q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
+        end;
       q /= FTileMapSize;
 
       lblCorrel.Caption := FormatFloat('##0.000000', q);
