@@ -330,6 +330,7 @@ function decodeFrame() {
 				gtmHeight = readWord();
 				gtmFrameLength = Math.round(readDWord() / (1000 * 1000));
 				gtmTileCount = readDWord();
+				console.log('TileCount:', gtmTileCount);
 				
 				if (gtmLoopCount <= 0) {
 					setInterval(decodeFrame, gtmFrameLength);
