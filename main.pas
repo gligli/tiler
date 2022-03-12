@@ -1582,7 +1582,7 @@ end;
 
 procedure TMainForm.btnDebugClick(Sender: TObject);
 begin
-  edInput.Text := 'C:\tiler_misc\tractor_1080p25.y4m';
+  edInput.Text := 'C:\tiler_misc\factory_1080p30.y4m';
   edOutput.Text := 'C:\tiler\debug.gtm';
   edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value = 12, 48, 12);
@@ -4468,8 +4468,8 @@ var
 begin
   for sx := 0 to FTileMapWidth - 1 do
   begin
-    TMI := @AFrame.TileMap[Y, sx];
-    ComputeTilePsyVisFeatures(FTiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], DCT);
+    PrevTMI := @APrevFrame.TileMap[Y, sx];
+    ComputeTilePsyVisFeatures(FTiles[PrevTMI^.SmoothedTileIdx]^, True, False, True, PrevTMI^.SmoothedHMirror, PrevTMI^.SmoothedVMirror, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx], PrevDCT);
 
     // prevent smoothing from crossing keyframes (to ensure proper seek)
 
@@ -4477,8 +4477,8 @@ begin
     begin
       // compare DCT of current tile with tile from prev frame tilemap
 
-      PrevTMI := @APrevFrame.TileMap[Y, sx];
-      ComputeTilePsyVisFeatures(FTiles[PrevTMI^.SmoothedTileIdx]^, True, False, True, PrevTMI^.SmoothedHMirror, PrevTMI^.SmoothedVMirror, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx], PrevDCT);
+      TMI := @AFrame.TileMap[Y, sx];
+      ComputeTilePsyVisFeatures(FTiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], DCT);
 
       cmp := CompareEuclideanDCT(DCT, PrevDCT);
       cmp := sqrt(cmp * cSqrtFactor);
@@ -4522,10 +4522,10 @@ begin
       ATList := FAdditionalTiles.LockList;
       try
         addlTile := TTile.New(True, True);
+        addlTile^.CopyFrom(APrevFrame.Tiles[Y * FTileMapWidth + sx]^);
         addlTile^.UseCount := 1;
         addlTile^.Active := True;
         addlTile^.Additional := True;
-        addlTile^.CopyFrom(APrevFrame.Tiles[Y * FTileMapWidth + sx]^);
         ATList.Add(addlTile);
 
         // redither tile (frame tiles don't have the paletted version)
