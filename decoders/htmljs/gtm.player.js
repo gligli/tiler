@@ -82,10 +82,28 @@ var gtmTMDblBuff = 0;
 var gtmKFCurDblBuff = 0;
 var gtmKFPrevDblBuff = 0;
 var gtmLoopCount = 0;
+var gtmFrameInterval = null;
+
+function gtmResetDecoding() {
+	if (gtmFrameInterval != null) {
+		clearInterval(gtmFrameInterval);
+	}
+	
+	gtmReady = false;
+	gtmDataPos = 0;
+	gtmLoopCount = 0;
+
+	gtmCanvasId = '';
+	gtmInStream = null;
+	gtmOutStream = null;
+	gtmHeader = null;
+	gtmLzmaDecoder = new LZMA.Decoder();
+}
 
 function gtmPlayFromFile(file, canvasId) {
+	gtmResetDecoding();
+
 	gtmCanvasId = canvasId;
-	gtmReady = false;
 	
 	var oReader = new FileReader();
 	
@@ -98,8 +116,9 @@ function gtmPlayFromFile(file, canvasId) {
 }
 
 function gtmPlayFromURL(url, canvasId) {
+	gtmResetDecoding();
+
 	gtmCanvasId = canvasId;
-	gtmReady = false;
 	
 	var oReq = new XMLHttpRequest();
 	oReq.open("GET", url, true);
@@ -157,7 +176,7 @@ function parseHeader() {
 		gtmWidth = (gtmHeader[GTMHeader.FramePixelWidth] / CTileWidth) >>> 0;
 		gtmHeight = (gtmHeader[GTMHeader.FramePixelHeight] / CTileWidth) >>> 0;
 		gtmLzmaBytesPerSecond = gtmHeader[GTMHeader.KFMaxBytesPerSec];
-		console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',', gtmLzmaBytesPerSecond * 8 / 1024, 'MBps');
+		console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',', Math.round(gtmLzmaBytesPerSecond * 8 / 1024), 'KBps');
 		
 		redimFrame();
 	} else {
@@ -318,9 +337,9 @@ function decodeFrame() {
 	gtmReady |= gtmDataPos < gtmFrameData.length;
 	
 	if (gtmReady && gtmPlaying) {
-	renderEnd();
-	
-	let doContinue = true;
+		renderEnd();
+		
+		let doContinue = true;
 		do {
 			let cmd = readCommand();
 			
@@ -333,7 +352,7 @@ function decodeFrame() {
 				console.log('TileCount:', gtmTileCount);
 				
 				if (gtmLoopCount <= 0) {
-					setInterval(decodeFrame, gtmFrameLength);
+					gtmFrameInterval = setInterval(decodeFrame, gtmFrameLength);
 					gtmTiles = new Array(gtmTileCount);
 					redimFrame();
 				}
