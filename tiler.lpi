@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CONFIG>
   <ProjectOptions>
-    <Version Value="11"/>
+    <Version Value="12"/>
     <PathDelim Value="\"/>
     <General>
+      <Flags>
+        <CompatibilityMode Value="True"/>
+      </Flags>
       <SessionStorage Value="InProjectDir"/>
-      <MainUnit Value="0"/>
       <Title Value="tiler"/>
       <ResourceType Value="res"/>
       <UseXPManifest Value="True"/>
@@ -101,6 +103,9 @@
             <CustomOptions Value="-Xs-
 -FWlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo
 -OWALL"/>
+            <ExecuteAfter>
+              <Command Value="$(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\strip.exe $(OutputFile)"/>
+            </ExecuteAfter>
           </Other>
         </CompilerOptions>
       </Item3>

@@ -17,7 +17,7 @@ object MainForm: TMainForm
   OnDestroy = FormDestroy
   OnKeyDown = FormKeyDown
   Position = poScreenCenter
-  LCLVersion = '2.0.6.0'
+  LCLVersion = '2.2.0.4'
   object pbProgress: TProgressBar
     Left = 8
     Height = 16
@@ -84,7 +84,6 @@ object MainForm: TMainForm
     Width = 256
     Anchors = [akLeft, akBottom]
     AutoSize = False
-    ParentColor = False
   end
   object chkDithered: TCheckBox
     Left = 320
@@ -104,7 +103,6 @@ object MainForm: TMainForm
     Top = 170
     Width = 126
     Caption = 'Tile limit (all; per frame)'
-    ParentColor = False
   end
   object seFrameCount: TSpinEdit
     Left = 208
@@ -121,7 +119,6 @@ object MainForm: TMainForm
     Top = 94
     Width = 144
     Caption = 'Frame count (0: automatic)'
-    ParentColor = False
   end
   object edInput: TEdit
     Left = 88
@@ -138,7 +135,6 @@ object MainForm: TMainForm
     Top = 10
     Width = 28
     Caption = 'Input'
-    ParentColor = False
   end
   object btnRunAll: TButton
     Left = 8
@@ -165,7 +161,6 @@ object MainForm: TMainForm
     Top = 373
     Width = 77
     Caption = 'Show tile page'
-    ParentColor = False
   end
   object Label7: TLabel
     Left = 8
@@ -173,14 +168,12 @@ object MainForm: TMainForm
     Top = 198
     Width = 100
     Caption = 'Max tiles per frame'
-    ParentColor = False
   end
   object seMaxTPF: TSpinEdit
     Left = 208
     Height = 23
     Top = 196
     Width = 56
-    MaxValue = 0
     TabOrder = 9
     Value = 260
   end
@@ -200,7 +193,6 @@ object MainForm: TMainForm
     Top = 66
     Width = 69
     Caption = 'WAV (mono)'
-    ParentColor = False
   end
   object edWAV: TEdit
     Left = 88
@@ -216,7 +208,6 @@ object MainForm: TMainForm
     Top = 38
     Width = 55
     Caption = 'Output dir'
-    ParentColor = False
   end
   object edOutputDir: TEdit
     Left = 88
@@ -232,7 +223,6 @@ object MainForm: TMainForm
     Top = 250
     Width = 159
     Caption = 'Temporal smoothing strength'
-    ParentColor = False
   end
   object seTempoSmoo: TSpinEdit
     Left = 208
@@ -241,7 +231,6 @@ object MainForm: TMainForm
     Width = 56
     MinValue = -1
     TabOrder = 11
-    Value = 2
   end
   object imgPalette: TImage
     Left = 8
@@ -282,7 +271,6 @@ object MainForm: TMainForm
     Alignment = taRightJustify
     AutoSize = False
     Caption = '0%'
-    ParentColor = False
   end
   object chkSprite: TCheckBox
     Left = 536
@@ -312,7 +300,6 @@ object MainForm: TMainForm
     Height = 23
     Top = 168
     Width = 56
-    MaxValue = 0
     OnEditingDone = seMaxTilesEditingDone
     TabOrder = 7
   end
@@ -338,7 +325,6 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = '0.0000'
-    ParentColor = False
   end
   object Label5: TLabel
     Left = 696
@@ -347,7 +333,6 @@ object MainForm: TMainForm
     Width = 35
     Anchors = [akLeft, akBottom]
     Caption = 'Correl:'
-    ParentColor = False
   end
   object cbxYilMix: TComboBox
     Left = 208
@@ -373,7 +358,6 @@ object MainForm: TMainForm
     Top = 121
     Width = 157
     Caption = 'Yiluoma 2 mixed colors count'
-    ParentColor = False
   end
   object chkUseTK: TCheckBox
     Left = 8
@@ -408,12 +392,12 @@ object MainForm: TMainForm
     Enabled = False
     Interval = 80
     OnTimer = IdleTimerTimer
-    left = 744
-    top = 736
+    Left = 744
+    Top = 736
   end
   object pmProcesses: TPopupMenu
-    left = 744
-    top = 688
+    Left = 744
+    Top = 688
     object miLoad: TMenuItem
       Caption = 'Load'
       ShortCut = 112
@@ -451,7 +435,7 @@ object MainForm: TMainForm
     end
   end
   object odInput: TOpenDialog
-    left = 744
-    top = 640
+    Left = 744
+    Top = 640
   end
 end

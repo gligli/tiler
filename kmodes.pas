@@ -301,7 +301,7 @@ asm
   movdqu xmm9, oword ptr [item_rcx + $30]
   movdqu xmm10, oword ptr [item_rcx + $40]
 
-  lea rbx, [list_rdx + 8 * count_r8]
+  lea rbx, [list_rdx + 8 * r8]
 
   lea rax, [list_rdx - 8]
 
