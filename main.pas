@@ -341,6 +341,7 @@ type
     Label15: TLabel;
     Label16: TLabel;
     Label17: TLabel;
+    Label18: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
@@ -358,6 +359,7 @@ type
     sbTiles: TScrollBox;
     sdGTM: TSaveDialog;
     sdGTS: TSaveDialog;
+    seFTBlendThres: TFloatSpinEdit;
     seQbTiles: TFloatSpinEdit;
     seFTBlend: TSpinEdit;
     seVisGamma: TFloatSpinEdit;
@@ -515,7 +517,7 @@ type
     procedure FinishGlobalFT;
     procedure PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AFTQuality: TFTQuality);
     procedure FinishFrameTiling(AKF: TKeyFrame);
-    procedure DoFrameTiling(AFrame: TFrame; Y: Integer; AFTGamma: Integer; AFTBlend: Integer);
+    procedure DoFrameTiling(AFrame: TFrame; Y: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -1009,6 +1011,7 @@ begin
   OriginalReloadedIndex := ATile.OriginalReloadedIndex;
   DitheringPalIndex := ATile.DitheringPalIndex;
   KFSoleIndex := ATile.KFSoleIndex;
+  Additional := ATile.Additional;
 
   if HasPalPixels and ATile.HasPalPixels then
     CopyPalPixels(ATile.GetPalPixelsPtr^);
@@ -1249,6 +1252,7 @@ var
   Gamma: Integer;
   FTQuality: TFTQuality;
   FTBlend: Integer;
+  FTBlendThres: TFloat;
 
   procedure DoBoth(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 
@@ -1293,7 +1297,7 @@ var
 
       WaitForSingleObject(Frame.PKeyFrame.FTPreparedEvent, INFINITE); // wait for KF prepared
 
-      DoFrameTiling(Frame, y, Gamma, FTBlend);
+      DoFrameTiling(Frame, y, Gamma, FTBlend, FTBlendThres);
 
       SpinEnter(@FLock);
       Frame.FTYDone[y] := True;
@@ -1325,6 +1329,7 @@ begin
   Gamma := IfThen(chkFTGamma.Checked, 0, -1);
   FTQuality := TFTQuality(cbxFTQ.ItemIndex);
   FTBlend := seFTBlend.Value;
+  FTBlendThres := seFTBlendThres.Value;
 
   for i := 0 to High(FKeyFrames) do
     FKeyFrames[i].FramesLeft := -1;
@@ -4103,7 +4108,7 @@ var
     begin
       FTiles[Item^.TileIdx]^.ExtractPalPixels(Line);
 
-      ann_kdtree_pri_search_multi(FGlobalDS.KDT, @idxs[0], @errs[0], cGlobalFTBucketSize, @Line[0], 0.0);
+      ann_kdtree_search_multi(FGlobalDS.KDT, @idxs[0], @errs[0], cGlobalFTBucketSize, @Line[0], 0.0);
 
       for i := 0 to cGlobalFTBucketSize - 1 do
       begin
@@ -4267,7 +4272,7 @@ begin
   end;
 end;
 
-procedure TMainForm.DoFrameTiling(AFrame: TFrame; Y: Integer; AFTGamma: Integer; AFTBlend: Integer);
+procedure TMainForm.DoFrameTiling(AFrame: TFrame; Y: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
 var
   i, bestIdx, bucketIdx, idx, bucketSize: Integer;
   attrs, bestBlendCur, bestBlendPrev: Byte;
@@ -4346,7 +4351,6 @@ var
 
 begin
   DS := AFrame.PKeyFrame.TileDS;
-  bucketSize := max(1, (AFTBlend + 1) * 2);
 
   // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
@@ -4359,15 +4363,18 @@ begin
     for i := 0 to cTileDCTSize - 1 do
       ANNDCT[i] := DCT[i];
 
-    ann_kdtree_pri_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @ANNDCT[0], 0.0);
+    ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], 1, @ANNDCT[0], 0.0);
 
     bestBlendCur := cMaxFTBlend - 1;
     bestBlendPrev := 0;
     bestX := x;
     bestY := Y;
-    if (AFTBlend >= 0) and not IsZero(errs[0]) then
+    if (AFTBlend >= 0) and not IsZero(errs[0], AFTBlendThres) then
     begin
       // try to blend a local tile of the previous frame to improve likeliness
+
+      bucketSize := max(1, (AFTBlend + 1) * 2);
+      ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @ANNDCT[0], 0.0);
 
       bestIdx := idxs[0];
       bestErr := errs[0];
