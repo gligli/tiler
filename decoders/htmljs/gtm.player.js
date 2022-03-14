@@ -53,95 +53,114 @@ const CTileWidth = 8;
 const CTMAttrBits = 1 + 1 + 8; // HMir + VMir + PalIdx
 const CShortIdxBits = 16 - CTMAttrBits;
 
-var gtmCanvasId = '';
-var gtmInStream = null;
-var gtmOutStream = null;
-var gtmHeader = null;
-var gtmLzmaDecoder = new LZMA.Decoder();
-var gtmLzmaBytesPerSecond = 1024 * 1024;
-var gtmFrameData = null;
-var gtmTMImageData = null;
-var gtmPaletteR = new Array(512);
-var gtmPaletteG = new Array(512);
-var gtmPaletteB = new Array(512);
-var gtmPaletteA = new Array(512);
-var gtmTMIndexes = new Array(2);
-var gtmTMAttrs = new Array(2);
+let gtmCanvasId = '';
+let gtmInStream = null;
+let gtmOutStream = null;
+let gtmHeader = null;
+let gtmLzmaDecoder = new LZMA.Decoder();
+let gtmLzmaBytesPerSecond = 1024 * 1024;
+let gtmTiles = null;
+let gtmFrameData = null;
+let gtmTMImageData = null;
+let gtmPaletteR = new Array(512);
+let gtmPaletteG = new Array(512);
+let gtmPaletteB = new Array(512);
+let gtmPaletteA = new Array(512);
+let gtmTMIndexes = new Array(2);
+let gtmTMAttrs = new Array(2);
+let gtmFrameInterval = null;
 
-var gtmReady = false;
-var gtmPlaying = true;
-var gtmInRender = false;
-var gtmDataPos = 0;
-var gtmWidth = 0;
-var gtmHeight = 0;
-var gtmFrameLength = 0;
-var gtmTiles = null;
-var gtmTileCount = 0;
-var gtmPalSize = 0;
-var gtmTMPos = 0;
-var gtmTMDblBuff = 0;
-var gtmKFCurDblBuff = 0;
-var gtmKFPrevDblBuff = 0;
-var gtmLoopCount = 0;
-var gtmFrameInterval = null;
+let gtmAwaitingCanvasId = ''
+let gtmAwaitingFile = null
+let gtmAwaitingURL = null
 
-function sleep(ms) {
-	return new Promise(resolve => setTimeout(resolve, ms));
+let gtmReady = false;
+let gtmPlaying = true;
+let gtmDataPos = 0;
+let gtmWidth = 0;
+let gtmHeight = 0;
+let gtmFrameLength = 0;
+let gtmTileCount = 0;
+let gtmPalSize = 0;
+let gtmTMPos = 0;
+let gtmTMDblBuff = 0;
+let gtmKFCurDblBuff = 0;
+let gtmKFPrevDblBuff = 0;
+let gtmLoopCount = 0;
+
+function gtmPlayFromFile(file, canvasId) {
+	if (gtmReady) {
+		gtmAwaitingCanvasId = canvasId
+		gtmAwaitingFile = file
+		gtmAwaitingURL = null
+	} else {
+		resetDecoding();
+
+		gtmCanvasId = canvasId;
+		
+		var oReader = new FileReader();
+		
+		oReader.onload = function (oEvent) {
+			gtmInStream = new LZMA.iStream(oReader.result);
+			startFromReader();
+		};
+		
+		oReader.readAsArrayBuffer(file);
+	}
 }
 
-function gtmResetDecoding() {
+function gtmPlayFromURL(url, canvasId) {
+	if (gtmReady) {
+		gtmAwaitingCanvasId = canvasId
+		gtmAwaitingFile = null
+		gtmAwaitingURL = url
+	} else {
+		resetDecoding();
+
+		gtmCanvasId = canvasId;
+		
+		var oReq = new XMLHttpRequest();
+		oReq.open("GET", url, true);
+		oReq.responseType = "arraybuffer";
+		
+		oReq.onload = function (oEvent) {
+			gtmInStream = new LZMA.iStream(oReq.response);
+			startFromReader();
+		};
+		
+		oReq.send(null);
+	}
+}
+
+function gtmSetPlaying(playing) {
+	gtmPlaying = playing;
+}
+
+function resetDecoding() {
 	if (gtmFrameInterval != null) {
 		clearInterval(gtmFrameInterval);
-		while(gtmInRender) {
-			sleep(10);
-		}
+		gtmFrameInterval = null;
 	}
 	
-	gtmReady = false;
-	gtmDataPos = 0;
-	gtmLoopCount = 0;
-
 	gtmCanvasId = '';
 	gtmInStream = null;
 	gtmOutStream = null;
 	gtmHeader = null;
 	gtmLzmaDecoder = new LZMA.Decoder();
-}
+	gtmLzmaBytesPerSecond = 1024 * 1024;
+	gtmTiles = null;
+	gtmFrameData = null;
 
-function gtmPlayFromFile(file, canvasId) {
-	gtmResetDecoding();
-
-	gtmCanvasId = canvasId;
-	
-	var oReader = new FileReader();
-	
-	oReader.onload = function (oEvent) {
-		gtmInStream = new LZMA.iStream(oReader.result);
-		startFromReader();
-	};
-	
-	oReader.readAsArrayBuffer(file);
-}
-
-function gtmPlayFromURL(url, canvasId) {
-	gtmResetDecoding();
-
-	gtmCanvasId = canvasId;
-	
-	var oReq = new XMLHttpRequest();
-	oReq.open("GET", url, true);
-	oReq.responseType = "arraybuffer";
-	
-	oReq.onload = function (oEvent) {
-		gtmInStream = new LZMA.iStream(oReq.response);
-		startFromReader();
-	};
-	
-	oReq.send(null);
-}
-
-function gtmSetPlaying(playing) {
-	gtmPlaying = playing;
+	gtmReady = false;
+	gtmDataPos = 0;
+	gtmFrameLength = 0;
+	gtmTileCount = 0;
+	gtmPalSize = 0;
+	gtmTMPos = 0;
+	gtmTMDblBuff = 0;
+	gtmKFCurDblBuff = 0;
+	gtmKFPrevDblBuff = 0;
+	gtmLoopCount = 0;
 }
 
 function startFromReader() {
@@ -342,131 +361,140 @@ function readCommand() {
 }
 
 function decodeFrame() {
-	gtmInRender = true;
-
-	try {
-		gtmReady |= gtmDataPos < gtmFrameData.length;
+	gtmReady |= gtmDataPos < gtmFrameData.length;
+	
+	if (gtmReady && gtmPlaying) {
+		renderEnd();
 		
-		if (gtmReady && gtmPlaying) {
-			renderEnd();
+		let doContinue = true;
+		do {
+			let cmd = readCommand();
 			
-			let doContinue = true;
-			do {
-				let cmd = readCommand();
+			switch (cmd[0]) {
+			case GTMCommand.SetDimensions:
+				gtmWidth = readWord();
+				gtmHeight = readWord();
+				gtmFrameLength = Math.round(readDWord() / (1000 * 1000));
+				gtmTileCount = readDWord();
+				console.log('TileCount:', gtmTileCount);
 				
-				switch (cmd[0]) {
-				case GTMCommand.SetDimensions:
-					gtmWidth = readWord();
-					gtmHeight = readWord();
-					gtmFrameLength = Math.round(readDWord() / (1000 * 1000));
-					gtmTileCount = readDWord();
-					console.log('TileCount:', gtmTileCount);
+				if (gtmLoopCount <= 0) {
+					gtmFrameInterval = setInterval(decodeFrame, gtmFrameLength);
+					gtmTiles = new Array(gtmTileCount);
+					redimFrame();
+				}
+				break;
+				
+			case GTMCommand.TileSet:
+				let tstart = readDWord();
+				let tend = readDWord();
+				gtmPalSize = cmd[1];
+				
+				for (let p = tstart; p <= tend; p++) {
+					gtmTiles[p] = new Uint8Array(CTileWidth * CTileWidth * 4);
+					let tile = gtmTiles[p];
+					let offh = CTileWidth * CTileWidth * 1;
+					let offv = CTileWidth * CTileWidth * 2;
+					let offhv = CTileWidth * CTileWidth * 3;
 					
-					if (gtmLoopCount <= 0) {
-						gtmFrameInterval = setInterval(decodeFrame, gtmFrameLength);
-						gtmTiles = new Array(gtmTileCount);
-						redimFrame();
-					}
-					break;
-					
-				case GTMCommand.TileSet:
-					let tstart = readDWord();
-					let tend = readDWord();
-					gtmPalSize = cmd[1];
-					
-					for (let p = tstart; p <= tend; p++) {
-						gtmTiles[p] = new Uint8Array(CTileWidth * CTileWidth * 4);
-						let tile = gtmTiles[p];
-						let offh = CTileWidth * CTileWidth * 1;
-						let offv = CTileWidth * CTileWidth * 2;
-						let offhv = CTileWidth * CTileWidth * 3;
-						
-						for (let ty = 0; ty < CTileWidth; ty++) {
-							for (let tx = 0; tx < CTileWidth; tx++) {
-								let b = readByte();
-								tile[ty * CTileWidth + tx] = b;
-								tile[offh + ty * CTileWidth + (CTileWidth - 1 - tx)] = b;
-								tile[offv + (CTileWidth - 1 - ty) * CTileWidth + tx] = b;
-								tile[offhv + (CTileWidth - 1 - ty) * CTileWidth + (CTileWidth - 1 - tx)] = b;
-							}
+					for (let ty = 0; ty < CTileWidth; ty++) {
+						for (let tx = 0; tx < CTileWidth; tx++) {
+							let b = readByte();
+							tile[ty * CTileWidth + tx] = b;
+							tile[offh + ty * CTileWidth + (CTileWidth - 1 - tx)] = b;
+							tile[offv + (CTileWidth - 1 - ty) * CTileWidth + tx] = b;
+							tile[offhv + (CTileWidth - 1 - ty) * CTileWidth + (CTileWidth - 1 - tx)] = b;
 						}
 					}
-					break;
-					
-				case GTMCommand.FrameEnd:
-					if (gtmTMPos != gtmWidth * gtmHeight) {
-						console.error('Incomplete tilemap ' + gtmTMPos + ' <> ' + gtmWidth * gtmHeight + '\n');
-					}
-					gtmTMPos = 0;
-
-					gtmTMDblBuff = 1 - gtmTMDblBuff;
-					gtmKFPrevDblBuff = gtmKFCurDblBuff;
-					if (cmd[1] & 1) // keyframe?
-					{
-						gtmKFCurDblBuff = 1 - gtmKFCurDblBuff;
-					}
-					doContinue = false;
-					break;
-					
-				case GTMCommand.SkipBlock:
-					skipBlock(cmd[1] + 1);
-					break;
-					
-				case GTMCommand.ShortTileIdx:
-					drawTilemapItem(readWord(), cmd[1]);
-					break;
-					
-				case GTMCommand.LongTileIdx:
-					drawTilemapItem(readDWord(), cmd[1]);
-					break;
-					
-				case GTMCommand.LoadPalette:
-					let palIdx = readByte() + 256 * gtmKFCurDblBuff;
-					readByte(); // palette format
-					
-					gtmPaletteR[palIdx] = new Uint8Array(gtmPalSize);
-					gtmPaletteG[palIdx] = new Uint8Array(gtmPalSize);
-					gtmPaletteB[palIdx] = new Uint8Array(gtmPalSize);
-					gtmPaletteA[palIdx] = new Uint8Array(gtmPalSize);
-					
-					for (let i = 0; i < gtmPalSize; i++) {
-						gtmPaletteR[palIdx][i] = readByte();
-						gtmPaletteG[palIdx][i] = readByte();
-						gtmPaletteB[palIdx][i] = readByte();
-						gtmPaletteA[palIdx][i] = readByte();
-					}
-					break;
-					
-				case GTMCommand.ShortBlendTileIdx:
-					let idxW = readWord()
-					let blendW = readWord()
-					drawBlendedTilemapItem(idxW, cmd[1], blendW);
-					break;
-					
-				case GTMCommand.LongBlendTileIdx:
-					let idxDW = readDWord()
-					let blendDW = readWord()
-					drawBlendedTilemapItem(idxDW, cmd[1], blendDW);
-					break;
-					
-				default:
-					console.error('Undecoded command @' + gtmDataPos + ': ' + cmd + '\n');
-					break;
 				}
+				break;
 				
-				gtmReady = (gtmDataPos < gtmFrameData.length);
-			} while (doContinue && gtmReady);
-			
-			if (!doContinue && !gtmReady && gtmInStream.offset >= gtmInStream.size) {
-				gtmDataPos = 0;
-				gtmLoopCount++;
-				gtmReady = true;
-			}
-		}
-		
-		unpackData();
+			case GTMCommand.FrameEnd:
+				if (gtmTMPos != gtmWidth * gtmHeight) {
+					console.error('Incomplete tilemap ' + gtmTMPos + ' <> ' + gtmWidth * gtmHeight + '\n');
+				}
+				gtmTMPos = 0;
 
-	} finally {
-		gtmInRender = false;
+				gtmTMDblBuff = 1 - gtmTMDblBuff;
+				gtmKFPrevDblBuff = gtmKFCurDblBuff;
+				if (cmd[1] & 1) // keyframe?
+				{
+					gtmKFCurDblBuff = 1 - gtmKFCurDblBuff;
+				}
+				doContinue = false;
+				break;
+				
+			case GTMCommand.SkipBlock:
+				skipBlock(cmd[1] + 1);
+				break;
+				
+			case GTMCommand.ShortTileIdx:
+				drawTilemapItem(readWord(), cmd[1]);
+				break;
+				
+			case GTMCommand.LongTileIdx:
+				drawTilemapItem(readDWord(), cmd[1]);
+				break;
+				
+			case GTMCommand.LoadPalette:
+				let palIdx = readByte() + 256 * gtmKFCurDblBuff;
+				readByte(); // palette format
+				
+				gtmPaletteR[palIdx] = new Uint8Array(gtmPalSize);
+				gtmPaletteG[palIdx] = new Uint8Array(gtmPalSize);
+				gtmPaletteB[palIdx] = new Uint8Array(gtmPalSize);
+				gtmPaletteA[palIdx] = new Uint8Array(gtmPalSize);
+				
+				for (let i = 0; i < gtmPalSize; i++) {
+					gtmPaletteR[palIdx][i] = readByte();
+					gtmPaletteG[palIdx][i] = readByte();
+					gtmPaletteB[palIdx][i] = readByte();
+					gtmPaletteA[palIdx][i] = readByte();
+				}
+				break;
+				
+			case GTMCommand.ShortBlendTileIdx:
+				let idxW = readWord()
+				let blendW = readWord()
+				drawBlendedTilemapItem(idxW, cmd[1], blendW);
+				break;
+				
+			case GTMCommand.LongBlendTileIdx:
+				let idxDW = readDWord()
+				let blendDW = readWord()
+				drawBlendedTilemapItem(idxDW, cmd[1], blendDW);
+				break;
+				
+			default:
+				console.error('Undecoded command @' + gtmDataPos + ': ' + cmd + '\n');
+				break;
+			}
+			
+			gtmReady = (gtmDataPos < gtmFrameData.length);
+		} while (doContinue && gtmReady);
+		
+		if (!doContinue && !gtmReady && gtmInStream.offset >= gtmInStream.size) {
+			gtmDataPos = 0;
+			gtmLoopCount++;
+			gtmReady = true;
+		}
+	}
+	
+	unpackData();
+	
+	if(gtmAwaitingFile != null || gtmAwaitingURL != null) {
+		console.log('Processing awaiting video...');
+
+		gtmReady = false;
+		if (gtmAwaitingFile != null)
+		{
+			gtmPlayFromFile(gtmAwaitingFile, gtmAwaitingCanvasId)
+		} else if (gtmAwaitingURL != null) {
+			gtmPlayFromURL(gtmAwaitingURL, gtmAwaitingCanvasId)
+		}
+
+		gtmAwaitingCanvasId = ''
+		gtmAwaitingFile = null
+		gtmAwaitingURL = null
 	}
 }
