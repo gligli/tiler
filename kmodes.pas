@@ -875,16 +875,20 @@ end;
 
 function TKModes.ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer;
   out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
+const
+  CMaxWorseGraces = 3;
 var
   init: TByteDynArray2;
   all: array of TKmodesRun;
 var
-  i, j, init_no, iattr, ipoint, ik, summemb, itr, moves, totalmoves: Integer;
+  i, j, init_no, iattr, ipoint, ik, summemb, itr, bestitr, moves, totalmoves, worsecounter: Integer;
   best, dis: UInt64;
   converged: Boolean;
-  cost, ncost: UInt64;
+  prevcost, cost, bestcost: UInt64;
   InvGoldenRatio, GRAcc: Single;
   Seed: Cardinal;
+  bestmembship: TIntegerDynArray;
+  bestcentroids: TByteDynArray2;
 begin
   Seed := $42381337;
 
@@ -974,34 +978,55 @@ begin
       end;
     end;
 
+    WriteLn(LogLabel, 'Init done');
+
     itr := 0;
     converged := False;
-    cost := High(UInt64);
+    prevcost := High(UInt64);
+    worsecounter := 0;
     totalmoves := 0;
-
-    WriteLn(LogLabel, 'Init done');
+    bestitr := 0;
+    bestcost := High(UInt64);
+    bestmembship := nil;
+    bestcentroids := nil;
 
     while (itr < MaxIter) and not converged do
     begin
       Inc(itr);
 
-      moves := KModesIter(Seed, ncost);
+      moves := KModesIter(Seed, cost);
 
-      converged := (ncost >= cost) or (moves = 0);
-      cost := ncost;
+      converged := cost >= prevcost;
+      if converged and SameValue(cost, prevcost, prevcost div 1000) then
+      begin
+        Inc(worsecounter);
+        if worsecounter < CMaxWorseGraces then
+          converged := False;
+      end;
+      converged := converged  or (moves = 0);
+
+      if cost < bestcost then
+      begin
+        bestitr := itr;
+        bestcost := cost;
+        bestmembship := Copy(membship);
+        bestcentroids := Copy(centroids);
+      end;
+
+      prevcost := cost;
 
       totalmoves += moves;
 
       if Log then
-        WriteLn(LogLabel, 'Itr: ', itr, #9'Moves: ', moves, #9'Cost: ', cost);
+        WriteLn(LogLabel, 'Itr: ', itr:3, #9'Moves: ', moves: 6, #9'Cost: ', cost:10);
     end;
 
-    WriteLn(LogLabel, 'Finished at Iteration: ', itr);
+    WriteLn(LogLabel, 'Itr: ', itr:3, ' Finished!',#9'BestItr: ', bestitr:3, #9'BestCost: ', bestcost:10);
 
-    all[init_no].Labels := Copy(membship);
-    all[init_no].Centroids := Copy(centroids);
-    all[init_no].Cost := cost;
-    all[init_no].NIter := itr;
+    all[init_no].Labels := bestmembship;
+    all[init_no].Centroids := bestcentroids;
+    all[init_no].Cost := bestcost;
+    all[init_no].NIter := bestitr;
     all[init_no].TotalMoves := totalmoves;
   end;
 
