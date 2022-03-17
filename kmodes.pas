@@ -245,7 +245,7 @@ var
 begin
   Result := 0;
   for i := 0 to High(a) do
-    Result += sqr(Int64(a[i]) - Int64(b[i]));
+    Result += Abs(Int64(a[i]) - Int64(b[i]));
 end;
 
 function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
@@ -254,7 +254,7 @@ var
 begin
   Result := 0;
   for i := 0 to count - 1 do
-    Result += sqr(Int64(a[i]) - Int64(b[i]));
+    Result += Abs(Int64(a[i]) - Int64(b[i]));
 end;
 
 {$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
@@ -355,35 +355,22 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    psubb xmm0, xmm5
-    pabsb xmm0, xmm0
-    pmaddubsw xmm0, xmm0
+    psadbw xmm0, xmm5
 
-    psubb xmm1, xmm6
-    pabsb xmm1, xmm1
-    pmaddubsw xmm1, xmm1
+    psadbw xmm1, xmm6
     paddusw xmm0, xmm1
 
-    psubb xmm2, xmm7
-    pabsb xmm2, xmm2
-    pmaddubsw xmm2, xmm2
+    psadbw xmm2, xmm7
     paddusw xmm0, xmm2
 
-    psubb xmm3, xmm8
-    pabsb xmm3, xmm3
-    pmaddubsw xmm3, xmm3
+    psadbw xmm3, xmm8
     paddusw xmm0, xmm3
 
-    psubb xmm4, xmm9
-    pabsb xmm4, xmm4
-    pmaddubsw xmm4, xmm4
+    psadbw xmm4, xmm9
     paddusw xmm0, xmm4
 
-    phaddsw xmm0, xmm0
-    phaddsw xmm0, xmm0
-
     pextrw esi, xmm0, 0
-    pextrw r10d, xmm0, 1
+    pextrw r10d, xmm0, 4
     add rsi, r10
 
     cmp rsi, r8
@@ -472,35 +459,22 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    psubb xmm0, xmm5
-    pabsb xmm0, xmm0
-    pmaddubsw xmm0, xmm0
+    psadbw xmm0, xmm5
 
-    psubb xmm1, xmm6
-    pabsb xmm1, xmm1
-    pmaddubsw xmm1, xmm1
+    psadbw xmm1, xmm6
     paddusw xmm0, xmm1
 
-    psubb xmm2, xmm7
-    pabsb xmm2, xmm2
-    pmaddubsw xmm2, xmm2
+    psadbw xmm2, xmm7
     paddusw xmm0, xmm2
 
-    psubb xmm3, xmm8
-    pabsb xmm3, xmm3
-    pmaddubsw xmm3, xmm3
+    psadbw xmm3, xmm8
     paddusw xmm0, xmm3
 
-    psubb xmm4, xmm9
-    pabsb xmm4, xmm4
-    pmaddubsw xmm4, xmm4
+    psadbw xmm4, xmm9
     paddusw xmm0, xmm4
 
-    phaddsw xmm0, xmm0
-    phaddsw xmm0, xmm0
-
     pextrw esi, xmm0, 0
-    pextrw r10d, xmm0, 1
+    pextrw r10d, xmm0, 4
     add rsi, r10
 
     mov rax, qword ptr [mindist_r9]
