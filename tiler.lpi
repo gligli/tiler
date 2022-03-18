@@ -87,7 +87,7 @@
             <StackSize Value="16777216"/>
             <TargetCPU Value="x86_64"/>
             <Optimizations>
-              <OptimizationLevel Value="4"/>
+              <OptimizationLevel Value="3"/>
             </Optimizations>
           </CodeGeneration>
           <Linking>
@@ -97,7 +97,7 @@
             <LinkSmart Value="True"/>
             <Options>
               <PassLinkerOptions Value="True"/>
-              <LinkerOptions Value="-Fwlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo -O4 -OwALL"/>
+              <LinkerOptions Value="-Fwlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo -O3 -OwALL"/>
             </Options>
           </Linking>
           <Other>
