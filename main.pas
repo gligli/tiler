@@ -235,12 +235,11 @@ type
 
   TTilingDataset = record
     Dataset: TANNFloatDynArray2;
-    TRToTileIdx: TIntegerDynArray;
-    TRToPalIdx: TByteDynArray;
-    TRToAttrs: TByteDynArray;
+    TDToTileIdx: TIntegerDynArray;
+    TDToPalIdx: TByteDynArray;
+    TDToAttrs: TByteDynArray;
     KDT: PANNkdtree;
-    DistErrCml: TFloat;
-    DistErrCnt: Integer;
+    DistErrCml: TFloatDynArray;
   end;
 
   PTilingDataset = ^TTilingDataset;
@@ -1303,7 +1302,6 @@ var
       DoFrameTiling(Frame, y, Gamma, FTBlend, FTBlendThres);
 
       SpinEnter(@FLock);
-      Frame.FTYDone[y] := True;
       ok := True;
       for i := 0 to FTileMapHeight - 1 do
         ok := ok and Frame.FTYDone[i];
@@ -3417,7 +3415,7 @@ begin
 
   SetLength(AFrame.TileMap, FTileMapHeight, FTileMapWidth);
   SetLength(AFrame.FSPixels, FScreenHeight * FScreenWidth * 3);
-  SetLength(AFrame.FTYDone, FScreenHeight);
+  SetLength(AFrame.FTYDone, FTileMapHeight);
 
   AFrame.Tiles := TTile.Array1DNew(FTileMapSize, True, False);
   for i := 0 to (FTileMapSize - 1) do
@@ -4075,15 +4073,15 @@ var
   begin
     T^.ExtractPalPixels(FGlobalDS.Dataset[di]);
 
-    FGlobalDS.TRToTileIdx[di] := TileIdx;
-    FGlobalDS.TRToAttrs[di] := Ord(HMirror) or (Ord(VMirror) shl 1);
+    FGlobalDS.TDToTileIdx[di] := TileIdx;
+    FGlobalDS.TDToAttrs[di] := Ord(HMirror) or (Ord(VMirror) shl 1);
     Inc(di);
   end;
 
 begin
   SetLength(FGlobalDS.Dataset, GetGlobalTileCount * 4, Sqr(cTileWidth));
-  SetLength(FGlobalDS.TRToTileIdx, Length(FGlobalDS.Dataset));
-  SetLength(FGlobalDS.TRToAttrs, Length(FGlobalDS.Dataset));
+  SetLength(FGlobalDS.TDToTileIdx, Length(FGlobalDS.Dataset));
+  SetLength(FGlobalDS.TDToAttrs, Length(FGlobalDS.Dataset));
 
   di := 0;
   for i := 0 to High(FTiles) do
@@ -4105,8 +4103,8 @@ begin
   end;
 
   SetLength(FGlobalDS.Dataset, di, Sqr(cTileWidth));
-  SetLength(FGlobalDS.TRToTileIdx, Length(FGlobalDS.Dataset));
-  SetLength(FGlobalDS.TRToAttrs, Length(FGlobalDS.Dataset));
+  SetLength(FGlobalDS.TDToTileIdx, Length(FGlobalDS.Dataset));
+  SetLength(FGlobalDS.TDToAttrs, Length(FGlobalDS.Dataset));
 
   FGlobalDS.KDT := ann_kdtree_create(@FGlobalDS.Dataset[0], Length(FGlobalDS.Dataset), Sqr(cTileWidth), 32, ANN_KD_STD);
 end;
@@ -4116,8 +4114,8 @@ begin
   ann_kdtree_destroy(FGlobalDS.KDT);
   FGlobalDS.KDT := nil;
   SetLength(FGlobalDS.Dataset, 0);
-  SetLength(FGlobalDS.TRToTileIdx, 0);
-  SetLength(FGlobalDS.TRToAttrs, 0);
+  SetLength(FGlobalDS.TDToTileIdx, 0);
+  SetLength(FGlobalDS.TDToAttrs, 0);
 end;
 
 procedure TMainForm.PrepareFrameTiling(AKF: TKeyFrame; AFTGamma: Integer; AFTQuality: TFTQuality);
@@ -4156,7 +4154,7 @@ var
 
          for palIdx := 0 to FPaletteCount - 1 do
           if PaletteDists[palIdx, Item^.PalIdx] <= cFTIntraPaletteTol[AFTQuality] * HighestDist then
-            used[palIdx, FGlobalDS.TRToTileIdx[idx], FGlobalDS.TRToAttrs[idx]] := True;
+            used[palIdx, FGlobalDS.TDToTileIdx[idx], FGlobalDS.TDToAttrs[idx]] := True;
       end;
     end;
   end;
@@ -4209,9 +4207,9 @@ var
         if used[AIndex, ti, hvmir] then
           begin
             T := FTiles[ti];
-            DS^.TRToTileIdx[di] := ti;
-            DS^.TRToPalIdx[di] := AIndex;
-            DS^.TRToAttrs[di] := hvmir;
+            DS^.TDToTileIdx[di] := ti;
+            DS^.TDToPalIdx[di] := AIndex;
+            DS^.TDToAttrs[di] := hvmir;
 
             ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[AIndex], DCT);
             for j := 0 to cTileDCTSize - 1 do
@@ -4254,13 +4252,12 @@ begin
   AKF.TileDS := DS;
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  SetLength(DS^.TRToTileIdx, KNNSize);
-  SetLength(DS^.TRToPalIdx, KNNSize);
-  SetLength(DS^.TRToAttrs, KNNSize);
+  SetLength(DS^.TDToTileIdx, KNNSize);
+  SetLength(DS^.TDToPalIdx, KNNSize);
+  SetLength(DS^.TDToAttrs, KNNSize);
   SetLength(DS^.Dataset, KNNSize, cTileDCTSize);
-
-  DS^.DistErrCml := 0.0;
-  DS^.DistErrCnt := 0;
+  SetLength(DS^.DistErrCml, AKF.FrameCount);
+  FillQWord(DS^.DistErrCml[0], Length(DS^.DistErrCml), 0);
 
   ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, FPaletteCount - 1, nil, NumberOfProcessors);
 
@@ -4268,28 +4265,31 @@ begin
 
   DS^.KDT := ann_kdtree_create(@DS^.Dataset[0], KNNSize, cTileDCTSize, 32, ANN_KD_STD);
 
-  WriteLn('KF: ', AKF.StartFrame, #9'KNNSize: ', KNNSize);
+  WriteLn('KF: ', AKF.StartFrame:4, #9'KNNSize: ', KNNSize:8);
 end;
 
 procedure TMainForm.FinishFrameTiling(AKF: TKeyFrame);
 var
+  i: Integer;
   resDist: TFloat;
 begin
-  resDist := AKF.TileDS^.DistErrCml;
+  resDist := 0.0;
+  for i := 0 to High(AKF.TileDS^.DistErrCml) do
+    resDist += AKF.TileDS^.DistErrCml[i];
 
   if Length(AKF.TileDS^.Dataset) > 0 then
     ann_kdtree_destroy(AKF.TileDS^.KDT);
   AKF.TileDS^.KDT := nil;
   SetLength(AKF.TileDS^.Dataset, 0);
-  SetLength(AKF.TileDS^.TRToTileIdx, 0);
-  SetLength(AKF.TileDS^.TRToAttrs, 0);
+  SetLength(AKF.TileDS^.TDToTileIdx, 0);
+  SetLength(AKF.TileDS^.TDToAttrs, 0);
   Dispose(AKF.TileDS);
 
   AKF.TileDS := nil;
 
-  WriteLn('KF: ', AKF.StartFrame, #9'ResidualErr: ',
-    FormatFloat('0.000000', resDist / AKF.FrameCount), ' (per frame)'#9,
-    FormatFloat('0.000000', resDist / AKF.FrameCount / FTileMapSize), ' (per tile)');
+  WriteLn('KF: ', AKF.StartFrame:4, #9'ResidualErr: ',
+    (resDist / AKF.FrameCount):13:6, ' (per frame)'#9,
+    (resDist / AKF.FrameCount / FTileMapSize):9:6, ' (per tile)');
 end;
 
 function ComputeBlendingError(PPlain, PCur, PPrev: PFloat; bc, bp: TFloat): TFloat; inline;
@@ -4316,6 +4316,7 @@ var
   attrs, bestBlendCur, bestBlendPrev: Byte;
   x, oy, ox, bestX, bestY: Integer;
   bestErr: TFloat;
+  frameDone: Boolean;
 
   tmiO, prevTMI: PTileMapItem;
   prevTile: PTile;
@@ -4326,14 +4327,6 @@ var
   DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   ANNDCT: array[0 .. cTileDCTSize - 1] of TANNFloat;
   CurPrevDCT: array[0 .. 2, 0 .. cTileDCTSize * 2 - 1] of TFloat;
-
-  procedure AccumulateErr;
-  begin
-    SpinEnter(@FLock);
-    DS^.DistErrCml += bestErr;
-    Inc(DS^.DistErrCnt);
-    SpinLeave(@FLock);
-  end;
 
   procedure TestBestErr(err: TANNFloat; bc, bp: Integer);
   begin
@@ -4472,9 +4465,9 @@ begin
 
     tmiO := @FFrames[AFrame.Index].TileMap[Y, x];
 
-    attrs := DS^.TRToAttrs[bestIdx];
-    tmiO^.TileIdx := DS^.TRToTileIdx[bestIdx];
-    tmiO^.PalIdx := DS^.TRToPalIdx[bestIdx];
+    attrs := DS^.TDToAttrs[bestIdx];
+    tmiO^.TileIdx := DS^.TDToTileIdx[bestIdx];
+    tmiO^.PalIdx := DS^.TDToPalIdx[bestIdx];
     tmiO^.HMirror := (attrs and 1) <> 0;
     tmiO^.VMirror := (attrs and 2) <> 0;
     tmiO^.BlendCur := bestBlendCur;
@@ -4482,13 +4475,21 @@ begin
     tmiO^.BlendX := bestX - x;
     tmiO^.BlendY := bestY - Y;
 
-    AccumulateErr;
+    SpinEnter(@FLock);
+    DS^.DistErrCml[AFrame.Index] += bestErr;
+    SpinLeave(@FLock);
 
     InterLockedIncrement(FTiles[tmiO^.TileIdx]^.UseCount);
   end;
 
-  if Y = FTileMapHeight - 1 then
-    WriteLn('Frame: ', AFrame.Index, #9'FramesLeft: ', AFrame.PKeyFrame.FramesLeft - 1);
+  SpinEnter(@FLock);
+  AFrame.FTYDone[y] := True;
+  frameDone := True;
+  for i := 0 to High(AFrame.FTYDone) do
+    frameDone := frameDone and AFrame.FTYDone[i];
+  if frameDone then
+    WriteLn('Frame: ', AFrame.Index:6, #9'ResidualErr: ', DS^.DistErrCml[AFrame.Index]:13:6);
+  SpinLeave(@FLock);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat;
