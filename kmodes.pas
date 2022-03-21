@@ -9,10 +9,9 @@ unit kmodes;
 interface
 
 uses
-  Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows;
+  Classes, SysUtils, Types, Math, LazLogger, MTProcs, windows, extern;
 
 const
-  cKModesDissimSubMatchingSize = 11;
   cKModesFeatureCount = 80;
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
@@ -24,9 +23,14 @@ type
   TIntegerDynArray3 = array of TIntegerDynArray2;
   TByteDynArray2 = array of TByteDynArray;
   TByteDynArray3 = array of TByteDynArray2;
-  TWordDynArray2 = array of TWordDynArray;
-  TBooleanDynArray2 = array of TBooleanDynArray;
   TUInt64DynArray = array of UInt64;
+  TUInt64DynArray2 = array of TUInt64DynArray;
+
+  TGMMD = record
+    clust: PInteger;
+    dis: PUInt64;
+    X, centroids: PPByte;
+  end;
 
   TKmodesRun = packed record
     Labels: TIntegerDynArray;
@@ -47,6 +51,14 @@ type
     cl_attr_freq: TIntegerDynArray3;
     MaxIter, NumClusters, NumThreads, NumAttrs, NumPoints: Integer;
     Log: Boolean;
+    LogLabel: String;
+    Concurrency: PInteger;
+    FGMMD: TGMMD;
+    FPTP: TProcThreadPool;
+
+    procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure FinishGMMD;
+    function GetConcurrentNumThreads: Integer;
 
     function CountClusterMembers(cluster: Integer): Integer;
     function GetMaxClusterMembers(out member_count: Integer): Integer;
@@ -54,7 +66,8 @@ type
     function InitFarthestFirst(InitPoint: Integer): TByteDynArray2;  // negative init_point means randomly chosen
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
-    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = 0; aLog: Boolean = False);
+    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = -1; aLog: Boolean = False; aLogLabel: String = ''; aConcurrency: PInteger = nil);
+    destructor Destroy; override;
     function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
     // negative n_init means use -n_init as starting point
     // FinalLabels cluster indexes start at 1
@@ -63,7 +76,9 @@ type
 
 function RandInt(Range: Cardinal; var Seed: Cardinal): Cardinal;
 procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline; overload;
+function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer; overload;
 
 implementation
 
@@ -224,22 +239,27 @@ begin
   Result := Cnt;
 end;
 
-{$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
-
-function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline;
+function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline; overload;
 var
   i: Integer;
 begin
   Result := 0;
   for i := 0 to High(a) do
-  begin
-    if a[i] <> b[i] then
-      Result += UInt64(1) shl cDissimSubMatchingSize;
-    Result += abs(Int64(a[i]) - Int64(b[i]));
-  end;
+    Result += Abs(Int64(a[i]) - Int64(b[i]));
 end;
 
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
+function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 0 to count - 1 do
+    Result += Abs(Int64(a[i]) - Int64(b[i]));
+end;
+
+{$if defined(GENERIC_DISSIM) or not defined(CPUX86_64)}
+
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer; overload;
 var
   i: Integer;
   dis, best: UInt64;
@@ -259,13 +279,33 @@ begin
   bestDissim := best;
 end;
 
-function GetMatchingDissimSum(const a: TByteDynArray2; const b: TByteDynArray; count: Integer): UInt64;
+//function GetMatchingDissimSum(const a: TByteDynArray2; const b: TByteDynArray; count: Integer): UInt64;
+//var
+//  i: Integer;
+//begin
+//  Result := 0;
+//  for i := 0 to count - 1 do
+//    Result += MatchingDissim(a[i], b);
+//end;
+
+function GetMinMatchingDissim(a: PPByte; b: PByte; rowCount, colCount: Integer; out bestDissim: UInt64): Integer; overload;
 var
   i: Integer;
+  dis, best: UInt64;
 begin
-  Result := 0;
-  for i := 0 to count - 1 do
-    Result += MatchingDissim(a[i], b);
+  Result := -1;
+  best := High(UInt64);
+  for i := 0 to rowCount - 1 do
+  begin
+    dis := MatchingDissim(a[i], b, colCount);
+    if dis <= best then
+    begin
+      best := dis;
+      Result := i;
+    end;
+  end;
+
+  bestDissim := best;
 end;
 
 {$else}
@@ -281,7 +321,7 @@ asm
   push r10
   push rdx
 
-  sub rsp, 16 * 12
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -292,14 +332,12 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
-  movdqu oword ptr [rsp + $a0], xmm10
-  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm6, oword ptr [item_rcx]
-  movdqu xmm7, oword ptr [item_rcx + $10]
-  movdqu xmm8, oword ptr [item_rcx + $20]
-  movdqu xmm9, oword ptr [item_rcx + $30]
-  movdqu xmm10, oword ptr [item_rcx + $40]
+  movdqu xmm5, oword ptr [item_rcx]
+  movdqu xmm6, oword ptr [item_rcx + $10]
+  movdqu xmm7, oword ptr [item_rcx + $20]
+  movdqu xmm8, oword ptr [item_rcx + $30]
+  movdqu xmm9, oword ptr [item_rcx + $40]
 
   lea rbx, [list_rdx + 8 * r8]
 
@@ -317,55 +355,22 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    movdqa xmm11, xmm0
-    psubb xmm11, xmm6
-    pabsb xmm11, xmm11
+    psadbw xmm0, xmm5
 
-    movdqa xmm5, xmm1
-    psadbw xmm5, xmm7
-    paddw xmm11, xmm5
+    psadbw xmm1, xmm6
+    paddusw xmm0, xmm1
 
-    movdqa xmm5, xmm2
-    psadbw xmm5, xmm8
-    paddw xmm11, xmm5
+    psadbw xmm2, xmm7
+    paddusw xmm0, xmm2
 
-    movdqa xmm5, xmm3
-    psadbw xmm5, xmm9
-    paddw xmm11, xmm5
+    psadbw xmm3, xmm8
+    paddusw xmm0, xmm3
 
-    movdqa xmm5, xmm4
-    psadbw xmm5, xmm10
-    paddw xmm11, xmm5
+    psadbw xmm4, xmm9
+    paddusw xmm0, xmm4
 
-    pcmpeqb xmm0, xmm6
-    pcmpeqb xmm1, xmm7
-    pcmpeqb xmm2, xmm8
-    pcmpeqb xmm3, xmm9
-    pcmpeqb xmm4, xmm10
-
-    pmovmskb edi, xmm0
-    mov rsi, rdi
-    pmovmskb edi, xmm1
-    rol rsi, 16
-    or rsi, rdi
-    pmovmskb edi, xmm2
-    rol rsi, 16
-    or rsi, rdi
-    pmovmskb edi, xmm3
-    rol rsi, 16
-    or rsi, rdi
-    not rsi
-    popcnt rsi, rsi
-
-    pmovmskb edi, xmm4
-    not di
-    popcnt di, di
-    add rsi, rdi
-
-    shl rsi, cKModesDissimSubMatchingSize
-    pextrw r10d, xmm11, 0
-    add rsi, r10
-    pextrw r10d, xmm11, 4
+    pextrw esi, xmm0, 0
+    pextrw r10d, xmm0, 4
     add rsi, r10
 
     cmp rsi, r8
@@ -390,9 +395,7 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  movdqu xmm10, oword ptr [rsp + $a0]
-  movdqu xmm11, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  add rsp, 16 * 10
 
   mov qword ptr [pbest_r9], r8
 
@@ -421,7 +424,7 @@ asm
   push r9
   push r10
 
-  sub rsp, 16 * 12
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm0
   movdqu oword ptr [rsp + $10], xmm1
   movdqu oword ptr [rsp + $20], xmm2
@@ -432,17 +435,15 @@ asm
   movdqu oword ptr [rsp + $70], xmm7
   movdqu oword ptr [rsp + $80], xmm8
   movdqu oword ptr [rsp + $90], xmm9
-  movdqu oword ptr [rsp + $a0], xmm10
-  movdqu oword ptr [rsp + $b0], xmm11
 
-  movdqu xmm6, oword ptr [item_rcx]
-  movdqu xmm7, oword ptr [item_rcx + $10]
-  movdqu xmm8, oword ptr [item_rcx + $20]
-  movdqu xmm9, oword ptr [item_rcx + $30]
-  movdqu xmm10, oword ptr [item_rcx + $40]
+  movdqu xmm5, oword ptr [item_rcx]
+  movdqu xmm6, oword ptr [item_rcx + $10]
+  movdqu xmm7, oword ptr [item_rcx + $20]
+  movdqu xmm8, oword ptr [item_rcx + $30]
+  movdqu xmm9, oword ptr [item_rcx + $40]
 
   mov eax, count
-  lea rbx, [list_rdx + 8 * rax - 8]
+  lea rbx, [list_rdx + 8 * rax]
 
   xor eax, eax
 
@@ -458,55 +459,22 @@ asm
     movdqu xmm3, oword ptr [rcx + $30]
     movdqu xmm4, oword ptr [rcx + $40]
 
-    movdqa xmm11, xmm0
-    psubb xmm11, xmm6
-    pabsb xmm11, xmm11
+    psadbw xmm0, xmm5
 
-    movdqa xmm5, xmm1
-    psadbw xmm5, xmm7
-    paddw xmm11, xmm5
+    psadbw xmm1, xmm6
+    paddusw xmm0, xmm1
 
-    movdqa xmm5, xmm2
-    psadbw xmm5, xmm8
-    paddw xmm11, xmm5
+    psadbw xmm2, xmm7
+    paddusw xmm0, xmm2
 
-    movdqa xmm5, xmm3
-    psadbw xmm5, xmm9
-    paddw xmm11, xmm5
+    psadbw xmm3, xmm8
+    paddusw xmm0, xmm3
 
-    movdqa xmm5, xmm4
-    psadbw xmm5, xmm10
-    paddw xmm11, xmm5
+    psadbw xmm4, xmm9
+    paddusw xmm0, xmm4
 
-    pcmpeqb xmm0, xmm6
-    pcmpeqb xmm1, xmm7
-    pcmpeqb xmm2, xmm8
-    pcmpeqb xmm3, xmm9
-    pcmpeqb xmm4, xmm10
-
-    pmovmskb edi, xmm0
-    mov rsi, rdi
-    pmovmskb edi, xmm1
-    rol rsi, 16
-    or rsi, rdi
-    pmovmskb edi, xmm2
-    rol rsi, 16
-    or rsi, rdi
-    pmovmskb edi, xmm3
-    rol rsi, 16
-    or rsi, rdi
-    not rsi
-    popcnt rsi, rsi
-
-    pmovmskb edi, xmm4
-    not di
-    popcnt di, di
-    add rsi, rdi
-
-    shl rsi, cKModesDissimSubMatchingSize
-    pextrw r10d, xmm11, 0
-    add rsi, r10
-    pextrw r10d, xmm11, 4
+    pextrw esi, xmm0, 0
+    pextrw r10d, xmm0, 4
     add rsi, r10
 
     mov rax, qword ptr [mindist_r9]
@@ -525,7 +493,7 @@ asm
     jne used
 
     cmp list_rdx, rbx
-    jle loop
+    jne loop
 
   movdqu xmm0, oword ptr [rsp]
   movdqu xmm1, oword ptr [rsp + $10]
@@ -537,9 +505,7 @@ asm
   movdqu xmm7, oword ptr [rsp + $70]
   movdqu xmm8, oword ptr [rsp + $80]
   movdqu xmm9, oword ptr [rsp + $90]
-  movdqu xmm10, oword ptr [rsp + $a0]
-  movdqu xmm11, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  add rsp, 16 * 10
 
   pop r10
   pop r9
@@ -552,11 +518,19 @@ asm
 
 end;
 
-function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer;
+function GetMinMatchingDissim(const a: TByteDynArray2; const b: TByteDynArray; count: Integer; out bestDissim: UInt64): Integer; overload;
 var
   bd: UInt64;
 begin
   Result := GetMinMatchingDissim_Asm(@b[0], @a[0], count, @bd);
+  bestDissim := bd;
+end;
+
+function GetMinMatchingDissim(a: PPByte; b: PByte; rowCount, colCount: Integer; out bestDissim: UInt64): Integer; overload;
+var
+  bd: UInt64;
+begin
+  Result := GetMinMatchingDissim_Asm(b, a, rowCount, @bd);
   bestDissim := bd;
 end;
 
@@ -672,7 +646,7 @@ var
   var
     UMD: TUMD;
   begin
-    if NumThreads <= 1 then
+    if (NumThreads <= 1) and not Assigned(Concurrency) then
     begin
       UpdateMinDistance_Asm(@X[icenter, 0], @X[0], @used[0], @mindistance[0], NumPoints);
     end
@@ -685,7 +659,7 @@ var
       UMD.mindistance := mindistance;
       UMD.used := used;
       UMD.X := X;
-      ProcThreadPool.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, NumThreads);
+      FPTP.DoParallel(@DoUMD, 0, UMD.NumBins - 1, @UMD, GetConcurrentNumThreads);
     end;
   end;
 
@@ -710,9 +684,9 @@ begin
   for icentroid := 1 to NumClusters - 1 do
   begin
     max := 0;
-    ifarthest := 0;
+    ifarthest := -1;
     for i := 0 to NumPoints - 1 do
-      if (MinDistance[i] > max) and not Used[i] then
+      if (MinDistance[i] >= max) and not Used[i] then
       begin
         max := MinDistance[i];
         ifarthest := i;
@@ -754,32 +728,51 @@ begin
   end;
 end;
 
-constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolean);
+constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolean; aLogLabel: String;
+  aConcurrency: PInteger);
 begin
   inherited Create;
 
+  FPTP := TProcThreadPool.Create;
   Self.MaxIter := aMaxIter;
   Self.NumThreads := aNumThreads;
   Self.Log := aLog;
+  Self.LogLabel := aLogLabel;
+  Self.Concurrency := aConcurrency;
 end;
 
-type
-  TGMMD = record
-    clust: TIntegerDynArray;
-    dis: TUInt64DynArray;
-    X, centroids: TByteDynArray2;
-  end;
-  PGMMD = ^TGMMD;
+destructor TKModes.Destroy;
+begin
+  inherited Destroy;
 
-procedure DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  FPTP.Free;
+end;
+
+procedure TKModes.DoGMMD(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  GMMD: PGMMD;
   dis: UInt64;
 begin
-  GMMD := PGMMD(AData);
-  GMMD^.clust[AIndex] := GetMinMatchingDissim(GMMD^.centroids, GMMD^.X[AIndex], Length(GMMD^.centroids), dis);
-  if Assigned(GMMD^.dis) then
-    GMMD^.dis[AIndex] := dis;
+  if AIndex < NumPoints then
+  begin
+    FGMMD.clust[AIndex] := GetMinMatchingDissim(FGMMD.centroids, FGMMD.X[AIndex], NumClusters, NumAttrs, dis);
+    if Assigned(FGMMD.dis) then
+      FGMMD.dis[AIndex] := dis;
+  end;
+end;
+
+procedure TKModes.FinishGMMD;
+begin
+  FGMMD.clust := nil;
+  FGMMD.dis := nil;
+  FGMMD.X := nil;
+  FGMMD.centroids := nil;
+end;
+
+function TKModes.GetConcurrentNumThreads: Integer;
+begin
+  Result := NumThreads;
+  if Assigned(Concurrency) then
+    Result := max(Result, FPTP.MaxThreadCount - (Concurrency^ - 1) * NumThreads);
 end;
 
 function TKModes.KModesIter(var Seed: Cardinal; out Cost: UInt64): Integer;
@@ -790,7 +783,6 @@ var
   cost_acc: UInt64;
   clust, choices: TIntegerDynArray;
   dis: TUInt64DynArray;
-  GMMD: TGMMD;
 begin
   Result := 0;
   cost_acc := 0;
@@ -799,23 +791,23 @@ begin
   SetLength(clust, NumPoints);
   SetLength(dis, NumPoints);
 
-  GMMD.clust := clust;
-  GMMD.dis := dis;
-  GMMD.X := X;
-  GMMD.centroids := centroids;
+  FGMMD.clust := @clust[0];
+  FGMMD.dis := @dis[0];
+  FGMMD.X := @X[0];
+  FGMMD.centroids := @centroids[0];
 
   for bin := 0 to ((NumPoints - 1) div cBinSize + 1) - 1 do
   begin
     last := min((bin + 1) * cBinSize, NumPoints) - 1;
 
-    if NumThreads <= 1 then
+    if (NumThreads <= 1) and not Assigned(Concurrency) then
     begin
       for ipoint := bin * cBinSize to last do
         clust[ipoint] := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis[ipoint]);
     end
     else
     begin
-      ProcThreadPool.DoParallel(@DoGMMD, bin * cBinSize, last, @GMMD, NumThreads);
+      FPTP.DoParallel(@DoGMMD, bin * cBinSize, last, nil, GetConcurrentNumThreads);
     end;
 
     for ipoint := bin * cBinSize to last do
@@ -832,7 +824,7 @@ begin
         if CountClusterMembers(old_clust) = 0 then
         begin
           from_clust := GetMaxClusterMembers(dummy);
-          writeln('zero', #9, from_clust, #9, dummy);
+          //writeln('zero', #9, from_clust, #9, dummy);
 
           cnt := 0;
           for i := 0 to High(membship) do
@@ -850,22 +842,27 @@ begin
     end;
   end;
 
+  FinishGMMD;
+
   Cost := cost_acc;
 end;
 
 function TKModes.ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer;
   out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
+const
+  CMaxWorseGraces = 3;
 var
   init: TByteDynArray2;
   all: array of TKmodesRun;
 var
-  i, j, init_no, iattr, ipoint, ik, summemb, itr, moves, totalmoves: Integer;
+  i, j, init_no, iattr, ipoint, ik, summemb, itr, bestitr, moves, totalmoves, worsecounter: Integer;
   best, dis: UInt64;
   converged: Boolean;
-  cost, ncost: UInt64;
+  prevcost, cost, bestcost: UInt64;
   InvGoldenRatio, GRAcc: Single;
   Seed: Cardinal;
-  GMMD: TGMMD;
+  bestmembship: TIntegerDynArray;
+  bestcentroids: TByteDynArray2;
 begin
   Seed := $42381337;
 
@@ -881,7 +878,7 @@ begin
   if NumThreads <= 0 then
     NumThreads := ProcThreadPool.MaxThreadCount;
 
-  if MaxIter <= 0 then
+  if MaxIter < 0 then
     MaxIter := MaxInt;
 
   init := nil;
@@ -921,18 +918,19 @@ begin
         FillDWord(cl_attr_freq[j, i, 0], ANumModalities, 0);
 
 
-    if NumThreads <= 1 then
+    if (NumThreads <= 1) and not Assigned(Concurrency) then
     begin
       for ipoint := 0 to NumPoints - 1 do
         membship[ipoint] := GetMinMatchingDissim(centroids, X[ipoint], Length(centroids), dis);
     end
     else
     begin
-      GMMD.clust := membship;
-      GMMD.dis := nil;
-      GMMD.X := X;
-      GMMD.centroids := centroids;
-      ProcThreadPool.DoParallel(@DoGMMD, 0, NumPoints - 1, @GMMD, NumThreads);
+      FGMMD.clust := @membship[0];
+      FGMMD.dis := nil;
+      FGMMD.X := @X[0];
+      FGMMD.centroids := @centroids[0];
+      FPTP.DoParallel(@DoGMMD, 0, NumPoints - 1, nil, GetConcurrentNumThreads);
+      FinishGMMD;
     end;
 
     for ipoint := 0 to NumPoints - 1 do
@@ -954,37 +952,59 @@ begin
       end;
     end;
 
+    WriteLn(LogLabel, 'Init done');
+
     itr := 0;
     converged := False;
-    cost := High(UInt64);
+    prevcost := High(UInt64);
+    worsecounter := 0;
     totalmoves := 0;
+    bestitr := 0;
+    bestcost := High(UInt64);
+    bestmembship := nil;
+    bestcentroids := nil;
 
-    while (itr <= MaxIter) and not converged do
+    while (itr < MaxIter) and not converged do
     begin
       Inc(itr);
 
-      if Log then
-        DbgOut(['Itr: ', itr]);
+      moves := KModesIter(Seed, cost);
 
-      moves := KModesIter(Seed, ncost);
+      converged := cost >= prevcost;
+      if converged and SameValue(cost, prevcost, prevcost div 1000) then
+      begin
+        Inc(worsecounter);
+        if worsecounter < CMaxWorseGraces then
+          converged := False;
+      end;
+      converged := converged  or (moves = 0);
 
-      converged := (ncost >= cost) or (moves = 0);
-      cost := ncost;
+      if cost < bestcost then
+      begin
+        bestitr := itr;
+        bestcost := cost;
+        bestmembship := Copy(membship);
+        bestcentroids := Copy(centroids);
+      end;
+
+      prevcost := cost;
 
       totalmoves += moves;
 
       if Log then
-        DebugLn([#9'Moves: ', moves, #9'Cost: ', cost]);
+        WriteLn(LogLabel, 'Itr: ', itr:3, #9'Moves: ', moves: 6, #9'Cost: ', cost:10);
     end;
 
-    all[init_no].Labels := Copy(membship);
-    all[init_no].Centroids := Copy(centroids);
-    all[init_no].Cost := cost;
-    all[init_no].NIter := itr;
+    WriteLn(LogLabel, 'Itr: ', itr:3, ' Finished!',#9'BestItr: ', bestitr:3, #9'BestCost: ', bestcost:10);
+
+    all[init_no].Labels := bestmembship;
+    all[init_no].Centroids := bestcentroids;
+    all[init_no].Cost := bestcost;
+    all[init_no].NIter := bestitr;
     all[init_no].TotalMoves := totalmoves;
   end;
 
-  j := -1;
+  j := 0;
   best := High(UInt64);
   for i := 0 to High(all) do
     if all[i].Cost < best then
@@ -995,7 +1015,7 @@ begin
 
   FinalLabels := all[j].Labels;
   FinalCentroids := all[j].Centroids;
-  Result := Length(centroids);
+  Result := Length(FinalCentroids);
 end;
 
 end.
