@@ -1276,7 +1276,7 @@ var
     var
       Frame: TFrame;
       idx, y, i: Integer;
-      ok: Boolean;
+      frameDone: Boolean;
     begin
       if not InRange(AIndex, 0, Length(FFrames) * FTileMapHeight - 1) then
         Exit;
@@ -1297,11 +1297,13 @@ var
       DoFrameTiling(Frame, y, Gamma, FTBlend, FTBlendThres);
 
       SpinEnter(@FLock);
-      ok := True;
-      for i := 0 to FTileMapHeight - 1 do
-        ok := ok and Frame.FTYDone[i];
-      if ok then
+      Frame.FTYDone[y] := True;
+      frameDone := True;
+      for i := 0 to High(Frame.FTYDone) do
+        frameDone := frameDone and Frame.FTYDone[i];
+      if frameDone then
       begin
+        WriteLn('Frame: ', Frame.Index:6, #9'ResidualErr: ', Frame.PKeyFrame.TileDS^.DistErrCml[Frame.Index - Frame.PKeyFrame.StartFrame]:13:6);
         Dec(Frame.PKeyFrame.FramesLeft);
         if Frame.PKeyFrame.FramesLeft <= 0 then
           SetEvent(Frame.PKeyFrame.FTDoFinishEvent); // signal DoPrepare thread to start finishing KF
@@ -4377,20 +4379,11 @@ begin
     tmiO^.BlendY := bestY - Y;
 
     SpinEnter(@FLock);
-    DS^.DistErrCml[AFrame.Index] += bestErr;
+    DS^.DistErrCml[AFrame.Index - AFrame.PKeyFrame.StartFrame] += bestErr;
     SpinLeave(@FLock);
 
     InterLockedIncrement(FTiles[tmiO^.TileIdx]^.UseCount);
   end;
-
-  SpinEnter(@FLock);
-  AFrame.FTYDone[y] := True;
-  frameDone := True;
-  for i := 0 to High(AFrame.FTYDone) do
-    frameDone := frameDone and AFrame.FTYDone[i];
-  if frameDone then
-    WriteLn('Frame: ', AFrame.Index:6, #9'ResidualErr: ', DS^.DistErrCml[AFrame.Index]:13:6);
-  SpinLeave(@FLock);
 end;
 
 procedure TMainForm.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat;
@@ -5435,9 +5428,9 @@ end;
 
 procedure TMainForm.FormDestroy(Sender: TObject);
 begin
-  DeleteCriticalSection(FCS);
-
   ClearAll;
+
+  DeleteCriticalSection(FCS);
 end;
 
 end.
