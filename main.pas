@@ -220,7 +220,8 @@ type
     PaletteCentroids: array[Boolean] of TFloatDynArray;
     PaletteUseCount: array [Boolean] of packed record
       UseCount: Integer;
-      Palette: TIntegerDynArray;
+      PaletteIndexes: TIntegerDynArray;
+      PaletteRGB: TIntegerDynArray;
       SpritePal: Boolean;
     end;
   end;
@@ -1960,108 +1961,108 @@ begin
   WriteLn('KF: ', AKeyFrame^.StartFrame, ' Yakmo end');
 end;
 
+function CompareCMUCnt(Item1,Item2,UserParameter:Pointer):Integer;
+begin
+  Result := CompareValue(PPCountIndexArray(Item2)^^.Count, PPCountIndexArray(Item1)^^.Count);
+end;
+
 procedure TMainForm.QuantizePalette(AKeyFrame: PKeyFrame; ASpritePal: Boolean);
 var
   CMPal: array of PCountIndexArray;
 
   procedure DoDennisLeeV3;
   var
-    dlCnt: Integer;
-    dlInput: PByte;
+    map_value: Integer;
     i, j, sy, sx, dx, dy, ty, tx, k, tileCnt, tileFx, tileFy, best: Integer;
-    dlPal: TDLUserPal;
     GTile: PTile;
-    CMItem: PCountIndexArray;
+    CMPlan: TMixingPlan;
+    list: TByteDynArray;
   begin
-    dlCnt := AKeyFrame^.FrameCount * cScreenWidth * cScreenHeight;
-    dlInput := GetMem(dlCnt * 3);
-    try
-      FillChar(dlInput^, dlCnt * 3, 0);
-      FillChar(dlPal[0, 0], SizeOf(dlPal), $ff);
-
-      // find width and height of a rectangular area to arrange tiles
-
-      tileCnt := 0;
-      for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
-        for sy := 0 to cTileMapHeight - 1 do
-          for sx := 0 to cTileMapWidth - 1 do
-          begin
-            GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-            if GTile^.Active and (GTile^.SpritePal = ASpritePal) then
-              Inc(tileCnt);
-          end;
-
-      best := MaxInt;
-      tileFx := 0;
-      tileFy := 0;
-      j := 0;
-      k := 0;
-      for i := 1 to tileCnt do
-      begin
-        DivMod(tileCnt, i, j, k);
-        if (k = 0) and (abs(i - j) < best) then
-        begin
-          best := abs(i - j);
-          tileFx := i;
-          tileFy := j;
-        end;
-      end;
-
-      // copy tile data into area
-
-      dx := 0;
-      dy := 0;
-      for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
-      begin
-        for sy := 0 to cTileMapHeight - 1 do
-          for sx := 0 to cTileMapWidth - 1 do
-          begin
-            GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-
-            if GTile^.Active and (GTile^.SpritePal = ASpritePal) then
-            begin
-              j := ((dy * cTileWidth) * tileFx * cTileWidth + (dx * cTileWidth)) * 3;
-              k := sy * cTileMapWidth + sx;
-              for ty := 0 to cTileWidth - 1 do
-              begin
-                for tx := 0 to cTileWidth - 1 do
-                begin
-                  FromRGB(FFrames[i].Tiles[k].RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
-                  Inc(j, 3);
-                end;
-                Inc(j, (tileFx - 1) * cTileWidth * 3);
-              end;
-
-              Inc(dx);
-              if dx >= tileFx then
-              begin
-                dx := 0;
-                Inc(dy);
-              end;
-
-              Inc(AKeyFrame^.PaletteUseCount[ASpritePal].UseCount);
-            end;
-          end;
-      end;
-
-      // call Dennis Lee v3 method
-
-      dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, cTilePaletteSize, 2, @dlPal);
-    finally
-      Freemem(dlInput);
+    PreparePlan(CMPlan, FY2MixedColors, FColorMap);
+    SetLength(list, cDitheringLen);
+    SetLength(CMPal, cTotalColors);
+    for i := 0 to High(CMPal) do
+    begin
+      New(CMPal[i]);
+      CMPal[i]^.Count := 0;
+      CMPal[i]^.Index := i;
+      CMPal[i]^.Luma := FColorMapLuma[i];
+      FromRGB(FColorMap[i], CMPal[i]^.R, CMPal[i]^.G, CMPal[i]^.B);
     end;
 
-    // retrieve palette data
+    // find width and height of a rectangular area to arrange tiles
+
+    tileCnt := 0;
+    for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
+        begin
+          GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
+          if GTile^.Active and (GTile^.SpritePal = ASpritePal) then
+            Inc(tileCnt);
+        end;
+
+    best := MaxInt;
+    tileFx := 0;
+    tileFy := 0;
+    j := 0;
+    k := 0;
+    for i := 1 to tileCnt do
+    begin
+      DivMod(tileCnt, i, j, k);
+      if (k = 0) and (abs(i - j) < best) then
+      begin
+        best := abs(i - j);
+        tileFx := i;
+        tileFy := j;
+      end;
+    end;
+
+    // dither area using full SMS palette to find most used colors
+
+    dx := 0;
+    dy := 0;
+    for i := AKeyFrame^.StartFrame to AKeyFrame^.EndFrame do
+    begin
+      for sy := 0 to cTileMapHeight - 1 do
+        for sx := 0 to cTileMapWidth - 1 do
+        begin
+          GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
+
+          if GTile^.Active and (GTile^.SpritePal = ASpritePal) then
+          begin
+            k := sy * cTileMapWidth + sx;
+            for ty := 0 to cTileWidth - 1 do
+            begin
+              for tx := 0 to cTileWidth - 1 do
+              begin
+                map_value := cDitheringMap[((ty and 7) shl 3) + (tx and 7)];
+                DeviseBestMixingPlanThomasKnoll(CMPlan, FFrames[i].Tiles[k].RGBPixels[ty, tx], list);
+                Inc(CMPal[list[map_value]]^.Count);
+              end;
+            end;
+
+            Inc(dx);
+            if dx >= tileFx then
+            begin
+              dx := 0;
+              Inc(dy);
+            end;
+
+            Inc(AKeyFrame^.PaletteUseCount[ASpritePal].UseCount);
+          end;
+        end;
+    end;
+
+    QuickSort(CMPal[0], 0, High(CMPal), SizeOf(CMPal[0]), @CompareCMUCnt);
+
+    // keep 16 most used colors
+
+    for i := cTilePaletteSize to High(CMPal) do
+      Dispose(CMPal[i]);
 
     SetLength(CMPal, cTilePaletteSize);
-    for i := 0 to cTilePaletteSize - 1 do
-    begin
-      New(CMItem);
-      CMItem^.Count := 0;
-      CMItem^.R := dlPal[0][i]; CMItem^.G := dlPal[1][i]; CMItem^.B := dlPal[2][i];
-      CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
-      CMPal[i] := CMItem;
-    end;
+
   end;
 
 var
@@ -2106,9 +2107,13 @@ begin
 
   QuickSort(CMPal[0], 0, High(CMPal), SizeOf(CMPal[0]), @CompareCMIntraPalette);
 
+  SetLength(AKeyFrame^.PaletteIndexes[ASpritePal], cTilePaletteSize);
   SetLength(AKeyFrame^.PaletteRGB[ASpritePal], cTilePaletteSize);
   for i := 0 to cTilePaletteSize - 1 do
-    AKeyFrame^.PaletteRGB[ASpritePal, i] := ToRGB(CMPal[i]^.R, CMPal[i]^.G, CMPal[i]^.B);
+  begin
+    AKeyFrame^.PaletteIndexes[ASpritePal, i] := CMPal[i]^.Index;
+    AKeyFrame^.PaletteRGB[ASpritePal, i] := FColorMap[CMPal[i]^.Index];
+  end;
 
   for i := 0 to High(CMPal) do
     Dispose(CMPal[i]);
@@ -2124,18 +2129,19 @@ var
   TmpCentroids: array[Boolean] of TFloatDynArray;
   GTile: PTile;
   SpritePal: Boolean;
-  r, g, b: Byte;
 begin
   // sort entire palettes by use count
   for SpritePal := False to True do
   begin
-    AKeyFrame^.PaletteUseCount[SpritePal].Palette := AKeyFrame^.PaletteRGB[SpritePal];
+    AKeyFrame^.PaletteUseCount[SpritePal].PaletteIndexes := AKeyFrame^.PaletteIndexes[SpritePal];
+    AKeyFrame^.PaletteUseCount[SpritePal].PaletteRGB := AKeyFrame^.PaletteRGB[SpritePal];
     AKeyFrame^.PaletteUseCount[SpritePal].SpritePal := SpritePal;
   end;
   QuickSort(AKeyFrame^.PaletteUseCount[False], 0, 1, SizeOf(AKeyFrame^.PaletteUseCount[False]), @ComparePaletteUseCount, AKeyFrame);
   for SpritePal := False to True do
   begin
-    AKeyFrame^.PaletteRGB[SpritePal] := AKeyFrame^.PaletteUseCount[SpritePal].Palette;
+    AKeyFrame^.PaletteIndexes[SpritePal] := AKeyFrame^.PaletteUseCount[SpritePal].PaletteIndexes;
+    AKeyFrame^.PaletteRGB[SpritePal] := AKeyFrame^.PaletteUseCount[SpritePal].PaletteRGB;
     PalIdxLUT[AKeyFrame^.PaletteUseCount[SpritePal].SpritePal] := SpritePal;
   end;
 
@@ -2146,21 +2152,6 @@ begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
         GTile^.SpritePal := PalIdxLUT[GTile^.SpritePal];
       end;
-
-  for SpritePal := False to True do
-  begin
-    SetLength(AKeyFrame^.PaletteIndexes[SpritePal], cTilePaletteSize);
-    for i := 0 to cTilePaletteSize - 1 do
-    begin
-      FromRGB(AKeyFrame^.PaletteRGB[SpritePal, i], r, g, b);
-      AKeyFrame^.PaletteIndexes[SpritePal, i] :=
-         (r * (1 shl cBitsPerComp - 1) div 256) or
-        ((g * (1 shl cBitsPerComp - 1) div 256) shl cBitsPerComp) or
-        ((b * (1 shl cBitsPerComp - 1) div 256) shl (cBitsPerComp * 2));
-
-      AKeyFrame^.PaletteRGB[SpritePal, i] := FColorMap[AKeyFrame^.PaletteIndexes[SpritePal, i]];
-    end;
-  end;
 
   for SpritePal := False to True do
     TmpCentroids[SpritePal] := AKeyFrame^.PaletteCentroids[SpritePal];
