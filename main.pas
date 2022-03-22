@@ -3523,7 +3523,7 @@ var
     SetLength(LocClusters, DSLen);
     SetLength(LocCentroids, DesiredNbTiles, cTileDCTSize);
 
-    KModes := TKModes.Create(1, -1, True);
+    KModes := TKModes.Create(0, -1, True);
     try
       DesiredNbTiles := KModes.ComputeKModes(Dataset, DesiredNbTiles, -StartingPoint, cTilePaletteSize, LocClusters, LocCentroids);
       Assert(Length(LocCentroids) = DesiredNbTiles);
