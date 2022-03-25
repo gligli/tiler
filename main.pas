@@ -23,10 +23,17 @@ const
   cGammaCorrectSmoothing = -1;
   cKFGamma = -1;
   cKFQWeighting = True;
+  cKFNBTilesEpsilon = 3;
 
+{$if true}
+  cRedMul = 2126;
+  cGreenMul = 7152;
+  cBlueMul = 722;
+{$else}
   cRedMul = 299;
   cGreenMul = 587;
   cBlueMul = 114;
+{$endif}
   cLumaDiv = cRedMul + cGreenMul + cBlueMul;
   cRGBw = 13; // in 1 / 32th
 
@@ -139,7 +146,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 3, 1, 4, 1, 3, 1, 2);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 3, 1, 4, 2, 3, 1, 2);
 
 type
   TSpinlock = LongInt;
@@ -229,8 +236,8 @@ type
 
   TFrameTilingData = record
     KF: PKeyFrame;
-    KFFrmIdx: Integer;
     Iteration: Integer;
+    FixupMode: Boolean;
 
     Dataset: TFloatDynArray2;
     DsTMItem: array of TTileMapItem;
@@ -382,7 +389,8 @@ type
 
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
-    function GetFrameTileCount(AFrame: PFrame; ADelta, ADeltaVal, AFromTileIdxs: Boolean): Integer;
+    function GetFrameTileCount(AFrame: PFrame; ADelta, AFromTileIdxs: Boolean; ADeltaFrame: PFrame = nil): Integer;
+    function GetKeyFrameFrameMaxTileCount(AKF: PKeyFrame; ADelta, ADeltaUsePrevKF: Boolean): Integer;
     procedure CopyTile(const Src: TTile; var Dest: TTile);
 
     procedure QuantizePalette(AKeyFrame: PKeyFrame; ASpritePal: Boolean);
@@ -406,7 +414,7 @@ type
     function TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
     procedure DoKeyFrameTiling(AFTD: PFrameTilingData);
     procedure DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
-    procedure FixupFrameTiling(AFrame, APrevFrame: PFrame; DesiredNbTiles: Integer);
+    procedure FixupFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -964,11 +972,15 @@ var
 
   procedure DoFixup(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    FixupTPF: Integer;
+    nbTiles: Integer;
   begin
-    FixupTPF := cMaxTilesPerFrame - cMaxTilesPerFrame div 10;
-    if GetFrameTileCount(@FFrames[FKeyFrames[AIndex]^.StartFrame], True, True, False) > FixupTPF then
-      FixupFrameTiling(@FFrames[FKeyFrames[AIndex]^.StartFrame], @FFrames[FKeyFrames[AIndex]^.StartFrame - 1], FixupTPF);
+    if AIndex > 0 then
+      nbTiles := MaxTPF div 2  // half tiles for the 2 frames in KF transition
+    else
+      nbTiles := MaxTPF div 4; // less tiles for first frame of video (preventing decoder corruption)
+
+    if GetFrameTileCount(@FFrames[FKeyFrames[AIndex]^.StartFrame], True, False) > nbTiles then
+      FixupFrameTiling(@FFrames[FKeyFrames[AIndex]^.StartFrame], nbTiles);
   end;
 
 var
@@ -985,7 +997,7 @@ begin
   ProcThreadPool.DoParallelLocalProc(@DoFrm, 0, High(FKeyFrames));
   ProgressRedraw(1);
 
-  ProcThreadPool.DoParallelLocalProc(@DoFixup, 1, High(FKeyFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoFixup, 0, High(FKeyFrames));
   ProgressRedraw(2);
 
   tbFrameChange(nil);
@@ -1320,7 +1332,7 @@ function TMainForm.GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFlo
 var
   x, y: TFloat;
 begin
-  if SameValue(Mini, Maxi, Epsilon) then
+  if SameValue(Mini, Maxi) then
   begin
     WriteLn('GoldenRatioSearch failed!');
     Result := NaN;
@@ -2736,8 +2748,8 @@ begin
   try
     if not playing then
     begin
-      ftc := GetFrameTileCount(Frame, False, False, False);
-      dftc := GetFrameTileCount(Frame, True, True, False);
+      ftc := GetFrameTileCount(Frame, False, False);
+      dftc := GetFrameTileCount(Frame, True, False);
       lblTileCount.Caption := 'Global: ' + IntToStr(GetGlobalTileCount) + ' / Frame #' + IntToStr(AFrameIndex) + IfThen(Frame^.KeyFrame^.StartFrame = AFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(ftc) + ' (Cml=' + IntToStr(dftc) + ')';
       if dftc > cMaxTilesPerFrame then
         lblTileCount.Font.Color := clMaroon
@@ -2963,7 +2975,6 @@ begin
     pbProgress.Position := Ord(FProgressStep) * cProgressMul;
     Screen.Cursor := crHourGlass;
     FProgressPrevTime := GetTickCount;
-    FProgressStartTime := FProgressPrevTime;
   end;
 
   if (CurFrameIdx < 0) and (ProgressStep = esNone) then
@@ -2980,12 +2991,12 @@ begin
   pbProgress.Invalidate;
   lblPct.Caption := IntToStr(pbProgress.Position * 100 div pbProgress.Max) + '%';
   lblPct.Invalidate;
-  Application.ProcessMessages;
+  Repaint;
 
   t := GetTickCount;
   if CurFrameIdx >= 0 then
   begin
-    WriteLn('Step: ', GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), ' / ', FProgressPosition,
+    WriteLn('Step: ', Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), 3), ' / ', FProgressPosition,
       #9'Time: ', FormatFloat('0.000', (t - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (t - FProgressStartTime) / 1000));
   end;
   FProgressPrevTime := t;
@@ -3002,7 +3013,7 @@ begin
       Inc(Result);
 end;
 
-function TMainForm.GetFrameTileCount(AFrame: PFrame; ADelta, ADeltaVal, AFromTileIdxs: Boolean): Integer;
+function TMainForm.GetFrameTileCount(AFrame: PFrame; ADelta, AFromTileIdxs: Boolean; ADeltaFrame: PFrame): Integer;
 var
   Used: array of Boolean;
   i, j: Integer;
@@ -3020,9 +3031,13 @@ begin
     for i := 0 to High(AFrame^.TilesIndexes) do
       Used[AFrame^.TilesIndexes[i].RomIndex] := True;
 
-    if ADelta and (AFrame^.Index > 0) then
-      for i := 0 to High(FFrames[AFrame^.Index - 1].TilesIndexes) do
-        Used[FFrames[AFrame^.Index - 1].TilesIndexes[i].RomIndex] := True;
+    if ADelta then
+    begin
+      Assert(not Assigned(ADeltaFrame));
+      if AFrame^.Index > 0 then
+        for i := 0 to High(FFrames[AFrame^.Index - 1].TilesIndexes) do
+          Used[FFrames[AFrame^.Index - 1].TilesIndexes[i].RomIndex] := True;
+    end;
   end
   else
   begin
@@ -3030,14 +3045,58 @@ begin
       for i := 0 to cTileMapWidth - 1 do
         Used[AFrame^.TileMap[j, i].TileIdx] := True;
 
-    if ADelta and (AFrame^.Index > 0) then
-      for j := 0 to cTileMapHeight - 1 do
-        for i := 0 to cTileMapWidth - 1 do
-          Used[FFrames[AFrame^.Index - 1].TileMap[j, i].TileIdx] := ADeltaVal;
+    if ADelta then
+    begin
+      if Assigned(ADeltaFrame) then
+      begin
+        for j := 0 to cTileMapHeight - 1 do
+          for i := 0 to cTileMapWidth - 1 do
+            Used[ADeltaFrame^.TileMap[j, i].TileIdx] := True;
+      end
+      else if AFrame^.Index > 0 then
+      begin
+        for j := 0 to cTileMapHeight - 1 do
+          for i := 0 to cTileMapWidth - 1 do
+            Used[FFrames[AFrame^.Index - 1].TileMap[j, i].TileIdx] := True;
+      end;
+    end;
   end;
 
   for i := 0 to High(Used) do
     Inc(Result, ifthen(Used[i], 1));
+end;
+
+function TMainForm.GetKeyFrameFrameMaxTileCount(AKF: PKeyFrame; ADelta, ADeltaUsePrevKF: Boolean): Integer;
+var
+  Used: array of Boolean;
+  i, j, frmIdx, ftc: Integer;
+begin
+  Result := 0;
+
+  if Length(FTiles) = 0 then
+    Exit;
+
+  SetLength(Used, Length(FTiles));
+
+  for frmIdx := AKF^.StartFrame to AKF^.EndFrame do
+  begin
+    FillChar(Used[0], Length(FTiles) * SizeOf(Boolean), 0);
+
+    for j := 0 to cTileMapHeight - 1 do
+      for i := 0 to cTileMapWidth - 1 do
+        Used[FFrames[frmIdx].TileMap[j, i].TileIdx] := True;
+
+    if ADelta and (frmIdx > IfThen(ADeltaUsePrevKF, 0, AKF^.StartFrame)) then
+      for j := 0 to cTileMapHeight - 1 do
+        for i := 0 to cTileMapWidth - 1 do
+          Used[FFrames[frmIdx - 1].TileMap[j, i].TileIdx] := True;
+
+    ftc := 0;
+    for i := 0 to High(Used) do
+      Inc(ftc, ifthen(Used[i], 1));
+
+    Result := max(Result, ftc);
+  end;
 end;
 
 procedure TMainForm.CopyTile(const Src: TTile; var Dest: TTile);
@@ -3126,7 +3185,7 @@ var
   frm: PFrame;
 begin
   FTD := PFrameTilingData(Data);
-  frmIdx := FTD^.KFFrmIdx + FTD^.KF^.StartFrame;
+  frmIdx := FTD^.KF^.StartFrame;
 
   SetLength(ReducedDS, Length(FTD^.Dataset));
   SetLength(ReducedIdxToDS, Length(FTD^.Dataset));
@@ -3140,19 +3199,14 @@ begin
       Inc(di);
     end;
 
-  // wait prev keyframe done for proper GetFrameTileCount with prev frame
-  if (FTD^.KFFrmIdx = 0) and (FTD^.KF^.StartFrame > 0) then
-    while FFrames[FTD^.KF^.StartFrame - 1].KeyFrame^.FramesLeft > 0 do
-      sleep(10);
-
   if di > 0 then
   begin
     SetLength(ReducedDS, di);
     SetLength(ReducedIdxToDS, di);
 
-    KDT := ann_kdtree_create(@ReducedDS[0], Length(ReducedDS), cTileDCTSize, 1, ANN_KD_STD);
+    KDT := ann_kdtree_create(@ReducedDS[0], Length(ReducedDS), cTileDCTSize, 8, ANN_KD_SUGGEST);
     try
-      for frmDelta := IfThen(FTD^.KFFrmIdx > 0, -1, 0) to 0 do
+      for frmDelta := 0 to FTD^.KF^.FrameCount - 1 do
       begin
         frm := @FFrames[frmIdx + frmDelta];
 
@@ -3164,7 +3218,7 @@ begin
             TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, @DCT[0], 0.0, @dummy)];
             Assert(TrIdx >= 0);
 
-            frm^.TileMap[sy, sx] := FTD^.DsTMItem[TrIdx];
+            frm^.TileMap[sy, sx] := FTD^.DsTMItem[TrIdx]
           end;
       end;
     finally
@@ -3172,10 +3226,10 @@ begin
     end;
   end;
 
-  TPF := GetFrameTileCount(@FFrames[frmIdx], True, True, False);
+  TPF := GetKeyFrameFrameMaxTileCount(FTD^.KF, True, False);
 
   EnterCriticalSection(FCS);
-  WriteLn('KF FrmIdx: ', FTD^.KF^.StartFrame + max(0, FTD^.KFFrmIdx), #9'Itr: ', FTD^.Iteration, #9'MaxTPF: ', TPF, #9'TileCnt: ', Length(ReducedDS));
+  WriteLn('KF: ', FTD^.KF^.StartFrame, #9'Itr: ', FTD^.Iteration, #9'MaxTPF: ', TPF, #9'TileCnt: ', Length(ReducedDS));
   LeaveCriticalSection(FCS);
 
   Inc(FTD^.Iteration);
@@ -3192,6 +3246,7 @@ var
   best: TFloat;
   KDT: PANNkdtree;
   DCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  pal: TIntegerDynArray;
 begin
   // make a list of all used tiles
 
@@ -3209,7 +3264,9 @@ begin
       for vmir := False to True do
         for spal := False to True do
         begin
-          ComputeTileDCT(FTiles[i]^, True, False, cKFQWeighting, hmir, vmir, cKFGamma, AFTD^.KF^.PaletteRGB[spal], AFTD^.Dataset[di]);
+          pal := AFTD^.KF^.PaletteRGB[spal];
+
+          ComputeTileDCT(FTiles[i]^, True, False, cKFQWeighting, hmir, vmir, cKFGamma, pal, AFTD^.Dataset[di]);
 
           AFTD^.DsTMItem[di].TileIdx := i;
           AFTD^.DsTMItem[di].VMirror := vmir;
@@ -3227,12 +3284,12 @@ begin
   SetLength(AFTD^.TileBestDist, Length(FTiles));
   FillQWord(AFTD^.TileBestDist[0], Length(AFTD^.TileBestDist), 0);  // TFloat = Double => FillQWord
 
-  KDT := ann_kdtree_create(@AFTD^.Dataset[0], Length(AFTD^.Dataset), cTileDCTSize, 1, ANN_KD_STD);
+  KDT := ann_kdtree_create(@AFTD^.Dataset[0], Length(AFTD^.Dataset), cTileDCTSize, 8, ANN_KD_SUGGEST);
   try
     di := 0;
-    for frame := 0 to AFTD^.KF^.FrameCount - 1 do
+    for frame := AFTD^.KF^.StartFrame to AFTD^.KF^.EndFrame do
     begin
-      frm := @FFrames[AFTD^.KF^.StartFrame + frame];
+      frm := @FFrames[frame];
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
@@ -3252,15 +3309,12 @@ begin
     ann_kdtree_destroy(KDT);
   end;
 
-
   EnterCriticalSection(FCS);
   WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize, #9'ActiveRepo: ', Length(AFTD^.Dataset), #9'MaxDist: ', FormatFloat('0.000', AFTD^.MaxDist));
   LeaveCriticalSection(FCS);
 end;
 
 procedure TMainForm.DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
-const
-  cNBTilesEpsilon = 1;
 var
   i: Integer;
   FTD: PFrameTilingData;
@@ -3268,53 +3322,56 @@ begin
   FTD := New(PFrameTilingData);
   try
     FTD^.KF := AKF;
-    FTD^.KFFrmIdx := -1;
     FTD^.Iteration := 0;
+    FTD^.FixupMode := False;
 
     DoKeyFrameTiling(FTD);
 
-    // search of PassTileCount that gives MaxTPF closest to DesiredNbTiles
+    // search of a fraction of the dataset that gives MaxTPF closest to DesiredNbTiles
 
-    for i := 0 to AKF^.FrameCount - 1 do
-    begin
-      FTD^.Iteration := 0;
-      FTD^.KFFrmIdx := i;
-      if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-        GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cNBTilesEpsilon, cNBTilesEpsilon, FTD);
-
-      InterLockedDecrement(AKF^.FramesLeft);
-    end;
+    FTD^.Iteration := 0;
+    if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
+      GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cKFNBTilesEpsilon, cKFNBTilesEpsilon, FTD);
   finally
     Dispose(FTD);
   end;
 end;
 
-procedure TMainForm.FixupFrameTiling(AFrame, APrevFrame: PFrame; DesiredNbTiles: Integer);
-const
-  CSteps = 64;
+procedure TMainForm.FixupFrameTiling(AFrame: PFrame; DesiredNbTiles: Integer);
 var
-  i: Integer;
   KF: TKeyFrame;
   FTD: PFrameTilingData;
+
+  procedure DoKF;
+  begin
+    FTD^.KF := @KF;
+    FTD^.Iteration := 0;
+    FTD^.FixupMode := True;
+
+    DoKeyFrameTiling(FTD);
+
+    if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
+      GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cKFNBTilesEpsilon, cKFNBTilesEpsilon, FTD);
+  end;
+
 begin
   FTD := New(PFrameTilingData);
   try
+    if AFrame^.Index > 0 then
+    begin
+      KF := FFrames[Max(0, AFrame^.KeyFrame^.StartFrame - 1)].KeyFrame^;
+      KF.StartFrame := KF.EndFrame;
+      KF.FrameCount := 1;
+
+      DoKF;
+    end;
+
     KF := AFrame^.KeyFrame^;
     KF.EndFrame := KF.StartFrame;
     KF.FrameCount := 1;
 
-    FTD^.KF := @KF;
-    FTD^.KFFrmIdx := -1;
-    FTD^.Iteration := 0;
+    DoKF;
 
-    DoKeyFrameTiling(FTD);
-
-    FTD^.Iteration := 0;
-    FTD^.KFFrmIdx := 0;
-
-    for i := 0 to CSteps - 1 do
-      if TestTMICount(lerp(0, -FTD^.MaxDist, i / CSteps), FTD) <= DesiredNbTiles then
-        Break;
   finally
     Dispose(FTD);
   end;
@@ -3943,7 +4000,7 @@ begin
       ADataStream.WriteByte(1);
       while ADataStream.Size mod cBankSize <> 0 do
         ADataStream.WriteByte(0);
-      WriteLn('Crossed bank limit!');
+      //WriteLn('Crossed bank limit!');
     end
     else
     begin
@@ -4208,7 +4265,7 @@ function TMainForm.PrepareVRAMTileIndexes(AFrameIdx: Integer; var ATileIndexes: 
       end;
     end;
 
-    Assert(bestIdx >= 0, 'Frame used too many tiles!');
+    Assert(bestIdx >= 0, 'Frame ' + IntToStr(AFrameIdx) + ' used too many tiles!');
 
     TileCache[bestIdx].TileIdx := ATileIdx;
     TileCache[bestIdx].Frame := AFrameIdx;
@@ -4244,7 +4301,7 @@ var
   found: Boolean;
   frm: PFrame;
 begin
-  TPF := GetFrameTileCount(AFrame, True, True, True);
+  TPF := GetFrameTileCount(AFrame, True, True);
 
   if TPF < cMaxTilesPerFrame then
   begin

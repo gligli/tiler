@@ -127,7 +127,7 @@ object MainForm: TMainForm
     Width = 152
     OnChange = edInputChange
     TabOrder = 0
-    Text = 'Rick Astley - Never Gonna Give You Up-full9_short.avi'
+    Text = 'Slayers - 05 (BD 720P x264 10bit AAC)_edit_sms.avi'
   end
   object Label4: TLabel
     Left = 8
@@ -175,6 +175,7 @@ object MainForm: TMainForm
     Top = 196
     Width = 56
     MaxValue = 414
+    MinValue = 207
     TabOrder = 9
     Value = 350
   end
@@ -186,7 +187,7 @@ object MainForm: TMainForm
     MaxValue = 1000
     OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 50
+    Value = 30
   end
   object Label10: TLabel
     Left = 8
