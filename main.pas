@@ -3213,7 +3213,10 @@ begin
         for sy := 0 to cTileMapHeight - 1 do
           for sx := 0 to cTileMapWidth - 1 do
           begin
-            ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, False, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DCT);
+            if FPalBasedFrmTiling then
+              ComputeTileDCT(FTiles[frm^.TileMap[sy, sx].TileIdx]^, True, False, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DCT)
+            else
+              ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], False, False, cKFQWeighting, False, False, cKFGamma, nil, DCT);
 
             TrIdx := ReducedIdxToDS[ann_kdtree_search(KDT, @DCT[0], 0.0, @dummy)];
             Assert(TrIdx >= 0);
@@ -3293,7 +3296,10 @@ begin
       for sy := 0 to cTileMapHeight - 1 do
         for sx := 0 to cTileMapWidth - 1 do
         begin
-          ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], FPalBasedFrmTiling, False, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DCT);
+          if FPalBasedFrmTiling then
+            ComputeTileDCT(FTiles[frm^.TileMap[sy, sx].TileIdx]^, True, False, cKFQWeighting, False, False, cKFGamma, frm^.KeyFrame^.PaletteRGB[frm^.TileMap[sy, sx].SpritePal], DCT)
+          else
+            ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], False, False, cKFQWeighting, False, False, cKFGamma, nil, DCT);
 
           ann_kdtree_search(KDT, @DCT[0], 0.0, @best);
 
