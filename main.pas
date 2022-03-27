@@ -3201,7 +3201,7 @@ begin
 
   di := 0;
   for i := 0 to High(FTD^.Dataset) do
-    if FTD^.TileBestDist[i] < PassX then
+    if FTD^.TileBestDist[i shr 3] < PassX then
     begin
       ReducedDS[di] := FTD^.Dataset[i];
       ReducedIdxToDS[di] := i;
@@ -3293,7 +3293,7 @@ begin
   SetLength(AFTD^.Dataset, di);
 
   AFTD^.MaxDist := 0;
-  SetLength(AFTD^.TileBestDist, Length(FTiles) * 8);
+  SetLength(AFTD^.TileBestDist, Length(FTiles));
   FillQWord(AFTD^.TileBestDist[0], Length(AFTD^.TileBestDist), 0);  // TFloat = Double => FillQWord
 
   KDT := ann_kdtree_create(@AFTD^.Dataset[0], Length(AFTD^.Dataset), cTileDCTSize, 8, ANN_KD_SUGGEST);
@@ -3310,7 +3310,7 @@ begin
           else
             ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], False, False, cKFQWeighting, False, False, cKFGamma, nil, DCT);
 
-          pdis := @AFTD^.TileBestDist[ann_kdtree_search(KDT, @DCT[0], 0.0, @best)];
+          pdis := @AFTD^.TileBestDist[ann_kdtree_search(KDT, @DCT[0], 0.0, @best) shr 3];
           pdis^ -= best;
           if pdis^ < AFTD^.MaxDist then
             AFTD^.MaxDist := pdis^;
