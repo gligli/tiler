@@ -301,7 +301,7 @@ type
     pmProcesses: TPopupMenu;
     PopupMenu1: TPopupMenu;
     pbProgress: TProgressBar;
-    seAvgTPF: TSpinEdit;
+    seQbTiles: TFloatSpinEdit;
     seMaxTiles: TSpinEdit;
     seMaxTPF: TSpinEdit;
     sePage: TSpinEdit;
@@ -335,7 +335,7 @@ type
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure IdleTimerTimer(Sender: TObject);
-    procedure seAvgTPFEditingDone(Sender: TObject);
+    procedure seQbTilesEditingDone(Sender: TObject);
     procedure seMaxTilesEditingDone(Sender: TObject);
     procedure tbFrameChange(Sender: TObject);
   private
@@ -847,6 +847,11 @@ begin
   Result := sqrt(Result);
 end;
 
+function EqualQualityTileCount(tileCount: TFloat): Integer;
+begin
+  Result := round(sqrt(tileCount) * log2(1 + tileCount));
+end;
+
 { TMainForm }
 
 function TMainForm.ComputeCorrelation(const a, b: TIntegerDynArray): TFloat;
@@ -1061,14 +1066,14 @@ const
   end;
 
 var
-  i, j, Cnt, LastKFIdx: Integer;
-  v, av, ratio: TFloat;
+  i, j: Integer;
   fn: String;
-  kfIdx, frc: Integer;
-  isKf: Boolean;
-  kfSL: TStringList;
+  frc: Integer;
   sfr, efr: Integer;
+  wasAutoQ: Boolean;
 begin
+  wasAutoQ := seMaxTiles.Value = round(seQbTiles.Value * EqualQualityTileCount(Length(FFrames) * cTileMapSize));
+
   ProgressRedraw;
 
   for i := 0 to High(FTiles) do
@@ -1163,6 +1168,8 @@ begin
 
   ProgressRedraw(4);
 
+  if wasAutoQ or (seMaxTiles.Value <= 0) then
+    seQbTilesEditingDone(nil);
   tbFrameChange(nil);
 end;
 
@@ -1308,22 +1315,24 @@ begin
   end;
 end;
 
-procedure TMainForm.seAvgTPFEditingDone(Sender: TObject);
+procedure TMainForm.seQbTilesEditingDone(Sender: TObject);
+var
+  RawTileCount: Integer;
 begin
-  if Length(FFrames) = 0 then Exit;
-  seMaxTiles.Value := seAvgTPF.Value * Length(FFrames);
+  if Length(FFrames) * cTileMapSize = 0 then Exit;
+  RawTileCount := Length(FFrames) * cTileMapSize;
+  seMaxTiles.Value := min(round(seQbTiles.Value * EqualQualityTileCount(RawTileCount)), RawTileCount);
 end;
 
 procedure TMainForm.seMaxTilesEditingDone(Sender: TObject);
 begin
   if Length(FFrames) = 0 then Exit;
-  seAvgTPF.Value := seMaxTiles.Value div Length(FFrames);
+  seQbTiles.Value := seMaxTiles.Value div Length(FFrames);
 end;
 
 procedure TMainForm.tbFrameChange(Sender: TObject);
 begin
   Screen.Cursor := crDefault;
-  seAvgTPFEditingDone(nil);
   Render(tbFrame.Position, chkPlay.Checked, chkDithered.Checked, chkMirrored.Checked, chkReduced.Checked,  chkGamma.Checked, IfThen(chkSprite.State = cbGrayed, -1, Ord(chkSprite.Checked)), sePage.Value);
 end;
 
@@ -2251,7 +2260,7 @@ var
 const
   CShotTransMaxTilesPerKF = 96 * 1920 * 1080 div sqr(cTileWidth); // limiter for the amount of data in a keyframe
   CShotTransEuclideanHiThres = 6.0; // frame equivalent accumulated distance
-  CShotTransCorrelLoThres = 0.55; // interframe pearson correlation low limit
+  CShotTransCorrelLoThres = 0.5; // interframe pearson correlation low limit
   CShotTransGracePeriod = 6; // minimum frames between keyframes
 var
   i, j, LastKFIdx: Integer;
@@ -3192,7 +3201,7 @@ begin
 
   di := 0;
   for i := 0 to High(FTD^.Dataset) do
-    if FTD^.TileBestDist[i shr 3] < PassX then
+    if FTD^.TileBestDist[i] < PassX then
     begin
       ReducedDS[di] := FTD^.Dataset[i];
       ReducedIdxToDS[di] := i;
@@ -3248,8 +3257,8 @@ var
   pdis: PFloat;
   best: TFloat;
   KDT: PANNkdtree;
-  DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   pal: TIntegerDynArray;
+  DCT: array[0 .. cTileDCTSize - 1] of TFloat;
 begin
   // make a list of all used tiles
 
@@ -3284,7 +3293,7 @@ begin
   SetLength(AFTD^.Dataset, di);
 
   AFTD^.MaxDist := 0;
-  SetLength(AFTD^.TileBestDist, Length(FTiles));
+  SetLength(AFTD^.TileBestDist, Length(FTiles) * 8);
   FillQWord(AFTD^.TileBestDist[0], Length(AFTD^.TileBestDist), 0);  // TFloat = Double => FillQWord
 
   KDT := ann_kdtree_create(@AFTD^.Dataset[0], Length(AFTD^.Dataset), cTileDCTSize, 8, ANN_KD_SUGGEST);
@@ -3301,12 +3310,10 @@ begin
           else
             ComputeTileDCT(frm^.Tiles[sy * cTileMapWidth + sx], False, False, cKFQWeighting, False, False, cKFGamma, nil, DCT);
 
-          ann_kdtree_search(KDT, @DCT[0], 0.0, @best);
-
-          pdis := @AFTD^.TileBestDist[frm^.TileMap[sy, sx].TileIdx];
+          pdis := @AFTD^.TileBestDist[ann_kdtree_search(KDT, @DCT[0], 0.0, @best)];
           pdis^ -= best;
-          if -pdis^ > AFTD^.MaxDist then
-            AFTD^.MaxDist := -pdis^;
+          if pdis^ < AFTD^.MaxDist then
+            AFTD^.MaxDist := pdis^;
 
           Inc(di);
         end;
@@ -3316,7 +3323,7 @@ begin
   end;
 
   EnterCriticalSection(FCS);
-  WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize, #9'ActiveRepo: ', Length(AFTD^.Dataset), #9'MaxDist: ', FormatFloat('0.000', AFTD^.MaxDist));
+  WriteLn('KF FrmIdx: ',AFTD^.KF^.StartFrame, #9'FullRepo: ', TRSize, #9'ActiveRepo: ', Length(AFTD^.Dataset), #9'MaxDist: ', FormatFloat('0.000', -AFTD^.MaxDist));
   LeaveCriticalSection(FCS);
 end;
 
@@ -3337,7 +3344,7 @@ begin
 
     FTD^.Iteration := 0;
     if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cKFNBTilesEpsilon, cKFNBTilesEpsilon, FTD);
+      GoldenRatioSearch(@TestTMICount, FTD^.MaxDist, 0, DesiredNbTiles - cKFNBTilesEpsilon, cKFNBTilesEpsilon, FTD);
   finally
     Dispose(FTD);
   end;
@@ -3357,7 +3364,7 @@ var
     DoKeyFrameTiling(FTD);
 
     if TestTMICount(0.0, FTD) > DesiredNbTiles then // no GR in case ok before reducing
-      GoldenRatioSearch(@TestTMICount, -FTD^.MaxDist, 0, DesiredNbTiles - cKFNBTilesEpsilon, cKFNBTilesEpsilon, FTD);
+      GoldenRatioSearch(@TestTMICount, FTD^.MaxDist, 0, DesiredNbTiles - cKFNBTilesEpsilon, cKFNBTilesEpsilon, FTD);
   end;
 
 begin

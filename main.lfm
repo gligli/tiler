@@ -24,7 +24,7 @@ object MainForm: TMainForm
     Top = 336
     Width = 224
     Smooth = True
-    TabOrder = 13
+    TabOrder = 12
   end
   object imgSource: TImage
     Left = 272
@@ -66,7 +66,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 21
+    TabOrder = 20
   end
   object chkPlay: TCheckBox
     Left = 272
@@ -75,7 +75,7 @@ object MainForm: TMainForm
     Width = 42
     Anchors = [akLeft, akBottom]
     Caption = 'Play'
-    TabOrder = 15
+    TabOrder = 14
   end
   object lblTileCount: TLabel
     Left = 8
@@ -95,14 +95,14 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 16
+    TabOrder = 15
   end
   object Label2: TLabel
     Left = 8
     Height = 15
     Top = 170
-    Width = 126
-    Caption = 'Tile limit (all; per frame)'
+    Width = 118
+    Caption = 'Tile limit (all; Q based)'
   end
   object seFrameCount: TSpinEdit
     Left = 208
@@ -144,7 +144,7 @@ object MainForm: TMainForm
     Caption = 'Run all (F9)'
     OnClick = btnRunAllClick
     PopupMenu = pmProcesses
-    TabOrder = 11
+    TabOrder = 10
   end
   object sePage: TSpinEdit
     Left = 208
@@ -153,7 +153,7 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 10000
     OnChange = tbFrameChange
-    TabOrder = 14
+    TabOrder = 13
   end
   object Label6: TLabel
     Left = 8
@@ -176,18 +176,8 @@ object MainForm: TMainForm
     Width = 56
     MaxValue = 414
     MinValue = 207
-    TabOrder = 9
-    Value = 350
-  end
-  object seAvgTPF: TSpinEdit
-    Left = 208
-    Height = 23
-    Top = 168
-    Width = 56
-    MaxValue = 1000
-    OnEditingDone = seAvgTPFEditingDone
     TabOrder = 8
-    Value = 30
+    Value = 350
   end
   object Label10: TLabel
     Left = 8
@@ -242,7 +232,7 @@ object MainForm: TMainForm
     Width = 69
     Caption = 'Test debug'
     OnClick = btnDebugClick
-    TabOrder = 12
+    TabOrder = 11
     Visible = False
   end
   object chkMirrored: TCheckBox
@@ -255,7 +245,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 18
+    TabOrder = 17
   end
   object lblPct: TLabel
     Left = 232
@@ -276,7 +266,7 @@ object MainForm: TMainForm
     Caption = 'Sprite palette'
     OnChange = tbFrameChange
     State = cbGrayed
-    TabOrder = 19
+    TabOrder = 18
   end
   object chkGamma: TCheckBox
     Left = 632
@@ -287,7 +277,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = tbFrameChange
-    TabOrder = 20
+    TabOrder = 19
   end
   object seMaxTiles: TSpinEdit
     Left = 145
@@ -308,7 +298,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = tbFrameChange
     State = cbChecked
-    TabOrder = 17
+    TabOrder = 16
   end
   object lblCorrel: TLabel
     Left = 736
@@ -380,7 +370,7 @@ object MainForm: TMainForm
     Width = 154
     Caption = 'Palette based frame tiling'
     OnChange = chkExtFTChange
-    TabOrder = 10
+    TabOrder = 9
   end
   object seTempoSmoo: TFloatSpinEdit
     Left = 208
@@ -388,8 +378,19 @@ object MainForm: TMainForm
     Top = 248
     Width = 56
     MaxValue = 100
+    TabOrder = 21
+    Value = 20
+  end
+  object seQbTiles: TFloatSpinEdit
+    Left = 208
+    Height = 23
+    Top = 168
+    Width = 56
+    Increment = 0.1
+    MaxValue = 100
+    OnEditingDone = seQbTilesEditingDone
     TabOrder = 22
-    Value = 10
+    Value = 1
   end
   object IdleTimer: TIdleTimer
     Enabled = False
