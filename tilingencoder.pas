@@ -63,7 +63,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 1, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 5, 1, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -311,6 +311,12 @@ type
 
   TTilingEncoder = class
   private
+    FGamma: array[0..1] of TFloat;
+    FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
+    FVecInv: array[0..256 * 4 - 1] of Cardinal;
+    FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
+    FPalettePattern : TFloatDynArray2;
+
     FDitheringUseGamma: Boolean;
     FEncoderGammaValue: TFloat;
     FFrameTilingBlendingSize: Integer;
@@ -374,6 +380,8 @@ type
 
     procedure ClearAll;
     procedure ProgressRedraw(ASubStepIdx: Integer = -1; AProgressStep: TEncoderStep = esNone);
+    procedure InitLuts(ATilePaletteSize, APaletteCount: Integer);
+    function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
 
     procedure DitherFloydSteinberg(const AScreen: TByteDynArray);
 
@@ -615,70 +623,6 @@ end;
 function CompareIntegers(const Item1, Item2: Integer): Integer;
 begin
   Result := CompareValue(Item1, Item2);
-end;
-
-var
-  gGamma: array[0..1] of TFloat = (2.0, 0.6);
-  gGammaCorLut: array[-1..High(gGamma), 0..High(Byte)] of TFloat;
-  gVecInv: array[0..256 * 4 - 1] of Cardinal;
-  gDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
-  gPalettePattern : TFloatDynArray2;
-
-procedure InitLuts(ATilePaletteSize, APaletteCount: Integer);
-const
-  cCurvature = 2.0;
-var
-  g, i, j, v, u, y, x: Int64;
-  f, fp: TFloat;
-begin
-  // gamma
-
-  for g := -1 to High(gGamma) do
-    for i := 0 to High(Byte) do
-      if g >= 0 then
-        gGammaCorLut[g, i] := power(i / 255.0, gGamma[g])
-      else
-        gGammaCorLut[g, i] := i / 255.0;
-
-  // inverse
-
-  for i := 0 to High(gVecInv) do
-    gVecInv[i] := iDiv0(1 shl cVecInvWidth, i shr 2);
-
-  // DCT
-
-  i := 0;
-  for v := 0 to (cTileWidth - 1) do
-    for u := 0 to (cTileWidth - 1) do
-      for y := 0 to (cTileWidth - 1) do
-        for x := 0 to (cTileWidth - 1) do
-        begin
-          gDCTLut[i] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
-          Inc(i);
-        end;
-
-  // palette pattern
-
-  SetLength(gPalettePattern, APaletteCount, ATilePaletteSize);
-
-  f := 0;
-  for i := 0 to ATilePaletteSize - 1 do
-  begin
-    fp := f;
-    f := power(i + 2, cCurvature);
-
-    for j := 0 to APaletteCount - 1 do
-      gPalettePattern[j, i] := ((j + 1) / APaletteCount) * max(APaletteCount, f - fp) + fp;
-  end;
-
-  for j := 0 to APaletteCount - 1 do
-    for i := 0 to ATilePaletteSize - 1 do
-      gPalettePattern[j, i] /= gPalettePattern[APaletteCount - 1, ATilePaletteSize - 1];
-end;
-
-function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
-begin
-  Result := gGammaCorLut[lut, x];
 end;
 
 function lerp(x, y, alpha: TFloat): TFloat; inline;
@@ -1016,6 +960,63 @@ end;
 
 { TTilingEncoder }
 
+procedure TTilingEncoder.InitLuts(ATilePaletteSize, APaletteCount: Integer);
+const
+  cCurvature = 2.0;
+var
+  g, i, j, v, u, y, x: Int64;
+  f, fp: TFloat;
+begin
+  // gamma
+
+  for g := -1 to High(FGamma) do
+    for i := 0 to High(Byte) do
+      if g >= 0 then
+        FGammaCorLut[g, i] := power(i / 255.0, FGamma[g])
+      else
+        FGammaCorLut[g, i] := i / 255.0;
+
+  // inverse
+
+  for i := 0 to High(FVecInv) do
+    FVecInv[i] := iDiv0(1 shl cVecInvWidth, i shr 2);
+
+  // DCT
+
+  i := 0;
+  for v := 0 to (cTileWidth - 1) do
+    for u := 0 to (cTileWidth - 1) do
+      for y := 0 to (cTileWidth - 1) do
+        for x := 0 to (cTileWidth - 1) do
+        begin
+          FDCTLut[i] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
+          Inc(i);
+        end;
+
+  // palette pattern
+
+  SetLength(FPalettePattern, APaletteCount, ATilePaletteSize);
+
+  f := 0;
+  for i := 0 to ATilePaletteSize - 1 do
+  begin
+    fp := f;
+    f := power(i + 2, cCurvature);
+
+    for j := 0 to APaletteCount - 1 do
+      FPalettePattern[j, i] := ((j + 1) / APaletteCount) * max(APaletteCount, f - fp) + fp;
+  end;
+
+  for j := 0 to APaletteCount - 1 do
+    for i := 0 to ATilePaletteSize - 1 do
+      FPalettePattern[j, i] /= FPalettePattern[APaletteCount - 1, ATilePaletteSize - 1];
+end;
+
+function TTilingEncoder.GammaCorrect(lut: Integer; x: Byte): TFloat;
+begin
+  Result := FGammaCorLut[lut, x];
+end;
+
 procedure TTilingEncoder.GlobalTiling(AReloadTiles: Boolean; AReloadFN: String);
 begin
   if Length(FFrames) = 0 then
@@ -1036,7 +1037,7 @@ begin
     SaveRawTiles(AReloadFN);
   end;
 
-  ProgressRedraw(1);
+  ProgressRedraw(5);
 end;
 
 procedure TTilingEncoder.Dither;
@@ -1711,7 +1712,7 @@ begin
   end;
 {$endif}
 
-  VecInv := @gVecInv[0];
+  VecInv := @FVecInv[0];
   plan_count := 0;
   so_far[0] := 0; so_far[1] := 0; so_far[2] := 0; so_far[3] := 0;
 
@@ -2091,7 +2092,7 @@ var
 
   Yakmo: PYakmo;
 begin
-  Assert(FPaletteCount <= Length(gPalettePattern));
+  Assert(FPaletteCount <= Length(FPalettePattern));
 
   SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
   SetLength(Clusters, Length(Dataset));
@@ -2328,7 +2329,7 @@ var
   dist, bestDist: Int64;
   GTile: PTile;
 begin
-  Assert(FPaletteCount <= Length(gPalettePattern));
+  Assert(FPaletteCount <= Length(FPalettePattern));
 
   AKeyFrame.PaletteUseCount[APalIdx].UseCount := 0;
 
@@ -2716,7 +2717,7 @@ begin
   if FEncoderGammaValue = AValue then Exit;
   FEncoderGammaValue := Max(0.0, AValue);
 
-  gGamma[0] := FRenderGammaValue;
+  FGamma[0] := FRenderGammaValue;
   InitLuts(FTilePaletteSize, FPaletteCount);
 end;
 
@@ -2770,7 +2771,7 @@ begin
   if FRenderGammaValue = AValue then Exit;
   FRenderGammaValue := Max(0.0, AValue);
 
-  gGamma[1] := FRenderGammaValue;
+  FGamma[1] := FRenderGammaValue;
   InitLuts(FTilePaletteSize, FPaletteCount);
 end;
 
@@ -3055,7 +3056,7 @@ begin
   for cpn := 0 to cColorCpns - 1 do
   begin
     pRatio := @cUVRatio[0, 0];
-    pLut := @gDCTLut[0];
+    pLut := @FDCTLut[0];
 
     for v := 0 to (cTileWidth - 1) do
       for u := 0 to (cTileWidth - 1) do
@@ -5196,6 +5197,9 @@ begin
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}
+
+  FGamma[0] := 2.0;
+  FGamma[1] := 0.6;
 
   FInputBitmap := TBitmap.Create;
   FOutputBitmap := TBitmap.Create;
