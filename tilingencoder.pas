@@ -1113,7 +1113,11 @@ begin
 
   ProgressRedraw(0, esMakeUnique);
 
+  InitMergeTiles;
+
   ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
+
+  FinishMergeTiles;
 
   ProgressRedraw(1);
 end;
@@ -1999,13 +2003,6 @@ begin
   FPaletteBitmap.Width := FTilePaletteSize;
   FPaletteBitmap.Height := FPaletteCount;
   FPaletteBitmap.PixelFormat:=pf32bit;
-
-  FTilesBitmap.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 2, 1);
-  FTilesBitmap.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 2, 1);
-  FInputBitmap.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
-  FInputBitmap.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
-  FOutputBitmap.Width := FScreenWidth shl IfThen(FScreenHeight <= 256, 1, 0);
-  FOutputBitmap.Height := FScreenHeight shl IfThen(FScreenHeight <= 256, 1, 0);
 end;
 
 procedure TTilingEncoder.DitherFloydSteinberg(const AScreen: TByteDynArray);
@@ -2496,8 +2493,6 @@ var
   end;
 
 begin
-  InitMergeTiles;
-
   sortList := TFPList.Create;
   try
 
@@ -2531,8 +2526,6 @@ begin
   finally
     sortList.Free;
   end;
-
-  FinishMergeTiles;
 end;
 
 procedure TTilingEncoder.LoadTiles;
@@ -4390,9 +4383,6 @@ var
   KMBin: PKModesBin;
   median: array[0 .. Sqr(cTileWidth) - 1, 0 .. Sqr(cTileWidth) - 1] of Integer;
 begin
-  if not InRange(AIndex, 0, FPaletteCount - 1) then
-    Exit;
-
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := Length(KMBin^.Dataset);
   if DSLen <= KMBin^.ClusterCount then
@@ -4776,10 +4766,14 @@ begin
           idx := IdxMap[idx];
 
           Frame^.TileMap[y,x].TileIdx := idx;
-          if FTiles[idx]^.KFSoleIndex < 0 then
-            FTiles[idx]^.KFSoleIndex := Frame^.PKeyFrame.StartFrame
-          else if FTiles[idx]^.KFSoleIndex <> Frame^.PKeyFrame.StartFrame then
-            FTiles[idx]^.KFSoleIndex := MaxInt;
+
+          if idx >= 0 then
+          begin
+            if FTiles[idx]^.KFSoleIndex < 0 then
+              FTiles[idx]^.KFSoleIndex := Frame^.PKeyFrame.StartFrame
+            else if FTiles[idx]^.KFSoleIndex <> Frame^.PKeyFrame.StartFrame then
+              FTiles[idx]^.KFSoleIndex := MaxInt;
+          end;
         end;
       end;
   end;
