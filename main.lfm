@@ -22,7 +22,7 @@ object MainForm: TMainForm
   OnKeyDown = FormKeyDown
   PopupMenu = pmProcesses
   Position = poScreenCenter
-  LCLVersion = '2.2.0.4'
+  LCLVersion = '2.2.2.0'
   object tbFrame: TTrackBar
     Left = -1
     Height = 26
@@ -105,6 +105,7 @@ object MainForm: TMainForm
     Anchors = [akRight, akBottom]
     AutoSize = False
     Caption = '  0.000000'
+    ParentColor = False
   end
   object Label5: TLabel
     Left = 816
@@ -113,6 +114,7 @@ object MainForm: TMainForm
     Width = 78
     Anchors = [akRight, akBottom]
     Caption = 'PsyV Delta (Q):'
+    ParentColor = False
   end
   object sedPalIdx: TSpinEdit
     Left = 376
@@ -132,15 +134,16 @@ object MainForm: TMainForm
     Width = 36
     Anchors = [akLeft, akBottom]
     Caption = 'Palette'
+    ParentColor = False
   end
   object pcPages: TPageControl
     Left = 0
     Height = 448
     Top = 40
     Width = 964
-    ActivePage = tsOutput
+    ActivePage = tsTilesPal
     Anchors = [akTop, akLeft, akRight, akBottom]
-    TabIndex = 2
+    TabIndex = 3
     TabOrder = 4
     OnChange = UpdateVideo
     object tsSettings: TTabSheet
@@ -267,6 +270,7 @@ object MainForm: TMainForm
         Top = 11
         Width = 58
         Caption = 'Start frame'
+        ParentColor = False
       end
       object Label11: TLabel
         Left = 8
@@ -274,6 +278,7 @@ object MainForm: TMainForm
         Top = 264
         Width = 160
         Caption = 'Yliluoma 2 mixed colors count'
+        ParentColor = False
       end
       object Label9: TLabel
         Left = 8
@@ -281,6 +286,7 @@ object MainForm: TMainForm
         Top = 315
         Width = 159
         Caption = 'Temporal smoothing strength'
+        ParentColor = False
       end
       object Label1: TLabel
         Left = 8
@@ -288,6 +294,7 @@ object MainForm: TMainForm
         Top = 33
         Width = 38
         Caption = 'Output'
+        ParentColor = False
       end
       object Label7: TLabel
         Left = 8
@@ -295,6 +302,7 @@ object MainForm: TMainForm
         Top = 293
         Width = 242
         Caption = 'Smoothing additional tiles threshold (0: none)'
+        ParentColor = False
       end
       object Label4: TLabel
         Left = 8
@@ -302,6 +310,7 @@ object MainForm: TMainForm
         Top = 11
         Width = 28
         Caption = 'Input'
+        ParentColor = False
       end
       object edInput: TEdit
         Left = 88
@@ -317,6 +326,7 @@ object MainForm: TMainForm
         Top = 33
         Width = 144
         Caption = 'Frame count (0: automatic)'
+        ParentColor = False
       end
       object Label2: TLabel
         Left = 8
@@ -324,6 +334,7 @@ object MainForm: TMainForm
         Top = 122
         Width = 118
         Caption = 'Tile limit (all; Q based)'
+        ParentColor = False
       end
       object chkDitheringGamma: TCheckBox
         Left = 312
@@ -349,6 +360,7 @@ object MainForm: TMainForm
         Top = 345
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
+        ParentColor = False
       end
       object seEncGamma: TFloatSpinEdit
         Left = 312
@@ -411,6 +423,7 @@ object MainForm: TMainForm
         Top = 100
         Width = 222
         Caption = 'Palettes layout (palette count; palette size)'
+        ParentColor = False
       end
       object cbxPalSize: TComboBox
         Left = 382
@@ -461,6 +474,7 @@ object MainForm: TMainForm
         Top = 242
         Width = 218
         Caption = 'Dennis Lee v3 output bits per component'
+        ParentColor = False
       end
       object cbxDLBPC: TComboBox
         Left = 312
@@ -514,6 +528,7 @@ object MainForm: TMainForm
         Top = 56
         Width = 65
         Caption = 'Scaling ratio'
+        ParentColor = False
       end
       object Label16: TLabel
         Left = 8
@@ -521,6 +536,7 @@ object MainForm: TMainForm
         Top = 153
         Width = 132
         Caption = 'Frame tiling match effort'
+        ParentColor = False
       end
       object cbxFTQ: TComboBox
         Left = 312
@@ -557,6 +573,7 @@ object MainForm: TMainForm
         Top = 175
         Width = 237
         Caption = 'Frame tiling blending search effort (-1: none)'
+        ParentColor = False
       end
       object seFTBlend: TSpinEdit
         Left = 312
@@ -575,6 +592,7 @@ object MainForm: TMainForm
         Top = 198
         Width = 166
         Caption = 'Frame tiling blending threshold'
+        ParentColor = False
       end
       object seFTBlendThres: TFloatSpinEdit
         Left = 312
@@ -662,6 +680,7 @@ object MainForm: TMainForm
         Top = 10
         Width = 26
         Caption = 'Page'
+        ParentColor = False
       end
       object imgPalette: TImage
         Cursor = crHandPoint
@@ -682,7 +701,7 @@ object MainForm: TMainForm
         Top = 8
         Width = 680
         HorzScrollBar.Increment = 64
-        HorzScrollBar.Page = 320
+        HorzScrollBar.Page = 640
         HorzScrollBar.Tracking = True
         VertScrollBar.Increment = 64
         VertScrollBar.Page = 360
@@ -695,7 +714,7 @@ object MainForm: TMainForm
           Left = 0
           Height = 360
           Top = 0
-          Width = 320
+          Width = 640
           PopupMenu = pmProcesses
           Stretch = True
         end
@@ -727,6 +746,7 @@ object MainForm: TMainForm
     Top = 13
     Width = 28
     Caption = 'From'
+    ParentColor = False
   end
   object cbxStartStep: TComboBox
     Left = 124
@@ -743,6 +763,7 @@ object MainForm: TMainForm
     Top = 13
     Width = 14
     Caption = 'To'
+    ParentColor = False
   end
   object pbProgress: TProgressBar
     Left = 344
@@ -762,6 +783,7 @@ object MainForm: TMainForm
     Anchors = [akTop, akRight]
     AutoSize = False
     Caption = '0%'
+    ParentColor = False
   end
   object pnLbl: TPanel
     Left = 344

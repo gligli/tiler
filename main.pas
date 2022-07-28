@@ -491,8 +491,6 @@ begin
   Constraints.MinHeight := Height;
   Constraints.MinWidth := Width;
   pcPages.ActivePage := tsSettings;
-  FTilingEncoder.ReframeUI(80, 45);
-  FTilingEncoder.FramesPerSecond := 24.0;
 
   for es := Succ(Low(TEncoderStep)) to High(TEncoderStep) do
   begin
