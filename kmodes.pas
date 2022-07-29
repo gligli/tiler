@@ -684,7 +684,7 @@ begin
   for icentroid := 1 to NumClusters - 1 do
   begin
     max := 0;
-    ifarthest := -1;
+    ifarthest := InitPoint;
     for i := 0 to NumPoints - 1 do
       if (MinDistance[i] >= max) and not Used[i] then
       begin
