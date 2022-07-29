@@ -4535,7 +4535,7 @@ begin
     SetLength(KMBins[i].Dataset, cnt[i], cKModesFeatureCount);
   end;
   FillDWord(cnt[0], Length(cnt), 0);
-  FillDWord(best[0], Length(best), 0);
+  FillDWord(best[0], Length(best), MaxInt);
 
   // bin tiles by PalSigni (highest number of pixels the same color from the tile)
 
@@ -4553,7 +4553,7 @@ begin
     for j := 0 to cKModesFeatureCount - 1 do
     begin
       KMBins[bin].Dataset[cnt[bin], j] := DataLine[j];
-      acc += KMBins[bin].Dataset[cnt[bin], j];
+      acc += DataLine[j];
     end;
     if acc <= best[bin] then
     begin
@@ -4588,7 +4588,9 @@ begin
 
   // ensure inter block tile unicity
 
+  InitMergeTiles;
   MakeTilesUnique(0, Length(FTiles));
+  FinishMergeTiles;
 
   ProgressRedraw(3);
 
@@ -4681,7 +4683,9 @@ begin
 
     ProgressRedraw(3);
 
+    InitMergeTiles;
     MakeTilesUnique(0, Length(FTiles));
+    FinishMergeTiles;
 
     ProgressRedraw(4);
   finally
