@@ -463,6 +463,7 @@ begin
 
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
+  sedPalIdx.MaxValue := FTilingEncoder.PaletteCount;
 end;
 
 procedure TMainForm.TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);

@@ -2771,7 +2771,7 @@ end;
 procedure TTilingEncoder.SetRenderPaletteIndex(AValue: Integer);
 begin
   if FRenderPaletteIndex = AValue then Exit;
-  FRenderPaletteIndex := EnsureRange(AValue, 0, FPaletteCount - 1);
+  FRenderPaletteIndex := EnsureRange(AValue, -1, FPaletteCount - 1);
 end;
 
 procedure TTilingEncoder.SetRenderTilePage(AValue: Integer);
@@ -3484,7 +3484,7 @@ begin
       try
         FOutputBitmap.Canvas.Brush.Color := clFuchsia;
         FOutputBitmap.Canvas.Brush.Style := bsDiagCross;
-        FOutputBitmap.Canvas.Clear;
+        FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
 
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do

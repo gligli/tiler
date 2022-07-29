@@ -45,7 +45,7 @@ object MainForm: TMainForm
     Width = 71
     Anchors = [akLeft, akBottom]
     Caption = 'Play (F11)'
-    OnChange = UpdateGUI
+    OnChange = UpdateVideo
     TabOrder = 6
   end
   object chkBlended: TCheckBox
@@ -56,7 +56,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     Caption = 'Blended'
     Checked = True
-    OnChange = UpdateGUI
+    OnChange = UpdateVideo
     State = cbChecked
     TabOrder = 9
   end
@@ -68,7 +68,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     Caption = 'Mirrored'
     Checked = True
-    OnChange = UpdateGUI
+    OnChange = UpdateVideo
     State = cbChecked
     TabOrder = 8
   end
@@ -80,7 +80,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = 'Gamma'
-    OnChange = UpdateGUI
+    OnChange = UpdateVideo
     TabOrder = 11
   end
   object chkSmoothed: TCheckBox
@@ -92,15 +92,15 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Smoothed'
     Checked = True
-    OnChange = UpdateGUI
+    OnChange = UpdateVideo
     State = cbChecked
     TabOrder = 7
   end
   object lblCorrel: TLabel
-    Left = 896
+    Left = 880
     Height = 13
     Top = 519
-    Width = 59
+    Width = 75
     Alignment = taRightJustify
     Anchors = [akRight, akBottom]
     AutoSize = False
@@ -108,7 +108,7 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label5: TLabel
-    Left = 816
+    Left = 800
     Height = 15
     Top = 519
     Width = 78
@@ -630,7 +630,6 @@ object MainForm: TMainForm
         KeepOriginXWhenClipped = True
         KeepOriginYWhenClipped = True
         PopupMenu = pmProcesses
-        Transparent = True
       end
     end
     object tsOutput: TTabSheet
@@ -658,7 +657,6 @@ object MainForm: TMainForm
         KeepOriginXWhenClipped = True
         KeepOriginYWhenClipped = True
         PopupMenu = pmProcesses
-        Transparent = True
       end
     end
     object tsTilesPal: TTabSheet
