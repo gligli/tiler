@@ -5166,7 +5166,7 @@ begin
 
   Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
   Process.Executable := 'ffmpeg.exe';
-  Process.Parameters.Add('-y -i "' + AFN + '" ' + vfl + ' -compression_level 0 -pix_fmt rgb24 "' + Result + '%04d.png' + '"');
+  Process.Parameters.Add('-y -i "' + AFN + '" ' + vfl + ' -compression_level 5 -pix_fmt rgb24 "' + Result + '%04d.png' + '"');
   Process.ShowWindow := swoHIDE;
   Process.Priority := ppIdle;
 
