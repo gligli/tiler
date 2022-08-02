@@ -201,6 +201,7 @@ end;
 procedure TMainForm.btnLoadClick(Sender: TObject);
 begin
   FTilingEncoder.Load(edInput.Text, seStartFrame.Value, seFrameCount.Value, StrToIntDef(cbxPalCount.Text, 1), StrToIntDef(cbxPalSize.Text, 2), StrToFloatDef(cbxScaling.Text, 1.0, InvariantFormatSettings));
+  seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
   UpdateVideo(nil);
 end;
 
@@ -313,7 +314,7 @@ var
   k: Word;
 begin
   k := Key;
-  if k in [VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10, VK_F11, VK_F12, VK_ESCAPE] then
+  if k in [VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10, VK_F11, VK_F12] then
     Key := 0; // KLUDGE: workaround event called twice
   case k of
     VK_F2: btnLoadClick(nil);
@@ -349,7 +350,6 @@ begin
         end;
         UpdateVideo(nil);
       end;
-    VK_ESCAPE: TerminateProcess(GetCurrentProcess, 1);
   end;
 end;
 
@@ -402,6 +402,7 @@ procedure TMainForm.seQbTilesEditingDone(Sender: TObject);
 begin
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
+  UpdateGUI(Sender);
 end;
 
 procedure TMainForm.UpdateVideo(Sender: TObject);
@@ -420,7 +421,7 @@ end;
 
 procedure TMainForm.UpdateGUI(Sender: TObject);
 const
-  cFTQuality : array[0..2] of TFTQuality = (ftFast, ftMedium, ftSlow);
+  cFTQuality : array[0..3] of TFTQuality = (ftFastest, ftFast, ftMedium, ftSlow);
 begin
   tbFrame.Min := 0;
   tbFrame.Max := FTilingEncoder.FrameCount - 1;

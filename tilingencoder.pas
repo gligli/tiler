@@ -14,7 +14,7 @@ uses
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
-  TFTQuality = (ftFast, ftMedium, ftSlow);
+  TFTQuality = (ftFastest, ftFast, ftMedium, ftSlow);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
 
 const
@@ -22,7 +22,7 @@ const
 
   cBitsPerComp = 8;
   cRandomKModesCount = 7;
-  cFTIntraPaletteTol: array[TFTQuality] of TFloat = (0.01, 0.05, 0.2);
+  cFTIntraPaletteTol: array[TFTQuality] of TFloat = (0.0, 0.01, 0.05, 0.2);
   cMaxFTBlend = 16;
   cMaxBlendingFTBucketSize = 16;
   cFTQWeighting = False;
@@ -2106,12 +2106,13 @@ begin
       end;
   assert(di = Length(Dataset));
 
+  WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo start');
+
   if (di > 1) and (FPaletteCount > 1) then
   begin
-   Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 1);
+   Yakmo := yakmo_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
    yakmo_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
    SetLength(Dataset, 0); // free up some memmory
-   WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo start');
    yakmo_train_on_data(Yakmo, @Clusters[0]);
    yakmo_get_centroids(Yakmo, @AKeyFrame.PaletteCentroids[0]);
    yakmo_destroy(Yakmo);
@@ -2290,7 +2291,7 @@ var
 
       // use KMeans to quantize to FTilePaletteSize elements
 
-      Yakmo := yakmo_create(FTilePaletteSize, 1, MaxInt, 1, 0, 0, 0);
+      Yakmo := yakmo_create(FTilePaletteSize, 1, 200, 1, 0, 0, 0);
       yakmo_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
 
       SetLength(Dataset, 0); // free up some memmory
