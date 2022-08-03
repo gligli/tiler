@@ -3857,7 +3857,7 @@ var
     for j := 0 to FPaletteCount - 1 do
       for i := 0 to FPaletteCount - 1 do
       begin
-        Result[j, i] := CompareEuclideanDCT(AKF.PaletteCentroids[j], AKF.PaletteCentroids[i]);
+        Result[j, i] := sqrt(CompareEuclideanDCT(AKF.PaletteCentroids[j], AKF.PaletteCentroids[i]));
         if not IsNan(Result[j, i]) then
           HighestDist := Max(HighestDist, Result[j, i]);
       end;
@@ -3865,18 +3865,16 @@ var
 
   procedure DoBuild(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    frm, ty, tx, palIdx: Integer;
+    ty, tx, palIdx: Integer;
   begin
-    if not InRange(AIndex, 0, High(FTiles)) then
+    if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    for frm := AKF.StartFrame to AKF.EndFrame do
-      for ty := 0 to FTileMapHeight - 1 do
-        for tx := 0 to FTileMapWidth - 1 do
-          if FFrames[frm].TileMap[ty, tx].TileIdx = AIndex then
-            for palIdx := 0 to FPaletteCount - 1 do
-             if PaletteDists[palIdx, FFrames[frm].TileMap[ty, tx].PalIdx] <= cFTIntraPaletteTol[AFTQuality] * HighestDist then
-               used[palIdx, AIndex] := True;
+    for ty := 0 to FTileMapHeight - 1 do
+      for tx := 0 to FTileMapWidth - 1 do
+        for palIdx := 0 to FPaletteCount - 1 do
+         if PaletteDists[palIdx, FFrames[AIndex].TileMap[ty, tx].PalIdx] <= cFTIntraPaletteTol[AFTQuality] * HighestDist then
+           used[palIdx, FFrames[AIndex].TileMap[ty, tx].TileIdx] := True;
   end;
 
   procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -3924,7 +3922,7 @@ begin
 
   // Build an indicator table of used tiles
 
-  ProcThreadPool.DoParallelLocalProc(@DoBuild, 0, High(FTiles), nil, NumberOfProcessors);
+  ProcThreadPool.DoParallelLocalProc(@DoBuild, 0, High(FFrames), nil, NumberOfProcessors);
 
   // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
