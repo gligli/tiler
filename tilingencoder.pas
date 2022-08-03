@@ -4381,10 +4381,9 @@ var
   KModes: TKModes;
   LocCentroids: TByteDynArray2;
   LocClusters: TIntegerDynArray;
-  lineIdx, clusterIdx, clusterLineCount, DSLen, tx, ty, j, k, bestIdx, bestVal: Integer;
+  lineIdx, clusterIdx, clusterLineCount, DSLen: Integer;
   ToMergeIdxs: TIntegerDynArray;
   KMBin: PKModesBin;
-  median: array[0 .. Sqr(cTileWidth) - 1, 0 .. Sqr(cTileWidth) - 1] of Integer;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := Length(KMBin^.Dataset);
@@ -4427,46 +4426,9 @@ begin
 
     if clusterLineCount >= 2 then
     begin
-      FillChar(median[0, 0], Sizeof(median), 0);
-
-      // build a median of the cluster
-
-      for j := 0 to clusterLineCount - 1 do
-      begin
-        k := 0;
-        for ty := 0 to cTileWidth - 1 do
-          for tx := 0 to cTileWidth - 1 do
-          begin
-            Inc(median[k, FTiles[ToMergeIdxs[j]]^.PalPixels[ty, tx]], FTiles[ToMergeIdxs[j]]^.UseCount);
-            Inc(k);
-          end;
-      end;
-
-      // use it as centroid
-
-      FTiles[ToMergeIdxs[0]]^.ClearRGBPixels;
-      k := 0;
-      for ty := 0 to cTileWidth - 1 do
-        for tx := 0 to cTileWidth - 1 do
-        begin
-          bestIdx := -1;
-          bestVal := -1;
-          for j := 0 to FTilePaletteSize - 1 do
-            if median[k, j] > bestVal then
-            begin
-              bestIdx := j;
-              bestVal := median[k, j];
-            end;
-
-          FTiles[ToMergeIdxs[0]]^.PalPixels[ty, tx] := bestIdx;
-          Inc(k);
-        end;
-
-
-
       // apply to cluster
       SpinEnter(@FLock);
-      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[0], nil, nil);
+      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[0], @LocCentroids[clusterIdx, 0], nil);
       SpinLeave(@FLock);
     end;
   end;
