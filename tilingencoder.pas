@@ -1323,7 +1323,10 @@ begin
     SetLength(FFrames[i].FSPixels, 0);
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
+  begin
+    SetGlobalTilingQualityBasedTileCount(0.0);
     SetGlobalTilingQualityBasedTileCount(FGlobalTilingQualityBasedTileCount);
+  end;
 
   ProgressRedraw(3);
 end;
@@ -2737,6 +2740,7 @@ procedure TTilingEncoder.SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
 var
   RawTileCount: Integer;
 begin
+  if FGlobalTilingQualityBasedTileCount = AValue then Exit;
   FGlobalTilingQualityBasedTileCount := AValue;
 
   RawTileCount := Length(FFrames) * FTileMapSize;
