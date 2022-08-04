@@ -10,7 +10,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger,
-  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, kmodes, extern, typ, sle;
+  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, kmodes, extern, typ, sle, tbbmalloc;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -3653,6 +3653,8 @@ var
   ProgressPosition, ProgressStepPosition, ProgressMax: Integer;
   ProgressHourGlass: Boolean;
 begin
+  scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, nil); // force the mem allocator to release unused memory
+
   if AProgressStep <> esNone then // new step?
   begin
     FProgressStep := AProgressStep;
