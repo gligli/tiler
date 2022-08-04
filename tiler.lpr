@@ -3,6 +3,7 @@ program tiler;
 {$mode objfpc}{$H+}
 
 uses
+  tbbmalloc,
   //cmem,
   {$IFDEF UNIX}{$IFDEF UseCThreads}
   cthreads,
