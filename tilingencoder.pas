@@ -236,7 +236,6 @@ type
   TTilingDataset = record
     Dataset: TANNFloatDynArray2;
     TDToTileIdx: TIntegerDynArray;
-    TDToAttrs: TByteDynArray;
     KDT: PANNkdtree;
     DistErrCml: TFloatDynArray;
   end;
@@ -3778,26 +3777,26 @@ var
 
   function DoPsyV: Integer;
   var
-    di, ti, j, hvmir: Integer;
+    di, ti, j: Integer;
     T: PTile;
     DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   begin
     di := 0;
     for ti := 0 to High(FTiles) do
-      for hvmir := 0 to 3 do
-      begin
-        T := FTiles[ti];
-        DS^.TDToTileIdx[di] := ti;
-        DS^.TDToAttrs[di] := hvmir;
+    begin
+      T := FTiles[ti];
 
-        ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], DCT);
+      if T^.Active then
+      begin
+        DS^.TDToTileIdx[di] := ti;
+
+        ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, AFTGamma, AKF.PaletteRGB[APaletteIndex], DCT);
         for j := 0 to cTileDCTSize - 1 do
           DS^.Dataset[di, j] := DCT[j];
 
-        // prune redundancies
-        if (di <= 0) or (CompareDWord(DS^.Dataset[di - 1, 0], DS^.Dataset[di, 0], cTileDCTSize) <> 0) then
-          Inc(di);
+        Inc(di);
       end;
+    end;
 
     Result := di;
   end;
@@ -3811,16 +3810,12 @@ begin
   AKF.TileDS[APaletteIndex] := DS;
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  KNNSize := Length(FTiles) * 4;
+  KNNSize := Length(FTiles);
   SetLength(DS^.TDToTileIdx, KNNSize);
-  SetLength(DS^.TDToAttrs, KNNSize);
   SetLength(DS^.Dataset, KNNSize, cTileDCTSize);
   SetLength(DS^.DistErrCml, AKF.FrameCount);
 
   KNNSize := DoPsyV;
-  SetLength(DS^.TDToTileIdx, KNNSize);
-  SetLength(DS^.TDToAttrs, KNNSize);
-  SetLength(DS^.Dataset, KNNSize, cTileDCTSize);
 
   // Build KNN
 
@@ -3842,7 +3837,6 @@ begin
   AKF.TileDS[APaletteIndex]^.KDT := nil;
   SetLength(AKF.TileDS[APaletteIndex]^.Dataset, 0);
   SetLength(AKF.TileDS[APaletteIndex]^.TDToTileIdx, 0);
-  SetLength(AKF.TileDS[APaletteIndex]^.TDToAttrs, 0);
   Dispose(AKF.TileDS[APaletteIndex]);
 
   AKF.TileDS[APaletteIndex] := nil;
@@ -3872,7 +3866,7 @@ procedure TTilingEncoder.DoFrameTiling(AFrame: TFrame; APaletteIndex: Integer; A
   AFTBlendThres: TFloat);
 var
   i, bestIdx, bucketIdx, idx, bucketSize: Integer;
-  attrs, bestBlendCur, bestBlendPrev: Byte;
+  hvmir, bestHvmir, bestBlendCur, bestBlendPrev: Byte;
   x, y, ox, oy, bestX, bestY: Integer;
   bestErr: TFloat;
 
@@ -3892,6 +3886,7 @@ var
     begin
       bestErr := err;
       bestIdx := idx;
+      bestHvmir := hvmir;
       bestBlendCur := bc;
       bestBlendPrev := bp;
       bestX := ox;
@@ -3951,81 +3946,86 @@ begin
       if AFrame.TileMap[y, x].PalIdx <> APaletteIndex then
         Continue;
 
-      ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, DCT);
-      for i := 0 to cTileDCTSize - 1 do
-        ANNDCT[i] := DCT[i];
-
-      ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], 1, @ANNDCT[0], 0.0);
-
+      bestIdx := -1;
+      bestErr := MaxSingle;
+      bestHvmir := 0;
       bestBlendCur := cMaxFTBlend - 1;
       bestBlendPrev := 0;
       bestX := x;
       bestY := y;
-      if (AFTBlend >= 0) and not IsZero(errs[0], AFTBlendThres) then
+      for hvmir := 0 to 3 do
       begin
-        // try to blend a local tile of the previous frame to improve likeliness
+        ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, (hvmir and 1) <> 0, (hvmir and 2) <> 0, AFTGamma, nil, DCT);
+        for i := 0 to cTileDCTSize - 1 do
+          ANNDCT[i] := DCT[i];
 
         bucketSize := max(1, (AFTBlend + 1) * 2);
         ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @ANNDCT[0], 0.0);
 
-        bestIdx := idxs[0];
-        bestErr := errs[0];
-        for bucketIdx := 0 to bucketSize - 1 do
+        if (AFTBlend >= 0) and not IsZero(errs[0], AFTBlendThres) then
         begin
-          idx := idxs[bucketIdx];
-          if idx < 0 then
-            Continue;
+          // try to blend a local tile of the previous frame to improve likeliness
 
-          for i := 0 to cTileDCTSize - 1 do
+          for bucketIdx := 0 to bucketSize - 1 do
           begin
-            CurPrevDCT[0, i] := DS^.Dataset[idx, i];
-            CurPrevDCT[2, i * 2] := CurPrevDCT[0, i];
-          end;
-
-          for oy := y - AFTBlend to y + AFTBlend do
-          begin
-            if not InRange(oy, 0, FTileMapHeight - 1) then
+            idx := idxs[bucketIdx];
+            if idx < 0 then
               Continue;
 
-            for ox := x - AFTBlend to x + AFTBlend do
+            for i := 0 to cTileDCTSize - 1 do
             begin
-              if not InRange(ox, 0, FTileMapWidth - 1) then
+              CurPrevDCT[0, i] := DS^.Dataset[idx, i];
+              CurPrevDCT[2, i * 2] := CurPrevDCT[0, i];
+            end;
+
+            for oy := y - AFTBlend to y + AFTBlend do
+            begin
+              if not InRange(oy, 0, FTileMapHeight - 1) then
                 Continue;
 
-              if AFrame.Index > 0 then
+              for ox := x - AFTBlend to x + AFTBlend do
               begin
-                prevTile := nil;
-                prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
-                prevTile := FTiles[prevTMI^.TileIdx];
+                if not InRange(ox, 0, FTileMapWidth - 1) then
+                  Continue;
 
-                ComputeTilePsyVisFeatures(prevTile^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], CurPrevDCT[1]);
-                for i := 0 to cTileDCTSize - 1 do
-                  CurPrevDCT[2, i * 2 + 1] := CurPrevDCT[1, i];
+                if AFrame.Index > 0 then
+                begin
+                  prevTile := nil;
+                  prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
+                  prevTile := FTiles[prevTMI^.TileIdx];
 
-                SearchBlending2P(DCT);
-              end
-              else
-              begin
-                SearchBlending1P(DCT, CurPrevDCT[0]);
+                  ComputeTilePsyVisFeatures(prevTile^, True, False, cFTQWeighting, prevTMI^.HMirror xor ((hvmir and 1) <> 0), prevTMI^.VMirror xor ((hvmir and 2) <> 0), AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], CurPrevDCT[1]);
+                  for i := 0 to cTileDCTSize - 1 do
+                    CurPrevDCT[2, i * 2 + 1] := CurPrevDCT[1, i];
+
+                  SearchBlending2P(DCT);
+                end
+                else
+                begin
+                  SearchBlending1P(DCT, CurPrevDCT[0]);
+                end;
               end;
             end;
           end;
-        end;
-      end
-      else
-      begin
-        // in case no blending, first element from KNN is best
+        end
+        else
+        begin
+          // in case no blending, first element from KNN is best
 
-        bestIdx := idxs[0];
-        bestErr := errs[0];
+          if errs[0] < bestErr then
+          begin
+            bestIdx := idxs[0];
+            bestErr := errs[0];
+            bestHvmir := hvmir;
+          end;
+        end;
       end;
 
       tmiO := @FFrames[AFrame.Index].TileMap[y, x];
 
-      attrs := DS^.TDToAttrs[bestIdx];
       tmiO^.TileIdx := DS^.TDToTileIdx[bestIdx];
-      tmiO^.HMirror := (attrs and 1) <> 0;
-      tmiO^.VMirror := (attrs and 2) <> 0;
+      tmiO^.HMirror := (bestHvmir and 1) <> 0;
+      tmiO^.VMirror := (bestHvmir and 2) <> 0;
       tmiO^.BlendCur := bestBlendCur;
       tmiO^.BlendPrev := bestBlendPrev;
       tmiO^.BlendX := bestX - x;
