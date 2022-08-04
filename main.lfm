@@ -190,12 +190,12 @@ object MainForm: TMainForm
       object seTempoSmoo: TFloatSpinEdit
         Left = 312
         Height = 23
-        Top = 312
+        Top = 296
         Width = 71
         Increment = 2.5
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 20
+        TabOrder = 19
         Value = 10
       end
       object seStartFrame: TSpinEdit
@@ -210,17 +210,17 @@ object MainForm: TMainForm
       object seAddlTiles: TFloatSpinEdit
         Left = 312
         Height = 23
-        Top = 290
+        Top = 274
         Width = 71
         Increment = 0.1
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 19
+        TabOrder = 18
       end
       object cbxYilMix: TComboBox
         Left = 312
         Height = 23
-        Top = 260
+        Top = 236
         Width = 71
         ItemHeight = 15
         ItemIndex = 2
@@ -232,7 +232,7 @@ object MainForm: TMainForm
           '16'
         )
         OnChange = UpdateGUI
-        TabOrder = 18
+        TabOrder = 17
         Text = '4'
       end
       object seFrameCount: TSpinEdit
@@ -262,7 +262,7 @@ object MainForm: TMainForm
         Checked = True
         OnChange = UpdateGUI
         State = cbChecked
-        TabOrder = 24
+        TabOrder = 23
       end
       object Label13: TLabel
         Left = 656
@@ -275,7 +275,7 @@ object MainForm: TMainForm
       object Label11: TLabel
         Left = 8
         Height = 15
-        Top = 264
+        Top = 240
         Width = 160
         Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
@@ -283,7 +283,7 @@ object MainForm: TMainForm
       object Label9: TLabel
         Left = 8
         Height = 15
-        Top = 315
+        Top = 299
         Width = 159
         Caption = 'Temporal smoothing strength'
         ParentColor = False
@@ -299,7 +299,7 @@ object MainForm: TMainForm
       object Label7: TLabel
         Left = 8
         Height = 15
-        Top = 293
+        Top = 277
         Width = 242
         Caption = 'Smoothing additional tiles threshold (0: none)'
         ParentColor = False
@@ -343,7 +343,7 @@ object MainForm: TMainForm
         Width = 170
         Caption = 'Dithering gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 25
+        TabOrder = 24
       end
       object chkFTGamma: TCheckBox
         Left = 312
@@ -352,12 +352,12 @@ object MainForm: TMainForm
         Width = 184
         Caption = 'Frame tiling gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 26
+        TabOrder = 25
       end
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 345
+        Top = 337
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -365,25 +365,25 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 312
         Height = 23
-        Top = 342
+        Top = 334
+        Width = 71
+        Increment = 0.1
+        MaxValue = 10
+        MinValue = 0.1
+        OnChange = UpdateGUI
+        TabOrder = 20
+        Value = 1.8
+      end
+      object seVisGamma: TFloatSpinEdit
+        Left = 382
+        Height = 23
+        Top = 334
         Width = 71
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
         TabOrder = 21
-        Value = 1.8
-      end
-      object seVisGamma: TFloatSpinEdit
-        Left = 382
-        Height = 23
-        Top = 342
-        Width = 71
-        Increment = 0.1
-        MaxValue = 10
-        MinValue = 0.1
-        OnChange = UpdateGUI
-        TabOrder = 22
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
@@ -471,7 +471,7 @@ object MainForm: TMainForm
       object Label14: TLabel
         Left = 8
         Height = 15
-        Top = 242
+        Top = 218
         Width = 218
         Caption = 'Dennis Lee v3 output bits per component'
         ParentColor = False
@@ -479,7 +479,7 @@ object MainForm: TMainForm
       object cbxDLBPC: TComboBox
         Left = 312
         Height = 23
-        Top = 238
+        Top = 214
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -495,7 +495,7 @@ object MainForm: TMainForm
         )
         OnChange = UpdateGUI
         Style = csDropDownList
-        TabOrder = 17
+        TabOrder = 16
         Text = '7'
       end
       object cbxScaling: TComboBox
@@ -530,33 +530,6 @@ object MainForm: TMainForm
         Caption = 'Scaling ratio'
         ParentColor = False
       end
-      object Label16: TLabel
-        Left = 8
-        Height = 15
-        Top = 153
-        Width = 132
-        Caption = 'Frame tiling match effort'
-        ParentColor = False
-      end
-      object cbxFTQ: TComboBox
-        Left = 312
-        Height = 23
-        Top = 149
-        Width = 71
-        DropDownCount = 20
-        ItemHeight = 15
-        ItemIndex = 2
-        Items.Strings = (
-          'Fastest'
-          'Fast'
-          'Medium'
-          'Slow'
-        )
-        OnChange = UpdateGUI
-        Style = csDropDownList
-        TabOrder = 14
-        Text = 'Medium'
-      end
       object chkUseKMQuant: TCheckBox
         Left = 8
         Height = 19
@@ -566,12 +539,12 @@ object MainForm: TMainForm
         Checked = True
         OnChange = UpdateGUI
         State = cbChecked
-        TabOrder = 23
+        TabOrder = 22
       end
       object Label17: TLabel
         Left = 8
         Height = 15
-        Top = 175
+        Top = 159
         Width = 237
         Caption = 'Frame tiling blending search effort (-1: none)'
         ParentColor = False
@@ -579,18 +552,18 @@ object MainForm: TMainForm
       object seFTBlend: TSpinEdit
         Left = 312
         Height = 23
-        Top = 172
+        Top = 156
         Width = 71
         MaxValue = 7
         MinValue = -1
         OnChange = UpdateGUI
-        TabOrder = 15
+        TabOrder = 14
         Value = 3
       end
       object Label18: TLabel
         Left = 8
         Height = 15
-        Top = 198
+        Top = 182
         Width = 166
         Caption = 'Frame tiling blending threshold'
         ParentColor = False
@@ -598,11 +571,11 @@ object MainForm: TMainForm
       object seFTBlendThres: TFloatSpinEdit
         Left = 312
         Height = 23
-        Top = 195
+        Top = 179
         Width = 71
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 16
+        TabOrder = 15
         Value = 10
       end
     end

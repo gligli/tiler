@@ -17,7 +17,6 @@ type
     btnInput: TButton;
     btnGTM: TButton;
     btnRunAll: TButton;
-    cbxFTQ: TComboBox;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
@@ -50,7 +49,6 @@ type
     Label13: TLabel;
     Label14: TLabel;
     Label15: TLabel;
-    Label16: TLabel;
     Label17: TLabel;
     Label18: TLabel;
     Label2: TLabel;
@@ -420,8 +418,6 @@ begin
 end;
 
 procedure TMainForm.UpdateGUI(Sender: TObject);
-const
-  cFTQuality : array[0..3] of TFTQuality = (ftFastest, ftFast, ftMedium, ftSlow);
 begin
   tbFrame.Min := 0;
   tbFrame.Max := FTilingEncoder.FrameCount - 1;
@@ -449,7 +445,6 @@ begin
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
 
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
-  FTilingEncoder.FrameTilingQuality := cFTQuality[cbxFTQ.ItemIndex];
   FTilingEncoder.FrameTilingBlendingSize := seFTBlend.Value;
   FTilingEncoder.FrameTilingBlendingThreshold := seFTBlendThres.Value;
 
