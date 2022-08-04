@@ -61,7 +61,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 1, 1, 5, 1, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 5, 1, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -1035,51 +1035,55 @@ end;
 
 procedure TTilingEncoder.Dither;
 
-  procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    KF: TKeyFrame;
-
-    procedure DoQuantize(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-    begin
-      QuantizePalette(KF, AIndex, FQuantizerUseYakmo, FQuantizerDennisLeeBitsPerComponent);
-    end;
-
-    procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-    begin
-      FinishDitherTiles(FFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
-    end;
-
+  procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    KF := FKeyFrames[AIndex];
-
-    // devise palettes
-
-    PrepareDitherTiles(KF, IfThen(FDitheringUseGamma, 1, -1));
-
-    // quantize
-
-    SetLength(KF.PaletteUseCount, FPaletteCount);
-
-    ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, FPaletteCount - 1, nil, Max(1, NumberOfProcessors - High(FKeyFrames)));
-
-    FinishQuantizePalette(KF);
-    SetLength(KF.PaletteUseCount, 0);
-
-    // dither
-
-    ProcThreadPool.DoParallelLocalProc(@DoDither, KF.StartFrame, KF.EndFrame, nil, Max(1, NumberOfProcessors - High(FKeyFrames)));
+    PrepareDitherTiles(FKeyFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
   end;
 
+  procedure DoQuantize(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    if not InRange(AIndex, 0, Length(FKeyFrames) * FPaletteCount - 1) then
+      Exit;
+
+    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, FQuantizerUseYakmo, FQuantizerDennisLeeBitsPerComponent);
+  end;
+
+  procedure DoFinish(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
+    FinishDitherTiles(FFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
+  end;
+
+var
+  i: Integer;
 begin
   if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(0, esDither);
-  ProcThreadPool.DoParallelLocalProc(@DoKF, 0, High(FKeyFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames));
+  WriteLn;
   ProgressRedraw(1);
+
+  for i := 0 to High(FKeyFrames) do
+    SetLength(FKeyFrames[i].PaletteUseCount, FPaletteCount);
+
+  ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Length(FKeyFrames) * FPaletteCount - 1);
+
+  for i := 0 to High(FKeyFrames) do
+  begin
+    FinishQuantizePalette(FKeyFrames[i]);
+    SetLength(FKeyFrames[i].PaletteUseCount, 0);
+  end;
+  ProgressRedraw(2);
+
+  ProcThreadPool.DoParallelLocalProc(@DoFinish, 0, High(FFrames));
+  ProgressRedraw(3);
 end;
 
 procedure TTilingEncoder.MakeUnique;
