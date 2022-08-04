@@ -179,8 +179,10 @@ type
 
   TRGBPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
   TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
+  TCpnPixels = array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
   PRGBPixels = ^TRGBPixels;
   PPalPixels = ^TPalPixels;
+  PCpnPixels = ^TCpnPixels;
 
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
     UseCount, TmpIndex, MergeIndex, OriginalReloadedIndex, DitheringPalIndex, KFSoleIndex: Integer;
@@ -1071,8 +1073,6 @@ procedure TTilingEncoder.Dither;
     ProcThreadPool.DoParallelLocalProc(@DoDither, KF.StartFrame, KF.EndFrame, nil, Max(1, NumberOfProcessors - High(FKeyFrames)));
   end;
 
-var
-  i: Integer;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -2040,7 +2040,7 @@ begin
       end;
   assert(di = Length(Dataset));
 
-  WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo start');
+  WriteLn('KF: ', AKeyFrame.StartFrame, ' Palettization start');
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
@@ -2066,7 +2066,7 @@ begin
       end;
   assert(di = Length(Clusters));
 
-  WriteLn('KF: ', AKeyFrame.StartFrame, ' Yakmo end');
+  WriteLn('KF: ', AKeyFrame.StartFrame, ' Palettization end');
 end;
 
 procedure TTilingEncoder.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer);
@@ -2314,7 +2314,7 @@ begin
   end;
 
   if APalIdx = FPaletteCount - 1 then
-    WriteLn('KF: ', AKeyFrame.StartFrame);
+    WriteLn('KF: ', AKeyFrame.StartFrame, ' Quantization end');
 end;
 
 procedure TTilingEncoder.FinishQuantizePalette(AKeyFrame: TKeyFrame);
@@ -2388,7 +2388,7 @@ begin
     for i := 0 to FPaletteCount - 1 do
       TerminatePlan(AFrame.PKeyFrame.MixingPlans[i]);
 
-    WriteLn('KF: ', AFrame.PKeyFrame.StartFrame);
+    WriteLn('KF: ', AFrame.PKeyFrame.StartFrame, ' Dithering end');
   end;
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
 end;
@@ -2925,7 +2925,7 @@ const
 var
   u, v, x, y, xx, yy, cpn: Integer;
   z: TFloat;
-  CpnPixels: array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
+  CpnPixels: TCpnPixels;
   pRatio, pDCT, pCpn, pLut: PFloat;
 
   procedure ToCpn(col, x, y: Integer); inline;
@@ -3822,13 +3822,12 @@ end;
 
 procedure TTilingEncoder.FinishFrameTiling(AKF: TKeyFrame; APaletteIndex: Integer);
 var
-  i, KNNSize: Integer;
+  i: Integer;
   resDist: TFloat;
 begin
   resDist := 0.0;
   for i := 0 to High(AKF.TileDS[APaletteIndex] ^.DistErrCml) do
     resDist += AKF.TileDS[APaletteIndex]^.DistErrCml[i];
-  KNNSize := Length(AKF.TileDS[APaletteIndex]^.Dataset);
 
   if Length(AKF.TileDS[APaletteIndex]^.Dataset) > 0 then
     ann_kdtree_destroy(AKF.TileDS[APaletteIndex]^.KDT);
@@ -3839,7 +3838,7 @@ begin
 
   AKF.TileDS[APaletteIndex] := nil;
 
-  WriteLn('KF: ', AKF.StartFrame:4, #9'PalIdx: ', APaletteIndex:3, #9'KNNSize: ', KNNSize:8, #9'ResidualErr: ', resDist:12:6);
+  WriteLn('KF: ', AKF.StartFrame:3, #9'PalIdx: ', APaletteIndex:3, #9'ResidualErr: ', resDist:12:6);
 end;
 
 function ComputeBlendingError(PPlain, PCur, PPrev: PFloat; bc, bp: TFloat): TFloat; inline;
