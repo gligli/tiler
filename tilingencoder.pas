@@ -10,7 +10,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger,
-  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, kmodes, extern, typ, sle, tbbmalloc;
+  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, kmodes, extern, sle, tbbmalloc;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -1472,7 +1472,7 @@ end;
 function TTilingEncoder.ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
 var
   i: Integer;
-  ya, yb: TDoubleDynArray;
+  ya, yb: TFloatDynArray;
   fr, fg, fb: TFloat;
 begin
   SetLength(ya, Length(a) * 3);
@@ -1493,7 +1493,7 @@ end;
 function TTilingEncoder.ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
 var
   i: Integer;
-  ya, yb: TDoubleDynArray;
+  ya, yb: TFloatDynArray;
   fr, fg, fb: TFloat;
 begin
   SetLength(ya, Length(a) * 3);
@@ -1514,7 +1514,7 @@ end;
 function TTilingEncoder.ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
 var
   sz, i: Integer;
-  ya, yb: TDoubleDynArray;
+  ya, yb: TFloatDynArray;
 begin
   Assert(Length(a.FSPixels) = Length(b.FSPixels));
   sz := Length(a.FSPixels) div 3;
@@ -2008,8 +2008,7 @@ end;
 
 function CompareCMIntraPalette(const Item1,Item2:PCountIndex):Integer;
 begin
-  Result := CompareValue(Item1^.Luma, Item2^.Luma) shl 24;
-  Result += CompareValue(Item2^.Count, Item1^.Count);
+  Result := CompareValue(Item2^.Count, Item1^.Count);
 end;
 
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
@@ -2026,7 +2025,7 @@ var
   Clusters: TIntegerDynArray;
   di: Integer;
 
-  Yakmo: PYakmo;
+  Yakmo: PYakmoSingle;
 begin
   Assert(FPaletteCount <= Length(FPalettePattern));
 
@@ -2048,11 +2047,11 @@ begin
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
-   Yakmo := yakmo_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
-   yakmo_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
+   Yakmo := yakmo_single_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
+   yakmo_single_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
    SetLength(Dataset, 0); // free up some memmory
-   yakmo_train_on_data(Yakmo, @Clusters[0]);
-   yakmo_destroy(Yakmo);
+   yakmo_single_train_on_data(Yakmo, @Clusters[0]);
+   yakmo_single_destroy(Yakmo);
   end
   else
   begin
@@ -2186,7 +2185,7 @@ var
     GTile: PTile;
     Dataset, Centroids: TFloatDynArray2;
     Clusters: TIntegerDynArray;
-    Yakmo: PYakmo;
+    Yakmo: PYakmoSingle;
     CMItem: PCountIndex;
   begin
     di := 0;
@@ -2228,14 +2227,14 @@ var
 
       // use KMeans to quantize to FTilePaletteSize elements
 
-      Yakmo := yakmo_create(FTilePaletteSize, 1, 200, 1, 0, 0, 0);
-      yakmo_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
+      Yakmo := yakmo_single_create(FTilePaletteSize, 1, 200, 1, 0, 0, 0);
+      yakmo_single_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
 
       SetLength(Dataset, 0); // free up some memmory
 
-      yakmo_train_on_data(Yakmo, @Clusters[0]);
-      yakmo_get_centroids(Yakmo, @Centroids[0]);
-      yakmo_destroy(Yakmo);
+      yakmo_single_train_on_data(Yakmo, @Clusters[0]);
+      yakmo_single_get_centroids(Yakmo, @Centroids[0]);
+      yakmo_single_destroy(Yakmo);
     end;
 
     // retrieve palette data
@@ -2928,7 +2927,7 @@ const
   );
 var
   u, v, x, y, xx, yy, cpn: Integer;
-  z: TFloat;
+  z: Double;
   CpnPixels: TCpnPixels;
   pRatio, pDCT, pCpn, pLut: PFloat;
 
@@ -3781,9 +3780,8 @@ var
 
   function DoPsyV: Integer;
   var
-    di, ti, j: Integer;
+    di, ti: Integer;
     T: PTile;
-    DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   begin
     di := 0;
     for ti := 0 to High(FTiles) do
@@ -3793,11 +3791,7 @@ var
       if T^.Active then
       begin
         DS^.TDToTileIdx[di] := ti;
-
-        ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, AFTGamma, AKF.PaletteRGB[APaletteIndex], DCT);
-        for j := 0 to cTileDCTSize - 1 do
-          DS^.Dataset[di, j] := DCT[j];
-
+        ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, AFTGamma, AKF.PaletteRGB[APaletteIndex], DS^.Dataset[di]);
         Inc(di);
       end;
     end;
@@ -3880,7 +3874,6 @@ var
   idxs: array[0 .. cMaxBlendingFTBucketSize - 1] of Integer;
   errs: array[0 .. cMaxBlendingFTBucketSize - 1] of TANNFloat;
   DCT: array[0 .. cTileDCTSize - 1] of TFloat;
-  ANNDCT: array[0 .. cTileDCTSize - 1] of TANNFloat;
   CurPrevDCT: array[0 .. 2, 0 .. cTileDCTSize * 2 - 1] of TFloat;
 
   procedure TestBestErr(err: TANNFloat; bc, bp: Integer);
@@ -3959,11 +3952,9 @@ begin
       for hvmir := 0 to 3 do
       begin
         ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, (hvmir and 1) <> 0, (hvmir and 2) <> 0, AFTGamma, nil, DCT);
-        for i := 0 to cTileDCTSize - 1 do
-          ANNDCT[i] := DCT[i];
 
         bucketSize := max(1, (AFTBlend + 1) * 2);
-        ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @ANNDCT[0], 0.0);
+        ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @DCT[0], 0.0);
 
         if (AFTBlend >= 0) and not IsZero(errs[0], AFTBlendThres) then
         begin

@@ -9,7 +9,7 @@ uses
   cthreads,
   {$ENDIF}{$ENDIF}
   Interfaces, // this includes the LCL widgetset
-  Forms, main, kmodes, extern, sysutils, LCLType, Controls, typinfo, tilingencoder;
+  Forms, main, kmodes, extern, sysutils, LCLType, Controls, typinfo, tilingencoder, sle;
 
 {$R *.res}
 

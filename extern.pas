@@ -8,7 +8,7 @@ uses
   LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math;
 
 type
-  TFloat = Double;
+  TFloat = Single;
 
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
