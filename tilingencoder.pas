@@ -244,9 +244,10 @@ type
 
   PTilingDataset = ^TTilingDataset;
 
-  TCountIndex = packed record
-    Count: Integer;
-    R, G, B, Luma: Byte;
+  TCountIndex = record
+    Index, Count: Integer;
+    Luma: Word;
+    R, G, B: Byte;
   end;
 
   PCountIndex = ^TCountIndex;
@@ -290,6 +291,7 @@ type
       UseCount: Integer;
       Palette: TIntegerDynArray;
       PalIdx: Integer;
+      IntraUseCount: array[0 .. Sqr(cTileWidth) - 1] of Cardinal;
     end;
 
     constructor Create(APaletteCount, AStartFrame, AEndFrame: Integer);
@@ -350,7 +352,7 @@ type
     FScreenHeight: Integer;
 
     FPaletteCount: Integer;
-    FTilePaletteSize: Integer;
+    FPaletteSize: Integer;
 
     FCS: TRTLCriticalSection;
     FLock: TSpinlock;
@@ -421,11 +423,11 @@ type
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: TFrame): Integer;
 
-    procedure PrepareDitherTiles(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
+    procedure PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
     procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer);
-    procedure FinishQuantizePalette(AKeyFrame: TKeyFrame);
+    procedure FinishQuantizePalettes(AKeyFrame: TKeyFrame);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    procedure FinishDitherTiles(AFrame: TFrame; ADitheringGamma: Integer);
+    procedure DitherTiles(AFrame: TFrame; ADitheringGamma: Integer);
 
     function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
@@ -482,7 +484,7 @@ type
     property TileMapWidth: Integer read FTileMapWidth;
     property TileMapHeight: Integer read FTileMapHeight;
     property TileMapSize: Integer read FTileMapSize;
-    property TilePaletteSize: Integer read FTilePaletteSize;
+    property TilePaletteSize: Integer read FPaletteSize;
     property PaletteCount: Integer read FPaletteCount;
     property FrameCount: Integer read GetFrameCount;
     property KeyFrameCount: Integer read GetKeyFrameCount;
@@ -608,9 +610,9 @@ begin
   b := (col shr 16) and $ff;
 end;
 
-function ToLuma(r, g, b: Byte): Byte; inline;
+function ToLuma(r, g, b: Byte): Word; inline;
 begin
-  Result := (r * cRedMul + g * cGreenMul + b * cBlueMul) div cLumaDiv;
+  Result := (r * cRedMul + g * cGreenMul + b * cBlueMul) div (cLumaDiv shr 4); // 12 bit output
 end;
 
 function CompareIntegers(const Item1, Item2: Integer): Integer;
@@ -1040,7 +1042,7 @@ procedure TTilingEncoder.Dither;
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    PrepareDitherTiles(FKeyFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
+    PreparePalettes(FKeyFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
   end;
 
   procedure DoQuantize(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -1056,7 +1058,7 @@ procedure TTilingEncoder.Dither;
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    FinishDitherTiles(FFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
+    DitherTiles(FFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
   end;
 
 var
@@ -1072,18 +1074,15 @@ begin
 
   for i := 0 to High(FKeyFrames) do
     SetLength(FKeyFrames[i].PaletteUseCount, FPaletteCount);
-
   ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Length(FKeyFrames) * FPaletteCount - 1);
-
   for i := 0 to High(FKeyFrames) do
-  begin
-    FinishQuantizePalette(FKeyFrames[i]);
-    SetLength(FKeyFrames[i].PaletteUseCount, 0);
-  end;
+    FinishQuantizePalettes(FKeyFrames[i]);
   ProgressRedraw(2);
 
   ProcThreadPool.DoParallelLocalProc(@DoFinish, 0, High(FFrames));
   ProgressRedraw(3);
+  for i := 0 to High(FKeyFrames) do
+    SetLength(FKeyFrames[i].PaletteUseCount, 0);
 end;
 
 procedure TTilingEncoder.MakeUnique;
@@ -1187,7 +1186,7 @@ var
   bmp: TPicture;
   wasAutoQ: Boolean;
 begin
-  FTilePaletteSize := EnsureRange(ATilePaletteSize, 2, 64);
+  FPaletteSize := EnsureRange(ATilePaletteSize, 2, 64);
   FPaletteCount := EnsureRange(APaletteCount, 1, 256);
   wasAutoQ := FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * EqualQualityTileCount(Length(FFrames) * FTileMapSize));
 
@@ -1199,7 +1198,7 @@ begin
 
   // init Gamma LUTs
 
-  InitLuts(FTilePaletteSize, FPaletteCount);
+  InitLuts(FPaletteSize, FPaletteCount);
 
   // load video
 
@@ -1939,7 +1938,7 @@ begin
   FTilesBitmap.Height:=FScreenHeight;
   FTilesBitmap.PixelFormat:=pf32bit;
 
-  FPaletteBitmap.Width := FTilePaletteSize;
+  FPaletteBitmap.Width := FPaletteSize;
   FPaletteBitmap.Height := FPaletteCount;
   FPaletteBitmap.PixelFormat:=pf32bit;
 end;
@@ -2006,9 +2005,14 @@ begin
   end;
 end;
 
-function CompareCMIntraPalette(const Item1,Item2:PCountIndex):Integer;
+function CompareIntraPaletteRevCount(const Item1,Item2:PCountIndex):Integer;
 begin
   Result := CompareValue(Item2^.Count, Item1^.Count);
+end;
+
+function CompareIntraPaletteLuma(const Item1,Item2:PCountIndex):Integer;
+begin
+  Result := CompareValue(Item1^.Luma, Item2^.Luma);
 end;
 
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
@@ -2016,7 +2020,7 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-procedure TTilingEncoder.PrepareDitherTiles(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
+procedure TTilingEncoder.PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
 var
   sx, sy, i: Integer;
   GTile: PTile;
@@ -2158,15 +2162,15 @@ var
 
       // call Dennis Lee v3 method
 
-      dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FTilePaletteSize, DLv3BPC, @dlPal);
+      dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FPaletteSize, DLv3BPC, @dlPal);
     finally
       Freemem(dlInput);
     end;
 
     // retrieve palette data
 
-    CMPal.Count := FTilePaletteSize;
-    for i := 0 to FTilePaletteSize - 1 do
+    CMPal.Count := FPaletteSize;
+    for i := 0 to FPaletteSize - 1 do
     begin
       New(CMItem);
       CMItem^.Count := 0;
@@ -2195,9 +2199,9 @@ var
           if FTiles[FFrames[i].TileMap[sy, sx].TileIdx]^.DitheringPalIndex = APalIdx then
             Inc(di, Sqr(cTileWidth));
 
-    SetLength(Centroids, FTilePaletteSize, cFeatureCount);
+    SetLength(Centroids, FPaletteSize, cFeatureCount);
 
-    if di >= FTilePaletteSize then
+    if di >= FPaletteSize then
     begin
       SetLength(Dataset, di, cFeatureCount);
       SetLength(Clusters, di);
@@ -2225,9 +2229,9 @@ var
             end;
           end;
 
-      // use KMeans to quantize to FTilePaletteSize elements
+      // use KMeans to quantize to FPaletteSize elements
 
-      Yakmo := yakmo_single_create(FTilePaletteSize, 1, 200, 1, 0, 0, 0);
+      Yakmo := yakmo_single_create(FPaletteSize, 1, 200, 1, 0, 0, 0);
       yakmo_single_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
 
       SetLength(Dataset, 0); // free up some memmory
@@ -2239,12 +2243,12 @@ var
 
     // retrieve palette data
 
-    CMPal.Count := FTilePaletteSize;
-    for i := 0 to FTilePaletteSize - 1 do
+    CMPal.Count := FPaletteSize;
+    for i := 0 to FPaletteSize - 1 do
     begin
       New(CMItem);
 
-      if di >= FTilePaletteSize then
+      if di >= FPaletteSize then
       begin
         CMItem^.R := Round(Nan0(Centroids[i, 0]));
         CMItem^.G := Round(Nan0(Centroids[i, 1]));
@@ -2258,10 +2262,7 @@ var
   end;
 
 var
-  i, j, ty, tx, sy, sx, bestIdx: Integer;
-  rr, gg, bb: Byte;
-  dist, bestDist: Int64;
-  GTile: PTile;
+  i: Integer;
 begin
   Assert(FPaletteCount <= Length(FPalettePattern));
 
@@ -2269,45 +2270,19 @@ begin
 
   CMPal := TCountIndexList.Create;
   try
+    // do quantize
+
     if UseYakmo then
       DoYakmo
     else
       DoDennisLeeV3;
 
-    // count uses of single palette color (nearest neighbor)
-
-    for j := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          GTile := FTiles[FFrames[j].TileMap[sy, sx].TileIdx];
-
-          if GTile^.Active and (GTile^.DitheringPalIndex = APalIdx) then
-            for ty := 0 to cTileWidth - 1 do
-              for tx := 0 to cTileWidth - 1 do
-              begin
-                bestIdx := -1;
-                bestDist := High(Int64);
-                for i := 0 to FTilePaletteSize - 1 do
-                begin
-                  FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
-                  dist := ColorCompare(rr, gg, bb, CMPal[i]^.R, CMPal[i]^.G, CMPal[i]^.B);
-                  if dist < bestDist then
-                  begin
-                    bestDist := dist;
-                    bestIdx := i;
-                  end;
-                end;
-                Inc(CMPal[bestIdx]^.Count);
-              end;
-        end;
-
     // split most used colors into tile palettes
 
-    CMPal.Sort(@CompareCMIntraPalette);
+    CMPal.Sort(@CompareIntraPaletteLuma);
 
-    SetLength(AKeyFrame.PaletteRGB[APalIdx], FTilePaletteSize);
-    for i := 0 to FTilePaletteSize - 1 do
+    SetLength(AKeyFrame.PaletteRGB[APalIdx], FPaletteSize);
+    for i := 0 to FPaletteSize - 1 do
       AKeyFrame.PaletteRGB[APalIdx, i] := ToRGB(CMPal[i]^.R, CMPal[i]^.G, CMPal[i]^.B);
 
     for i := 0 to CMPal.Count - 1 do
@@ -2320,7 +2295,7 @@ begin
     WriteLn('KF: ', AKeyFrame.StartFrame, ' Quantization end');
 end;
 
-procedure TTilingEncoder.FinishQuantizePalette(AKeyFrame: TKeyFrame);
+procedure TTilingEncoder.FinishQuantizePalettes(AKeyFrame: TKeyFrame);
 var
   i, sy, sx, PalIdx: Integer;
   PalIdxLUT: TIntegerDynArray;
@@ -2350,15 +2325,18 @@ begin
       end;
 end;
 
-procedure TTilingEncoder.FinishDitherTiles(AFrame: TFrame; ADitheringGamma: Integer);
+procedure TTilingEncoder.DitherTiles(AFrame: TFrame; ADitheringGamma: Integer);
 var
-  i, PalIdx: Integer;
-  sx, sy: Integer;
-  OrigTile: PTile;
+  i, PalIdx, frm: Integer;
+  sx, sy, tx, ty: Integer;
+  T: PTile;
+  IntraPaletteSorter: TCountIndexList;
+  pci: PCountIndex;
 begin
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   if AFrame.PKeyFrame.FramesLeft < 0 then
   begin
+    // build ditherer
     for i := 0 to FPaletteCount - 1 do
       PreparePlan(AFrame.PKeyFrame.MixingPlans[i], FDitheringYliluoma2MixedColors, AFrame.PKeyFrame.PaletteRGB[i]);
     AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
@@ -2368,17 +2346,23 @@ begin
   for sy := 0 to FTileMapHeight - 1 do
     for sx := 0 to FTileMapWidth - 1 do
     begin
-      OrigTile := FTiles[AFrame.TileMap[sy, sx].TileIdx];
+      T := FTiles[AFrame.TileMap[sy, sx].TileIdx];
 
-      if OrigTile^.Active then
+      if T^.Active then
       begin
-        // choose best palette from the keyframe by comparing DCT of the tile colored with either palette
+        // dither tile in chosen palette
 
-        PalIdx := OrigTile^.DitheringPalIndex;
+        PalIdx := T^.DitheringPalIndex;
         Assert(InRange(PalIdx, 0, FPaletteCount - 1));
-        DitherTile(OrigTile^, AFrame.PKeyFrame.MixingPlans[PalIdx]);
+        DitherTile(T^, AFrame.PKeyFrame.MixingPlans[PalIdx]);
 
-        // now that the palette is chosen, update tilemap
+        // count uses of color indexes in tile
+
+        for ty := 0 to cTileWidth - 1 do
+          for tx := 0 to cTileWidth - 1 do
+            Inc(AFrame.PKeyFrame.PaletteUseCount[PalIdx].IntraUseCount[T^.PalPixels[ty, tx]]);
+
+        // update tilemap
 
         AFrame.TileMap[sy, sx].PalIdx := PalIdx;
       end;
@@ -2388,8 +2372,62 @@ begin
   Dec(AFrame.PKeyFrame.FramesLeft);
   if AFrame.PKeyFrame.FramesLeft <= 0 then
   begin
-    for i := 0 to FPaletteCount - 1 do
-      TerminatePlan(AFrame.PKeyFrame.MixingPlans[i]);
+    IntraPaletteSorter := TCountIndexList.Create;
+    try
+      // init sorter
+      for i := 0 to FPaletteSize - 1 do
+      begin
+        New(pci);
+        IntraPaletteSorter.Add(pci);
+      end;
+
+      for PalIdx := 0 to FPaletteCount - 1 do
+      begin
+        // cleanup ditherer
+        TerminatePlan(AFrame.PKeyFrame.MixingPlans[PalIdx]);
+
+        // sort palette intra
+        for i := 0 to FPaletteSize - 1 do
+        begin
+          pci := IntraPaletteSorter[i];
+          pci^.Index := i;
+          pci^.Count := AFrame.PKeyFrame.PaletteUseCount[PalIdx].IntraUseCount[i];
+          FromRGB(AFrame.PKeyFrame.PaletteRGB[PalIdx, i], pci^.R, pci^.G, pci^.B);
+        end;
+
+        IntraPaletteSorter.Sort(@CompareIntraPaletteRevCount);
+
+        // build a lookup table to remap tiles, also remap palette
+        for i := 0 to FPaletteSize - 1 do
+        begin
+          pci := IntraPaletteSorter[i];
+          AFrame.PKeyFrame.PaletteUseCount[PalIdx].IntraUseCount[pci^.Index] := i;
+          AFrame.PKeyFrame.PaletteRGB[PalIdx, i] := ToRGB(pci^.R, pci^.G, pci^.B);
+        end;
+
+      end;
+
+      // remap tiles
+
+      for frm := AFrame.PKeyFrame.StartFrame to AFrame.PKeyFrame.EndFrame do
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            T := FTiles[FFrames[frm].TileMap[sy, sx].TileIdx];
+
+            if T^.Active then
+              for ty := 0 to cTileWidth - 1 do
+                for tx := 0 to cTileWidth - 1 do
+                  T^.PalPixels[ty, tx] := AFrame.PKeyFrame.PaletteUseCount[T^.DitheringPalIndex].IntraUseCount[T^.PalPixels[ty, tx]];
+          end;
+
+      // cleanup
+      for i := 0 to FPaletteSize - 1 do
+        Dispose(IntraPaletteSorter[i]);
+
+    finally
+      IntraPaletteSorter.Free;
+    end;
 
     WriteLn('KF: ', AFrame.PKeyFrame.StartFrame, ' Dithering end');
   end;
@@ -2643,7 +2681,7 @@ begin
   FEncoderGammaValue := Max(0.0, AValue);
 
   FGamma[0] := FRenderGammaValue;
-  InitLuts(FTilePaletteSize, FPaletteCount);
+  InitLuts(FPaletteSize, FPaletteCount);
 end;
 
 procedure TTilingEncoder.SetFramesPerSecond(AValue: Double);
@@ -2698,7 +2736,7 @@ begin
   FRenderGammaValue := Max(0.0, AValue);
 
   FGamma[1] := FRenderGammaValue;
-  InitLuts(FTilePaletteSize, FPaletteCount);
+  InitLuts(FPaletteSize, FPaletteCount);
 end;
 
 procedure TTilingEncoder.SetRenderPaletteIndex(AValue: Integer);
@@ -4156,14 +4194,14 @@ begin
     for x := 0 to cTileWidth - 1 do
     begin
       b := ATile.PalPixels[y, x];
-      Inc(acc[b * ZoneCount div FTilePaletteSize]);
+      Inc(acc[b * ZoneCount div FPaletteSize]);
     end;
 
   Result := sqr(cTileWidth);
   for i := 0 to ZoneCount - 1 do
   begin
     Result := Min(Result, sqr(cTileWidth) - acc[i]);
-    signi := acc[i] > (FTilePaletteSize div ZoneCount);
+    signi := acc[i] > (FPaletteSize div ZoneCount);
     Zones^ := Ord(signi);
     Inc(Zones);
   end;
@@ -4172,8 +4210,6 @@ end;
 function TTilingEncoder.WriteTileDatasetLine(const ATile: TTile; DataLine: PByte): Integer;
 var
   x, y: Integer;
-  hsv: array[0..3, 0..2] of Word;
-  ph, ps, pv: Byte;
 begin
   Result := 0;
 
@@ -4186,39 +4222,10 @@ begin
       Inc(Result);
     end;
 
-  // HSV for 4x4 quadrants
+  // count of most used index per 2x2 quadrant
 
-  FillChar(hsv, SizeOf(hsv), 0);
-  for y := 0 to cTileWidth div 2 - 1 do
-    for x := 0 to cTileWidth div 2 - 1 do
-    begin
-      RGBToHSV(ATile.RGBPixels[y, x], ph, ps, pv);
-      hsv[0, 0] += ph; hsv[0, 1] += ps; hsv[0, 2] += pv;
-
-      RGBToHSV(ATile.RGBPixels[y, x + cTileWidth div 2], ph, ps, pv);
-      hsv[1, 0] += ph; hsv[1, 1] += ps; hsv[1, 2] += pv;
-
-      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x], ph, ps, pv);
-      hsv[2, 0] += ph; hsv[2, 1] += ps; hsv[2, 2] += pv;
-
-      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x + cTileWidth div 2], ph, ps, pv);
-      hsv[3, 0] += ph; hsv[3, 1] += ps; hsv[3, 2] += pv;
-    end;
-
-  for y := 0 to 3 do
-  begin
-    DataLine[Result] := (hsv[y, 0] * FTilePaletteSize) shr 12; // to FTilePaletteSize from (8 bits) * (sqr(cTileWidth div 2)=16)
-    Inc(Result);
-    DataLine[Result] := (hsv[y, 1] * FTilePaletteSize) shr 12;
-    Inc(Result);
-    DataLine[Result] := (hsv[y, 2] * FTilePaletteSize) shr 12;
-    Inc(Result);
-  end;
-
-  // count of most used index per 4x4 quadrant
-
-  GetTilePalZoneThres(ATile, sqr(cTileWidth) div 16, @DataLine[Result]);
-  Inc(Result, sqr(cTileWidth) div 16);
+  GetTilePalZoneThres(ATile, sqr(cTileWidth) div 4, @DataLine[Result]);
+  Inc(Result, sqr(cTileWidth) div 4);
 
   Assert(Result <= cKModesFeatureCount);
 end;
@@ -4254,7 +4261,7 @@ begin
 
   KModes := TKModes.Create(1, -1, False, 'Bin: ' + IntToStr(AIndex) + #9, @FConcurrentKModesBins);
   try
-    KMBin^.ClusterCount := KModes.ComputeKModes(KMBin^.Dataset, round(KMBin^.ClusterCount), -KMBin^.StartingPoint, FTilePaletteSize, LocClusters, LocCentroids);
+    KMBin^.ClusterCount := KModes.ComputeKModes(KMBin^.Dataset, round(KMBin^.ClusterCount), -KMBin^.StartingPoint, FPaletteSize, LocClusters, LocCentroids);
     Assert(Length(LocCentroids) = KMBin^.ClusterCount);
     Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
   finally
@@ -4493,7 +4500,7 @@ begin
       fs.ReadBuffer(PalPixels[0, 0], SizeOf(TPalPixels));
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
-          PalPixels[y, x] := (PalPixels[y, x] * FTilePaletteSize) div TilingPaletteSize;
+          PalPixels[y, x] := (PalPixels[y, x] * FPaletteSize) div TilingPaletteSize;
       T^.CopyPalPixels(PalPixels);
       T^.ExtractPalPixels(KNNDataset[i]);
     end;
@@ -4712,7 +4719,7 @@ var
       DoCmd(gtLoadPalette, 0);
       DoByte(j);
       DoByte(0);
-      for i := 0 to FTilePaletteSize - 1 do
+      for i := 0 to FPaletteSize - 1 do
         DoDWord(KF.PaletteRGB[j, i] or $ff000000);
     end;
   end;
@@ -4735,7 +4742,7 @@ var
 
         if idx - PrevIdx > 1 then
         begin
-          DoCmd(gtTileSet, FTilePaletteSize);
+          DoCmd(gtTileSet, FPaletteSize);
           DoDWord(StartIdx); // start tile
           DoDWord(PrevIdx); // end tile
 
@@ -4956,7 +4963,7 @@ begin
     fs := TFileStream.Create(OutFN, fmCreate or fmShareDenyWrite);
     try
       fs.WriteByte(0); // version
-      fs.WriteByte(FTilePaletteSize);
+      fs.WriteByte(FPaletteSize);
       for i := 0 to High(FTiles) do
         if FTiles[i]^.Active then
         begin
