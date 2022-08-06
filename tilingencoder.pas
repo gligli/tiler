@@ -292,7 +292,6 @@ type
       UseCount: Integer;
       Palette: TIntegerDynArray;
       PalIdx: Integer;
-      IntraUseCount: array[0 .. Sqr(cTileWidth) - 1] of Cardinal;
     end;
 
     constructor Create(APaletteCount, AStartFrame, AEndFrame: Integer);
@@ -2053,11 +2052,11 @@ begin
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
-   Yakmo := yakmo_single_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
-   yakmo_single_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
-   SetLength(Dataset, 0); // free up some memmory
-   yakmo_single_train_on_data(Yakmo, @Clusters[0]);
-   yakmo_single_destroy(Yakmo);
+    Yakmo := yakmo_single_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
+    yakmo_single_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
+    SetLength(Dataset, 0); // free up some memmory
+    yakmo_single_train_on_data(Yakmo, @Clusters[0]);
+    yakmo_single_destroy(Yakmo);
   end
   else
   begin
@@ -2369,8 +2368,8 @@ begin
   if AFrame.PKeyFrame.FramesLeft <= 0 then
   begin
     // cleanup ditherer
-    for PalIdx := 0 to FPaletteCount - 1 do
-      TerminatePlan(AFrame.PKeyFrame.MixingPlans[PalIdx]);
+    for i := 0 to FPaletteCount - 1 do
+      TerminatePlan(AFrame.PKeyFrame.MixingPlans[i]);
     WriteLn('KF: ', AFrame.PKeyFrame.StartFrame, ' Dithering end');
   end;
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
@@ -3808,6 +3807,9 @@ begin
   SetLength(DS^.DistErrCml, AKF.FrameCount);
 
   KNNSize := DoPsyV;
+  SetLength(DS^.TDToTileIdx, KNNSize);
+  SetLength(DS^.TDToAttrs, KNNSize);
+  SetLength(DS^.Dataset, KNNSize);
 
   // Build KNN
 
