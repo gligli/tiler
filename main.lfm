@@ -372,7 +372,7 @@ object MainForm: TMainForm
         MinValue = 0.1
         OnChange = UpdateGUI
         TabOrder = 20
-        Value = 1.8
+        Value = 2
       end
       object seVisGamma: TFloatSpinEdit
         Left = 382
@@ -576,7 +576,7 @@ object MainForm: TMainForm
         MaxValue = 1000
         OnChange = UpdateGUI
         TabOrder = 15
-        Value = 10
+        Value = 5
       end
     end
     object tsInput: TTabSheet
