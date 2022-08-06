@@ -238,6 +238,7 @@ type
   TTilingDataset = record
     Dataset: TANNFloatDynArray2;
     TDToTileIdx: TIntegerDynArray;
+    TDToAttrs: TByteDynArray;
     KDT: PANNkdtree;
     DistErrCml: TFloatDynArray;
   end;
@@ -246,8 +247,8 @@ type
 
   TCountIndex = record
     Index, Count: Integer;
-    Luma: Word;
-    R, G, B: Byte;
+    R, G, B, Luma: Byte;
+    Hue, Sat, Val: Byte;
   end;
 
   PCountIndex = ^TCountIndex;
@@ -610,9 +611,9 @@ begin
   b := (col shr 16) and $ff;
 end;
 
-function ToLuma(r, g, b: Byte): Word; inline;
+function ToLuma(r, g, b: Byte): Byte; inline;
 begin
-  Result := (r * cRedMul + g * cGreenMul + b * cBlueMul) div (cLumaDiv shr 4); // 12 bit output
+  Result := (r * cRedMul + g * cGreenMul + b * cBlueMul) div cLumaDiv;
 end;
 
 function CompareIntegers(const Item1, Item2: Integer): Integer;
@@ -2005,14 +2006,15 @@ begin
   end;
 end;
 
-function CompareIntraPaletteRevCount(const Item1,Item2:PCountIndex):Integer;
-begin
-  Result := CompareValue(Item2^.Count, Item1^.Count);
-end;
-
-function CompareIntraPaletteLuma(const Item1,Item2:PCountIndex):Integer;
+function CompareCMULHS(const Item1,Item2:PCountIndex):Integer;
 begin
   Result := CompareValue(Item1^.Luma, Item2^.Luma);
+  if Result = 0 then
+    Result := CompareValue(Item1^.Val, Item2^.Val);
+  if Result = 0 then
+    Result := CompareValue(Item1^.Sat, Item2^.Sat);
+  if Result = 0 then
+    Result := CompareValue(Item1^.Hue, Item2^.Hue);
 end;
 
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
@@ -2176,6 +2178,7 @@ var
       CMItem^.Count := 0;
       CMItem^.R := dlPal[0][i]; CMItem^.G := dlPal[1][i]; CMItem^.B := dlPal[2][i];
       CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
+      RGBToHSV(ToRGB(CMItem^.R, CMItem^.G, CMItem^.B), CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
       CMPal[i] := CMItem;
     end;
   end;
@@ -2257,6 +2260,7 @@ var
 
       CMItem^.Count := 0;
       CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
+      RGBToHSV(ToRGB(CMItem^.R, CMItem^.G, CMItem^.B), CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
       CMPal[i] := CMItem;
     end;
   end;
@@ -2279,7 +2283,7 @@ begin
 
     // split most used colors into tile palettes
 
-    CMPal.Sort(@CompareIntraPaletteLuma);
+    CMPal.Sort(@CompareCMULHS);
 
     SetLength(AKeyFrame.PaletteRGB[APalIdx], FPaletteSize);
     for i := 0 to FPaletteSize - 1 do
@@ -2327,11 +2331,9 @@ end;
 
 procedure TTilingEncoder.DitherTiles(AFrame: TFrame; ADitheringGamma: Integer);
 var
-  i, PalIdx, frm: Integer;
-  sx, sy, tx, ty: Integer;
+  i, PalIdx: Integer;
+  sx, sy: Integer;
   T: PTile;
-  IntraPaletteSorter: TCountIndexList;
-  pci: PCountIndex;
 begin
   EnterCriticalSection(AFrame.PKeyFrame.CS);
   if AFrame.PKeyFrame.FramesLeft < 0 then
@@ -2356,12 +2358,6 @@ begin
         Assert(InRange(PalIdx, 0, FPaletteCount - 1));
         DitherTile(T^, AFrame.PKeyFrame.MixingPlans[PalIdx]);
 
-        // count uses of color indexes in tile
-
-        for ty := 0 to cTileWidth - 1 do
-          for tx := 0 to cTileWidth - 1 do
-            Inc(AFrame.PKeyFrame.PaletteUseCount[PalIdx].IntraUseCount[T^.PalPixels[ty, tx]]);
-
         // update tilemap
 
         AFrame.TileMap[sy, sx].PalIdx := PalIdx;
@@ -2372,63 +2368,9 @@ begin
   Dec(AFrame.PKeyFrame.FramesLeft);
   if AFrame.PKeyFrame.FramesLeft <= 0 then
   begin
-    IntraPaletteSorter := TCountIndexList.Create;
-    try
-      // init sorter
-      for i := 0 to FPaletteSize - 1 do
-      begin
-        New(pci);
-        IntraPaletteSorter.Add(pci);
-      end;
-
-      for PalIdx := 0 to FPaletteCount - 1 do
-      begin
-        // cleanup ditherer
-        TerminatePlan(AFrame.PKeyFrame.MixingPlans[PalIdx]);
-
-        // sort palette intra
-        for i := 0 to FPaletteSize - 1 do
-        begin
-          pci := IntraPaletteSorter[i];
-          pci^.Index := i;
-          pci^.Count := AFrame.PKeyFrame.PaletteUseCount[PalIdx].IntraUseCount[i];
-          FromRGB(AFrame.PKeyFrame.PaletteRGB[PalIdx, i], pci^.R, pci^.G, pci^.B);
-        end;
-
-        IntraPaletteSorter.Sort(@CompareIntraPaletteRevCount);
-
-        // build a lookup table to remap tiles, also remap palette
-        for i := 0 to FPaletteSize - 1 do
-        begin
-          pci := IntraPaletteSorter[i];
-          AFrame.PKeyFrame.PaletteUseCount[PalIdx].IntraUseCount[pci^.Index] := i;
-          AFrame.PKeyFrame.PaletteRGB[PalIdx, i] := ToRGB(pci^.R, pci^.G, pci^.B);
-        end;
-
-      end;
-
-      // remap tiles
-
-      for frm := AFrame.PKeyFrame.StartFrame to AFrame.PKeyFrame.EndFrame do
-        for sy := 0 to FTileMapHeight - 1 do
-          for sx := 0 to FTileMapWidth - 1 do
-          begin
-            T := FTiles[FFrames[frm].TileMap[sy, sx].TileIdx];
-
-            if T^.Active then
-              for ty := 0 to cTileWidth - 1 do
-                for tx := 0 to cTileWidth - 1 do
-                  T^.PalPixels[ty, tx] := AFrame.PKeyFrame.PaletteUseCount[T^.DitheringPalIndex].IntraUseCount[T^.PalPixels[ty, tx]];
-          end;
-
-      // cleanup
-      for i := 0 to FPaletteSize - 1 do
-        Dispose(IntraPaletteSorter[i]);
-
-    finally
-      IntraPaletteSorter.Free;
-    end;
-
+    // cleanup ditherer
+    for PalIdx := 0 to FPaletteCount - 1 do
+      TerminatePlan(AFrame.PKeyFrame.MixingPlans[PalIdx]);
     WriteLn('KF: ', AFrame.PKeyFrame.StartFrame, ' Dithering end');
   end;
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
@@ -3818,7 +3760,7 @@ var
 
   function DoPsyV: Integer;
   var
-    di, ti: Integer;
+    di, ti, hvmir: Integer;
     T: PTile;
   begin
     di := 0;
@@ -3828,9 +3770,17 @@ var
 
       if T^.Active then
       begin
-        DS^.TDToTileIdx[di] := ti;
-        ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, AFTGamma, AKF.PaletteRGB[APaletteIndex], DS^.Dataset[di]);
-        Inc(di);
+        for hvmir := 0 to 3 do
+        begin
+          DS^.TDToTileIdx[di] := ti;
+          DS^.TDToAttrs[di] := hvmir;
+
+          ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], DS^.Dataset[di]);
+
+          // prune redundancies
+          if (di <= 0) or (CompareDWord(DS^.Dataset[di - 1, 0], DS^.Dataset[di, 0], cTileDCTSize) <> 0) then
+            Inc(di);
+        end;
       end;
     end;
 
@@ -3846,8 +3796,9 @@ begin
   AKF.TileDS[APaletteIndex] := DS;
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  KNNSize := Length(FTiles);
+  KNNSize := Length(FTiles) * 4;
   SetLength(DS^.TDToTileIdx, KNNSize);
+  SetLength(DS^.TDToAttrs, KNNSize);
   SetLength(DS^.Dataset, KNNSize, cTileDCTSize);
   SetLength(DS^.DistErrCml, AKF.FrameCount);
 
@@ -3872,6 +3823,7 @@ begin
   AKF.TileDS[APaletteIndex]^.KDT := nil;
   SetLength(AKF.TileDS[APaletteIndex]^.Dataset, 0);
   SetLength(AKF.TileDS[APaletteIndex]^.TDToTileIdx, 0);
+  SetLength(AKF.TileDS[APaletteIndex]^.TDToAttrs, 0);
   Dispose(AKF.TileDS[APaletteIndex]);
 
   AKF.TileDS[APaletteIndex] := nil;
@@ -3901,7 +3853,7 @@ procedure TTilingEncoder.DoFrameTiling(AFrame: TFrame; APaletteIndex: Integer; A
   AFTBlendThres: TFloat);
 var
   i, bestIdx, bucketIdx, idx, bucketSize: Integer;
-  hvmir, bestHvmir, bestBlendCur, bestBlendPrev: Byte;
+  attrs, bestBlendCur, bestBlendPrev: Byte;
   x, y, ox, oy, bestX, bestY: Integer;
   bestErr: TFloat;
 
@@ -3920,7 +3872,6 @@ var
     begin
       bestErr := err;
       bestIdx := idx;
-      bestHvmir := hvmir;
       bestBlendCur := bc;
       bestBlendPrev := bp;
       bestX := ox;
@@ -3980,84 +3931,77 @@ begin
       if AFrame.TileMap[y, x].PalIdx <> APaletteIndex then
         Continue;
 
-      bestIdx := -1;
-      bestErr := MaxSingle;
-      bestHvmir := 0;
+      ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, DCT);
+
+      bucketSize := max(1, (AFTBlend + 1) * 2);
+      ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @DCT[0], 0.0);
+
       bestBlendCur := cMaxFTBlend - 1;
       bestBlendPrev := 0;
       bestX := x;
       bestY := y;
-      for hvmir := 0 to 3 do
+      if (AFTBlend >= 0) and not IsZero(errs[0], AFTBlendThres) then
       begin
-        ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, (hvmir and 1) <> 0, (hvmir and 2) <> 0, AFTGamma, nil, DCT);
+        // try to blend a local tile of the previous frame to improve likeliness
 
-        bucketSize := max(1, (AFTBlend + 1) * 2);
-        ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @DCT[0], 0.0);
-
-        if (AFTBlend >= 0) and not IsZero(errs[0], AFTBlendThres) then
+        bestIdx := idxs[0];
+        bestErr := errs[0];
+        for bucketIdx := 0 to bucketSize - 1 do
         begin
-          // try to blend a local tile of the previous frame to improve likeliness
+          idx := idxs[bucketIdx];
+          if idx < 0 then
+            Continue;
 
-          for bucketIdx := 0 to bucketSize - 1 do
+          for i := 0 to cTileDCTSize - 1 do
           begin
-            idx := idxs[bucketIdx];
-            if idx < 0 then
+            CurPrevDCT[0, i] := DS^.Dataset[idx, i];
+            CurPrevDCT[2, i * 2] := CurPrevDCT[0, i];
+          end;
+
+          for oy := y - AFTBlend to y + AFTBlend do
+          begin
+            if not InRange(oy, 0, FTileMapHeight - 1) then
               Continue;
 
-            for i := 0 to cTileDCTSize - 1 do
+            for ox := x - AFTBlend to x + AFTBlend do
             begin
-              CurPrevDCT[0, i] := DS^.Dataset[idx, i];
-              CurPrevDCT[2, i * 2] := CurPrevDCT[0, i];
-            end;
-
-            for oy := y - AFTBlend to y + AFTBlend do
-            begin
-              if not InRange(oy, 0, FTileMapHeight - 1) then
+              if not InRange(ox, 0, FTileMapWidth - 1) then
                 Continue;
 
-              for ox := x - AFTBlend to x + AFTBlend do
+              if AFrame.Index > 0 then
               begin
-                if not InRange(ox, 0, FTileMapWidth - 1) then
-                  Continue;
+                prevTile := nil;
+                prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
+                prevTile := FTiles[prevTMI^.TileIdx];
 
-                if AFrame.Index > 0 then
-                begin
-                  prevTile := nil;
-                  prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
-                  prevTile := FTiles[prevTMI^.TileIdx];
+                ComputeTilePsyVisFeatures(prevTile^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], CurPrevDCT[1]);
+                for i := 0 to cTileDCTSize - 1 do
+                  CurPrevDCT[2, i * 2 + 1] := CurPrevDCT[1, i];
 
-                  ComputeTilePsyVisFeatures(prevTile^, True, False, cFTQWeighting, prevTMI^.HMirror xor ((hvmir and 1) <> 0), prevTMI^.VMirror xor ((hvmir and 2) <> 0), AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], CurPrevDCT[1]);
-                  for i := 0 to cTileDCTSize - 1 do
-                    CurPrevDCT[2, i * 2 + 1] := CurPrevDCT[1, i];
-
-                  SearchBlending2P(DCT);
-                end
-                else
-                begin
-                  SearchBlending1P(DCT, CurPrevDCT[0]);
-                end;
+                SearchBlending2P(DCT);
+              end
+              else
+              begin
+                SearchBlending1P(DCT, CurPrevDCT[0]);
               end;
             end;
           end;
-        end
-        else
-        begin
-          // in case no blending, first element from KNN is best
-
-          if errs[0] < bestErr then
-          begin
-            bestIdx := idxs[0];
-            bestErr := errs[0];
-            bestHvmir := hvmir;
-          end;
         end;
+      end
+      else
+      begin
+        // in case no blending, first element from KNN is best
+
+        bestIdx := idxs[0];
+        bestErr := errs[0];
       end;
 
       tmiO := @FFrames[AFrame.Index].TileMap[y, x];
 
+      attrs := DS^.TDToAttrs[bestIdx];
       tmiO^.TileIdx := DS^.TDToTileIdx[bestIdx];
-      tmiO^.HMirror := (bestHvmir and 1) <> 0;
-      tmiO^.VMirror := (bestHvmir and 2) <> 0;
+      tmiO^.HMirror := (attrs and 1) <> 0;
+      tmiO^.VMirror := (attrs and 2) <> 0;
       tmiO^.BlendCur := bestBlendCur;
       tmiO^.BlendPrev := bestBlendPrev;
       tmiO^.BlendX := bestX - x;
@@ -4247,9 +4191,11 @@ var
   KModes: TKModes;
   LocCentroids: TByteDynArray2;
   LocClusters: TIntegerDynArray;
-  lineIdx, clusterIdx, clusterLineCount, DSLen: Integer;
+  lineIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx: Integer;
+  ToMerge: TByteDynArray2;
   ToMergeIdxs: TIntegerDynArray;
   KMBin: PKModesBin;
+  dummy: UInt64;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := Length(KMBin^.Dataset);
@@ -4272,6 +4218,7 @@ begin
   Assert(Length(LocCentroids) = KMBin^.ClusterCount);
   Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
 
+  SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
   // build a list of this centroid tiles
@@ -4283,18 +4230,19 @@ begin
     begin
       if LocClusters[lineIdx] = clusterIdx then
       begin
+        ToMerge[clusterLineCount] := KMBin^.Dataset[lineIdx];
         ToMergeIdxs[clusterLineCount] := KMBin^.TileIndices[lineIdx];
         Inc(clusterLineCount);
       end;
     end;
 
-    // devise a single tile for the cluster
+    // choose a tile from the cluster
 
     if clusterLineCount >= 2 then
     begin
-      // apply to cluster
+      clusterLineIdx := GetMinMatchingDissim(ToMerge, LocCentroids[clusterIdx], clusterLineCount, dummy);
       SpinEnter(@FLock);
-      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[0], @LocCentroids[clusterIdx, 0], nil);
+      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
       SpinLeave(@FLock);
     end;
   end;
