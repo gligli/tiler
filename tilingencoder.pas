@@ -436,7 +436,7 @@ type
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
-    function WriteTileDatasetLine(const ATile: TTile; DataLine: PByte): Integer;
+    function WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer): Integer;
     procedure DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
@@ -4151,7 +4151,7 @@ begin
   end;
 end;
 
-function TTilingEncoder.WriteTileDatasetLine(const ATile: TTile; DataLine: PByte): Integer;
+function TTilingEncoder.WriteTileDatasetLine(const ATile: TTile; DataLine: PByte; out PalSigni: Integer): Integer;
 var
   x, y: Integer;
 begin
@@ -4168,7 +4168,7 @@ begin
 
   // count of most used index per 2x2 quadrant
 
-  GetTilePalZoneThres(ATile, sqr(cTileWidth) div 4, @DataLine[Result]);
+  PalSigni := GetTilePalZoneThres(ATile, sqr(cTileWidth) div 4, @DataLine[Result]);
   Inc(Result, sqr(cTileWidth) div 4);
 
   Assert(Result <= cKModesFeatureCount);
@@ -4255,28 +4255,7 @@ end;
 
 procedure TTilingEncoder.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 const
-  cBinCount = 16;
-
-  function GetTileBin(ATile: PTile): Byte;
-  var
-    tx, ty, rr, gg, bb: Integer;
-    r, g, b, h, s, v, sh: Byte;
-  begin
-    rr := 0; gg := 0; bb := 0;
-    for ty := 0 to cTileWidth - 1 do
-      for tx := 0 to cTileWidth - 1 do
-      begin
-        FromRGB(ATile^.RGBPixels[ty, tx], r, g, b);
-        rr += r; gg += g; bb += b;
-      end;
-    rr := rr div Sqr(cTileWidth); gg := gg div Sqr(cTileWidth); bb := bb div Sqr(cTileWidth);
-
-    RGBToHSV(ToRGB(rr, gg, bb), h, s, v);
-
-    sh := 8 - Round(Log2(cBinCount));
-    Result := (h shr sh) xor (s shr sh) xor (v shr sh);
-  end;
-
+  cBinCountShift = 0;
 var
   KMBins: TKModesBinArray;
   acc, i, j, disCnt, bin: Integer;
@@ -4289,8 +4268,8 @@ begin
   // prepare KModes dataset, one line per tile, psychovisual model as features
   // also choose KModes starting point
 
-  FConcurrentKModesBins := cBinCount;
-  SetLength(KMBins, cBinCount);
+  FConcurrentKModesBins := sqr(cTileWidth) shr cBinCountShift;
+  SetLength(KMBins, FConcurrentKModesBins);
   SetLength(cnt, Length(KMBins));
   SetLength(best, Length(KMBins));
   SetLength(DataLine, cKModesFeatureCount);
@@ -4303,7 +4282,8 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    bin := GetTileBin(FTiles[i]);
+    WriteTileDatasetLine(FTiles[i]^, @DataLine[0], bin);
+    bin := bin shr cBinCountShift;
 
     Inc(cnt[bin]);
   end;
@@ -4323,8 +4303,8 @@ begin
     if not FTiles[i]^.Active then
       Continue;
 
-    WriteTileDatasetLine(FTiles[i]^, @DataLine[0]);
-    bin := GetTileBin(FTiles[i]);
+    WriteTileDatasetLine(FTiles[i]^, @DataLine[0], bin);
+    bin := bin shr cBinCountShift;
 
     KMBins[bin].TileIndices[cnt[bin]] := i;
 
