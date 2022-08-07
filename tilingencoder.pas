@@ -3799,12 +3799,12 @@ begin
   DS := New(PTilingDataset);
   AKF.TileDS[APaletteIndex] := DS;
   FillChar(DS^, SizeOf(TTilingDataset), 0);
+  SetLength(DS^.DistErrCml, AKF.FrameCount);
 
   KNNSize := Length(FTiles) * 4;
   SetLength(DS^.TDToTileIdx, KNNSize);
   SetLength(DS^.TDToAttrs, KNNSize);
   SetLength(DS^.Dataset, KNNSize, cTileDCTSize);
-  SetLength(DS^.DistErrCml, AKF.FrameCount);
 
   KNNSize := DoPsyV;
   SetLength(DS^.TDToTileIdx, KNNSize);
@@ -3926,8 +3926,9 @@ var
   end;
 
 begin
+  bucketSize := max(1, (AFTBlend + 1) * 2);
   DS := AFrame.PKeyFrame.TileDS[APaletteIndex];
-  if Length(DS^.Dataset) <= 0 then
+  if Length(DS^.Dataset) < bucketSize then
     Exit;
 
   // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
@@ -3940,7 +3941,6 @@ begin
 
       ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, DCT);
 
-      bucketSize := max(1, (AFTBlend + 1) * 2);
       ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @DCT[0], 0.0);
 
       bestBlendCur := cMaxFTBlend - 1;
