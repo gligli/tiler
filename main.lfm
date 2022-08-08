@@ -576,7 +576,7 @@ object MainForm: TMainForm
         MaxValue = 1000
         OnChange = UpdateGUI
         TabOrder = 15
-        Value = 5
+        Value = 10
       end
     end
     object tsInput: TTabSheet
