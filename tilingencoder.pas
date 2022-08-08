@@ -215,8 +215,8 @@ type
     procedure ClearPalPixels;
     procedure ClearRGBPixels;
     procedure ClearPixels;
-    procedure ExtractPalPixels(var AArray: array of TANNFloat);
-    procedure LoadPalPixels(const AArray: TANNFloatDynArray);
+    procedure ExtractPalPixels(AArray: PANNFloat);
+    procedure LoadPalPixels(AArray: PANNFloat);
     function ComparePalPixelsTo(const ATile: TTile): Integer;
 
     property RGBPixels[y, x: Integer]: Integer read GetRGBPixels write SetRGBPixels;
@@ -239,8 +239,8 @@ type
     Dataset: TANNFloatDynArray;
     TDToTileIdx: TIntegerDynArray;
     TDToAttrs: TByteDynArray;
-    KDT: flann_index_t;
-    Params: PFLANNParameters;
+    FLANN: flann_index_t;
+    FLANNParams: PFLANNParameters;
     DistErrCml: TFloatDynArray;
   end;
 
@@ -872,15 +872,15 @@ begin
   ClearRGBPixels;
 end;
 
-procedure TTileHelper.ExtractPalPixels(var AArray: array of TANNFloat);
+procedure TTileHelper.ExtractPalPixels(AArray: PANNFloat);
 var
   i: Integer;
   PB: PByte;
-  PF: ^TANNFloat;
+  PF: PANNFloat;
 begin
   Assert(HasPalPixels);
   PB := @GetPalPixelsPtr^[0, 0];
-  PF := @AArray[0];
+  PF := AArray;
   for i := 0 to Sqr(cTileWidth) - 1 do
   begin
     PF^ := PB^;
@@ -889,15 +889,15 @@ begin
   end;
 end;
 
-procedure TTileHelper.LoadPalPixels(const AArray: TANNFloatDynArray);
+procedure TTileHelper.LoadPalPixels(AArray: PANNFloat);
 var
   i: Integer;
   PB: PByte;
-  PF: ^TANNFloat;
+  PF: PANNFloat;
 begin
   Assert(HasPalPixels);
   PB := @GetPalPixelsPtr^[0, 0];
-  PF := @AArray[0];
+  PF := AArray;
   for i := 0 to Sqr(cTileWidth) - 1 do
   begin
     PB^ := Round(PF^);
@@ -3813,11 +3813,11 @@ begin
 
   // Build KNN
 
-  New(DS^.Params);
-  DS^.Params^ := CDefaultFLANNParameters;
-  DS^.Params^.checks := cTileDCTSize;
+  New(DS^.FLANNParams);
+  DS^.FLANNParams^ := CDefaultFLANNParameters;
+  DS^.FLANNParams^.checks := cTileDCTSize;
 
-  DS^.KDT := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.Params);
+  DS^.FLANN := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
 end;
 
 procedure TTilingEncoder.FinishFrameTiling(AKF: TKeyFrame; APaletteIndex: Integer);
@@ -3830,8 +3830,8 @@ begin
     resDist += AKF.TileDS[APaletteIndex]^.DistErrCml[i];
 
   if Length(AKF.TileDS[APaletteIndex]^.Dataset) > 0 then
-    flann_free_index(AKF.TileDS[APaletteIndex]^.KDT, AKF.TileDS[APaletteIndex]^.Params);
-  AKF.TileDS[APaletteIndex]^.KDT := nil;
+    flann_free_index(AKF.TileDS[APaletteIndex]^.FLANN, AKF.TileDS[APaletteIndex]^.FLANNParams);
+  AKF.TileDS[APaletteIndex]^.FLANN := nil;
   SetLength(AKF.TileDS[APaletteIndex]^.Dataset, 0);
   SetLength(AKF.TileDS[APaletteIndex]^.TDToTileIdx, 0);
   SetLength(AKF.TileDS[APaletteIndex]^.TDToAttrs, 0);
@@ -3954,7 +3954,7 @@ begin
       Inc(annQueryCount);
     end;
 
-  flann_find_nearest_neighbors_index(DS^.KDT, @DCTs[0], annQueryCount, @idxs[0], @errs[0], bucketSize, DS^.Params);
+  flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[0], annQueryCount, @idxs[0], @errs[0], bucketSize, DS^.FLANNParams);
 
   // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
 
@@ -4391,8 +4391,9 @@ end;
 procedure TTilingEncoder.ReloadPreviousTiling(AFN: String);
 var
   ParallelCount: PtrUInt;
-  KNNDataset: TANNFloatDynArray2;
-  KDT: PANNkdtree;
+  KNNDataset: TANNFloatDynArray;
+  FLANN: flann_index_t;
+  FLANNParameters: TFLANNParameters;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -4413,8 +4414,10 @@ var
       if FTiles[i]^.Active then
       begin
         FTiles[i]^.ExtractPalPixels(DataLine);
-        tidx := ann_kdtree_pri_search(KDT, @DataLine[0], 0.0, @err);
-        FTiles[i]^.LoadPalPixels(KNNDataset[tidx]);
+
+        flann_find_nearest_neighbors_index(FLANN, @DataLine[0], 1, @tidx, @err, 1, @FLANNParameters);
+
+        FTiles[i]^.LoadPalPixels(@KNNDataset[tidx * Sqr(cTileWidth)]);
       end;
 
       if i mod 10000 = 0 then
@@ -4428,10 +4431,11 @@ var
   T: PTile;
   TilingPaletteSize: Integer;
   PalPixels: TPalPixels;
+  speedup: Single;
 begin
   fs := TFileStream.Create(AFN, fmOpenRead or fmShareDenyNone);
   T := TTile.New(False, True);
-  KDT := nil;
+  FLANN := nil;
   try
     T^.Active := True;
 
@@ -4447,9 +4451,9 @@ begin
     if Version >=0 then
       NewTileCount := fs.Size div (sqr(cTileWidth) + SizeOf(Integer));
 
-    SetLength(KNNDataset, NewTileCount, Sqr(cTileWidth));
+    SetLength(KNNDataset, NewTileCount * Sqr(cTileWidth));
 
-    for i := 0 to High(KNNDataset) do
+    for i := 0 to NewTileCount - 1 do
     begin
       if Version >= 0 then
         T^.UseCount := fs.ReadDWord;
@@ -4458,10 +4462,12 @@ begin
         for x := 0 to cTileWidth - 1 do
           PalPixels[y, x] := (PalPixels[y, x] * FPaletteSize) div TilingPaletteSize;
       T^.CopyPalPixels(PalPixels);
-      T^.ExtractPalPixels(KNNDataset[i]);
+      T^.ExtractPalPixels(@KNNDataset[i * Sqr(cTileWidth)]);
     end;
 
-    KDT := ann_kdtree_create(@KNNDataset[0], NewTileCount, sqr(cTileWidth), 32, ANN_KD_SUGGEST);
+    FLANNParameters := CDefaultFLANNParameters;
+    FLANNParameters.checks := Sqr(cTileWidth);
+    FLANN := flann_build_index(@KNNDataset[0], NewTileCount, Sqr(cTileWidth), @speedup, @FLANNParameters);
 
     ProgressRedraw(1);
 
@@ -4476,8 +4482,8 @@ begin
 
     ProgressRedraw(4);
   finally
-    if Assigned(KDT) then
-      ann_kdtree_destroy(KDT);
+    if Assigned(FLANN) then
+      flann_free_index(FLANN, @FLANNParameters);
     TTile.Dispose(T);
     fs.Free;
   end;
