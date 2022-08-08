@@ -236,10 +236,11 @@ type
   TTileMapItems = array of TTileMapItem;
 
   TTilingDataset = record
-    Dataset: TANNFloatDynArray2;
+    Dataset: TANNFloatDynArray;
     TDToTileIdx: TIntegerDynArray;
     TDToAttrs: TByteDynArray;
-    KDT: PANNkdtree;
+    KDT: flann_index_t;
+    Params: PFLANNParameters;
     DistErrCml: TFloatDynArray;
   end;
 
@@ -406,7 +407,7 @@ type
     procedure WaveletGS(Data: PFloat; Output: PFloat; dx, dy, depth: cardinal);
     procedure DeWaveletGS(wl: PFloat; pic: PFloat; dx, dy, depth: longint);
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
-      VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; var DCT: array of TFloat); inline;
+      VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline;
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -2043,7 +2044,7 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, Dataset[di]);
+        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @Dataset[di, 0]);
         Inc(di);
       end;
   assert(di = Length(Dataset));
@@ -2892,7 +2893,7 @@ BEGIN
 END;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
-  VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; var DCT: array of TFloat);
+  VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
 const
   cUVRatio: array[0..cTileWidth-1,0..cTileWidth-1] of TFloat = (
     (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),
@@ -2933,8 +2934,6 @@ var
   end;
 
 begin
-  Assert(Length(DCT) >= cTileDCTSize, 'DCT too small!');
-
   if FromPal then
   begin
     for y := 0 to (cTileWidth - 1) do
@@ -3472,7 +3471,7 @@ begin
               end;
 
               if not FRenderPlaying then
-                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, chgDCT[sy, sx]);
+                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, @chgDCT[sy, sx, 0]);
             end;
           end;
       finally
@@ -3779,10 +3778,10 @@ var
           DS^.TDToTileIdx[di] := ti;
           DS^.TDToAttrs[di] := hvmir;
 
-          ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], DS^.Dataset[di]);
+          ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], @DS^.Dataset[di * cTileDCTSize]);
 
           // prune redundancies
-          if (di <= 0) or (CompareDWord(DS^.Dataset[di - 1, 0], DS^.Dataset[di, 0], cTileDCTSize) <> 0) then
+          if (di <= 0) or (CompareDWord(DS^.Dataset[(di - 1) * cTileDCTSize], DS^.Dataset[di * cTileDCTSize], cTileDCTSize) <> 0) then
             Inc(di);
         end;
       end;
@@ -3793,6 +3792,7 @@ var
 
 var
   KNNSize: Integer;
+  speedup: Single;
 begin
   // Compute psycho visual model for all used tiles (in all palettes / mirrors)
 
@@ -3804,16 +3804,20 @@ begin
   KNNSize := Length(FTiles) * 4;
   SetLength(DS^.TDToTileIdx, KNNSize);
   SetLength(DS^.TDToAttrs, KNNSize);
-  SetLength(DS^.Dataset, KNNSize, cTileDCTSize);
+  SetLength(DS^.Dataset, KNNSize * cTileDCTSize);
 
   KNNSize := DoPsyV;
   SetLength(DS^.TDToTileIdx, KNNSize);
   SetLength(DS^.TDToAttrs, KNNSize);
-  SetLength(DS^.Dataset, KNNSize);
+  SetLength(DS^.Dataset, KNNSize * cTileDCTSize);
 
   // Build KNN
 
-  DS^.KDT := ann_kdtree_create(@DS^.Dataset[0], KNNSize, cTileDCTSize, 32, ANN_KD_STD);
+  New(DS^.Params);
+  DS^.Params^ := CDefaultFLANNParameters;
+  DS^.Params^.checks := cTileDCTSize;
+
+  DS^.KDT := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.Params);
 end;
 
 procedure TTilingEncoder.FinishFrameTiling(AKF: TKeyFrame; APaletteIndex: Integer);
@@ -3826,7 +3830,7 @@ begin
     resDist += AKF.TileDS[APaletteIndex]^.DistErrCml[i];
 
   if Length(AKF.TileDS[APaletteIndex]^.Dataset) > 0 then
-    ann_kdtree_destroy(AKF.TileDS[APaletteIndex]^.KDT);
+    flann_free_index(AKF.TileDS[APaletteIndex]^.KDT, AKF.TileDS[APaletteIndex]^.Params);
   AKF.TileDS[APaletteIndex]^.KDT := nil;
   SetLength(AKF.TileDS[APaletteIndex]^.Dataset, 0);
   SetLength(AKF.TileDS[APaletteIndex]^.TDToTileIdx, 0);
@@ -3859,7 +3863,7 @@ end;
 procedure TTilingEncoder.DoFrameTiling(AFrame: TFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer;
   AFTBlendThres: TFloat);
 var
-  i, bestIdx, bucketIdx, idx, bucketSize: Integer;
+  i, bestIdx, bucketIdx, idx, bucketSize, annQueryCount, annQueryPos: Integer;
   attrs, bestBlendCur, bestBlendPrev: Byte;
   x, y, ox, oy, bestX, bestY: Integer;
   bestErr: TFloat;
@@ -3868,8 +3872,9 @@ var
   prevTile: PTile;
 
   DS: PTilingDataset;
-  idxs: array[0 .. cMaxBlendingFTBucketSize - 1] of Integer;
-  errs: array[0 .. cMaxBlendingFTBucketSize - 1] of TANNFloat;
+  idxs: TIntegerDynArray;
+  errs: TANNFloatDynArray;
+  DCTs: TFloatDynArray;
   DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   CurPrevDCT: array[0 .. 2, 0 .. cTileDCTSize * 2 - 1] of TFloat;
 
@@ -3928,40 +3933,61 @@ var
 begin
   bucketSize := max(1, (AFTBlend + 1) * 2);
   DS := AFrame.PKeyFrame.TileDS[APaletteIndex];
-  if Length(DS^.Dataset) < bucketSize then
+  if Length(DS^.Dataset) div cTileDCTSize < bucketSize then
     Exit;
 
-  // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
+  annQueryCount := FTileMapWidth * FTileMapHeight;
 
+  SetLength(DCTs, annQueryCount * cTileDCTSize);
+  SetLength(idxs, annQueryCount * bucketSize);
+  SetLength(errs, annQueryCount * bucketSize);
+
+  annQueryCount := 0;
   for y := 0 to FTileMapHeight - 1 do
     for x := 0 to FTileMapWidth - 1 do
     begin
       if AFrame.TileMap[y, x].PalIdx <> APaletteIndex then
         Continue;
 
-      ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, DCT);
+      ComputeTilePsyVisFeatures(AFrame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, @DCTs[annQueryCount * cTileDCTSize]);
 
-      ann_kdtree_search_multi(DS^.KDT, @idxs[0], @errs[0], bucketSize, @DCT[0], 0.0);
+      Inc(annQueryCount);
+    end;
 
+  flann_find_nearest_neighbors_index(DS^.KDT, @DCTs[0], annQueryCount, @idxs[0], @errs[0], bucketSize, DS^.Params);
+
+  // map AFrame tilemap items to reduced tiles and mirrors and choose best corresponding palette
+
+  annQueryPos := 0;
+  for y := 0 to FTileMapHeight - 1 do
+    for x := 0 to FTileMapWidth - 1 do
+    begin
+      if AFrame.TileMap[y, x].PalIdx <> APaletteIndex then
+        Continue;
+
+      for i := 0 to cTileDCTSize - 1 do
+        DCT[i] := DCTs[annQueryPos * cTileDCTSize + i];
+
+      bestIdx := idxs[annQueryPos * bucketSize];
+      bestErr := errs[annQueryPos * bucketSize];
       bestBlendCur := cMaxFTBlend - 1;
       bestBlendPrev := 0;
       bestX := x;
       bestY := y;
-      if (AFTBlend >= 0) and not IsZero(errs[0], AFTBlendThres) then
+
+      if (AFTBlend >= 0) and not IsZero(errs[annQueryPos * bucketSize], AFTBlendThres) then
       begin
         // try to blend a local tile of the previous frame to improve likeliness
 
-        bestIdx := idxs[0];
-        bestErr := errs[0];
         for bucketIdx := 0 to bucketSize - 1 do
         begin
-          idx := idxs[bucketIdx];
+          idx := idxs[annQueryPos * bucketSize + bucketIdx];
           if idx < 0 then
             Continue;
 
           for i := 0 to cTileDCTSize - 1 do
           begin
-            CurPrevDCT[0, i] := DS^.Dataset[idx, i];
+            CurPrevDCT[0, i] := DS^.Dataset[idx * cTileDCTSize + i];
             CurPrevDCT[2, i * 2] := CurPrevDCT[0, i];
           end;
 
@@ -3994,13 +4020,6 @@ begin
             end;
           end;
         end;
-      end
-      else
-      begin
-        // in case no blending, first element from KNN is best
-
-        bestIdx := idxs[0];
-        bestErr := errs[0];
       end;
 
       tmiO := @FFrames[AFrame.Index].TileMap[y, x];
@@ -4019,6 +4038,8 @@ begin
       SpinLeave(@FLock);
 
       InterLockedIncrement(FTiles[tmiO^.TileIdx]^.UseCount);
+
+      Inc(annQueryPos);
     end;
 end;
 
