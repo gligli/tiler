@@ -437,7 +437,7 @@ var
   FS: TFileStream;
   Process: TProcess;
   OutputStream: TMemoryStream;
-  pdi: PDouble;
+  pdi: PFloat;
   pfo: PSingle;
   fbuf: TSingleDynArray;
 begin
