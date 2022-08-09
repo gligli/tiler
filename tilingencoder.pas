@@ -4293,7 +4293,7 @@ var
   share: TFloat;
 begin
 
-  // prepare KModes dataset, one line per tile, psychovisual model as features
+  // prepare KModes dataset, one line per tile, tiles indices as features
   // also choose KModes starting point
 
   FConcurrentKModesBins := sqr(cTileWidth) shr cBinCountShift;
@@ -4355,17 +4355,17 @@ begin
 
   disCnt := 0;
   for i := 0 to High(cnt) do
-    disCnt += EqualQualityTileCount(cnt[i]);
+    disCnt += cnt[i];
   share := DesiredNbTiles / disCnt;
 
   for i := 0 to High(cnt) do
-    KMBins[i].ClusterCount := ceil(EqualQualityTileCount(cnt[i]) * share);
+    KMBins[i].ClusterCount := ceil(cnt[i] * share);
 
   InitMergeTiles;
 
   ProgressRedraw(1);
 
-  // run the KMeans algorithm, which will group similar tiles until it reaches a fixed amount of groups
+  // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
   ProcThreadPool.DoParallel(@DoGlobalKModes, 0, High(KMBins), @KMBins);
 
