@@ -203,7 +203,7 @@ object MainForm: TMainForm
         Height = 23
         Top = 8
         Width = 71
-        MaxValue = 100000
+        MaxValue = 2000000000
         OnChange = UpdateGUI
         TabOrder = 7
       end
@@ -240,7 +240,7 @@ object MainForm: TMainForm
         Height = 23
         Top = 31
         Width = 71
-        MaxValue = 100000
+        MaxValue = 2000000000
         OnChange = UpdateGUI
         TabOrder = 8
       end
