@@ -299,12 +299,12 @@ end;
 
 procedure TMainForm.btnDebugClick(Sender: TObject);
 begin
-  edInput.Text := 'C:\tiler_misc\factory_1080p30.y4m';
+  edInput.Text := 'C:\tiler_misc\Star.Wars.Despecialized.Edition.v2.5.avi';
   edOutput.Text := 'C:\tiler\debug.gtm';
   edReload.Text := '';
-  seFrameCount.Value := IfThen(seFrameCount.Value >= 24, IfThen(seFrameCount.Value = 24, 96, 1), 24);
-  seFTBlendThres.Value := 5.0;
-  cbxScaling.ItemIndex := 2;
+  seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);
+  //seFTBlendThres.Value := 5.0;
+  //cbxScaling.ItemIndex := 2;
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);

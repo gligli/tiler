@@ -212,7 +212,7 @@ object MainForm: TMainForm
         Height = 23
         Top = 274
         Width = 71
-        Increment = 0.1
+        Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
         TabOrder = 18
@@ -573,10 +573,11 @@ object MainForm: TMainForm
         Height = 23
         Top = 179
         Width = 71
+        Increment = 0.5
         MaxValue = 1000
         OnChange = UpdateGUI
         TabOrder = 15
-        Value = 10
+        Value = 5
       end
     end
     object tsInput: TTabSheet
