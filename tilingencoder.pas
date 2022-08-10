@@ -2933,14 +2933,9 @@ var
     FromRGB(col, r, g, b);
 
     if UseLAB then
-    begin
       RGBToLAB(r, g, b, GammaCor, yy, uu, vv)
-    end
     else
-    begin
       RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
-      yy *= 1.25; uu *= 0.5; vv *= 0.5; // low chroma importance, normalized
-    end;
 
     CpnPixels[0, y, x] := yy;
     CpnPixels[1, y, x] := uu;
