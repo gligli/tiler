@@ -241,7 +241,6 @@ type
     TDToAttrs: TByteDynArray;
     FLANN: flann_index_t;
     FLANNParams: PFLANNParameters;
-    DistErrCml: TFloatDynArray;
   end;
 
   PTilingDataset = ^TTilingDataset;
@@ -289,6 +288,7 @@ type
     MixingPlans: array of TMixingPlan;
     TileDS: array of PTilingDataset;
     FTPaletteDone: TBooleanDynArray;
+    FTErrCml: TFloat;
 
     PaletteUseCount: array of record
       UseCount: Integer;
@@ -3801,7 +3801,6 @@ begin
 
   DS := New(PTilingDataset);
   FillChar(DS^, SizeOf(TTilingDataset), 0);
-  SetLength(DS^.DistErrCml, AKF.FrameCount);
 
   KNNSize := Length(FTiles) * 4;
   SetLength(DS^.TDToTileIdx, KNNSize);
@@ -3829,12 +3828,8 @@ end;
 procedure TTilingEncoder.FinishFrameTiling(AKF: TKeyFrame; APaletteIndex: Integer);
 var
   i: Integer;
-  resDist: TFloat;
+  done: Boolean;
 begin
-  resDist := 0.0;
-  for i := 0 to High(AKF.TileDS[APaletteIndex] ^.DistErrCml) do
-    resDist += AKF.TileDS[APaletteIndex]^.DistErrCml[i];
-
   if Length(AKF.TileDS[APaletteIndex]^.Dataset) > 0 then
     flann_free_index(AKF.TileDS[APaletteIndex]^.FLANN, AKF.TileDS[APaletteIndex]^.FLANNParams);
   AKF.TileDS[APaletteIndex]^.FLANN := nil;
@@ -3846,7 +3841,17 @@ begin
   AKF.TileDS[APaletteIndex] := nil;
   AKF.FTPaletteDone[APaletteIndex] := True;
 
-  WriteLn('KF: ', AKF.StartFrame:3, #9'PalIdx: ', APaletteIndex:3, #9'ResidualErr: ', resDist:12:6);
+  done := True;
+  for i := 0 to FPaletteCount - 1 do
+    done := done and AKF.FTPaletteDone[i];
+
+  Write('.');
+
+  if done then
+  begin
+    WriteLn;
+    WriteLn('KF: ', AKF.StartFrame:3, #9'ResidualErr: ', (AKF.FTErrCml / AKF.FrameCount):12:3, ' (by frame) ', (AKF.FTErrCml / (FTileMapSize * AKF.FrameCount)):12:6, ' (by tile)');
+  end;
 end;
 
 procedure ComputeBlending(PRes, Px, Py: PFloat; bx, by: TFloat); inline;
@@ -4077,6 +4082,9 @@ begin
             end
             else
             begin
+              if (ox <> x) or (oy <> y) then
+                Continue;
+
               FillDWord(PrevDCT[0], cTileDCTSize, 0);
             end;
 
@@ -4117,7 +4125,7 @@ begin
       tmiO^.BlendY := bestY - y;
 
       SpinEnter(@FLock);
-      DS^.DistErrCml[AFrame.Index - AFrame.PKeyFrame.StartFrame] += bestErr;
+      AFrame.PKeyFrame.FTErrCml += bestErr;
       SpinLeave(@FLock);
 
       InterLockedIncrement(FTiles[tmiO^.TileIdx]^.UseCount);
