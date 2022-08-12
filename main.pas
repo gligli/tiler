@@ -303,8 +303,8 @@ begin
   edOutput.Text := 'C:\tiler\debug.gtm';
   edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);
-  //seFTBlendThres.Value := 5.0;
-  //cbxScaling.ItemIndex := 2;
+  seFTBlend.Value := 7;
+  seFTBlendThres.Value := 1.0;
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);

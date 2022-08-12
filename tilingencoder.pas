@@ -283,11 +283,11 @@ type
   TKeyFrame = class
     StartFrame, EndFrame, FrameCount: Integer;
     FramesLeft: Integer;
-    TileDS: array of PTilingDataset;
-    CS: TRTLCriticalSection;
-    FTDoPrepareEvent, FTDoFinishEvent, FTPreparedEvent: THandle;
-    MixingPlans: array of TMixingPlan;
+
     PaletteRGB: TIntegerDynArray2;
+    CS: TRTLCriticalSection;
+    MixingPlans: array of TMixingPlan;
+    TileDS: array of PTilingDataset;
     FTPaletteDone: TBooleanDynArray;
 
     PaletteUseCount: array of record
@@ -946,9 +946,6 @@ begin
   FrameCount := AEndFrame - AStartFrame + 1;
   FramesLeft := -1;
   InitializeCriticalSection(CS);
-  FTDoPrepareEvent := CreateEvent(nil, True, False, nil);
-  FTDoFinishEvent := CreateEvent(nil, True, False, nil);
-  FTPreparedEvent := CreateEvent(nil, True, False, nil);
   SetLength(MixingPlans, APaletteCount);
   SetLength(PaletteRGB, APaletteCount);
 end;
@@ -957,9 +954,6 @@ destructor TKeyFrame.Destroy;
 begin
   inherited Destroy;
   DeleteCriticalSection(CS);
-  CloseHandle(FTDoPrepareEvent);
-  CloseHandle(FTDoFinishEvent);
-  CloseHandle(FTPreparedEvent);
 end;
 
 { TTilingEncoder }
@@ -1134,7 +1128,7 @@ procedure TTilingEncoder.FrameTiling;
   var
     kf, pal, frm: Integer;
   begin
-    DivMod(AIndex, FPaletteCount, kf, pal);
+    DivMod(AIndex, Length(FKeyFrames), pal, kf);
 
     PrepareFrameTiling(FKeyFrames[kf], pal, IfThen(FFrameTilingUseGamma, 0, -1));
 
@@ -3803,10 +3797,9 @@ var
   KNNSize: Integer;
   speedup: Single;
 begin
-  // Compute psycho visual model for all used tiles (in all palettes / mirrors)
+  // Compute psycho visual model for all tiles (in all palettes / mirrors)
 
   DS := New(PTilingDataset);
-  AKF.TileDS[APaletteIndex] := DS;
   FillChar(DS^, SizeOf(TTilingDataset), 0);
   SetLength(DS^.DistErrCml, AKF.FrameCount);
 
@@ -3827,6 +3820,10 @@ begin
   DS^.FLANNParams^.checks := cTileDCTSize;
 
   DS^.FLANN := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
+
+  // Dataset is ready
+
+  AKF.TileDS[APaletteIndex] := DS;
 end;
 
 procedure TTilingEncoder.FinishFrameTiling(AKF: TKeyFrame; APaletteIndex: Integer);
@@ -3852,6 +3849,23 @@ begin
   WriteLn('KF: ', AKF.StartFrame:3, #9'PalIdx: ', APaletteIndex:3, #9'ResidualErr: ', resDist:12:6);
 end;
 
+procedure ComputeBlending(PRes, Px, Py: PFloat; bx, by: TFloat); inline;
+var
+  i: Integer;
+begin
+  for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
+  begin
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+  end;
+end;
+
 function ComputeBlendingError(PPlain, PCur, PPrev: PFloat; bc, bp: TFloat): TFloat; inline;
 var
   i: Integer;
@@ -3870,6 +3884,111 @@ begin
   end;
 end;
 
+function ComputeBlendingError_Asm(PPlain_rcx, PCur_rdx, PPrev_r8: PFloat; bc_xmm3, bp_stack: TFloat): TFloat; register; assembler;
+const
+  cDCTSizeOffset = cTileDCTSize * SizeOf(TFloat);
+label loop;
+asm
+  push rcx
+  push rdx
+  push r8
+
+  sub rsp, 16 * 14
+  movdqu oword ptr [rsp],       xmm1
+  movdqu oword ptr [rsp + $10], xmm2
+  movdqu oword ptr [rsp + $20], xmm3
+  movdqu oword ptr [rsp + $30], xmm4
+  movdqu oword ptr [rsp + $40], xmm5
+  movdqu oword ptr [rsp + $50], xmm6
+  movdqu oword ptr [rsp + $60], xmm7
+  movdqu oword ptr [rsp + $70], xmm8
+  movdqu oword ptr [rsp + $80], xmm9
+  movdqu oword ptr [rsp + $90], xmm10
+  movdqu oword ptr [rsp + $a0], xmm11
+  movdqu oword ptr [rsp + $b0], xmm12
+  movdqu oword ptr [rsp + $c0], xmm13
+  movdqu oword ptr [rsp + $d0], xmm14
+
+  pshufd xmm1, xmm3, 0
+  pshufd xmm2, dword ptr [bp_stack], 0
+  xorps xmm0, xmm0
+
+  lea rax, byte ptr [rcx + cDCTSizeOffset]
+  loop:
+    movups xmm3,  oword ptr [rcx]
+    movups xmm6,  oword ptr [rcx + $10]
+    movups xmm9,  oword ptr [rcx + $20]
+    movups xmm12, oword ptr [rcx + $30]
+
+    movups xmm4,  oword ptr [rdx]
+    movups xmm7,  oword ptr [rdx + $10]
+    movups xmm10, oword ptr [rdx + $20]
+    movups xmm13, oword ptr [rdx + $30]
+
+    movups xmm5,  oword ptr [r8]
+    movups xmm8,  oword ptr [r8 + $10]
+    movups xmm11, oword ptr [r8 + $20]
+    movups xmm14, oword ptr [r8 + $30]
+
+    mulps xmm4, xmm1
+    mulps xmm5, xmm2
+    addps xmm4, xmm5
+    subps xmm3, xmm4
+    mulps xmm3, xmm3
+    addps xmm0, xmm3
+
+    mulps xmm7, xmm1
+    mulps xmm8, xmm2
+    addps xmm7, xmm8
+    subps xmm6, xmm7
+    mulps xmm6, xmm6
+    addps xmm0, xmm6
+
+    mulps xmm10, xmm1
+    mulps xmm11, xmm2
+    addps xmm10, xmm11
+    subps xmm9, xmm10
+    mulps xmm9, xmm9
+    addps xmm0, xmm9
+
+    mulps xmm13, xmm1
+    mulps xmm14, xmm2
+    addps xmm13, xmm14
+    subps xmm12, xmm13
+    mulps xmm12, xmm12
+    addps xmm0, xmm12
+
+    lea rcx, [rcx + $40]
+    lea rdx, [rdx + $40]
+    lea r8, [r8 + $40]
+
+    cmp rcx, rax
+    jne loop
+
+  haddps xmm0, xmm0
+  haddps xmm0, xmm0
+
+  movdqu xmm1,  oword ptr [rsp]
+  movdqu xmm2,  oword ptr [rsp + $10]
+  movdqu xmm3,  oword ptr [rsp + $20]
+  movdqu xmm4,  oword ptr [rsp + $30]
+  movdqu xmm5,  oword ptr [rsp + $40]
+  movdqu xmm6,  oword ptr [rsp + $50]
+  movdqu xmm7,  oword ptr [rsp + $60]
+  movdqu xmm8,  oword ptr [rsp + $70]
+  movdqu xmm9,  oword ptr [rsp + $80]
+  movdqu xmm10, oword ptr [rsp + $90]
+  movdqu xmm11, oword ptr [rsp + $a0]
+  movdqu xmm12, oword ptr [rsp + $b0]
+  movdqu xmm13, oword ptr [rsp + $c0]
+  movdqu xmm14, oword ptr [rsp + $d0]
+  add rsp, 16 * 14
+
+  pop r8
+  pop rdx
+  pop rcx
+end;
+
 procedure TTilingEncoder.DoFrameTiling(AFrame: TFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer;
   AFTBlendThres: TFloat);
 var
@@ -3884,7 +4003,6 @@ var
   idxs: TIntegerDynArray;
   errs: TANNFloatDynArray;
   DCTs: TFloatDynArray;
-  DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   SearchDCT: array[0 .. cTileDCTSize - 1] of TFloat;
   PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
 
@@ -3922,9 +4040,6 @@ begin
       if AFrame.TileMap[y, x].PalIdx <> APaletteIndex then
         Continue;
 
-      for i := 0 to cTileDCTSize - 1 do
-        DCT[i] := DCTs[annQueryPos * cTileDCTSize + i];
-
       bestIdx := idxs[annQueryPos];
       bestErr := errs[annQueryPos];
       bestBlendCur := cMaxFTBlend - 1;
@@ -3934,6 +4049,7 @@ begin
 
       if (AFTBlend >= 0) and not IsZero(errs[annQueryPos], AFTBlendThres) then
       begin
+
         // try to blend a local tile of the previous frame to improve likeliness
 
         for oy := y - AFTBlend to y + AFTBlend do
@@ -3969,12 +4085,11 @@ begin
               fc := blend * (1.0 / (cMaxFTBlend - 1));
               rfc := 1.0 / fc;
 
-              for i := 0 to cTileDCTSize - 1 do
-                SearchDCT[i] := lerp(PrevDCT[i], DCT[i], rfc);
+              ComputeBlending(@SearchDCT[0], @PrevDCT[0], @DCTs[annQueryPos * cTileDCTSize], 1.0 - rfc, rfc);
 
-              flann_find_nearest_neighbors_index(DS^.FLANN, @SearchDCT[0], 1, @idx, @errs[0], 1, DS^.FLANNParams);
+              flann_find_nearest_neighbors_index(DS^.FLANN, @SearchDCT[0], 1, @idx, @err, 1, DS^.FLANNParams);
 
-              err := ComputeBlendingError(@DCT[0], @DS^.Dataset[idx * cTileDCTSize], @PrevDCT[0], fc, 1.0 - fc);
+              err := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[idx * cTileDCTSize], @PrevDCT[0], fc, 1.0 - fc);
 
               if err < bestErr then
               begin
