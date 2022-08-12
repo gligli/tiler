@@ -779,7 +779,8 @@ begin
       if AArray[i] < smallest then
         smallest := AArray[i];
 
-    Freemem(smallest);
+    if Assigned(smallest) then
+      Freemem(smallest);
     SetLength(AArray, 0);
   end;
 end;
@@ -3271,14 +3272,16 @@ var
   i: Integer;
 begin
   for i := 0 to High(FFrames) do
-  begin
-    TTile.Array1DDispose(FFrames[i].Tiles);
-    FFrames[i].Free;
-  end;
+    if Assigned(FFrames[i]) then
+    begin
+      TTile.Array1DDispose(FFrames[i].Tiles);
+      FreeAndNil(FFrames[i]);
+    end;
   SetLength(FFrames, 0);
 
   for i := 0 to High(FKeyFrames) do
-    FKeyFrames[i].Free;
+    if Assigned(FKeyFrames[i]) then
+      FreeAndNil(FKeyFrames[i]);
   SetLength(FKeyFrames, 0);
 
   TTile.Array1DDispose(FTiles);
