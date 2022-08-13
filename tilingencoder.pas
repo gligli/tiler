@@ -287,14 +287,16 @@ type
     CS: TRTLCriticalSection;
     MixingPlans: array of TMixingPlan;
     TileDS: array of PTilingDataset;
-    FTPaletteDone: TBooleanDynArray;
-    FTErrCml: TFloat;
 
     PaletteUseCount: array of record
       UseCount: Integer;
       Palette: TIntegerDynArray;
       PalIdx: Integer;
     end;
+
+    FTPaletteDoneEvent: array of THandle;
+    FTPalettesLeft: Integer;
+    FTErrCml: TFloat;
 
     constructor Create(APaletteCount, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
@@ -1140,7 +1142,7 @@ procedure TTilingEncoder.FrameTiling;
   end;
 
 var
-  kf: Integer;
+  kf, i: Integer;
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
@@ -1149,16 +1151,21 @@ begin
 
   for kf := 0 to high(FKeyFrames) do
   begin
+    FKeyFrames[kf].FTPalettesLeft := FPaletteCount;
     SetLength(FKeyFrames[kf].TileDS, FPaletteCount);
-    SetLength(FKeyFrames[kf].FTPaletteDone, FPaletteCount);
+    SetLength(FKeyFrames[kf].FTPaletteDoneEvent, FPaletteCount);
+    for i := 0 to FPaletteCount - 1 do
+      FKeyFrames[kf].FTPaletteDoneEvent[i] := CreateEvent(nil, True, False, nil);
   end;
   try
     ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, nil, NumberOfProcessors);
   finally
     for kf := 0 to high(FKeyFrames) do
     begin
+      for i := 0 to FPaletteCount - 1 do
+        CloseHandle(FKeyFrames[kf].FTPaletteDoneEvent[i]);
+      SetLength(FKeyFrames[kf].FTPaletteDoneEvent, 0);
       SetLength(FKeyFrames[kf].TileDS, 0);
-      SetLength(FKeyFrames[kf].FTPaletteDone, 0);
     end;
   end;
 
@@ -3844,15 +3851,12 @@ begin
   Dispose(AKF.TileDS[APaletteIndex]);
 
   AKF.TileDS[APaletteIndex] := nil;
-  AKF.FTPaletteDone[APaletteIndex] := True;
-
-  done := True;
-  for i := 0 to FPaletteCount - 1 do
-    done := done and AKF.FTPaletteDone[i];
+  SetEvent(AKF.FTPaletteDoneEvent[APaletteIndex]);
+  InterLockedDecrement(AKF.FTPalettesLeft);
 
   Write('.');
 
-  if done then
+  if AKF.FTPalettesLeft <= 0 then
   begin
     WriteLn;
     WriteLn('KF: ', AKF.StartFrame:3, #9'ResidualErr: ', (AKF.FTErrCml / AKF.FrameCount):12:3, ' (by frame) ', (AKF.FTErrCml / (FTileMapSize * AKF.FrameCount)):12:6, ' (by tile)');
@@ -4081,8 +4085,7 @@ begin
 
               if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
               begin
-                while not FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDone[prevTMI^.PalIdx] do
-                  Sleep(10); // wait prev keyframe for palette done
+                WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
 
                 ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
               end
