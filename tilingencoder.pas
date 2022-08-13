@@ -226,8 +226,8 @@ type
   PTileMapItem = ^TTileMapItem;
 
   TTileMapItem = packed record
-    TileIdx, SmoothedTileIdx: Integer;
-    PalIdx, SmoothedPalIdx: Integer;
+    TileIdx, SmoothedTileIdx, FTTileDSIdx: Integer;
+    PalIdx, SmoothedPalIdx: SmallInt;
     Smoothed, HMirror, VMirror, SmoothedHMirror, SmoothedVMirror: Boolean;
     BlendCur, BlendPrev: Byte;
     BlendX, BlendY: ShortInt;
@@ -1129,7 +1129,7 @@ procedure TTilingEncoder.FrameTiling;
   var
     kf, pal, frm: Integer;
   begin
-    DivMod(AIndex, Length(FKeyFrames), pal, kf);
+    DivMod(AIndex, FPaletteCount, kf, pal);
 
     PrepareFrameTiling(FKeyFrames[kf], pal, IfThen(FFrameTilingUseGamma, 0, -1));
 
@@ -1153,7 +1153,7 @@ begin
     SetLength(FKeyFrames[kf].FTPaletteDone, FPaletteCount);
   end;
   try
-    ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, Length(FKeyFrames) * FPaletteCount - 1, nil, NumberOfProcessors);
+    ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, nil, NumberOfProcessors);
   finally
     for kf := 0 to high(FKeyFrames) do
     begin
@@ -3160,6 +3160,8 @@ begin
       TMI^.BlendPrev := 0;
       TMI^.BlendX := 0;
       TMI^.BlendY := 0;
+
+      TMI^.FTTileDSIdx := -1;
     end;
 
   Assert(ABitmap.Description.Width >= FScreenWidth, 'Wrong video width!');
@@ -4078,10 +4080,17 @@ begin
                 Continue;
 
               if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
+              begin
                 while not FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDone[prevTMI^.PalIdx] do
                   Sleep(10); // wait prev keyframe for palette done
 
-              ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
+                ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
+              end
+              else
+              begin
+                for i := 0 to cTileDCTSize - 1 do
+                  PrevDCT[i] := DS^.Dataset[prevTMI^.FTTileDSIdx * cTileDCTSize + i];
+              end;
             end
             else
             begin
@@ -4091,7 +4100,7 @@ begin
               FillDWord(PrevDCT[0], cTileDCTSize, 0);
             end;
 
-            for blend := 1 to cMaxFTBlend - 1 do
+            for blend := 1 to cMaxFTBlend - 2 do
             begin
               fc := blend * (1.0 / (cMaxFTBlend - 1));
               rfc := 1.0 / fc;
@@ -4119,6 +4128,7 @@ begin
       tmiO := @FFrames[AFrame.Index].TileMap[y, x];
 
       attrs := DS^.TDToAttrs[bestIdx];
+      tmiO^.FTTileDSIdx := bestIdx;
       tmiO^.TileIdx := DS^.TDToTileIdx[bestIdx];
       tmiO^.HMirror := (attrs and 1) <> 0;
       tmiO^.VMirror := (attrs and 2) <> 0;
