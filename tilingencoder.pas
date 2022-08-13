@@ -2043,7 +2043,7 @@ var
   sx, sy, i: Integer;
   GTile: PTile;
 
-  Dataset: TFloatDynArray2;
+  Dataset, BIRCHOutput: TFloatDynArray2;
   Clusters: TIntegerDynArray;
   di: Integer;
 
@@ -2069,11 +2069,25 @@ begin
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
+{$if true}
     Yakmo := yakmo_single_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
     yakmo_single_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
     SetLength(Dataset, 0); // free up some memmory
     yakmo_single_train_on_data(Yakmo, @Clusters[0]);
     yakmo_single_destroy(Yakmo);
+{$else}
+  {$if true}
+    DoExternalSKLearn(Dataset, FPaletteCount, 2, False, True, Clusters);
+  {$else}
+    DoExternalBIRCH(Dataset, 0.01, BIRCHOutput);
+    SetLength(Dataset, 0); // free up some memmory
+    Yakmo := yakmo_single_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 1);
+    yakmo_single_load_train_data(Yakmo, di, 3, @BIRCHOutput[0]);
+    SetLength(BIRCHOutput, 0); // free up some memmory
+    yakmo_single_train_on_data(Yakmo, @Clusters[0]);
+    yakmo_single_destroy(Yakmo);
+  {$ifend}
+{$ifend}
   end
   else
   begin

@@ -122,6 +122,7 @@ type
 
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
+procedure DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Output: TFloatDynArray2);
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
@@ -424,6 +425,62 @@ begin
   finally
     OutputStream.Free;
     Shuffler.Free;
+    SL.Free;
+  end;
+end;
+
+procedure DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Output: TFloatDynArray2);
+var
+  i, j, st: Integer;
+  InFN, Line, TextOutput, ErrOut: String;
+  SL, Parser: TStringList;
+  Process: TProcess;
+  OutputStream: TMemoryStream;
+begin
+  SL := TStringList.Create;
+  Parser := TStringList.Create;
+  OutputStream := TMemoryStream.Create;
+  try
+    for i := 0 to High(Dataset) do
+    begin
+      Line := '';
+      for j := 0 to High(Dataset[0]) do
+        Line := Line + FloatToStr(Dataset[i, j]) + ' ';
+      SL.Add(Line);
+    end;
+
+    InFN := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
+    SL.SaveToFile(InFN);
+    SL.Clear;
+
+    Process := TProcess.Create(nil);
+    Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
+    Process.Executable := 'BIRCH.exe';
+
+    Process.Parameters.Add('"' + InFN + '" ' + FloatToStr(Threshold, InvariantFormatSettings) + ' "' + InFN + '.membership"');
+    Process.ShowWindow := swoHIDE;
+    Process.Priority := ppIdle;
+
+    st := 0;
+    internalRuncommand(Process, TextOutput, ErrOut, st, True); // destroys Process
+
+    SL.LoadFromFile(InFN + '.membership');
+
+    DeleteFile(PChar(InFN));
+    DeleteFile(PChar(InFN + '.membership'));
+
+    SetLength(Output, SL.Count, 3);
+    Parser.Delimiter := ' ';
+    for i := 0 to SL.Count - 1 do
+    begin
+      Parser.DelimitedText := SL[i];
+      Output[i, 0] := StrToFloatDef(Parser[0], 0, InvariantFormatSettings);
+      Output[i, 1] := StrToFloatDef(Parser[1], 0, InvariantFormatSettings);
+      Output[i, 2] := StrToIntDef(Parser[2], 0);
+    end;
+  finally
+    OutputStream.Free;
+    Parser.Free;
     SL.Free;
   end;
 end;
