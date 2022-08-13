@@ -3412,7 +3412,10 @@ begin
     begin
       FOutputBitmap.BeginUpdate;
       try
-        FOutputBitmap.Canvas.Brush.Color := clFuchsia;
+        FOutputBitmap.Canvas.Brush.Color := clBlack;
+        FOutputBitmap.Canvas.Brush.Style := bsSolid;
+        FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
+        FOutputBitmap.Canvas.Brush.Color := $300038;
         FOutputBitmap.Canvas.Brush.Style := bsDiagCross;
         FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
 
