@@ -60,8 +60,6 @@ type
     lblPct: TLabel;
     MenuItem8: TMenuItem;
     odFFInput: TOpenDialog;
-    pbFrameO: TPaintBox;
-    pbFrameI: TPaintBox;
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
@@ -123,7 +121,7 @@ type
     procedure imgPaletteClick(Sender: TObject);
     procedure imgPaletteDblClick(Sender: TObject);
     procedure btnGeneratePNGsClick(Sender: TObject);
-    procedure pbFramePaint(Sender: TObject);
+    procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
     procedure seMaxTilesEditingDone(Sender: TObject);
     procedure seQbTilesEditingDone(Sender: TObject);
     procedure UpdateVideo(Sender: TObject);
@@ -225,6 +223,13 @@ procedure TMainForm.btnGeneratePNGsClick(Sender: TObject);
 begin
   FTilingEncoder.GeneratePNGs(edOutput.Text);
   UpdateVideo(nil);
+end;
+
+procedure TMainForm.imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
+begin
+  ACanvas.Brush.Color := clBlack;
+  ACanvas.Brush.Style := bsSolid;
+  ACanvas.Clear;
 end;
 
 procedure TMainForm.btnRunAllClick(Sender: TObject);
@@ -378,16 +383,6 @@ procedure TMainForm.imgPaletteDblClick(Sender: TObject);
 begin
   sedPalIdx.Value := -1;
   FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;
-end;
-
-procedure TMainForm.pbFramePaint(Sender: TObject);
-begin
-  TPaintBox(Sender).Canvas.Brush.Color := clBlack;
-  TPaintBox(Sender).Canvas.Brush.Style := TFPBrushStyle.bsSolid;
-  TPaintBox(Sender).Canvas.FillRect(TPaintBox(Sender).Canvas.ClipRect);
-  TPaintBox(Sender).Canvas.Brush.Color := IfThen(Sender = pbFrameI, $300038, $302800);
-  TPaintBox(Sender).Canvas.Brush.Style := TFPBrushStyle.bsDiagCross;
-  TPaintBox(Sender).Canvas.FillRect(TPaintBox(Sender).Canvas.ClipRect);
 end;
 
 procedure TMainForm.seMaxTilesEditingDone(Sender: TObject);

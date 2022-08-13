@@ -166,6 +166,7 @@ object MainForm: TMainForm
         Top = 120
         Width = 71
         Increment = 1000
+        MaxValue = 1000000000
         OnChange = UpdateGUI
         OnEditingDone = seMaxTilesEditingDone
         TabOrder = 12
@@ -393,7 +394,7 @@ object MainForm: TMainForm
         Width = 71
         Increment = 0.1
         MaxValue = 100
-        MinValue = 0.5
+        MinValue = 0.1
         OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
         TabOrder = 13
@@ -584,16 +585,6 @@ object MainForm: TMainForm
       Caption = 'Input'
       ClientHeight = 420
       ClientWidth = 956
-      object pbFrameI: TPaintBox
-        Left = 0
-        Height = 420
-        Top = 0
-        Width = 956
-        Align = alClient
-        Color = clBlack
-        ParentColor = False
-        OnPaint = pbFramePaint
-      end
       object imgSource: TImage
         Left = 0
         Height = 420
@@ -604,6 +595,7 @@ object MainForm: TMainForm
         Center = True
         KeepOriginXWhenClipped = True
         KeepOriginYWhenClipped = True
+        OnPaintBackground = imgPaintBackground
         PopupMenu = pmProcesses
       end
     end
@@ -611,16 +603,6 @@ object MainForm: TMainForm
       Caption = 'Output (F12)'
       ClientHeight = 420
       ClientWidth = 956
-      object pbFrameO: TPaintBox
-        Left = 0
-        Height = 420
-        Top = 0
-        Width = 956
-        Align = alClient
-        Color = clBlack
-        ParentColor = False
-        OnPaint = pbFramePaint
-      end
       object imgDest: TImage
         Left = 0
         Height = 420
@@ -631,6 +613,7 @@ object MainForm: TMainForm
         Center = True
         KeepOriginXWhenClipped = True
         KeepOriginYWhenClipped = True
+        OnPaintBackground = imgPaintBackground
         PopupMenu = pmProcesses
       end
     end
