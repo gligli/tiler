@@ -122,7 +122,7 @@ type
 
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
-procedure DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Output: TFloatDynArray2);
+function DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Clusters: TIntegerDynArray): Integer;
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
@@ -395,9 +395,9 @@ begin
 
     for i := 0 to GetEnvironmentVariableCount - 1 do
       Process.Environment.Add(GetEnvironmentString(i));
-    Process.Environment.Add('MKL_NUM_THREADS=1');
-    Process.Environment.Add('NUMEXPR_NUM_THREADS=1');
-    Process.Environment.Add('OMP_NUM_THREADS=1');
+    //Process.Environment.Add('MKL_NUM_THREADS=1');
+    //Process.Environment.Add('NUMEXPR_NUM_THREADS=1');
+    //Process.Environment.Add('OMP_NUM_THREADS=1');
 
     if not Compiled then
       Process.Parameters.Add('cluster.py');
@@ -409,6 +409,8 @@ begin
 
     st := 0;
     internalRuncommand(Process, Output, ErrOut, st, PrintProgress); // destroys Process
+    WriteLn(Output);
+    WriteLn(ErrOut);
 
     SL.LoadFromFile(InFN + '.membership');
 
@@ -429,7 +431,7 @@ begin
   end;
 end;
 
-procedure DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Output: TFloatDynArray2);
+function DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Clusters: TIntegerDynArray): Integer;
 var
   i, j, st: Integer;
   InFN, Line, TextOutput, ErrOut: String;
@@ -469,15 +471,15 @@ begin
     DeleteFile(PChar(InFN));
     DeleteFile(PChar(InFN + '.membership'));
 
-    SetLength(Output, SL.Count, 3);
     Parser.Delimiter := ' ';
+    Result := -1;
     for i := 0 to SL.Count - 1 do
     begin
       Parser.DelimitedText := SL[i];
-      Output[i, 0] := StrToFloatDef(Parser[0], 0, InvariantFormatSettings);
-      Output[i, 1] := StrToFloatDef(Parser[1], 0, InvariantFormatSettings);
-      Output[i, 2] := StrToIntDef(Parser[2], 0);
+      Clusters[i] := StrToIntDef(Parser[Parser.Count - 1], 0);
+      Result := max(Result, Clusters[i]);
     end;
+    Inc(Result);
   finally
     OutputStream.Free;
     Parser.Free;

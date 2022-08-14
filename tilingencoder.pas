@@ -2040,19 +2040,19 @@ end;
 
 procedure TTilingEncoder.PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
 var
-  sx, sy, i: Integer;
+  sx, sy, i, j, k, cnt, BIRCHClusterCount: Integer;
   GTile: PTile;
 
-  Dataset, BIRCHOutput: TFloatDynArray2;
-  Clusters: TIntegerDynArray;
+  BIRCHDataset, YakmoDataset: TFloatDynArray2;
+  BIRCHClusters, YakmoClusters: TIntegerDynArray;
   di: Integer;
 
   Yakmo: PYakmoSingle;
 begin
   Assert(FPaletteCount <= Length(FPalettePattern));
 
-  SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
-  SetLength(Clusters, Length(Dataset));
+  SetLength(BIRCHDataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
+  SetLength(BIRCHClusters, Length(BIRCHDataset));
 
   di := 0;
   for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
@@ -2060,10 +2060,10 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @Dataset[di, 0]);
+        ComputeTilePsyVisFeatures(GTile^, False, False, True, True, False, False, ADitheringGamma, nil, @BIRCHDataset[di, 0]);
         Inc(di);
       end;
-  assert(di = Length(Dataset));
+  assert(di = Length(BIRCHDataset));
 
   WriteLn('KF: ', AKeyFrame.StartFrame, ' Palettization start');
 
@@ -2071,27 +2071,57 @@ begin
   begin
 {$if true}
     Yakmo := yakmo_single_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
-    yakmo_single_load_train_data(Yakmo, di, cTileDCTSize, @Dataset[0]);
-    SetLength(Dataset, 0); // free up some memmory
-    yakmo_single_train_on_data(Yakmo, @Clusters[0]);
+    yakmo_single_load_train_data(Yakmo, di, cTileDCTSize, @BIRCHDataset[0]);
+    SetLength(BIRCHDataset, 0); // free up some memmory
+    yakmo_single_train_on_data(Yakmo, @BIRCHClusters[0]);
     yakmo_single_destroy(Yakmo);
+
+    SetLength(YakmoClusters, FPaletteCount);
+    for i := 0 to FPaletteCount - 1 do
+      YakmoClusters[i] := i;
 {$else}
-  {$if true}
-    DoExternalSKLearn(Dataset, FPaletteCount, 2, False, True, Clusters);
+  {$if false}
+    DoExternalSKLearn(BIRCHDataset, FPaletteCount, 2, False, True, BIRCHClusters);
+    SetLength(YakmoClusters, FPaletteCount);
+    for i := 0 to FPaletteCount - 1 do
+      YakmoClusters[i] := i;
   {$else}
-    DoExternalBIRCH(Dataset, 0.01, BIRCHOutput);
-    SetLength(Dataset, 0); // free up some memmory
+    BIRCHClusterCount := DoExternalBIRCH(BIRCHDataset, 100000, BIRCHClusters);
+
+    WriteLn('KF: ', AKeyFrame.StartFrame, #9'BIRCHClusterCount: ', BIRCHClusterCount:6);
+
+    SetLength(YakmoClusters, BIRCHClusterCount);
+    SetLength(YakmoDataset, BIRCHClusterCount, cTileDCTSize);
+
+    for i := 0 to BIRCHClusterCount - 1 do
+    begin
+      cnt := 0;
+      for j := 0 to di - 1 do
+        if BIRCHClusters[j] = i then
+        begin
+          for k := 0 to cTileDCTSize - 1 do
+            YakmoDataset[i, k] += BIRCHDataset[j, k];
+          Inc(cnt)
+        end;
+
+      if cnt > 0 then
+        for k := 0 to cTileDCTSize - 1 do
+          YakmoDataset[i, k] /= cnt;
+    end;
+
+    SetLength(BIRCHDataset, 0); // free up some memmory
+
     Yakmo := yakmo_single_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 1);
-    yakmo_single_load_train_data(Yakmo, di, 3, @BIRCHOutput[0]);
-    SetLength(BIRCHOutput, 0); // free up some memmory
-    yakmo_single_train_on_data(Yakmo, @Clusters[0]);
+    yakmo_single_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
+    SetLength(BIRCHDataset, 0); // free up some memmory
+    yakmo_single_train_on_data(Yakmo, @YakmoClusters[0]);
     yakmo_single_destroy(Yakmo);
   {$ifend}
 {$ifend}
   end
   else
   begin
-    FillDWord(Clusters[0], Length(Clusters), 0);
+    FillDWord(YakmoClusters[0], Length(YakmoClusters), 0);
   end;
 
   di := 0;
@@ -2100,10 +2130,10 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        GTile^.DitheringPalIndex := Clusters[di];
+        GTile^.DitheringPalIndex := YakmoClusters[BIRCHClusters[di]];
         Inc(di);
       end;
-  assert(di = Length(Clusters));
+  assert(di = Length(BIRCHClusters));
 
   WriteLn('KF: ', AKeyFrame.StartFrame, ' Palettization end');
 end;
