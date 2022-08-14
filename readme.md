@@ -10,7 +10,7 @@ Upon bitstream format maturity I will probably write a DirectShow plugin or some
 
 Online demo here: <https://gligli.github.io/tiler/demo/>
 
-The project is in **Alpha stage** and located at: <https://github.com/gligli/tiler>
+The project is in **Beta stage** and located at: <https://github.com/gligli/tiler> (go to the 'releases' section for binary downloads).
 
 _Author: GliGli_
 _License: GNU GPL v3_
