@@ -2047,6 +2047,7 @@ var
   BIRCHClusters, YakmoClusters: TIntegerDynArray;
   di: Integer;
 
+  BIRCH: PBIRCH;
   Yakmo: PYakmoSingle;
 begin
   Assert(FPaletteCount <= Length(FPalettePattern));
@@ -2065,30 +2066,19 @@ begin
       end;
   assert(di = Length(BIRCHDataset));
 
-  WriteLn('KF: ', AKeyFrame.StartFrame, ' Palettization start');
+  WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization start');
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
-{$if false}
-    Yakmo := yakmo_single_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
-    yakmo_single_load_train_data(Yakmo, di, cTileDCTSize, @BIRCHDataset[0]);
-    SetLength(BIRCHDataset, 0); // free up some memmory
-    yakmo_single_train_on_data(Yakmo, @BIRCHClusters[0]);
-    yakmo_single_destroy(Yakmo);
+{$if true}
+    BIRCH := birch_create(100000, 512*1024*1024 div sizeof(TFloat));
+    for i := 0 to di - 1 do
+      birch_insert_line(BIRCH, @BIRCHDataset[i, 0]);
+    birch_get_results(BIRCH, @BIRCHClusters[0]);
+    birch_destroy(BIRCH);
+    BIRCHClusterCount := MaxIntValue(BIRCHClusters) + 1;
 
-    SetLength(YakmoClusters, FPaletteCount);
-    for i := 0 to FPaletteCount - 1 do
-      YakmoClusters[i] := i;
-{$else}
-  {$if false}
-    DoExternalSKLearn(BIRCHDataset, FPaletteCount, 2, False, True, BIRCHClusters);
-    SetLength(YakmoClusters, FPaletteCount);
-    for i := 0 to FPaletteCount - 1 do
-      YakmoClusters[i] := i;
-  {$else}
-    BIRCHClusterCount := DoExternalBIRCH(BIRCHDataset, 100000, BIRCHClusters);
-
-    WriteLn('KF: ', AKeyFrame.StartFrame, #9'BIRCHClusterCount: ', BIRCHClusterCount:6);
+    WriteLn('KF: ', AKeyFrame.StartFrame:8, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
 
     SetLength(YakmoClusters, BIRCHClusterCount);
     SetLength(YakmoDataset, BIRCHClusterCount, cTileDCTSize);
@@ -2116,7 +2106,11 @@ begin
     SetLength(BIRCHDataset, 0); // free up some memmory
     yakmo_single_train_on_data(Yakmo, @YakmoClusters[0]);
     yakmo_single_destroy(Yakmo);
-  {$ifend}
+{$else}
+    DoExternalSKLearn(BIRCHDataset, FPaletteCount, 2, False, True, BIRCHClusters);
+    SetLength(YakmoClusters, FPaletteCount);
+    for i := 0 to FPaletteCount - 1 do
+      YakmoClusters[i] := i;
 {$ifend}
   end
   else
@@ -2135,7 +2129,7 @@ begin
       end;
   assert(di = Length(BIRCHClusters));
 
-  WriteLn('KF: ', AKeyFrame.StartFrame, ' Palettization end');
+  WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization end');
 end;
 
 procedure TTilingEncoder.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer);
@@ -2356,7 +2350,7 @@ begin
   end;
 
   if APalIdx = FPaletteCount - 1 then
-    WriteLn('KF: ', AKeyFrame.StartFrame, ' Quantization end');
+    WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Quantization end');
 end;
 
 procedure TTilingEncoder.FinishQuantizePalettes(AKeyFrame: TKeyFrame);
@@ -2431,7 +2425,7 @@ begin
     // cleanup ditherer
     for i := 0 to FPaletteCount - 1 do
       TerminatePlan(AFrame.PKeyFrame.MixingPlans[i]);
-    WriteLn('KF: ', AFrame.PKeyFrame.StartFrame, ' Dithering end');
+    WriteLn('KF: ', AFrame.PKeyFrame.StartFrame:8, ' Dithering end');
   end;
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
 end;
@@ -3291,7 +3285,7 @@ begin
       FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
       Inc(kfIdx);
 
-      WriteLn('KF: ', kfIdx, #9'Frame: ', i, #9'Correlation: ', FloatToStr(correl), #9'Euclidean: ', FloatToStr(euclidean));
+      WriteLn('KF: ', kfIdx:3, #9'Frame: ', i:8, #9'Correlation: ', FloatToStr(correl), #9'Euclidean: ', FloatToStr(euclidean));
 
       euclidean := 0.0;
       LastKFIdx := i;
@@ -3876,6 +3870,7 @@ begin
   New(DS^.FLANNParams);
   DS^.FLANNParams^ := CDefaultFLANNParameters;
   DS^.FLANNParams^.checks := cTileDCTSize;
+  DS^.FLANNParams^.cores := 2;
 
   DS^.FLANN := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
 
@@ -3906,7 +3901,7 @@ begin
   if AKF.FTPalettesLeft <= 0 then
   begin
     WriteLn;
-    WriteLn('KF: ', AKF.StartFrame:3, #9'ResidualErr: ', (AKF.FTErrCml / AKF.FrameCount):12:3, ' (by frame) ', (AKF.FTErrCml / (FTileMapSize * AKF.FrameCount)):12:6, ' (by tile)');
+    WriteLn('KF: ', AKF.StartFrame:8, #9'ResidualErr: ', (AKF.FTErrCml / AKF.FrameCount):12:3, ' (by frame) ', (AKF.FTErrCml / (FTileMapSize * AKF.FrameCount)):12:6, ' (by tile)');
   end;
 end;
 
@@ -5047,7 +5042,7 @@ begin
             Header.KFMaxBytesPerSec := max(Header.KFMaxBytesPerSec, round(KFSize * FFramesPerSecond / KFCount));
           Header.AverageBytesPerSec += KFSize;
 
-          WriteLn('KF: ', FKeyFrames[kf].StartFrame, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * FFramesPerSecond)+' kbps)');
+          WriteLn('KF: ', FKeyFrames[kf].StartFrame:8, #9'FCnt: ', KFCount, #9'Written: ', KFSize, #9'Bitrate: ', FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount) + ' kbpf  '#9'(' + FormatFloat('0.00', KFSize / 1024.0 * 8.0 / KFCount * FFramesPerSecond)+' kbps)');
         end;
       end;
     end;

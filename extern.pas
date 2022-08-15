@@ -52,6 +52,11 @@ type
 
   PYakmoSingle = ^TYakmoSingle;
 
+  TBIRCH = record
+  end;
+
+  PBIRCH = ^TBIRCH;
+
   flann_index_t = Pointer;
 
   flann_algorithm_t = (
@@ -162,6 +167,12 @@ procedure yakmo_single_destroy(ay: PYakmoSingle); stdcall; external 'yakmo_singl
 procedure yakmo_single_load_train_data(ay: PYakmoSingle; rowCount: Cardinal; colCount: Cardinal; dataset: PPANNFloat); stdcall; external 'yakmo_single.dll' name 'yakmo_load_train_data';
 procedure yakmo_single_train_on_data(ay: PYakmoSingle; pointToCluster: PInteger); stdcall; external 'yakmo_single.dll' name 'yakmo_train_on_data';
 procedure yakmo_single_get_centroids(ay: PYakmoSingle; centroids: PPANNFloat); stdcall; external 'yakmo_single.dll' name 'yakmo_get_centroids';
+
+function birch_create(dist_threshold: TFloat; mem_limit: UInt64): PBIRCH; stdcall; external 'BIRCH.dll';
+procedure birch_destroy(birch: PBIRCH); stdcall; external 'BIRCH.dll';
+procedure birch_insert_line(birch: PBIRCH; line: PFloat); stdcall; external 'BIRCH.dll';
+procedure birch_get_results(birch: PBIRCH; pointToCluster: PInteger); stdcall; external 'BIRCH.dll';
+
 
 function NumberOfProcessors: Integer;
 function HalfNumberOfProcessors: Integer;
