@@ -2043,8 +2043,8 @@ var
   sx, sy, i, j, k, cnt, BIRCHClusterCount: Integer;
   GTile: PTile;
 
-  BIRCHDataset, YakmoDataset: TFloatDynArray2;
-  BIRCHClusters, YakmoClusters: TIntegerDynArray;
+  Dataset, YakmoDataset: TFloatDynArray2;
+  Clusters, YakmoClusters: TIntegerDynArray;
   di: Integer;
 
   BIRCH: PBIRCH;
@@ -2052,8 +2052,8 @@ var
 begin
   Assert(FPaletteCount <= Length(FPalettePattern));
 
-  SetLength(BIRCHDataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
-  SetLength(BIRCHClusters, Length(BIRCHDataset));
+  SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
+  SetLength(Clusters, Length(Dataset));
 
   di := 0;
   for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
@@ -2061,22 +2061,21 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @BIRCHDataset[di, 0]);
+        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @Dataset[di, 0]);
         Inc(di);
       end;
-  assert(di = Length(BIRCHDataset));
+  assert(di = Length(Dataset));
 
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization start');
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
-{$if true}
-    BIRCH := birch_create(100000, 512*1024*1024 div sizeof(TFloat));
+    BIRCH := birch_create(100000, 256*1024*1024 div sizeof(TFloat));
     for i := 0 to di - 1 do
-      birch_insert_line(BIRCH, @BIRCHDataset[i, 0]);
-    birch_get_results(BIRCH, @BIRCHClusters[0]);
+      birch_insert_line(BIRCH, @Dataset[i, 0]);
+    birch_get_results(BIRCH, @Clusters[0]);
     birch_destroy(BIRCH);
-    BIRCHClusterCount := MaxIntValue(BIRCHClusters) + 1;
+    BIRCHClusterCount := MaxIntValue(Clusters) + 1;
 
     WriteLn('KF: ', AKeyFrame.StartFrame:8, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
 
@@ -2087,10 +2086,10 @@ begin
     begin
       cnt := 0;
       for j := 0 to di - 1 do
-        if BIRCHClusters[j] = i then
+        if Clusters[j] = i then
         begin
           for k := 0 to cTileDCTSize - 1 do
-            YakmoDataset[i, k] += BIRCHDataset[j, k];
+            YakmoDataset[i, k] += Dataset[j, k];
           Inc(cnt)
         end;
 
@@ -2099,19 +2098,21 @@ begin
           YakmoDataset[i, k] /= cnt;
     end;
 
-    SetLength(BIRCHDataset, 0); // free up some memmory
+    SetLength(Dataset, 0); // free up some memmory
 
-    Yakmo := yakmo_single_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 1);
-    yakmo_single_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
-    SetLength(BIRCHDataset, 0); // free up some memmory
-    yakmo_single_train_on_data(Yakmo, @YakmoClusters[0]);
-    yakmo_single_destroy(Yakmo);
-{$else}
-    DoExternalSKLearn(BIRCHDataset, FPaletteCount, 2, False, True, BIRCHClusters);
-    SetLength(YakmoClusters, FPaletteCount);
-    for i := 0 to FPaletteCount - 1 do
-      YakmoClusters[i] := i;
-{$ifend}
+    if BIRCHClusterCount > FPaletteCount then
+    begin
+      Yakmo := yakmo_single_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
+      yakmo_single_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
+      SetLength(YakmoDataset, 0); // free up some memmory
+      yakmo_single_train_on_data(Yakmo, @YakmoClusters[0]);
+      yakmo_single_destroy(Yakmo);
+    end
+    else
+    begin
+      for i := 0 to FPaletteCount - 1 do
+        YakmoClusters[i] := i;
+    end;
   end
   else
   begin
@@ -2124,10 +2125,10 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        GTile^.DitheringPalIndex := YakmoClusters[BIRCHClusters[di]];
+        GTile^.DitheringPalIndex := YakmoClusters[Clusters[di]];
         Inc(di);
       end;
-  assert(di = Length(BIRCHClusters));
+  assert(di = Length(Clusters));
 
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization end');
 end;
@@ -3261,7 +3262,7 @@ begin
   SetLength(Correlations, Length(FFrames));
   SetLength(EuclideanDist, Length(FFrames));
   Correlations[0] := 0.0;
-  EuclideanDist[0] := MaxSingle;
+  EuclideanDist[0] := Infinity;
   ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
 
   // find keyframes
@@ -3285,7 +3286,7 @@ begin
       FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
       Inc(kfIdx);
 
-      WriteLn('KF: ', kfIdx:3, #9'Frame: ', i:8, #9'Correlation: ', FloatToStr(correl), #9'Euclidean: ', FloatToStr(euclidean));
+      WriteLn('KF: ', i:8, ' (', kfIdx:3, ') Correlation: ', correl:12:9, ' Euclidean: ', euclidean:12:9);
 
       euclidean := 0.0;
       LastKFIdx := i;
