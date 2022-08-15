@@ -465,6 +465,8 @@ begin
 
     st := 0;
     internalRuncommand(Process, TextOutput, ErrOut, st, True); // destroys Process
+    WriteLn(TextOutput);
+    WriteLn(ErrOut);
 
     SL.LoadFromFile(InFN + '.membership');
 

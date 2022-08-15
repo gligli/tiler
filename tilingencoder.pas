@@ -2069,7 +2069,7 @@ begin
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
-{$if true}
+{$if false}
     Yakmo := yakmo_single_create(FPaletteCount, 1, 200, 1, 0, 0, 1);
     yakmo_single_load_train_data(Yakmo, di, cTileDCTSize, @BIRCHDataset[0]);
     SetLength(BIRCHDataset, 0); // free up some memmory
