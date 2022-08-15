@@ -2060,7 +2060,7 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        ComputeTilePsyVisFeatures(GTile^, False, False, True, True, False, False, ADitheringGamma, nil, @BIRCHDataset[di, 0]);
+        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @BIRCHDataset[di, 0]);
         Inc(di);
       end;
   assert(di = Length(BIRCHDataset));
