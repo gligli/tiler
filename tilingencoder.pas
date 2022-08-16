@@ -590,11 +590,11 @@ begin
     Result := x / y;
 end;
 
-function Nan0(x: TFloat): TFloat; inline;
+function NanDef(x, def: TFloat): TFloat; inline;
 begin
   Result := x;
   if IsNan(Result) then
-    Result := 0.0;
+    Result := def;
 end;
 
 function SwapRB(c: Integer): Integer; inline;
@@ -2303,9 +2303,9 @@ var
 
       if di >= FPaletteSize then
       begin
-        CMItem^.R := Round(Nan0(Centroids[i, 0]));
-        CMItem^.G := Round(Nan0(Centroids[i, 1]));
-        CMItem^.B := Round(Nan0(Centroids[i, 2]));
+        CMItem^.R := EnsureRange(Ceil(NanDef(Centroids[i, 0], 255.0)), 0, 255);
+        CMItem^.G := EnsureRange(Ceil(NanDef(Centroids[i, 1], 0.0)), 0, 255);
+        CMItem^.B := EnsureRange(Ceil(NanDef(Centroids[i, 2], 255.0)), 0, 255);
       end;
 
       CMItem^.Count := 0;
