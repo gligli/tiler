@@ -142,9 +142,9 @@ object MainForm: TMainForm
     Height = 448
     Top = 40
     Width = 964
-    ActivePage = tsOutput
+    ActivePage = tsSettings
     Anchors = [akTop, akLeft, akRight, akBottom]
-    TabIndex = 2
+    TabIndex = 0
     TabOrder = 4
     OnChange = UpdateVideo
     object tsSettings: TTabSheet
@@ -195,11 +195,11 @@ object MainForm: TMainForm
         Top = 296
         Width = 71
         DecimalPlaces = 5
-        Increment = 0.00025
+        Increment = 0.0025
         MaxValue = 1
         OnChange = UpdateGUI
         TabOrder = 19
-        Value = 0.002
+        Value = 0.02
       end
       object seStartFrame: TSpinEdit
         Left = 872
