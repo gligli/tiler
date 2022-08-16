@@ -10,7 +10,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger,
-  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, kmodes, extern, sle, tbbmalloc;
+  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, kmodes, extern, tbbmalloc;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -382,6 +382,7 @@ type
     procedure ProgressRedraw(ASubStepIdx: Integer = -1; AProgressStep: TEncoderStep = esNone);
     procedure InitLuts(ATilePaletteSize, APaletteCount: Integer);
     function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
+    function GammaUncorrect(lut: Integer; x: TFloat): Byte; inline;
 
     procedure DitherFloydSteinberg(const AScreen: TByteDynArray);
 
@@ -428,10 +429,10 @@ type
     function GetFrameTileCount(AFrame: TFrame): Integer;
 
     procedure PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
-    procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer);
+    procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
     procedure FinishQuantizePalettes(AKeyFrame: TKeyFrame);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    procedure DitherTiles(AFrame: TFrame; ADitheringGamma: Integer);
+    procedure DitherTiles(AFrame: TFrame);
 
     function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
@@ -1016,6 +1017,13 @@ begin
   Result := FGammaCorLut[lut, x];
 end;
 
+function TTilingEncoder.GammaUncorrect(lut: Integer; x: TFloat): Byte;
+begin
+  if lut >= 0 then
+    x := power(x, 1 / FGamma[lut]);
+  Result := Round(x * 255.0);
+end;
+
 procedure TTilingEncoder.GlobalTiling(AReloadTiles: Boolean; AReloadFN: String);
 begin
   if Length(FFrames) = 0 then
@@ -1046,7 +1054,7 @@ procedure TTilingEncoder.Dither;
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    PreparePalettes(FKeyFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
+    PreparePalettes(FKeyFrames[AIndex], IfThen(FDitheringUseGamma, 0, -1));
   end;
 
   procedure DoQuantize(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -1054,7 +1062,7 @@ procedure TTilingEncoder.Dither;
     if not InRange(AIndex, 0, Length(FKeyFrames) * FPaletteCount - 1) then
       Exit;
 
-    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, FQuantizerUseYakmo, FQuantizerDennisLeeBitsPerComponent);
+    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, FQuantizerUseYakmo, FQuantizerDennisLeeBitsPerComponent, IfThen(FDitheringUseGamma, 0, -1));
   end;
 
   procedure DoFinish(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -1062,7 +1070,7 @@ procedure TTilingEncoder.Dither;
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    DitherTiles(FFrames[AIndex], IfThen(FDitheringUseGamma, 1, -1));
+    DitherTiles(FFrames[AIndex]);
   end;
 
 var
@@ -2124,7 +2132,8 @@ begin
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization end');
 end;
 
-procedure TTilingEncoder.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer);
+procedure TTilingEncoder.QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer;
+  ADitheringGamma: Integer);
 var
   CMPal: TCountIndexList;
 
@@ -2273,7 +2282,9 @@ var
                 for tx := 0 to cTileWidth - 1 do
                 begin
                   FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
-                  Dataset[di, 0] := rr; Dataset[di, 1] := gg; Dataset[di, 2] := bb;
+                  Dataset[di, 0] := GammaCorrect(ADitheringGamma, rr);
+                  Dataset[di, 1] := GammaCorrect(ADitheringGamma, gg);
+                  Dataset[di, 2] := GammaCorrect(ADitheringGamma, bb);
                   Inc(di);
                 end;
 
@@ -2302,9 +2313,9 @@ var
 
       if di >= FPaletteSize then
       begin
-        CMItem^.R := EnsureRange(Round(NanDef(Centroids[i, 0], 255.0)), 0, 255);
-        CMItem^.G := EnsureRange(Round(NanDef(Centroids[i, 1], 0.0)), 0, 255);
-        CMItem^.B := EnsureRange(Round(NanDef(Centroids[i, 2], 255.0)), 0, 255);
+        CMItem^.R := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 0], 1.0)), 0, 255);
+        CMItem^.G := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 1], 0.0)), 0, 255);
+        CMItem^.B := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 2], 1.0)), 0, 255);
       end;
 
       CMItem^.Count := 0;
@@ -2375,7 +2386,7 @@ begin
         FFrames[i].TileMap[sy, sx].PalIdx := PalIdxLUT[FFrames[i].TileMap[sy, sx].PalIdx];
 end;
 
-procedure TTilingEncoder.DitherTiles(AFrame: TFrame; ADitheringGamma: Integer);
+procedure TTilingEncoder.DitherTiles(AFrame: TFrame);
 var
   i, PalIdx: Integer;
   sx, sy: Integer;
@@ -2664,7 +2675,7 @@ begin
   if FEncoderGammaValue = AValue then Exit;
   FEncoderGammaValue := Max(0.0, AValue);
 
-  FGamma[0] := FRenderGammaValue;
+  FGamma[0] := FEncoderGammaValue;
   InitLuts(FPaletteSize, FPaletteCount);
 end;
 
