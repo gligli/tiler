@@ -482,7 +482,7 @@ type
     property Frames: TFrameArray read FFrames;
     property Tiles: PTileArray read FTiles;
 
-    property ScreenWidth: Integer read FScreenHeight;
+    property ScreenWidth: Integer read FScreenWidth;
     property ScreenHeight: Integer read FScreenHeight;
     property FramesPerSecond: Double read FFramesPerSecond write SetFramesPerSecond;
     property TileMapWidth: Integer read FTileMapWidth;
@@ -1335,8 +1335,6 @@ end;
 
 procedure TTilingEncoder.Smooth(ASmoothingFactor: TFloat; AAddlTilesThres: TFloat);
 var
-  Smoothing: TFloat;
-  AddlTilesThres: TFloat;
   NonAddlCount: Integer;
 
   procedure DoSmoothing(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -1347,7 +1345,7 @@ var
       Exit;
 
     for i := cSmoothingPrevFrame to High(FFrames) do
-      DoTemporalSmoothing(FFrames[i], FFrames[i - cSmoothingPrevFrame], AIndex, Smoothing, AddlTilesThres, NonAddlCount);
+      DoTemporalSmoothing(FFrames[i], FFrames[i - cSmoothingPrevFrame], AIndex, ASmoothingFactor, AAddlTilesThres, NonAddlCount);
   end;
 
 var
@@ -1360,9 +1358,6 @@ begin
     Exit;
 
   ProgressRedraw(0, esSmooth);
-
-  Smoothing := ASmoothingFactor / 1000.0;
-  AddlTilesThres := AAddlTilesThres;
 
   for frm := 0 to high(FFrames) do
     for j := 0 to (FTileMapHeight - 1) do
@@ -3434,11 +3429,19 @@ begin
     begin
       FInputBitmap.BeginUpdate;
       try
+        FInputBitmap.Canvas.Brush.Color := clBlack;
+        FInputBitmap.Canvas.Brush.Style := bsSolid;
+        FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
+        FInputBitmap.Canvas.Brush.Color := $202020;
+        FInputBitmap.Canvas.Brush.Style := bsDiagCross;
+        FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
+
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
           begin
             tilePtr :=  Frame.Tiles[sy * FTileMapWidth + sx];
-            DrawTile(FInputBitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
+            if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
+              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
           end;
       finally
         FInputBitmap.EndUpdate;
@@ -3454,7 +3457,7 @@ begin
         FOutputBitmap.Canvas.Brush.Color := clBlack;
         FOutputBitmap.Canvas.Brush.Style := bsSolid;
         FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
-        FOutputBitmap.Canvas.Brush.Color := $300038;
+        FOutputBitmap.Canvas.Brush.Color := $202020;
         FOutputBitmap.Canvas.Brush.Style := bsDiagCross;
         FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
 
@@ -3586,14 +3589,20 @@ begin
     if not FRenderPlaying then
     begin
       q := 0.0;
+      i := 0;
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
           tilePtr :=  Frame.Tiles[sy * FTileMapWidth + sx];
-          ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, @DCT[0]);
-          q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
+          if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
+          begin
+            ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, @DCT[0]);
+            q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
+            Inc(i);
+          end;
         end;
-      q /= FTileMapSize;
+      if i <> 0 then
+        q /= i;
 
       FRenderPsychoVisualQuality := q;
     end;

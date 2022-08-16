@@ -108,12 +108,12 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label5: TLabel
-    Left = 800
+    Left = 770
     Height = 15
     Top = 519
-    Width = 78
+    Width = 108
     Anchors = [akRight, akBottom]
-    Caption = 'PsyV Delta (Q):'
+    Caption = 'PsyV (residual error):'
     ParentColor = False
   end
   object sedPalIdx: TSpinEdit
@@ -122,6 +122,7 @@ object MainForm: TMainForm
     Top = 513
     Width = 42
     Anchors = [akLeft, akBottom]
+    AutoSize = False
     MinValue = -1
     OnChange = UpdateVideo
     TabOrder = 10
@@ -141,9 +142,9 @@ object MainForm: TMainForm
     Height = 448
     Top = 40
     Width = 964
-    ActivePage = tsSettings
+    ActivePage = tsOutput
     Anchors = [akTop, akLeft, akRight, akBottom]
-    TabIndex = 0
+    TabIndex = 2
     TabOrder = 4
     OnChange = UpdateVideo
     object tsSettings: TTabSheet
@@ -161,7 +162,7 @@ object MainForm: TMainForm
         TabOrder = 2
       end
       object seMaxTiles: TSpinEdit
-        Left = 312
+        Left = 328
         Height = 23
         Top = 120
         Width = 71
@@ -189,15 +190,16 @@ object MainForm: TMainForm
         TabOrder = 1
       end
       object seTempoSmoo: TFloatSpinEdit
-        Left = 312
+        Left = 328
         Height = 23
         Top = 296
         Width = 71
-        Increment = 2.5
-        MaxValue = 1000
+        DecimalPlaces = 5
+        Increment = 0.00025
+        MaxValue = 1
         OnChange = UpdateGUI
         TabOrder = 19
-        Value = 10
+        Value = 0.002
       end
       object seStartFrame: TSpinEdit
         Left = 872
@@ -209,17 +211,18 @@ object MainForm: TMainForm
         TabOrder = 7
       end
       object seAddlTiles: TFloatSpinEdit
-        Left = 312
+        Left = 328
         Height = 23
         Top = 274
         Width = 71
+        DecimalPlaces = 5
         Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
         TabOrder = 18
       end
       object cbxYilMix: TComboBox
-        Left = 312
+        Left = 328
         Height = 23
         Top = 236
         Width = 71
@@ -285,8 +288,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 299
-        Width = 159
-        Caption = 'Temporal smoothing strength'
+        Width = 229
+        Caption = 'Temporal smoothing strength (PsyV based)'
         ParentColor = False
       end
       object Label1: TLabel
@@ -301,8 +304,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 277
-        Width = 242
-        Caption = 'Smoothing additional tiles threshold (0: none)'
+        Width = 308
+        Caption = 'Smoothing additional tiles threshold (0: none, PSyV based)'
         ParentColor = False
       end
       object Label4: TLabel
@@ -333,12 +336,12 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 122
-        Width = 118
-        Caption = 'Tile limit (all; Q based)'
+        Width = 145
+        Caption = 'Tile limit (all; quality based)'
         ParentColor = False
       end
       object chkDitheringGamma: TCheckBox
-        Left = 312
+        Left = 328
         Height = 19
         Top = 374
         Width = 170
@@ -347,7 +350,7 @@ object MainForm: TMainForm
         TabOrder = 24
       end
       object chkFTGamma: TCheckBox
-        Left = 312
+        Left = 328
         Height = 19
         Top = 392
         Width = 184
@@ -364,7 +367,7 @@ object MainForm: TMainForm
         ParentColor = False
       end
       object seEncGamma: TFloatSpinEdit
-        Left = 312
+        Left = 328
         Height = 23
         Top = 334
         Width = 71
@@ -376,7 +379,7 @@ object MainForm: TMainForm
         Value = 2
       end
       object seVisGamma: TFloatSpinEdit
-        Left = 382
+        Left = 398
         Height = 23
         Top = 334
         Width = 71
@@ -388,7 +391,7 @@ object MainForm: TMainForm
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
-        Left = 382
+        Left = 398
         Height = 23
         Top = 119
         Width = 71
@@ -427,7 +430,7 @@ object MainForm: TMainForm
         ParentColor = False
       end
       object cbxPalSize: TComboBox
-        Left = 382
+        Left = 398
         Height = 23
         Top = 96
         Width = 71
@@ -447,7 +450,7 @@ object MainForm: TMainForm
         Text = '16'
       end
       object cbxPalCount: TComboBox
-        Left = 312
+        Left = 328
         Height = 23
         Top = 96
         Width = 71
@@ -478,7 +481,7 @@ object MainForm: TMainForm
         ParentColor = False
       end
       object cbxDLBPC: TComboBox
-        Left = 312
+        Left = 328
         Height = 23
         Top = 214
         Width = 71
@@ -551,7 +554,7 @@ object MainForm: TMainForm
         ParentColor = False
       end
       object seFTBlend: TSpinEdit
-        Left = 312
+        Left = 328
         Height = 23
         Top = 156
         Width = 71
@@ -565,15 +568,16 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 182
-        Width = 166
-        Caption = 'Frame tiling blending threshold'
+        Width = 237
+        Caption = 'Frame tiling blending threshold (PSyV based)'
         ParentColor = False
       end
       object seFTBlendThres: TFloatSpinEdit
-        Left = 312
+        Left = 328
         Height = 23
         Top = 179
         Width = 71
+        DecimalPlaces = 5
         Increment = 0.5
         MaxValue = 1000
         OnChange = UpdateGUI
@@ -586,6 +590,7 @@ object MainForm: TMainForm
       ClientHeight = 420
       ClientWidth = 956
       object imgSource: TImage
+        Cursor = crHandPoint
         Left = 0
         Height = 420
         Top = 0
@@ -593,8 +598,8 @@ object MainForm: TMainForm
         AntialiasingMode = amOff
         Align = alClient
         Center = True
-        KeepOriginXWhenClipped = True
-        KeepOriginYWhenClipped = True
+        OnClick = imgClick
+        OnContextPopup = imgContextPopup
         OnPaintBackground = imgPaintBackground
         PopupMenu = pmProcesses
       end
@@ -604,15 +609,17 @@ object MainForm: TMainForm
       ClientHeight = 420
       ClientWidth = 956
       object imgDest: TImage
+        Cursor = crHandPoint
         Left = 0
         Height = 420
         Top = 0
         Width = 956
         AntialiasingMode = amOff
         Align = alClient
+        AutoSize = True
         Center = True
-        KeepOriginXWhenClipped = True
-        KeepOriginYWhenClipped = True
+        OnClick = imgClick
+        OnContextPopup = imgContextPopup
         OnPaintBackground = imgPaintBackground
         PopupMenu = pmProcesses
       end
@@ -647,6 +654,7 @@ object MainForm: TMainForm
         AntialiasingMode = amOff
         Anchors = [akTop, akLeft, akBottom]
         OnClick = imgPaletteClick
+        OnContextPopup = imgContextPopup
         OnDblClick = imgPaletteDblClick
         PopupMenu = pmProcesses
         Stretch = True

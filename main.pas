@@ -118,6 +118,8 @@ type
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure IdleTimerTimer(Sender: TObject);
+    procedure imgClick(Sender: TObject);
+    procedure imgContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
     procedure imgPaletteClick(Sender: TObject);
     procedure imgPaletteDblClick(Sender: TObject);
     procedure btnGeneratePNGsClick(Sender: TObject);
@@ -370,6 +372,31 @@ begin
   end;
 end;
 
+procedure TMainForm.imgClick(Sender: TObject);
+var
+  pt: TPoint;
+begin
+  pt := TImage(Sender).ScreenToClient(Mouse.CursorPos);
+
+  pt.X -= (TImage(Sender).Width - FTilingEncoder.ScreenWidth) div 2;
+  pt.Y -= (TImage(Sender).Height - FTilingEncoder.ScreenHeight) div 2;
+
+  if Assigned(FTilingEncoder) and (tbFrame.Position < FTilingEncoder.FrameCount) and
+    InRange(pt.X, 0, FTilingEncoder.ScreenWidth - 1) and InRange(pt.Y, 0, FTilingEncoder.ScreenHeight - 1) then
+  begin
+    pt.X := pt.X div cTileWidth;
+    pt.Y := pt.Y div cTileWidth;
+
+    sedPalIdx.Value := FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].PalIdx;
+  end;
+end;
+
+procedure TMainForm.imgContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
+begin
+  Handled := True;
+  sedPalIdx.Value := -1;
+end;
+
 procedure TMainForm.imgPaletteClick(Sender: TObject);
 var
   P: TPoint;
@@ -382,7 +409,6 @@ end;
 procedure TMainForm.imgPaletteDblClick(Sender: TObject);
 begin
   sedPalIdx.Value := -1;
-  FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;
 end;
 
 procedure TMainForm.seMaxTilesEditingDone(Sender: TObject);
@@ -454,7 +480,7 @@ begin
 
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
-  sedPalIdx.MaxValue := FTilingEncoder.PaletteCount;
+  sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
 end;
 
 procedure TMainForm.TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);
@@ -477,6 +503,7 @@ procedure TMainForm.FormCreate(Sender: TObject);
 var
   es: TEncoderStep;
 begin
+  FormatSettings := InvariantFormatSettings;
   FTilingEncoder := TTilingEncoder.Create;
   FTilingEncoder.OnProgress := @TilingEncoderProgress;
 
