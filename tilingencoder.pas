@@ -2302,9 +2302,9 @@ var
 
       if di >= FPaletteSize then
       begin
-        CMItem^.R := EnsureRange(Ceil(NanDef(Centroids[i, 0], 255.0)), 0, 255);
-        CMItem^.G := EnsureRange(Ceil(NanDef(Centroids[i, 1], 0.0)), 0, 255);
-        CMItem^.B := EnsureRange(Ceil(NanDef(Centroids[i, 2], 255.0)), 0, 255);
+        CMItem^.R := EnsureRange(Round(NanDef(Centroids[i, 0], 255.0)), 0, 255);
+        CMItem^.G := EnsureRange(Round(NanDef(Centroids[i, 1], 0.0)), 0, 255);
+        CMItem^.B := EnsureRange(Round(NanDef(Centroids[i, 2], 255.0)), 0, 255);
       end;
 
       CMItem^.Count := 0;
