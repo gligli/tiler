@@ -185,7 +185,7 @@ type
   PCpnPixels = ^TCpnPixels;
 
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
-    UseCount, TmpIndex, MergeIndex, OriginalReloadedIndex, DitheringPalIndex, KFSoleIndex: Integer;
+    UseCount, TmpIndex, MergeIndex, KFSoleIndex: Integer;
     Active, IntraKF, Additional, HasRGBPixels, HasPalPixels: Boolean;
   end;
 
@@ -929,8 +929,6 @@ begin
   TmpIndex := ATile.TmpIndex;
   MergeIndex := ATile.MergeIndex;
   UseCount := ATile.UseCount;
-  OriginalReloadedIndex := ATile.OriginalReloadedIndex;
-  DitheringPalIndex := ATile.DitheringPalIndex;
   KFSoleIndex := ATile.KFSoleIndex;
   Additional := ATile.Additional;
 
@@ -1075,7 +1073,6 @@ begin
 
   ProgressRedraw(0, esDither);
   ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames));
-  WriteLn;
   ProgressRedraw(1);
 
   for i := 0 to High(FKeyFrames) do
@@ -2119,8 +2116,7 @@ begin
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
       begin
-        GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        GTile^.DitheringPalIndex := YakmoClusters[Clusters[di]];
+        FFrames[i].TileMap[sy, sx].PalIdx := YakmoClusters[Clusters[di]];
         Inc(di);
       end;
   assert(di = Length(Clusters));
@@ -2155,7 +2151,7 @@ var
           for sx := 0 to FTileMapWidth - 1 do
           begin
             GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-            if GTile^.Active and (GTile^.DitheringPalIndex = APalIdx) then
+            if GTile^.Active and (FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
               Inc(tileCnt);
           end;
 
@@ -2186,7 +2182,7 @@ var
           begin
             GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
 
-            if GTile^.Active and (GTile^.DitheringPalIndex = APalIdx) then
+            if GTile^.Active and (FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
             begin
               j := ((dy * cTileWidth) * tileFx * cTileWidth + (dx * cTileWidth)) * 3;
               k := sy * FTileMapWidth + sx;
@@ -2249,8 +2245,11 @@ var
     for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
-          if FTiles[FFrames[i].TileMap[sy, sx].TileIdx]^.DitheringPalIndex = APalIdx then
+        begin
+          GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
+          if GTile^.Active and (FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
             Inc(di, Sqr(cTileWidth));
+        end;
 
     SetLength(Centroids, FPaletteSize, cFeatureCount);
 
@@ -2268,7 +2267,7 @@ var
           begin
             GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
 
-            if GTile^.Active and (GTile^.DitheringPalIndex = APalIdx) then
+            if GTile^.Active and (FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
             begin
               for ty := 0 to cTileWidth - 1 do
                 for tx := 0 to cTileWidth - 1 do
@@ -2373,10 +2372,7 @@ begin
   for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
-      begin
-        GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        GTile^.DitheringPalIndex := PalIdxLUT[GTile^.DitheringPalIndex];
-      end;
+        FFrames[i].TileMap[sy, sx].PalIdx := PalIdxLUT[FFrames[i].TileMap[sy, sx].PalIdx];
 end;
 
 procedure TTilingEncoder.DitherTiles(AFrame: TFrame; ADitheringGamma: Integer);
@@ -2404,13 +2400,9 @@ begin
       begin
         // dither tile in chosen palette
 
-        PalIdx := T^.DitheringPalIndex;
+        PalIdx := AFrame.TileMap[sy, sx].PalIdx;
         Assert(InRange(PalIdx, 0, FPaletteCount - 1));
         DitherTile(T^, AFrame.PKeyFrame.MixingPlans[PalIdx]);
-
-        // update tilemap
-
-        AFrame.TileMap[sy, sx].PalIdx := PalIdx;
       end;
     end;
 
@@ -3176,8 +3168,6 @@ begin
     T^.UseCount := 1;
     T^.TmpIndex := -1;
     T^.MergeIndex := -1;
-    T^.OriginalReloadedIndex := -1;
-    T^.DitheringPalIndex := -1;
     T^.KFSoleIndex := -1;
   end;
 
@@ -4657,8 +4647,6 @@ begin
   Result := CompareValue(Ord(t1^.Additional), Ord(t2^.Additional));
   if Result = 0 then
     Result := CompareValue(t2^.UseCount, t1^.UseCount);
-  if Result = 0 then
-    Result := CompareValue(t1^.DitheringPalIndex, t2^.DitheringPalIndex);
   if Result = 0 then
     Result := CompareValue(t1^.TmpIndex, t2^.TmpIndex);
 end;
