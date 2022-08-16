@@ -2070,14 +2070,14 @@ begin
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
-    BIRCH := birch_create(100000, 256*1024*1024 div sizeof(TFloat));
+    BIRCH := birch_create(100000, 64 * 1024 * 1024);
     for i := 0 to di - 1 do
       birch_insert_line(BIRCH, @Dataset[i, 0]);
     birch_get_results(BIRCH, @Clusters[0]);
     birch_destroy(BIRCH);
     BIRCHClusterCount := MaxIntValue(Clusters) + 1;
 
-    WriteLn('KF: ', AKeyFrame.StartFrame:8, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
+    WriteLn('KF: ', AKeyFrame.StartFrame:8, ' DatasetSize: ', di:8, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
 
     SetLength(YakmoClusters, BIRCHClusterCount);
     SetLength(YakmoDataset, BIRCHClusterCount, cTileDCTSize);
@@ -2110,13 +2110,13 @@ begin
     end
     else
     begin
-      for i := 0 to FPaletteCount - 1 do
+      for i := 0 to BIRCHClusterCount - 1 do
         YakmoClusters[i] := i;
     end;
   end
   else
   begin
-    FillDWord(YakmoClusters[0], Length(YakmoClusters), 0);
+    SetLength(YakmoClusters, 1);
   end;
 
   di := 0;
