@@ -10,6 +10,8 @@ uses
 type
   TFloat = Single;
 
+  TIntegerDynArray2 = array of TIntegerDynArray;
+  TByteDynArray2 = array of TByteDynArray;
   TFloatDynArray = array of TFloat;
   TFloatDynArray2 = array of TFloatDynArray;
   TFloatDynArray3 = array of TFloatDynArray2;
@@ -125,10 +127,14 @@ type
 
   PFLANNParameters = ^TFLANNParameters;
 
+  TCompareFunction=function(Item1,Item2,UserParameter:Pointer):Integer;
+
+procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
+
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
 function DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Clusters: TIntegerDynArray): Integer;
-procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
+procedure DoExternalSKLearn(Dataset: TByteDynArray2; ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
   OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
@@ -324,6 +330,56 @@ begin
   end;
 end;
 
+procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
+var I, J, P: Integer;
+    PData,P1,P2: PByte;
+    Tmp: array[0..4095] of Byte;
+begin
+  if ALastItem <= AFirstItem then
+    Exit;
+
+  Assert(AItemSize < SizeOf(Tmp),'AItemSize too big!');
+  PData:=PByte(@AData);
+  repeat
+    I := AFirstItem;
+    J := ALastItem;
+    P := (AFirstItem + ALastItem) shr 1;
+    repeat
+      P1:=PData;Inc(P1,I*AItemSize);
+      P2:=PData;Inc(P2,P*AItemSize);
+      while ACompareFunction(P1, P2, AUserParameter) < 0 do
+      begin
+        Inc(I);
+        Inc(P1,AItemSize);
+      end;
+      P1:=PData;Inc(P1,J*AItemSize);
+      //P2:=PData;Inc(P2,P*AItemSize); already done
+      while ACompareFunction(P1, P2, AUserParameter) > 0 do
+      begin
+        Dec(J);
+        Dec(P1,AItemSize);
+      end;
+      if I <= J then
+      begin
+        P1:=PData;Inc(P1,I*AItemSize);
+        P2:=PData;Inc(P2,J*AItemSize);
+        Move(P2^, Tmp[0], AItemSize);
+        Move(P1^, P2^, AItemSize);
+        Move(Tmp[0], P1^, AItemSize);
+
+        if P = I then
+          P := J
+        else if P = J then
+          P := I;
+        Inc(I);
+        Dec(J);
+      end;
+    until I > J;
+    if AFirstItem < J then QuickSort(AData,AFirstItem,J,AItemSize,ACompareFunction,AUserParameter);
+    AFirstItem := I;
+  until I >= ALastItem;
+end;
+
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 var
   Process: TProcess;
@@ -364,7 +420,7 @@ begin
   DeleteFile(PChar(DstFN));
 end;
 
-procedure DoExternalSKLearn(Dataset: TFloatDynArray2; ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean;
+procedure DoExternalSKLearn(Dataset: TByteDynArray2; ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean;
   var Clusters: TIntegerDynArray);
 var
   i, j, st: Integer;
@@ -380,9 +436,9 @@ begin
   try
     for i := 0 to High(Dataset) do
     begin
-      Line := IntToStr(i) + ' ';
+      Line := '';
       for j := 0 to High(Dataset[0]) do
-        Line := Line + FloatToStr(Dataset[i, j]) + ' ';
+        Line := Line + IntToStr(Dataset[i, j]) + ' ';
       SL.Add(Line);
     end;
 
@@ -406,9 +462,9 @@ begin
 
     for i := 0 to GetEnvironmentVariableCount - 1 do
       Process.Environment.Add(GetEnvironmentString(i));
-    //Process.Environment.Add('MKL_NUM_THREADS=1');
-    //Process.Environment.Add('NUMEXPR_NUM_THREADS=1');
-    //Process.Environment.Add('OMP_NUM_THREADS=1');
+    Process.Environment.Add('MKL_NUM_THREADS=1');
+    Process.Environment.Add('NUMEXPR_NUM_THREADS=1');
+    Process.Environment.Add('OMP_NUM_THREADS=1');
 
     if not Compiled then
       Process.Parameters.Add('cluster.py');
@@ -420,8 +476,8 @@ begin
 
     st := 0;
     internalRuncommand(Process, Output, ErrOut, st, PrintProgress); // destroys Process
-    WriteLn(Output);
-    WriteLn(ErrOut);
+    Write(Output);
+    Write(ErrOut);
 
     SL.LoadFromFile(InFN + '.membership');
 
