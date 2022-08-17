@@ -2261,6 +2261,12 @@ var
         end;
 
     SetLength(Centroids, FPaletteSize, cFeatureCount);
+    for i := 0 to FPaletteSize - 1 do
+    begin
+      Centroids[i, 0] := NaN;
+      Centroids[i, 1] := NaN;
+      Centroids[i, 2] := NaN;
+    end;
 
     if di >= FPaletteSize then
     begin
@@ -2314,7 +2320,7 @@ var
       if di >= FPaletteSize then
       begin
         CMItem^.R := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 0], 1.0)), 0, 255);
-        CMItem^.G := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 1], 0.0)), 0, 255);
+        CMItem^.G := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 1], 1.0)), 0, 255);
         CMItem^.B := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 2], 1.0)), 0, 255);
       end;
 
@@ -3881,7 +3887,6 @@ begin
   New(DS^.FLANNParams);
   DS^.FLANNParams^ := CDefaultFLANNParameters;
   DS^.FLANNParams^.checks := cTileDCTSize;
-  DS^.FLANNParams^.cores := 2;
 
   DS^.FLANN := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
 
