@@ -20,9 +20,7 @@ const
   // tweakable constants
 
   cBitsPerComp = 8;
-  cRandomKModesCount = 7;
   cMaxFTBlend = 16;
-  cMaxBlendingFTBucketSize = 16;
   cFTQWeighting = False;
 
 {$if false}
@@ -441,7 +439,7 @@ type
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
     procedure DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-    procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
+    procedure DoGlobalTiling(DesiredNbTiles: Integer);
 
     procedure ReloadPreviousTiling(AFN: String);
 
@@ -1020,7 +1018,7 @@ function TTilingEncoder.GammaUncorrect(lut: Integer; x: TFloat): Byte;
 begin
   if lut >= 0 then
     x := power(x, 1 / FGamma[lut]);
-  Result := Round(x * 255.0);
+  Result := EnsureRange(Round(x * 255.0), 0, 255);
 end;
 
 procedure TTilingEncoder.GlobalTiling(AReloadTiles: Boolean; AReloadFN: String);
@@ -1038,7 +1036,7 @@ begin
   end
   else
   begin
-    DoGlobalTiling(FGlobalTilingTileCount, cRandomKModesCount);
+    DoGlobalTiling(FGlobalTilingTileCount);
 
     SaveRawTiles(AReloadFN);
   end;
@@ -2318,9 +2316,9 @@ var
 
       if di >= FPaletteSize then
       begin
-        CMItem^.R := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 0], 1.0)), 0, 255);
-        CMItem^.G := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 1], 1.0)), 0, 255);
-        CMItem^.B := EnsureRange(GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 2], 1.0)), 0, 255);
+        CMItem^.R := GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 0], 1.0));
+        CMItem^.G := GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 1], 1.0));
+        CMItem^.B := GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 2], 1.0));
       end;
 
       CMItem^.Count := 0;
@@ -4469,7 +4467,7 @@ begin
 end;
 
 
-procedure TTilingEncoder.DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
+procedure TTilingEncoder.DoGlobalTiling(DesiredNbTiles: Integer);
 const
   cBinCountShift = 0;
 var
