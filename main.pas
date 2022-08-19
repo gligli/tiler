@@ -114,6 +114,7 @@ type
     procedure btnInputClick(Sender: TObject);
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
+    procedure btnDebug2Click(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -314,6 +315,16 @@ begin
   seFTBlendThres.Value := 1.0;
 end;
 
+procedure TMainForm.btnDebug2Click(Sender: TObject);
+begin
+  edInput.Text := 'C:\tiler_misc\factory_1080p30.y4m';
+  edOutput.Text := 'C:\tiler\debug.gtm';
+  edReload.Text := '';
+  seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);
+  cbxScaling.ItemIndex := 2;
+  seFTBlend.Value := 3;
+end;
+
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
 var
   k: Word;
@@ -336,6 +347,10 @@ begin
       if ssCtrl in Shift then
       begin
         btnDebugClick(nil);
+      end
+      else if ssAlt in Shift then
+      begin
+        btnDebug2Click(nil);
       end
       else
       begin

@@ -98,6 +98,18 @@ const
     )
   );
 
+
+  cDCTUVRatio: array[0..cTileWidth-1,0..cTileWidth-1] of TFloat = (
+    (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1)
+  );
+
 type
   // GliGli's TileMotion header structs and commands
 
@@ -425,6 +437,7 @@ type
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: TFrame): Integer;
+    function GetTileIndexTMItem(ATileIndex: Integer; out AFrame: TFrame): PTileMapItem;
 
     procedure PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
     procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
@@ -986,7 +999,7 @@ begin
       for y := 0 to (cTileWidth - 1) do
         for x := 0 to (cTileWidth - 1) do
         begin
-          FDCTLut[i] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
+          FDCTLut[i] := cos((x + 0.5) * u * PI / (cTileWidth * 2)) * cos((y + 0.5) * v * PI / (cTileWidth * 2)) * cDCTUVRatio[v, u];
           Inc(i);
         end;
 
@@ -2950,22 +2963,11 @@ END;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
   VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
-const
-  cUVRatio: array[0..cTileWidth-1,0..cTileWidth-1] of TFloat = (
-    (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1)
-  );
 var
   u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
   CpnPixels: TCpnPixels;
-  pRatio, pDCT, pCpn, pLut: PFloat;
+  pDCT, pCpn, pLut: PFloat;
 
   procedure ToCpn(col, x, y: Integer); inline;
   var
@@ -3015,7 +3017,6 @@ begin
   pDCT := @DCT[0];
   for cpn := 0 to cColorCpns - 1 do
   begin
-    pRatio := @cUVRatio[0, 0];
     pLut := @FDCTLut[0];
 
     for v := 0 to (cTileWidth - 1) do
@@ -3109,9 +3110,8 @@ begin
         if QWeighting then
            z *= cDCTQuantization[cpn, v, u];
 
-        pDCT^ := z * pRatio^;
+        pDCT^ := z;
         Inc(pDCT);
-        Inc(pRatio);
       end;
   end;
 end;
@@ -3775,6 +3775,19 @@ begin
     Inc(Result, Used[i]);
 end;
 
+function TTilingEncoder.GetTileIndexTMItem(ATileIndex: Integer; out AFrame: TFrame): PTileMapItem;
+var
+  frmIdx, int, sy, sx: Integer;
+begin
+  DivMod(ATileIndex, FTileMapSize, frmIdx, int);
+  DivMod(int, FTileMapWidth, sy, sx);
+
+  Result := @FFrames[frmIdx].TileMap[sy, sx];
+  AFrame := FFrames[frmIdx];
+
+  Assert(Result^.TileIdx = ATileIndex);
+end;
+
 procedure TTilingEncoder.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer;
   NewTile: PPalPixels; NewTileRGB: PRGBPixels);
 var
@@ -4346,9 +4359,9 @@ end;
 
 type
   TKModesBin = record
-    Dataset: TFloatDynArray2;
-    TileIndices: TIntegerDynArray;
+    TileBin: TIntegerDynArray;
     ClusterCount: Integer;
+    DatasetLength: Integer;
   end;
 
   PKModesBin = ^TKModesBin;
@@ -4359,24 +4372,47 @@ procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: T
 var
   YakmoDataset, YakmoCentroids: TFloatDynArray2;
   Clusters, YakmoClusters: TIntegerDynArray;
-  i, lineIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
+  i, bin, cnt, lineIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
   v, best: TFloat;
   ToMerge: TFloatDynArray2;
   ToMergeIdxs: TIntegerDynArray;
   KMBin: PKModesBin;
   Yakmo: PYakmoSingle;
   BIRCH: PBIRCH;
+  Dataset: TFloatDynArray2;
+  TileIndices: TIntegerDynArray;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
-  DSLen := Length(KMBin^.Dataset);
+  DSLen := KMBin^.DatasetLength;
   if (DSLen <= KMBin^.ClusterCount) or (KMBin^.ClusterCount <= 1) then
     Exit;
+
+  // build bin dataset
+
+  SetLength(TileIndices, DSLen);
+  SetLength(Dataset, DSLen, cTileDCTSize);
+  cnt := 0;
+  for i := 0 to High(FTiles) do
+  begin
+    bin := KMBin^.TileBin[i];
+
+    if bin <> AIndex then
+      Continue;
+
+    ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
+
+    TileIndices[cnt] := i;
+    Inc(cnt);
+  end;
+  Assert(cnt = DSLen);
+
+  // cluster dataset using BIRCH + Yakmo
 
   SetLength(Clusters, DSLen);
 
   BIRCH := birch_create(0.001, 64 * 1024 * 1024);
   for i := 0 to DSLen - 1 do
-    birch_insert_line(BIRCH, @KMBin^.Dataset[i, 0]);
+    birch_insert_line(BIRCH, @Dataset[i, 0]);
   birch_get_results(BIRCH, @Clusters[0]);
   birch_destroy(BIRCH);
   BIRCHClusterCount := MaxIntValue(Clusters) + 1;
@@ -4394,7 +4430,7 @@ begin
       if Clusters[lineIdx] = clusterIdx then
       begin
         for i := 0 to cTileDCTSize - 1 do
-          YakmoDataset[clusterIdx, i] += KMBin^.Dataset[lineIdx, i];
+          YakmoDataset[clusterIdx, i] += Dataset[lineIdx, i];
         Inc(clusterLineCount)
       end;
 
@@ -4427,12 +4463,12 @@ begin
   for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
   begin
     clusterLineCount := 0;
-    for lineIdx := 0 to High(KMBin^.TileIndices) do
+    for lineIdx := 0 to High(TileIndices) do
     begin
       if YakmoClusters[Clusters[lineIdx]] = clusterIdx then
       begin
-        ToMerge[clusterLineCount] := KMBin^.Dataset[lineIdx];
-        ToMergeIdxs[clusterLineCount] := KMBin^.TileIndices[lineIdx];
+        ToMerge[clusterLineCount] := Dataset[lineIdx];
+        ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
         Inc(clusterLineCount);
       end;
     end;
@@ -4459,10 +4495,6 @@ begin
     end;
   end;
 
-  // free up memory
-
-  SetLength(KMBin^.TileIndices, 0);
-
   WriteLn('Bin: ', AIndex:2, ' Done!');
 end;
 
@@ -4476,53 +4508,36 @@ var
   cnt: TIntegerDynArray;
   best: TIntegerDynArray;
   share: TFloat;
+  TileBin: TIntegerDynArray;
 begin
 
-  // prepare KModes dataset, one line per tile, tiles indices as features
-  // also choose KModes starting point
-
-  FConcurrentKModesBins := sqr(cTileWidth) shr cBinCountShift;
+  FConcurrentKModesBins := Sqr(cTileWidth) shr cBinCountShift;
   SetLength(KMBins, FConcurrentKModesBins);
   SetLength(cnt, Length(KMBins));
   SetLength(best, Length(KMBins));
 
   // precompute dataset size
 
+  SetLength(TileBin, Length(FTiles));
+  FillDWord(TileBin[0], Length(TileBin), DWORD(-1));
   FillDWord(cnt[0], Length(cnt), 0);
   for i := 0 to High(FTiles) do
   begin
     if not FTiles[i]^.Active then
       Continue;
 
-    bin := GetTilePalZoneThres(FTiles[i]^, sqr(cTileWidth) div 4, nil);
+    bin := GetTilePalZoneThres(FTiles[i]^, sqr(cTileWidth), nil);
     bin := bin shr cBinCountShift;
+
+    TileBin[i] := bin;
 
     Inc(cnt[bin]);
   end;
 
   for i := 0 to High(KMBins) do
   begin
-    SetLength(KMBins[i].TileIndices, cnt[i]);
-    SetLength(KMBins[i].Dataset, cnt[i], cTileDCTSize);
-  end;
-  FillDWord(cnt[0], Length(cnt), 0);
-  FillDWord(best[0], Length(best), MaxInt);
-
-  // bin tiles by PalSigni (highest number of pixels the same color from the tile)
-
-  for i := 0 to High(FTiles) do
-  begin
-    if not FTiles[i]^.Active then
-      Continue;
-
-    bin := GetTilePalZoneThres(FTiles[i]^, sqr(cTileWidth) div 4, nil);
-    bin := bin shr cBinCountShift;
-
-    KMBins[bin].TileIndices[cnt[bin]] := i;
-
-    ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, False, False, -1, nil, @KMBins[bin].Dataset[cnt[bin], 0]);
-
-    Inc(cnt[bin]);
+    KMBins[i].TileBin := TileBin;
+    KMBins[i].DatasetLength := cnt[i];
   end;
 
   // share DesiredNbTiles among bins, proportional to amount of tiles
@@ -4539,7 +4554,7 @@ begin
 
   ProgressRedraw(1);
 
-  // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
+  // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
   ProcThreadPool.DoParallel(@DoGlobalKMeans, 0, High(KMBins), @KMBins);
 
