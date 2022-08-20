@@ -3906,9 +3906,6 @@ begin
 end;
 
 procedure TTilingEncoder.FinishFrameTiling(AKF: TKeyFrame; APaletteIndex: Integer);
-var
-  i: Integer;
-  done: Boolean;
 begin
   if Length(AKF.TileDS[APaletteIndex]^.Dataset) > 0 then
     flann_free_index(AKF.TileDS[APaletteIndex]^.FLANN, AKF.TileDS[APaletteIndex]^.FLANNParams);
@@ -3948,34 +3945,15 @@ begin
   end;
 end;
 
-function ComputeBlendingError(PPlain, PCur, PPrev: PFloat; bc, bp: TFloat): TFloat; inline;
-var
-  i: Integer;
-begin
-  Result := 0.0;
-  for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
-  begin
-    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
-  end;
-end;
-
-function ComputeBlendingError_Asm(PPlain_rcx, PCur_rdx, PPrev_r8: PFloat; bc_xmm3, bp_stack: TFloat): TFloat; register; assembler;
-const
-  cDCTSizeOffset = cTileDCTSize * SizeOf(TFloat);
+procedure ComputeBlending_Asm(PRes_rcx, Px_rdx, Py_r8: PFloat; bx_xmm3, by_stack: TFloat); register; assembler;
 label loop;
 asm
+  push rax
   push rcx
   push rdx
   push r8
 
-  sub rsp, 16 * 14
+  sub rsp, 16 * 10
   movdqu oword ptr [rsp],       xmm1
   movdqu oword ptr [rsp + $10], xmm2
   movdqu oword ptr [rsp + $20], xmm3
@@ -3986,69 +3964,121 @@ asm
   movdqu oword ptr [rsp + $70], xmm8
   movdqu oword ptr [rsp + $80], xmm9
   movdqu oword ptr [rsp + $90], xmm10
-  movdqu oword ptr [rsp + $a0], xmm11
-  movdqu oword ptr [rsp + $b0], xmm12
-  movdqu oword ptr [rsp + $c0], xmm13
-  movdqu oword ptr [rsp + $d0], xmm14
 
   pshufd xmm1, xmm3, 0
-  pshufd xmm2, dword ptr [bp_stack], 0
-  xorps xmm0, xmm0
+  pshufd xmm2, dword ptr [by_stack], 0
 
-  lea rax, byte ptr [rcx + cDCTSizeOffset]
+  // unrolled for 48 = (cTileDCTSize / 4)
+
+  mov al, (cTileDCTSize / 48)
   loop:
-    movups xmm3,  oword ptr [rcx]
-    movups xmm6,  oword ptr [rcx + $10]
-    movups xmm9,  oword ptr [rcx + $20]
-    movups xmm12, oword ptr [rcx + $30]
 
-    movups xmm4,  oword ptr [rdx]
-    movups xmm7,  oword ptr [rdx + $10]
-    movups xmm10, oword ptr [rdx + $20]
-    movups xmm13, oword ptr [rdx + $30]
+    // step 1
 
-    movups xmm5,  oword ptr [r8]
-    movups xmm8,  oword ptr [r8 + $10]
-    movups xmm11, oword ptr [r8 + $20]
-    movups xmm14, oword ptr [r8 + $30]
+    movups xmm4,  oword ptr [r8]
+    movups xmm6,  oword ptr [r8 + $10]
+    movups xmm8,  oword ptr [r8 + $20]
+    movups xmm10, oword ptr [r8 + $30]
 
-    mulps xmm4, xmm1
-    mulps xmm5, xmm2
-    addps xmm4, xmm5
-    subps xmm3, xmm4
-    mulps xmm3, xmm3
-    addps xmm0, xmm3
+    movups xmm3,  oword ptr [rdx]
+    movups xmm5,  oword ptr [rdx + $10]
+    movups xmm7,  oword ptr [rdx + $20]
+    movups xmm9,  oword ptr [rdx + $30]
 
-    mulps xmm7, xmm1
-    mulps xmm8, xmm2
-    addps xmm7, xmm8
-    subps xmm6, xmm7
-    mulps xmm6, xmm6
-    addps xmm0, xmm6
+    mulps xmm4,  xmm2
+    mulps xmm6,  xmm2
+    mulps xmm8,  xmm2
+    mulps xmm10, xmm2
 
-    mulps xmm10, xmm1
-    mulps xmm11, xmm2
-    addps xmm10, xmm11
-    subps xmm9, xmm10
-    mulps xmm9, xmm9
-    addps xmm0, xmm9
+    mulps xmm3,  xmm1
+    mulps xmm5,  xmm1
+    mulps xmm7,  xmm1
+    mulps xmm9,  xmm1
 
-    mulps xmm13, xmm1
-    mulps xmm14, xmm2
-    addps xmm13, xmm14
-    subps xmm12, xmm13
-    mulps xmm12, xmm12
-    addps xmm0, xmm12
+    addps xmm3,  xmm4
+    addps xmm5,  xmm6
+    addps xmm7,  xmm8
+    addps xmm9,  xmm10
 
-    lea rcx, [rcx + $40]
-    lea rdx, [rdx + $40]
-    lea r8, [r8 + $40]
+    movups oword ptr [rcx],       xmm3
+    movups oword ptr [rcx + $10], xmm5
+    movups oword ptr [rcx + $20], xmm7
+    movups oword ptr [rcx + $30], xmm9
 
-    cmp rcx, rax
-    jne loop
+    // step 2
 
-  haddps xmm0, xmm0
-  haddps xmm0, xmm0
+    movups xmm4,  oword ptr [r8 + $40]
+    movups xmm6,  oword ptr [r8 + $50]
+    movups xmm8,  oword ptr [r8 + $60]
+    movups xmm10, oword ptr [r8 + $70]
+
+    movups xmm3,  oword ptr [rdx + $40]
+    movups xmm5,  oword ptr [rdx + $50]
+    movups xmm7,  oword ptr [rdx + $60]
+    movups xmm9,  oword ptr [rdx + $70]
+
+    mulps xmm4,  xmm2
+    mulps xmm6,  xmm2
+    mulps xmm8,  xmm2
+    mulps xmm10, xmm2
+
+    mulps xmm3,  xmm1
+    mulps xmm5,  xmm1
+    mulps xmm7,  xmm1
+    mulps xmm9,  xmm1
+
+    addps xmm3,  xmm4
+    addps xmm5,  xmm6
+    addps xmm7,  xmm8
+    addps xmm9,  xmm10
+
+    movups oword ptr [rcx + $40], xmm3
+    movups oword ptr [rcx + $50], xmm5
+    movups oword ptr [rcx + $60], xmm7
+    movups oword ptr [rcx + $70], xmm9
+
+    // step 3
+
+    movups xmm4,  oword ptr [r8 + $80]
+    movups xmm6,  oword ptr [r8 + $90]
+    movups xmm8,  oword ptr [r8 + $a0]
+    movups xmm10, oword ptr [r8 + $b0]
+
+    movups xmm3,  oword ptr [rdx + $80]
+    movups xmm5,  oword ptr [rdx + $90]
+    movups xmm7,  oword ptr [rdx + $a0]
+    movups xmm9,  oword ptr [rdx + $b0]
+
+    mulps xmm4,  xmm2
+    mulps xmm6,  xmm2
+    mulps xmm8,  xmm2
+    mulps xmm10, xmm2
+
+    mulps xmm3,  xmm1
+    mulps xmm5,  xmm1
+    mulps xmm7,  xmm1
+    mulps xmm9,  xmm1
+
+    addps xmm3,  xmm4
+    addps xmm5,  xmm6
+    addps xmm7,  xmm8
+    addps xmm9,  xmm10
+
+    movups oword ptr [rcx + $80], xmm3
+    movups oword ptr [rcx + $90], xmm5
+    movups oword ptr [rcx + $a0], xmm7
+    movups oword ptr [rcx + $b0], xmm9
+
+    // loop
+
+    lea rcx, [rcx + $c0]
+    lea rdx, [rdx + $c0]
+    lea r8, [r8 + $c0]
+
+    dec al
+    jnz loop
+
+  // end
 
   movdqu xmm1,  oword ptr [rsp]
   movdqu xmm2,  oword ptr [rsp + $10]
@@ -4060,15 +4090,12 @@ asm
   movdqu xmm8,  oword ptr [rsp + $70]
   movdqu xmm9,  oword ptr [rsp + $80]
   movdqu xmm10, oword ptr [rsp + $90]
-  movdqu xmm11, oword ptr [rsp + $a0]
-  movdqu xmm12, oword ptr [rsp + $b0]
-  movdqu xmm13, oword ptr [rsp + $c0]
-  movdqu xmm14, oword ptr [rsp + $d0]
-  add rsp, 16 * 14
+  add rsp, 16 * 10
 
   pop r8
   pop rdx
   pop rcx
+  pop rax
 end;
 
 procedure TTilingEncoder.DoFrameTiling(AFrame: TFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer;
@@ -4088,10 +4115,13 @@ var
   SearchDCT: array[0 .. cTileDCTSize - 1] of TFloat;
   PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
 
+  PrevKFPaletteDone: TBooleanDynArray;
 begin
   DS := AFrame.PKeyFrame.TileDS[APaletteIndex];
   if Length(DS^.Dataset) < cTileDCTSize then
     Exit;
+
+  SetLength(PrevKFPaletteDone, FPaletteCount);
 
   annQueryCount := FTileMapWidth * FTileMapHeight;
 
@@ -4153,7 +4183,11 @@ begin
 
               if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
               begin
-                WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
+                if not PrevKFPaletteDone[prevTMI^.PalIdx] then
+                begin
+                  WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
+                  PrevKFPaletteDone[prevTMI^.PalIdx] := True;
+                end;
 
                 ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
               end
@@ -4176,11 +4210,11 @@ begin
               fc := blend * (1.0 / (cMaxFTBlend - 1));
               rfc := 1.0 / fc;
 
-              ComputeBlending(@SearchDCT[0], @PrevDCT[0], @DCTs[annQueryPos * cTileDCTSize], 1.0 - rfc, rfc);
+              ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], @DCTs[annQueryPos * cTileDCTSize], 1.0 - rfc, rfc);
 
               flann_find_nearest_neighbors_index(DS^.FLANN, @SearchDCT[0], 1, @idx, @err, 1, DS^.FLANNParams);
 
-              err := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[idx * cTileDCTSize], @PrevDCT[0], fc, 1.0 - fc);
+              err := sqr(sqrt(err)*fc);
 
               if err < bestErr then
               begin
