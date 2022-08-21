@@ -310,7 +310,7 @@ begin
   edInput.Text := 'C:\tiler_misc\Star.Wars.Despecialized.Edition.v2.5.avi';
   edOutput.Text := 'C:\tiler\debug.gtm';
   edReload.Text := '';
-  seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);
+  seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 48, 1), 12);
   seFTBlend.Value := 7;
   seFTBlendThres.Value := 1.0;
 end;
