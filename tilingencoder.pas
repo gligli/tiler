@@ -4394,11 +4394,15 @@ end;
 function TTilingEncoder.GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
 var
   i, j: Integer;
+  r, g, b: Byte;
 begin
   Result := 0;
   for j := y to y + h - 1 do
     for i := x to x + w - 1 do
-      Result += ATile.PalPixels[j, i];
+    begin
+      FromRGB(ATile.RGBPixels[j, i], r, g, b);
+      Result += ToLuma(r, g, b);
+    end;
 end;
 
 function TTilingEncoder.GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
@@ -4445,6 +4449,7 @@ var
   YakmoDataset, YakmoCentroids: TFloatDynArray2;
   Clusters, YakmoClusters: TIntegerDynArray;
   i, bin, cnt, lineIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
+  q00, q01, q10, q11: Integer;
   v, best: TFloat;
   ToMerge: TFloatDynArray2;
   ToMergeIdxs: TIntegerDynArray;
@@ -4471,7 +4476,12 @@ begin
     if bin <> AIndex then
       Continue;
 
-    ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
+    q00 := GetTileZoneSum(FTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
+    q01 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
+    q10 := GetTileZoneSum(FTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+    q11 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+
+    ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, q00 + q10 < q01 + q11, q00 + q01 < q10 + q11, -1, nil, @Dataset[cnt, 0]);
 
     TileIndices[cnt] := i;
     Inc(cnt);
