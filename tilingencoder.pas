@@ -460,8 +460,7 @@ type
     function VMirrorPalTile(var ATile: TTile): Boolean;
     procedure PrepareKFTiling(AKF: TKeyFrame; APaletteIndex, AFTGamma: Integer);
     procedure FinishKFTiling(AKF: TKeyFrame;  APaletteIndex: Integer);
-    procedure DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat
-      );
+    procedure DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -2551,8 +2550,11 @@ begin
   fb := GammaCorrect(GammaCor, b);
 
   yy := fr * (cRedMul / cLumaDiv) + fg * (cGreenMul / cLumaDiv) + fb * (cBlueMul / cLumaDiv);
-  uu := (fb - yy) * (0.5 / (1.0 - cBlueMul / cLumaDiv));
-  vv := (fr - yy) * (0.5 / (1.0 - cRedMul / cLumaDiv));
+  uu := (fb - yy) * 0.492;
+  vv := (fr - yy) * 0.877;
+{$if cRedMul <> 299}
+  {$error RGBToYUV should be changed!}
+{$endif}
 
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
@@ -3608,7 +3610,7 @@ begin
       if i <> 0 then
         q /= i;
 
-      FRenderPsychoVisualQuality := q;
+      FRenderPsychoVisualQuality := Sqrt(q);
     end;
   finally
     TTile.Dispose(PsyTile);
@@ -3906,6 +3908,8 @@ begin
 end;
 
 procedure TTilingEncoder.FinishKFTiling(AKF: TKeyFrame; APaletteIndex: Integer);
+var
+  tileResd: TFloat;
 begin
   if Length(AKF.TileDS[APaletteIndex]^.Dataset) > 0 then
     flann_free_index(AKF.TileDS[APaletteIndex]^.FLANN, AKF.TileDS[APaletteIndex]^.FLANNParams);
@@ -3923,8 +3927,9 @@ begin
 
   if AKF.FTPalettesLeft <= 0 then
   begin
+    tileResd := Sqrt(AKF.FTErrCml / (FTileMapSize * AKF.FrameCount));
     WriteLn;
-    WriteLn('KF: ', AKF.StartFrame:8, #9'ResidualErr: ', (AKF.FTErrCml / AKF.FrameCount):12:3, ' (by frame) ', (AKF.FTErrCml / (FTileMapSize * AKF.FrameCount)):12:6, ' (by tile)');
+    WriteLn('KF: ', AKF.StartFrame:8, #9'ResidualErr: ', (tileResd * FTileMapSize * AKF.FrameCount):12:3, ' (by frame) ', tileResd:12:6, ' (by tile)');
   end;
 end;
 
@@ -4189,7 +4194,7 @@ begin
         bestX := x;
         bestY := y;
 
-        if (AFTBlend >= 0) and not IsZero(errs[annQueryPos], AFTBlendThres) then
+        if (AFTBlend >= 0) and not IsZero(sqrt(errs[annQueryPos]), AFTBlendThres) then
         begin
 
           // try to blend a local tile of the previous frame to improve likeliness

@@ -578,7 +578,7 @@ object MainForm: TMainForm
         Top = 179
         Width = 71
         DecimalPlaces = 5
-        Increment = 0.5
+        Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
         TabOrder = 15
