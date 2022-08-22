@@ -1157,7 +1157,7 @@ procedure TTilingEncoder.FrameTiling;
   var
     kf, pal: Integer;
   begin
-    DivMod(AIndex, FPaletteCount, kf, pal);
+    DivMod(AIndex, Length(FKeyFrames), pal, kf);
 
     PrepareKFTiling(FKeyFrames[kf], pal, IfThen(FFrameTilingUseGamma, 0, -1));
 
@@ -1182,14 +1182,14 @@ begin
     SetLength(FKeyFrames[kf].TileDS, FPaletteCount);
   end;
   try
-    ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, Pointer(0));
+    ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, Pointer(0), QuarterNumberOfProcessors);
 
     for kf := 0 to high(FKeyFrames) do
       FKeyFrames[kf].FTPalettesLeft := FPaletteCount;
 
     ProgressRedraw(1);
 
-    ProcThreadPool.DoParallelLocalProc(@DoKFPal, FPaletteCount, FPaletteCount * Length(FKeyFrames) - 1, Pointer(1));
+    ProcThreadPool.DoParallelLocalProc(@DoKFPal, FPaletteCount, FPaletteCount * Length(FKeyFrames) - 1, Pointer(1), QuarterNumberOfProcessors);
   finally
     for kf := 0 to high(FKeyFrames) do
     begin
@@ -3912,6 +3912,7 @@ begin
   New(DS^.FLANNParams);
   DS^.FLANNParams^ := CDefaultFLANNParameters;
   DS^.FLANNParams^.checks := cTileDCTSize;
+  DS^.FLANNParams^.cores := 4;
 
   DS^.FLANN := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
 
@@ -4117,15 +4118,25 @@ end;
 
 procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; var AKFTilingBest: TKFTilingBest);
 var
-  i, idx, blend, ox, oy: Integer;
+  i, blend, ox, oy, annQueryCount, annQueryPos: Integer;
   err, fc, rfc: TFloat;
   prevTMI: PTileMapItem;
   DS: PTilingDataset;
+  idxs: TIntegerDynArray;
+  errs: TANNFloatDynArray;
   PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
-  SearchDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  SearchDCTs: TFloatDynArray;
 begin
   DS := AFrame.PKeyFrame.TileDS[APaletteIndex];
 
+  annQueryCount := Sqr(AFTBlend * 2 + 1) * (cMaxFTBlend - 2);
+  SetLength(SearchDCTs, annQueryCount * cTileDCTSize);
+  SetLength(idxs, annQueryCount);
+  SetLength(errs, annQueryCount);
+
+  // prepare KNN queries
+
+  annQueryCount := 0;
   for oy := y - AFTBlend to y + AFTBlend do
   begin
     if not InRange(oy, 0, FTileMapHeight - 1) then
@@ -4166,24 +4177,66 @@ begin
         fc := blend * (1.0 / (cMaxFTBlend - 1));
         rfc := 1.0 / fc;
 
-        ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
+        ComputeBlending_Asm(@SearchDCTs[annQueryCount * cTileDCTSize], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
 
-        flann_find_nearest_neighbors_index(DS^.FLANN, @SearchDCT[0], 1, @idx, @err, 1, DS^.FLANNParams);
+        Inc(annQueryCount);
+      end;
+    end;
+  end;
 
-        err := sqr(sqrt(err)*fc);
+  // query KNN
+
+  flann_find_nearest_neighbors_index(DS^.FLANN, @SearchDCTs[0], annQueryCount, @idxs[0], @errs[0], 1, DS^.FLANNParams);
+
+  // parse KNN result
+
+  annQueryPos := 0;
+  for oy := y - AFTBlend to y + AFTBlend do
+  begin
+    if not InRange(oy, 0, FTileMapHeight - 1) then
+      Continue;
+
+    for ox := x - AFTBlend to x + AFTBlend do
+    begin
+      if not InRange(ox, 0, FTileMapWidth - 1) then
+        Continue;
+
+      if AFrame.Index > 0 then
+      begin
+        prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
+
+        if prevTMI^.PalIdx <> APaletteIndex then
+          Continue;
+      end
+      else
+      begin
+        if (ox <> x) or (oy <> y) then
+          Continue;
+
+        FillDWord(PrevDCT[0], cTileDCTSize, 0);
+      end;
+
+      for blend := 1 to cMaxFTBlend - 2 do
+      begin
+        fc := blend * (1.0 / (cMaxFTBlend - 1));
+
+        err := sqr(sqrt(errs[annQueryPos])*fc);
 
         if err < AKFTilingBest.bestErr then
         begin
           AKFTilingBest.bestErr := err;
-          AKFTilingBest.bestIdx := idx;
+          AKFTilingBest.bestIdx := idxs[annQueryPos];
           AKFTilingBest.bestBlendCur := blend;
           AKFTilingBest.bestBlendPrev := cMaxFTBlend - 1 - blend;
           AKFTilingBest.bestX := ox;
           AKFTilingBest.bestY := oy;
         end;
+
+        Inc(annQueryPos);
       end;
     end;
   end;
+  Assert(annQueryPos = annQueryCount);
 end;
 
 procedure TTilingEncoder.DoKFTilingPass1(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer;
@@ -4297,6 +4350,7 @@ begin
         Inc(annQueryPos);
       end;
   end;
+  Assert(annQueryPos = annQueryCount);
 
   SpinEnter(@FLock);
   AKF.FTErrCml += errCml;
