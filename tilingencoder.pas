@@ -1182,14 +1182,15 @@ begin
     SetLength(FKeyFrames[kf].TileDS, FPaletteCount);
   end;
   try
-    ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, Pointer(0), QuarterNumberOfProcessors);
+    ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, Pointer(0));
 
     for kf := 0 to high(FKeyFrames) do
       FKeyFrames[kf].FTPalettesLeft := FPaletteCount;
 
     ProgressRedraw(1);
 
-    ProcThreadPool.DoParallelLocalProc(@DoKFPal, FPaletteCount, FPaletteCount * Length(FKeyFrames) - 1, Pointer(1), QuarterNumberOfProcessors);
+    if FFrameTilingBlendingSize >= 0 then
+      ProcThreadPool.DoParallelLocalProc(@DoKFPal, FPaletteCount, FPaletteCount * Length(FKeyFrames) - 1, Pointer(1));
   finally
     for kf := 0 to high(FKeyFrames) do
     begin
@@ -3912,7 +3913,7 @@ begin
   New(DS^.FLANNParams);
   DS^.FLANNParams^ := CDefaultFLANNParameters;
   DS^.FLANNParams^.checks := cTileDCTSize;
-  DS^.FLANNParams^.cores := 4;
+  DS^.FLANNParams^.cores := 2;
 
   DS^.FLANN := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
 
