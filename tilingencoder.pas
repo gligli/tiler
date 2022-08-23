@@ -1464,7 +1464,7 @@ procedure TTilingEncoder.FrameTiling;
   var
     kf, pal: Integer;
   begin
-    DivMod(AIndex, FPaletteCount, kf, pal);
+    DivMod(AIndex, Length(FKeyFrames), pal, kf);
 
     PrepareKFTiling(FKeyFrames[kf], pal, IfThen(FFrameTilingUseGamma, 0, -1));
 
