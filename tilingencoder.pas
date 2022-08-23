@@ -22,6 +22,7 @@ const
   cBitsPerComp = 8;
   cMaxFTBlend = 16;
   cFTQWeighting = False;
+  cFTBinSize = 64;
 
 {$if false}
   cRedMul = 2126;
@@ -59,7 +60,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 5, 2, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 5, 1, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -313,6 +314,7 @@ type
       PalIdx: Integer;
     end;
 
+    FTPaletteDoneEvent: array of THandle;
     FTPalettesLeft: Integer;
     FTErrCml: TFloat;
 
@@ -469,9 +471,8 @@ type
     procedure PrepareKFTiling(AKF: TKeyFrame; APaletteIndex, AFTGamma: Integer);
     procedure FinishKFTiling(AKF: TKeyFrame;  APaletteIndex: Integer);
     procedure DoTileBlending(AFrame: TFrame; APaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat;
-      var AKFTilingBest: TKFTilingBest);
-    procedure DoKFTilingPass1(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
-    procedure DoKFTilingPass2(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
+      ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
+    procedure DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
     procedure ReindexTiles;
@@ -686,9 +687,145 @@ begin
   end;
 end;
 
+function CompareEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat): TFloat; register; assembler;
+label loop;
+asm
+  push rax
+  push rcx
+  push rdx
+
+  sub rsp, 16 * 12
+  movdqu oword ptr [rsp],       xmm1
+  movdqu oword ptr [rsp + $10], xmm2
+  movdqu oword ptr [rsp + $20], xmm3
+  movdqu oword ptr [rsp + $30], xmm4
+  movdqu oword ptr [rsp + $40], xmm5
+  movdqu oword ptr [rsp + $50], xmm6
+  movdqu oword ptr [rsp + $60], xmm7
+  movdqu oword ptr [rsp + $70], xmm8
+  movdqu oword ptr [rsp + $80], xmm9
+  movdqu oword ptr [rsp + $90], xmm10
+  movdqu oword ptr [rsp + $a0], xmm11
+  movdqu oword ptr [rsp + $b0], xmm12
+
+  // unrolled for 48 = (cTileDCTSize / 4)
+
+  pxor xmm0, xmm0
+  mov al, (cTileDCTSize / 48)
+  loop:
+
+    // step 1
+
+    movups xmm2,  oword ptr [rcx]
+    movups xmm4,  oword ptr [rcx + $10]
+    movups xmm6,  oword ptr [rcx + $20]
+    movups xmm8,  oword ptr [rcx + $30]
+    movups xmm10, oword ptr [rcx + $40]
+    movups xmm12, oword ptr [rcx + $50]
+
+    movups xmm1,  oword ptr [rdx]
+    movups xmm3,  oword ptr [rdx + $10]
+    movups xmm5,  oword ptr [rdx + $20]
+    movups xmm7,  oword ptr [rdx + $30]
+    movups xmm9,  oword ptr [rdx + $40]
+    movups xmm11, oword ptr [rdx + $50]
+
+    subps xmm1,  xmm2
+    subps xmm3,  xmm4
+    subps xmm5,  xmm6
+    subps xmm7,  xmm8
+    subps xmm9,  xmm10
+    subps xmm11, xmm12
+
+    mulps xmm1,  xmm1
+    mulps xmm3,  xmm3
+    mulps xmm5,  xmm5
+    mulps xmm7,  xmm7
+    mulps xmm9,  xmm9
+    mulps xmm11, xmm11
+
+    addps xmm1, xmm7
+    addps xmm3, xmm9
+    addps xmm5, xmm11
+
+    addps xmm1, xmm3
+    addps xmm0, xmm5
+    addps xmm0, xmm1
+
+    // step 2
+
+    movups xmm2,  oword ptr [rcx + $60]
+    movups xmm4,  oword ptr [rcx + $70]
+    movups xmm6,  oword ptr [rcx + $80]
+    movups xmm8,  oword ptr [rcx + $90]
+    movups xmm10, oword ptr [rcx + $a0]
+    movups xmm12, oword ptr [rcx + $b0]
+
+    movups xmm1,  oword ptr [rdx + $60]
+    movups xmm3,  oword ptr [rdx + $70]
+    movups xmm5,  oword ptr [rdx + $80]
+    movups xmm7,  oword ptr [rdx + $90]
+    movups xmm9,  oword ptr [rdx + $a0]
+    movups xmm11, oword ptr [rdx + $b0]
+
+    subps xmm1,  xmm2
+    subps xmm3,  xmm4
+    subps xmm5,  xmm6
+    subps xmm7,  xmm8
+    subps xmm9,  xmm10
+    subps xmm11, xmm12
+
+    mulps xmm1,  xmm1
+    mulps xmm3,  xmm3
+    mulps xmm5,  xmm5
+    mulps xmm7,  xmm7
+    mulps xmm9,  xmm9
+    mulps xmm11, xmm11
+
+    addps xmm1, xmm7
+    addps xmm3, xmm9
+    addps xmm5, xmm11
+
+    addps xmm1, xmm3
+    addps xmm0, xmm5
+    addps xmm0, xmm1
+
+    // loop
+
+    lea rcx, [rcx + $c0]
+    lea rdx, [rdx + $c0]
+    lea r8, [r8 + $c0]
+
+    dec al
+    jnz loop
+
+  // end
+
+  movdqu xmm1,  oword ptr [rsp]
+  movdqu xmm2,  oword ptr [rsp + $10]
+  movdqu xmm3,  oword ptr [rsp + $20]
+  movdqu xmm4,  oword ptr [rsp + $30]
+  movdqu xmm5,  oword ptr [rsp + $40]
+  movdqu xmm6,  oword ptr [rsp + $50]
+  movdqu xmm7,  oword ptr [rsp + $60]
+  movdqu xmm8,  oword ptr [rsp + $70]
+  movdqu xmm9,  oword ptr [rsp + $80]
+  movdqu xmm10, oword ptr [rsp + $90]
+  movdqu xmm11, oword ptr [rsp + $a0]
+  movdqu xmm12, oword ptr [rsp + $b0]
+  add rsp, 16 * 12
+
+  haddps xmm0, xmm0
+  haddps xmm0, xmm0
+
+  pop rdx
+  pop rcx
+  pop rax
+end;
+
 function CompareEuclideanDCT(const a, b: TFloatDynArray): TFloat; inline; overload;
 begin
-  Result := CompareEuclideanDCTPtr(@a[0], @b[0]);
+  Result := CompareEuclideanDCTPtr_asm(@a[0], @b[0]);
 end;
 
 function CompareEuclidean(const a, b: TFloatDynArray): TFloat; inline;
@@ -699,6 +836,176 @@ begin
   for i := 0 to High(a) do
     Result += sqr(a[i] - b[i]);
   Result := sqrt(Result);
+end;
+
+procedure ComputeBlending(PRes, Px, Py: PFloat; bx, by: TFloat); inline;
+var
+  i: Integer;
+begin
+  for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
+  begin
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
+  end;
+end;
+
+procedure ComputeBlending_Asm(PRes_rcx, Px_rdx, Py_r8: PFloat; bx_xmm3, by_stack: TFloat); register; assembler;
+label loop;
+asm
+  push rax
+  push rcx
+  push rdx
+  push r8
+
+  sub rsp, 16 * 10
+  movdqu oword ptr [rsp],       xmm1
+  movdqu oword ptr [rsp + $10], xmm2
+  movdqu oword ptr [rsp + $20], xmm3
+  movdqu oword ptr [rsp + $30], xmm4
+  movdqu oword ptr [rsp + $40], xmm5
+  movdqu oword ptr [rsp + $50], xmm6
+  movdqu oword ptr [rsp + $60], xmm7
+  movdqu oword ptr [rsp + $70], xmm8
+  movdqu oword ptr [rsp + $80], xmm9
+  movdqu oword ptr [rsp + $90], xmm10
+
+  pshufd xmm1, xmm3, 0
+  pshufd xmm2, dword ptr [by_stack], 0
+
+  // unrolled for 48 = (cTileDCTSize / 4)
+
+  mov al, (cTileDCTSize / 48)
+  loop:
+
+    // step 1
+
+    movups xmm4,  oword ptr [r8]
+    movups xmm6,  oword ptr [r8 + $10]
+    movups xmm8,  oword ptr [r8 + $20]
+    movups xmm10, oword ptr [r8 + $30]
+
+    movups xmm3,  oword ptr [rdx]
+    movups xmm5,  oword ptr [rdx + $10]
+    movups xmm7,  oword ptr [rdx + $20]
+    movups xmm9,  oword ptr [rdx + $30]
+
+    mulps xmm4,  xmm2
+    mulps xmm6,  xmm2
+    mulps xmm8,  xmm2
+    mulps xmm10, xmm2
+
+    mulps xmm3,  xmm1
+    mulps xmm5,  xmm1
+    mulps xmm7,  xmm1
+    mulps xmm9,  xmm1
+
+    addps xmm3,  xmm4
+    addps xmm5,  xmm6
+    addps xmm7,  xmm8
+    addps xmm9,  xmm10
+
+    movups oword ptr [rcx],       xmm3
+    movups oword ptr [rcx + $10], xmm5
+    movups oword ptr [rcx + $20], xmm7
+    movups oword ptr [rcx + $30], xmm9
+
+    // step 2
+
+    movups xmm4,  oword ptr [r8 + $40]
+    movups xmm6,  oword ptr [r8 + $50]
+    movups xmm8,  oword ptr [r8 + $60]
+    movups xmm10, oword ptr [r8 + $70]
+
+    movups xmm3,  oword ptr [rdx + $40]
+    movups xmm5,  oword ptr [rdx + $50]
+    movups xmm7,  oword ptr [rdx + $60]
+    movups xmm9,  oword ptr [rdx + $70]
+
+    mulps xmm4,  xmm2
+    mulps xmm6,  xmm2
+    mulps xmm8,  xmm2
+    mulps xmm10, xmm2
+
+    mulps xmm3,  xmm1
+    mulps xmm5,  xmm1
+    mulps xmm7,  xmm1
+    mulps xmm9,  xmm1
+
+    addps xmm3,  xmm4
+    addps xmm5,  xmm6
+    addps xmm7,  xmm8
+    addps xmm9,  xmm10
+
+    movups oword ptr [rcx + $40], xmm3
+    movups oword ptr [rcx + $50], xmm5
+    movups oword ptr [rcx + $60], xmm7
+    movups oword ptr [rcx + $70], xmm9
+
+    // step 3
+
+    movups xmm4,  oword ptr [r8 + $80]
+    movups xmm6,  oword ptr [r8 + $90]
+    movups xmm8,  oword ptr [r8 + $a0]
+    movups xmm10, oword ptr [r8 + $b0]
+
+    movups xmm3,  oword ptr [rdx + $80]
+    movups xmm5,  oword ptr [rdx + $90]
+    movups xmm7,  oword ptr [rdx + $a0]
+    movups xmm9,  oword ptr [rdx + $b0]
+
+    mulps xmm4,  xmm2
+    mulps xmm6,  xmm2
+    mulps xmm8,  xmm2
+    mulps xmm10, xmm2
+
+    mulps xmm3,  xmm1
+    mulps xmm5,  xmm1
+    mulps xmm7,  xmm1
+    mulps xmm9,  xmm1
+
+    addps xmm3,  xmm4
+    addps xmm5,  xmm6
+    addps xmm7,  xmm8
+    addps xmm9,  xmm10
+
+    movups oword ptr [rcx + $80], xmm3
+    movups oword ptr [rcx + $90], xmm5
+    movups oword ptr [rcx + $a0], xmm7
+    movups oword ptr [rcx + $b0], xmm9
+
+    // loop
+
+    lea rcx, [rcx + $c0]
+    lea rdx, [rdx + $c0]
+    lea r8, [r8 + $c0]
+
+    dec al
+    jnz loop
+
+  // end
+
+  movdqu xmm1,  oword ptr [rsp]
+  movdqu xmm2,  oword ptr [rsp + $10]
+  movdqu xmm3,  oword ptr [rsp + $20]
+  movdqu xmm4,  oword ptr [rsp + $30]
+  movdqu xmm5,  oword ptr [rsp + $40]
+  movdqu xmm6,  oword ptr [rsp + $50]
+  movdqu xmm7,  oword ptr [rsp + $60]
+  movdqu xmm8,  oword ptr [rsp + $70]
+  movdqu xmm9,  oword ptr [rsp + $80]
+  movdqu xmm10, oword ptr [rsp + $90]
+  add rsp, 16 * 10
+
+  pop r8
+  pop rdx
+  pop rcx
+  pop rax
 end;
 
 const
@@ -1157,19 +1464,16 @@ procedure TTilingEncoder.FrameTiling;
   var
     kf, pal: Integer;
   begin
-    DivMod(AIndex, Length(FKeyFrames), pal, kf);
+    DivMod(AIndex, FPaletteCount, kf, pal);
 
     PrepareKFTiling(FKeyFrames[kf], pal, IfThen(FFrameTilingUseGamma, 0, -1));
 
-    if PtrInt(AData) = 0 then
-      DoKFTilingPass1(FKeyFrames[kf], pal, IfThen(FFrameTilingUseGamma, 0, -1), FFrameTilingBlendingSize, FFrameTilingBlendingThreshold)
-    else
-      DoKFTilingPass2(FKeyFrames[kf], pal, IfThen(FFrameTilingUseGamma, 0, -1), FFrameTilingBlendingSize, FFrameTilingBlendingThreshold);
+    DoKFTiling(FKeyFrames[kf], pal, IfThen(FFrameTilingUseGamma, 0, -1), FFrameTilingBlendingSize, FFrameTilingBlendingThreshold);
 
     FinishKFTiling(FKeyFrames[kf], pal);
   end;
 var
-  kf: Integer;
+  kf, i: Integer;
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
@@ -1180,25 +1484,23 @@ begin
   begin
     FKeyFrames[kf].FTPalettesLeft := FPaletteCount;
     SetLength(FKeyFrames[kf].TileDS, FPaletteCount);
+    SetLength(FKeyFrames[kf].FTPaletteDoneEvent, FPaletteCount);
+    for i := 0 to FPaletteCount - 1 do
+      FKeyFrames[kf].FTPaletteDoneEvent[i] := CreateEvent(nil, True, False, nil);
   end;
   try
     ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, Pointer(0));
-
-    for kf := 0 to high(FKeyFrames) do
-      FKeyFrames[kf].FTPalettesLeft := FPaletteCount;
-
-    ProgressRedraw(1);
-
-    if FFrameTilingBlendingSize >= 0 then
-      ProcThreadPool.DoParallelLocalProc(@DoKFPal, FPaletteCount, FPaletteCount * Length(FKeyFrames) - 1, Pointer(1));
   finally
     for kf := 0 to high(FKeyFrames) do
     begin
+      for i := 0 to FPaletteCount - 1 do
+        CloseHandle(FKeyFrames[kf].FTPaletteDoneEvent[i]);
+      SetLength(FKeyFrames[kf].FTPaletteDoneEvent, 0);
       SetLength(FKeyFrames[kf].TileDS, 0);
     end;
   end;
 
-  ProgressRedraw(2);
+  ProgressRedraw(1);
 end;
 
 procedure TTilingEncoder.Load(AFileName: String; AStartFrame, AFrameCount, APaletteCount, ATilePaletteSize: Integer;
@@ -3935,6 +4237,7 @@ begin
   Dispose(AKF.TileDS[APaletteIndex]);
 
   AKF.TileDS[APaletteIndex] := nil;
+  SetEvent(AKF.FTPaletteDoneEvent[APaletteIndex]);
   InterLockedDecrement(AKF.FTPalettesLeft);
 
   Write('.');
@@ -3947,197 +4250,19 @@ begin
   end;
 end;
 
-procedure ComputeBlending(PRes, Px, Py: PFloat; bx, by: TFloat); inline;
+procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
 var
-  i: Integer;
-begin
-  for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
-  begin
-    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
-    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
-    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
-    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
-    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
-    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
-    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
-    PRes^ := Px^ * bx + Py^ * by; Inc(PRes); Inc(Px); Inc(Py);
-  end;
-end;
-
-procedure ComputeBlending_Asm(PRes_rcx, Px_rdx, Py_r8: PFloat; bx_xmm3, by_stack: TFloat); register; assembler;
-label loop;
-asm
-  push rax
-  push rcx
-  push rdx
-  push r8
-
-  sub rsp, 16 * 10
-  movdqu oword ptr [rsp],       xmm1
-  movdqu oword ptr [rsp + $10], xmm2
-  movdqu oword ptr [rsp + $20], xmm3
-  movdqu oword ptr [rsp + $30], xmm4
-  movdqu oword ptr [rsp + $40], xmm5
-  movdqu oword ptr [rsp + $50], xmm6
-  movdqu oword ptr [rsp + $60], xmm7
-  movdqu oword ptr [rsp + $70], xmm8
-  movdqu oword ptr [rsp + $80], xmm9
-  movdqu oword ptr [rsp + $90], xmm10
-
-  pshufd xmm1, xmm3, 0
-  pshufd xmm2, dword ptr [by_stack], 0
-
-  // unrolled for 48 = (cTileDCTSize / 4)
-
-  mov al, (cTileDCTSize / 48)
-  loop:
-
-    // step 1
-
-    movups xmm4,  oword ptr [r8]
-    movups xmm6,  oword ptr [r8 + $10]
-    movups xmm8,  oword ptr [r8 + $20]
-    movups xmm10, oword ptr [r8 + $30]
-
-    movups xmm3,  oword ptr [rdx]
-    movups xmm5,  oword ptr [rdx + $10]
-    movups xmm7,  oword ptr [rdx + $20]
-    movups xmm9,  oword ptr [rdx + $30]
-
-    mulps xmm4,  xmm2
-    mulps xmm6,  xmm2
-    mulps xmm8,  xmm2
-    mulps xmm10, xmm2
-
-    mulps xmm3,  xmm1
-    mulps xmm5,  xmm1
-    mulps xmm7,  xmm1
-    mulps xmm9,  xmm1
-
-    addps xmm3,  xmm4
-    addps xmm5,  xmm6
-    addps xmm7,  xmm8
-    addps xmm9,  xmm10
-
-    movups oword ptr [rcx],       xmm3
-    movups oword ptr [rcx + $10], xmm5
-    movups oword ptr [rcx + $20], xmm7
-    movups oword ptr [rcx + $30], xmm9
-
-    // step 2
-
-    movups xmm4,  oword ptr [r8 + $40]
-    movups xmm6,  oword ptr [r8 + $50]
-    movups xmm8,  oword ptr [r8 + $60]
-    movups xmm10, oword ptr [r8 + $70]
-
-    movups xmm3,  oword ptr [rdx + $40]
-    movups xmm5,  oword ptr [rdx + $50]
-    movups xmm7,  oword ptr [rdx + $60]
-    movups xmm9,  oword ptr [rdx + $70]
-
-    mulps xmm4,  xmm2
-    mulps xmm6,  xmm2
-    mulps xmm8,  xmm2
-    mulps xmm10, xmm2
-
-    mulps xmm3,  xmm1
-    mulps xmm5,  xmm1
-    mulps xmm7,  xmm1
-    mulps xmm9,  xmm1
-
-    addps xmm3,  xmm4
-    addps xmm5,  xmm6
-    addps xmm7,  xmm8
-    addps xmm9,  xmm10
-
-    movups oword ptr [rcx + $40], xmm3
-    movups oword ptr [rcx + $50], xmm5
-    movups oword ptr [rcx + $60], xmm7
-    movups oword ptr [rcx + $70], xmm9
-
-    // step 3
-
-    movups xmm4,  oword ptr [r8 + $80]
-    movups xmm6,  oword ptr [r8 + $90]
-    movups xmm8,  oword ptr [r8 + $a0]
-    movups xmm10, oword ptr [r8 + $b0]
-
-    movups xmm3,  oword ptr [rdx + $80]
-    movups xmm5,  oword ptr [rdx + $90]
-    movups xmm7,  oword ptr [rdx + $a0]
-    movups xmm9,  oword ptr [rdx + $b0]
-
-    mulps xmm4,  xmm2
-    mulps xmm6,  xmm2
-    mulps xmm8,  xmm2
-    mulps xmm10, xmm2
-
-    mulps xmm3,  xmm1
-    mulps xmm5,  xmm1
-    mulps xmm7,  xmm1
-    mulps xmm9,  xmm1
-
-    addps xmm3,  xmm4
-    addps xmm5,  xmm6
-    addps xmm7,  xmm8
-    addps xmm9,  xmm10
-
-    movups oword ptr [rcx + $80], xmm3
-    movups oword ptr [rcx + $90], xmm5
-    movups oword ptr [rcx + $a0], xmm7
-    movups oword ptr [rcx + $b0], xmm9
-
-    // loop
-
-    lea rcx, [rcx + $c0]
-    lea rdx, [rdx + $c0]
-    lea r8, [r8 + $c0]
-
-    dec al
-    jnz loop
-
-  // end
-
-  movdqu xmm1,  oword ptr [rsp]
-  movdqu xmm2,  oword ptr [rsp + $10]
-  movdqu xmm3,  oword ptr [rsp + $20]
-  movdqu xmm4,  oword ptr [rsp + $30]
-  movdqu xmm5,  oword ptr [rsp + $40]
-  movdqu xmm6,  oword ptr [rsp + $50]
-  movdqu xmm7,  oword ptr [rsp + $60]
-  movdqu xmm8,  oword ptr [rsp + $70]
-  movdqu xmm9,  oword ptr [rsp + $80]
-  movdqu xmm10, oword ptr [rsp + $90]
-  add rsp, 16 * 10
-
-  pop r8
-  pop rdx
-  pop rcx
-  pop rax
-end;
-
-procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; var AKFTilingBest: TKFTilingBest);
-var
-  i, blend, ox, oy, annQueryCount, annQueryPos: Integer;
-  err, fc, rfc: TFloat;
+  i, blend, ox, oy, idx: Integer;
+  e, err, fc, rfc: TFloat;
   prevTMI: PTileMapItem;
   DS: PTilingDataset;
-  idxs: TIntegerDynArray;
-  errs: TANNFloatDynArray;
   PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
-  SearchDCTs: TFloatDynArray;
+  SearchDCT: array[0 .. cTileDCTSize - 1] of TFloat;
 begin
   DS := AFrame.PKeyFrame.TileDS[APaletteIndex];
 
-  annQueryCount := Sqr(AFTBlend * 2 + 1) * (cMaxFTBlend - 2);
-  SetLength(SearchDCTs, annQueryCount * cTileDCTSize);
-  SetLength(idxs, annQueryCount);
-  SetLength(errs, annQueryCount);
-
   // prepare KNN queries
 
-  annQueryCount := 0;
   for oy := y - AFTBlend to y + AFTBlend do
   begin
     if not InRange(oy, 0, FTileMapHeight - 1) then
@@ -4157,6 +4282,8 @@ begin
 
         if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
         begin
+          WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
+
           ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
         end
         else
@@ -4178,69 +4305,38 @@ begin
         fc := blend * (1.0 / (cMaxFTBlend - 1));
         rfc := 1.0 / fc;
 
-        ComputeBlending_Asm(@SearchDCTs[annQueryCount * cTileDCTSize], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
+        ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
 
-        Inc(annQueryCount);
-      end;
-    end;
-  end;
+        idx := -1;
+        err := MaxSingle;
+        for i := 0 to cFTBinSize - 1 do
+        begin
+          e := CompareEuclideanDCTPtr_asm(@SearchDCT[0], @DS^.Dataset[ACurIdxs[i] * cTileDCTSize]);
+          if e < err then
+          begin
+           err := e;
+           idx := ACurIdxs[i];
+          end;
+        end;
 
-  // query KNN
-
-  flann_find_nearest_neighbors_index(DS^.FLANN, @SearchDCTs[0], annQueryCount, @idxs[0], @errs[0], 1, DS^.FLANNParams);
-
-  // parse KNN result
-
-  annQueryPos := 0;
-  for oy := y - AFTBlend to y + AFTBlend do
-  begin
-    if not InRange(oy, 0, FTileMapHeight - 1) then
-      Continue;
-
-    for ox := x - AFTBlend to x + AFTBlend do
-    begin
-      if not InRange(ox, 0, FTileMapWidth - 1) then
-        Continue;
-
-      if AFrame.Index > 0 then
-      begin
-        prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
-
-        if prevTMI^.PalIdx <> APaletteIndex then
-          Continue;
-      end
-      else
-      begin
-        if (ox <> x) or (oy <> y) then
-          Continue;
-
-        FillDWord(PrevDCT[0], cTileDCTSize, 0);
-      end;
-
-      for blend := 1 to cMaxFTBlend - 2 do
-      begin
-        fc := blend * (1.0 / (cMaxFTBlend - 1));
-
-        err := sqr(sqrt(errs[annQueryPos])*fc);
+        //
+        err := sqr(sqrt(err)*fc);
 
         if err < AKFTilingBest.bestErr then
         begin
           AKFTilingBest.bestErr := err;
-          AKFTilingBest.bestIdx := idxs[annQueryPos];
+          AKFTilingBest.bestIdx := idx;
           AKFTilingBest.bestBlendCur := blend;
           AKFTilingBest.bestBlendPrev := cMaxFTBlend - 1 - blend;
           AKFTilingBest.bestX := ox;
           AKFTilingBest.bestY := oy;
         end;
-
-        Inc(annQueryPos);
       end;
     end;
   end;
-  Assert(annQueryPos = annQueryCount);
 end;
 
-procedure TTilingEncoder.DoKFTilingPass1(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer;
+procedure TTilingEncoder.DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer;
   AFTBlendThres: TFloat);
 var
   x, y, frmIdx, annQueryCount, annQueryPos: Integer;
@@ -4281,8 +4377,8 @@ begin
   end;
 
   SetLength(DCTs, annQueryCount * cTileDCTSize);
-  SetLength(idxs, annQueryCount);
-  SetLength(errs, annQueryCount);
+  SetLength(idxs, annQueryCount * cFTBinSize);
+  SetLength(errs, annQueryCount * cFTBinSize);
 
   // prepare KNN queries
 
@@ -4305,7 +4401,7 @@ begin
 
   // query KNN
 
-  flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[0], annQueryCount, @idxs[0], @errs[0], 1, DS^.FLANNParams);
+  flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[0], annQueryCount, @idxs[0], @errs[0], cFTBinSize, DS^.FLANNParams);
 
   // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
 
@@ -4320,8 +4416,8 @@ begin
         if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
           Continue;
 
-        Best.bestIdx := idxs[annQueryPos];
-        Best.bestErr := errs[annQueryPos];
+        Best.bestIdx := idxs[annQueryPos * cFTBinSize];
+        Best.bestErr := errs[annQueryPos * cFTBinSize];
         Best.bestBlendCur := cMaxFTBlend - 1;
         Best.bestBlendPrev := 0;
         Best.bestX := x;
@@ -4329,8 +4425,8 @@ begin
 
         // try to blend a local tile of the previous frame to improve likeliness
 
-        if ((frmIdx <> AKF.StartFrame) or (frmidx = 0)) and (AFTBlend >= 0) and not IsZero(sqrt(errs[annQueryPos]), AFTBlendThres) then
-          DoTileBlending(Frame, APaletteIndex, AFTGamma, AFTBlend, x, y, @DCTs[annQueryPos * cTileDCTSize], Best);
+        if (AFTBlend >= 0) and not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
+          DoTileBlending(Frame, APaletteIndex, AFTGamma, AFTBlend, x, y, @DCTs[annQueryPos * cTileDCTSize], @idxs[annQueryPos * cFTBinSize], @errs[annQueryPos * cFTBinSize], Best);
 
         tmiO := @FFrames[Frame.Index].TileMap[y, x];
 
@@ -4352,87 +4448,6 @@ begin
       end;
   end;
   Assert(annQueryPos = annQueryCount);
-
-  SpinEnter(@FLock);
-  AKF.FTErrCml += errCml;
-  SpinLeave(@FLock);
-end;
-
-procedure TTilingEncoder.DoKFTilingPass2(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer;
-  AFTBlendThres: TFloat);
-var
-  x, y: Integer;
-  Frame: TFrame;
-  attrs: Byte;
-  errCml: TFloat;
-
-  ForbiddenTMPos: TBooleanDynArray2;
-  tmi: PTileMapItem;
-  DS: PTilingDataset;
-
-  DCT: array[0 .. cTileDCTSize - 1] of TFloat;
-
-  Best: TKFTilingBest;
-begin
-  DS := AKF.TileDS[APaletteIndex];
-  if Length(DS^.Dataset) < cTileDCTSize then
-    Exit;
-
-  errCml := 0.0;
-  SetLength(ForbiddenTMPos, FTileMapHeight, FTileMapWidth);
-
-  // prevent backreferences from next frame to be altered
-
-  if AKF.FrameCount > 1 then
-  begin
-    Frame := FFrames[AKF.StartFrame + 1];
-
-    for y := 0 to FTileMapHeight - 1 do
-      for x := 0 to FTileMapWidth - 1 do
-      begin
-        tmi := @Frame.TileMap[y, x];
-        if tmi^.BlendPrev > 0 then
-          ForbiddenTMPos[y + tmi^.BlendY, x + tmi^.BlendX] := True;
-      end;
-  end;
-
-  Frame := FFrames[AKF.StartFrame];
-
-  for y := 0 to FTileMapHeight - 1 do
-    for x := 0 to FTileMapWidth - 1 do
-    begin
-      if (Frame.TileMap[y, x].PalIdx <> APaletteIndex) or ForbiddenTMPos[y, x] then
-        Continue;
-
-      tmi := @Frame.TileMap[y, x];
-      ComputeTilePsyVisFeatures(Frame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, @DCT[0]);
-
-      Best.bestIdx := tmi^.FTTileDSIdx;
-      Best.bestErr := CompareEuclideanDCTPtr(@DCT[0], @DS^.Dataset[Best.bestIdx * cTileDCTSize]);
-      Best.bestBlendCur := cMaxFTBlend - 1;
-      Best.bestBlendPrev := 0;
-      Best.bestX := x;
-      Best.bestY := y;
-
-      errCml -= Best.bestErr;
-      InterLockedDecrement(FTiles[tmi^.TileIdx]^.UseCount);
-
-      if (AFTBlend >= 0) and not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
-        DoTileBlending(Frame, APaletteIndex, AFTGamma, AFTBlend, x, y, @DCT[0], Best);
-
-      attrs := DS^.TDToAttrs[Best.bestIdx];
-      tmi^.FTTileDSIdx := Best.bestIdx;
-      tmi^.TileIdx := DS^.TDToTileIdx[Best.bestIdx];
-      tmi^.HMirror := (attrs and 1) <> 0;
-      tmi^.VMirror := (attrs and 2) <> 0;
-      tmi^.BlendCur := Best.bestBlendCur;
-      tmi^.BlendPrev := Best.bestBlendPrev;
-      tmi^.BlendX := Best.bestX - x;
-      tmi^.BlendY := Best.bestY - y;
-
-      errCml += Best.bestErr;
-      InterLockedIncrement(FTiles[tmi^.TileIdx]^.UseCount);
-    end;
 
   SpinEnter(@FLock);
   AKF.FTErrCml += errCml;

@@ -192,7 +192,7 @@ const
   CDefaultFLANNParameters: TFLANNParameters = (
       algorithm: FLANN_INDEX_KDTREE;
       checks: 32; eps: 0.0;
-      sorted: 0; max_neighbors: -1; cores: 1;
+      sorted: 1; max_neighbors: -1; cores: 1;
       trees: 1; leaf_max_size: 32;
       branching: 32; iterations: 11; centers_init: FLANN_CENTERS_RANDOM; cb_index: 0.2;
       target_precision: 0.9; build_weight: 0.01; memory_weight: 0; sample_fraction: 0.1;
