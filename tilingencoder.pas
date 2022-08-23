@@ -4282,8 +4282,6 @@ begin
 
         if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
         begin
-          WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
-
           ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
         end
         else
@@ -4409,6 +4407,9 @@ begin
   for frmIdx := AKF.StartFrame to AKF.EndFrame do
   begin
     Frame := FFrames[frmIdx];
+
+    if (frmIdx > 0) and (FFrames[frmIdx - 1].PKeyFrame <> Frame.PKeyFrame) then
+      WaitForSingleObject(FFrames[frmIdx - 1].PKeyFrame.FTPaletteDoneEvent[APaletteIndex], INFINITE); // wait prev keyframe for palette done
 
     for y := 0 to FTileMapHeight - 1 do
       for x := 0 to FTileMapWidth - 1 do
