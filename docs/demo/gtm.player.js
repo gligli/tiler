@@ -203,7 +203,7 @@ function parseHeader() {
 		gtmWidth = (gtmHeader[GTMHeader.FramePixelWidth] / CTileWidth) >>> 0;
 		gtmHeight = (gtmHeader[GTMHeader.FramePixelHeight] / CTileWidth) >>> 0;
 		gtmLzmaBytesPerSecond = gtmHeader[GTMHeader.KFMaxBytesPerSec];
-		console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',', Math.round(gtmLzmaBytesPerSecond * 8 / 1024), 'KBps');
+		console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',', Math.round(gtmHeader[GTMHeader.AverageBytesPerSec] * 8 / 1024), 'KBps');
 		
 		redimFrame();
 	} else {
