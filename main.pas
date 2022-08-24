@@ -175,7 +175,7 @@ end;
 
 procedure TMainForm.btnDoGlobalTilingClick(Sender: TObject);
 begin
-  FTilingEncoder.GlobalTiling(chkReload.Checked, edReload.Text);
+  FTilingEncoder.GlobalTiling;
   UpdateVideo(nil);
 end;
 
@@ -199,7 +199,7 @@ end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);
 begin
-  FTilingEncoder.Load(edInput.Text, seStartFrame.Value, seFrameCount.Value, StrToIntDef(cbxPalCount.Text, 1), StrToIntDef(cbxPalSize.Text, 2), StrToFloatDef(cbxScaling.Text, 1.0, InvariantFormatSettings));
+  FTilingEncoder.Load;
   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
   UpdateVideo(nil);
 end;
@@ -212,19 +212,19 @@ end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
 begin
-  FTilingEncoder.Save(edOutput.Text);
+  FTilingEncoder.Save;
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnSmoothClick(Sender: TObject);
 begin
-  FTilingEncoder.Smooth(seTempoSmoo.Value, seAddlTiles.Value);
+  FTilingEncoder.Smooth;
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnGeneratePNGsClick(Sender: TObject);
 begin
-  FTilingEncoder.GeneratePNGs(edOutput.Text);
+  FTilingEncoder.GeneratePNGs;
   UpdateVideo(nil);
 end;
 
@@ -460,6 +460,15 @@ begin
   IdleTimer.Interval := round(1000 / FTilingEncoder.FramesPerSecond);
   FLastIOTabSheet := pcPages.ActivePage;
 
+
+  FTilingEncoder.InputFileName := edInput.Text;
+  FTilingEncoder.OutputFileName := edOutput.Text;
+  FTilingEncoder.StartFrame := seStartFrame.Value;
+  FTilingEncoder.FrameCount := seFrameCount.Value;
+  FTilingEncoder.PaletteCount := StrToIntDef(cbxPalCount.Text, 1);
+  FTilingEncoder.PaletteSize := StrToIntDef(cbxPalSize.Text, 2);
+  FTilingEncoder.Scaling := StrToFloatDef(cbxScaling.Text, 1.0, InvariantFormatSettings);
+
   FTilingEncoder.EncoderGammaValue := seEncGamma.Value;
   FTilingEncoder.RenderPlaying := chkPlay.Checked;
   FTilingEncoder.RenderFrameIndex := Max(0, tbFrame.Position);
@@ -479,10 +488,15 @@ begin
 
   FTilingEncoder.GlobalTilingTileCount := seMaxTiles.Value;
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
+  FTilingEncoder.ReloadTileset := chkReload.Checked;
+  FTilingEncoder.ReloadTilesetFileName := edReload.Text;
 
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingBlendingSize := seFTBlend.Value;
   FTilingEncoder.FrameTilingBlendingThreshold := seFTBlendThres.Value;
+
+  FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
+  FTilingEncoder.SmoothingAdditionalTilesThreshold := seAddlTiles.Value;
 
   if pcPages.ActivePage = tsInput then
     FTilingEncoder.RenderPage := rpInput

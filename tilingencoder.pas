@@ -332,21 +332,20 @@ type
 
   TTilingEncoder = class
   private
-    // settings
+    // encoder state variables
 
-    FPaletteCount: Integer;
-    FPaletteSize: Integer;
-    FQuantizerDennisLeeBitsPerComponent: Integer;
-    FQuantizerUseYakmo: Boolean;
-    FDitheringUseThomasKnoll: Boolean;
-    FDitheringYliluoma2MixedColors: Integer;
-    FDitheringUseGamma: Boolean;
-    FGlobalTilingTileCount: Integer;
-    FGlobalTilingQualityBasedTileCount: TFloat;
-    FFrameTilingBlendingSize: Integer;
-    FFrameTilingBlendingThreshold: TFloat;
-    FFrameTilingUseGamma: Boolean;
-    FEncoderGammaValue: TFloat;
+    FCS: TRTLCriticalSection;
+    FLock: TSpinlock;
+
+    FGamma: array[0..1] of TFloat;
+    FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
+    FVecInv: array[0..256 * 4 - 1] of Cardinal;
+    FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
+
+    FKeyFrames: TKeyFrameArray;
+    FFrames: TFrameArray;
+    FTiles: PTileArray;
+    FAdditionalTiles: TThreadList;
 
     // video properties
 
@@ -357,6 +356,31 @@ type
     FScreenWidth: Integer;
     FScreenHeight: Integer;
     FFramesPerSecond: Double;
+
+    // settings
+
+    FInputFileName: String;
+    FOutputFileName: String;
+    FStartFrame: Integer;
+    FFrameCount: Integer;
+    FScaling: TFloat;
+    FEncoderGammaValue: TFloat;
+    FPaletteSize: Integer;
+    FPaletteCount: Integer;
+    FQuantizerUseYakmo: Boolean;
+    FQuantizerDennisLeeBitsPerComponent: Integer;
+    FDitheringUseGamma: Boolean;
+    FDitheringUseThomasKnoll: Boolean;
+    FDitheringYliluoma2MixedColors: Integer;
+    FGlobalTilingTileCount: Integer;
+    FGlobalTilingQualityBasedTileCount: TFloat;
+    FReloadTileset: Boolean;
+    FReloadTilesetFileName: String;
+    FFrameTilingUseGamma: Boolean;
+    FFrameTilingBlendingSize: Integer;
+    FFrameTilingBlendingThreshold: TFloat;
+    FSmoothingFactor: TFloat;
+    FSmoothingAdditionalTilesThreshold: TFloat;
 
     // GUI state variables
 
@@ -380,23 +404,27 @@ type
     FProgressStep: TEncoderStep;
     FProgressStartTime, FProgressPrevTime: Int64;
 
-    // encoder state variables
-
-    FCS: TRTLCriticalSection;
-    FLock: TSpinlock;
-
-    FGamma: array[0..1] of TFloat;
-    FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
-    FVecInv: array[0..256 * 4 - 1] of Cardinal;
-    FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
-
-    FKeyFrames: TKeyFrameArray;
-    FFrames: TFrameArray;
-    FTiles: PTileArray;
-    FAdditionalTiles: TThreadList;
-
-    function GetFrameCount: Integer;
     function GetKeyFrameCount: Integer;
+    procedure SetDitheringYliluoma2MixedColors(AValue: Integer);
+    procedure SetEncoderGammaValue(AValue: TFloat);
+    procedure SetFrameCount(AValue: Integer);
+    procedure SetFramesPerSecond(AValue: Double);
+    procedure SetFrameTilingBlendingSize(AValue: Integer);
+    procedure SetFrameTilingBlendingThreshold(AValue: TFloat);
+    procedure SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
+    procedure SetPaletteCount(AValue: Integer);
+    procedure SetPaletteSize(AValue: Integer);
+    procedure SetQuantizerDennisLeeBitsPerComponent(AValue: Integer);
+    procedure SetRenderFrameIndex(AValue: Integer);
+    procedure SetRenderGammaValue(AValue: TFloat);
+    procedure SetRenderPaletteIndex(AValue: Integer);
+    procedure SetRenderTilePage(AValue: Integer);
+    procedure SetGlobalTilingTileCount(AValue: Integer);
+    procedure SetScaling(AValue: TFloat);
+    procedure SetSmoothingAdditionalTilesThreshold(AValue: TFloat);
+    procedure SetSmoothingFactor(AValue: TFloat);
+    procedure SetStartFrame(AValue: Integer);
+
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
     function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
@@ -408,8 +436,6 @@ type
     function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
     function GammaUncorrect(lut: Integer; x: TFloat): Byte; inline;
 
-    procedure DitherFloydSteinberg(const AScreen: TByteDynArray);
-
     function HSVToRGB(h, s, v: Byte): Integer;
     procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
     procedure RGBToHSV(col: Integer; out h, s, v: TFloat); overload;
@@ -418,18 +444,6 @@ type
     procedure RGBToLAB(r, g, b: TFloat; GammaCor: Integer; out ol, oa, ob: TFloat);
     procedure RGBToLAB(ir, ig, ib: Integer; GammaCor: Integer; out ol, oa, ob: TFloat);
     function LABToRGB(ll, aa, bb: TFloat): Integer;
-    procedure SetDitheringYliluoma2MixedColors(AValue: Integer);
-    procedure SetEncoderGammaValue(AValue: TFloat);
-    procedure SetFramesPerSecond(AValue: Double);
-    procedure SetFrameTilingBlendingSize(AValue: Integer);
-    procedure SetFrameTilingBlendingThreshold(AValue: TFloat);
-    procedure SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
-    procedure SetQuantizerDennisLeeBitsPerComponent(AValue: Integer);
-    procedure SetRenderFrameIndex(AValue: Integer);
-    procedure SetRenderGammaValue(AValue: TFloat);
-    procedure SetRenderPaletteIndex(AValue: Integer);
-    procedure SetRenderTilePage(AValue: Integer);
-    procedure SetGlobalTilingTileCount(AValue: Integer);
     function YUVToRGB(y, u, v: TFloat): Integer;
 
     procedure WaveletGS(Data: PFloat; Output: PFloat; dx, dy, depth: cardinal);
@@ -495,15 +509,15 @@ type
 
     // processes / functions
 
-    procedure Load(AFileName: String; AStartFrame, AFrameCount, APaletteCount, ATilePaletteSize: Integer; AScaling: TFloat = 1.0);
+    procedure Load;
     procedure Dither;
     procedure MakeUnique;
-    procedure GlobalTiling(AReloadTiles: Boolean = False; AReloadFN: String = '');
+    procedure GlobalTiling;
     procedure FrameTiling;
     procedure Reindex;
-    procedure Smooth(ASmoothingFactor: TFloat; AAddlTilesThres: TFloat);
-    procedure Save(AOutputFN: String);
-    procedure GeneratePNGs(AOutputFN: String);
+    procedure Smooth;
+    procedure Save;
+    procedure GeneratePNGs;
 
     procedure Render;
     procedure ReframeUI(AWidth, AHeight: Integer);
@@ -522,24 +536,32 @@ type
     property TileMapWidth: Integer read FTileMapWidth;
     property TileMapHeight: Integer read FTileMapHeight;
     property TileMapSize: Integer read FTileMapSize;
-    property FrameCount: Integer read GetFrameCount;
     property KeyFrameCount: Integer read GetKeyFrameCount;
 
     // settings
 
-    property PaletteSize: Integer read FPaletteSize;
-    property PaletteCount: Integer read FPaletteCount;
+    property InputFileName: String read FInputFileName write FInputFileName;
+    property OutputFileName: String read FOutputFileName write FOutputFileName;
+    property StartFrame: Integer read FStartFrame write SetStartFrame;
+    property FrameCount: Integer read FFrameCount write SetFrameCount;
+    property Scaling: TFloat read FScaling write SetScaling;
+    property EncoderGammaValue: TFloat read FEncoderGammaValue write SetEncoderGammaValue;
+    property PaletteSize: Integer read FPaletteSize write SetPaletteSize;
+    property PaletteCount: Integer read FPaletteCount write SetPaletteCount;
     property QuantizerUseYakmo: Boolean read FQuantizerUseYakmo write FQuantizerUseYakmo;
     property QuantizerDennisLeeBitsPerComponent: Integer read FQuantizerDennisLeeBitsPerComponent write SetQuantizerDennisLeeBitsPerComponent;
     property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
-    property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
+    property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
     property GlobalTilingQualityBasedTileCount: TFloat read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
+    property ReloadTileset: Boolean read FReloadTileset write FReloadTileset;
+    property ReloadTilesetFileName: String read FReloadTilesetFileName write FReloadTilesetFileName;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingBlendingSize: Integer read FFrameTilingBlendingSize write SetFrameTilingBlendingSize;
     property FrameTilingBlendingThreshold: TFloat read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
-    property EncoderGammaValue: TFloat read FEncoderGammaValue write SetEncoderGammaValue;
+    property SmoothingFactor: TFloat read FSmoothingFactor write SetSmoothingFactor;
+    property SmoothingAdditionalTilesThreshold: TFloat read FSmoothingAdditionalTilesThreshold write SetSmoothingAdditionalTilesThreshold;
 
     // GUI state variables
 
@@ -1339,24 +1361,24 @@ begin
   Result := EnsureRange(Round(x * 255.0), 0, 255);
 end;
 
-procedure TTilingEncoder.GlobalTiling(AReloadTiles: Boolean; AReloadFN: String);
+procedure TTilingEncoder.GlobalTiling;
 begin
   if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(0, esGlobalTiling);
 
-  if AReloadTiles then
+  if FReloadTileset then
   begin
-    if not FileExists(AReloadFN) then
-      raise EFileNotFoundException.Create('File not found: ' + AReloadFN);
-    ReloadPreviousTiling(AReloadFN);
+    if not FileExists(FReloadTilesetFileName) then
+      raise EFileNotFoundException.Create('File not found: ' + FReloadTilesetFileName);
+    ReloadPreviousTiling(FReloadTilesetFileName);
   end
   else
   begin
     DoGlobalTiling(FGlobalTilingTileCount);
 
-    SaveRawTiles(AReloadFN);
+    SaveRawTiles(FReloadTilesetFileName);
   end;
 
   ProgressRedraw(5);
@@ -1490,8 +1512,7 @@ begin
   ProgressRedraw(1);
 end;
 
-procedure TTilingEncoder.Load(AFileName: String; AStartFrame, AFrameCount, APaletteCount, ATilePaletteSize: Integer;
-  AScaling: TFloat);
+procedure TTilingEncoder.Load;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -1516,13 +1537,11 @@ procedure TTilingEncoder.Load(AFileName: String; AStartFrame, AFrameCount, APale
   end;
 
 var
-  i, StartFrame, frc: Integer;
+  i, frc: Integer;
   fn: String;
   bmp: TPicture;
   wasAutoQ: Boolean;
 begin
-  FPaletteSize := EnsureRange(ATilePaletteSize, 2, 64);
-  FPaletteCount := EnsureRange(APaletteCount, 1, 256);
   wasAutoQ := FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * EqualQualityTileCount(Length(FFrames) * FTileMapSize));
 
   ProgressRedraw(-1, esNone);
@@ -1537,17 +1556,16 @@ begin
 
   // load video
 
-  StartFrame := AStartFrame;
-  frc := AFrameCount;
+  frc := FFrameCount;
 
-  if FileExists(AFileName) then
+  if FileExists(FInputFileName) then
   begin
-    DoExternalFFMpeg(AFileName, FInputPath, StartFrame, frc, AScaling, FFramesPerSecond);
-    StartFrame := 1;
+    DoExternalFFMpeg(FInputFileName, FInputPath, FStartFrame, frc, FScaling, FFramesPerSecond);
+    FStartFrame := 1;
   end
   else
   begin
-    FInputPath := AFileName;
+    FInputPath := FInputFileName;
     FFramesPerSecond := 24.0;
   end;
 
@@ -1557,7 +1575,7 @@ begin
   begin
     i := 0;
     repeat
-      fn := Format(FInputPath, [i + StartFrame]);
+      fn := Format(FInputPath, [i + FStartFrame]);
       Inc(i);
     until not FileExists(fn);
 
@@ -1571,13 +1589,13 @@ begin
   bmp := TPicture.Create;
   try
     bmp.Bitmap.PixelFormat:=pf32bit;
-    bmp.LoadFromFile(Format(FInputPath, [StartFrame]));
+    bmp.LoadFromFile(Format(FInputPath, [FStartFrame]));
     ReframeUI(bmp.Width div cTileWidth, bmp.Height div cTileWidth);
   finally
     bmp.Free;
   end;
 
-  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(StartFrame));
+  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(FStartFrame));
   WriteLn;
 
   ProgressRedraw(1);
@@ -1632,7 +1650,7 @@ begin
   ProgressRedraw(2);
 end;
 
-procedure TTilingEncoder.Save(AOutputFN: String);
+procedure TTilingEncoder.Save;
 var
   fs: TFileStream;
 begin
@@ -1641,7 +1659,7 @@ begin
 
   ProgressRedraw(0, esSave);
 
-  fs := TFileStream.Create(AOutputFN, fmCreate or fmShareDenyWrite);
+  fs := TFileStream.Create(FOutputFileName, fmCreate or fmShareDenyWrite);
   try
     SaveStream(fs, FFrameTilingBlendingSize);
   finally
@@ -1651,7 +1669,7 @@ begin
   ProgressRedraw(1);
 end;
 
-procedure TTilingEncoder.Smooth(ASmoothingFactor: TFloat; AAddlTilesThres: TFloat);
+procedure TTilingEncoder.Smooth;
 var
   NonAddlCount: Integer;
 
@@ -1663,7 +1681,7 @@ var
       Exit;
 
     for i := cSmoothingPrevFrame to High(FFrames) do
-      DoTemporalSmoothing(FFrames[i], FFrames[i - cSmoothingPrevFrame], AIndex, ASmoothingFactor, AAddlTilesThres, NonAddlCount);
+      DoTemporalSmoothing(FFrames[i], FFrames[i - cSmoothingPrevFrame], AIndex, FSmoothingFactor, FSmoothingAdditionalTilesThreshold, NonAddlCount);
   end;
 
 var
@@ -1729,7 +1747,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.GeneratePNGs(AOutputFN: String);
+procedure TTilingEncoder.GeneratePNGs;
 var
   palPict: TPortableNetworkGraphic;
   i, oldRenderFrameIndex : Integer;
@@ -1749,7 +1767,7 @@ begin
       Render;
 
       palPict.Canvas.Draw(0, 0, FOutputBitmap);
-      palPict.SaveToFile(Format('%s_%.4d.png', [ChangeFileExt(AOutputFN, ''), i]));
+      palPict.SaveToFile(Format('%s_%.4d.png', [ChangeFileExt(FOutputFileName, ''), i]));
     end;
   finally
     palPict.Free;
@@ -1786,11 +1804,6 @@ begin
   Result := 0.0;
   if den <> 0.0 then
     Result := num / den;
-end;
-
-function TTilingEncoder.GetFrameCount: Integer;
-begin
-  Result := Length(FFrames);
 end;
 
 function TTilingEncoder.GetKeyFrameCount: Integer;
@@ -2271,38 +2284,6 @@ begin
   FPaletteBitmap.Width := FPaletteSize;
   FPaletteBitmap.Height := FPaletteCount;
   FPaletteBitmap.PixelFormat:=pf32bit;
-end;
-
-procedure TTilingEncoder.DitherFloydSteinberg(const AScreen: TByteDynArray);
-var
-  x, y, c, yp, xm, xp: Integer;
-  OldPixel, NewPixel, QuantError: Integer;
-  ppx: PByte;
-begin
-  ppx := @AScreen[0];
-  for y := 0 to FScreenHeight - 1 do
-    for x := 0 to FScreenWidth - 1 do
-    begin
-      yp := IfThen(y < FScreenHeight - 1, FScreenWidth * 3, 0);
-      xp := IfThen(x < FScreenWidth - 1, 3, 0);
-      xm := IfThen(x > 0, -3, 0);
-
-      for c := 0 to 2 do
-      begin
-        OldPixel := ppx^;
-        NewPixel := Posterize(OldPixel);
-        QuantError := OldPixel - NewPixel;
-
-        ppx^ := NewPixel;
-
-        ppx[xp] := EnsureRange(ppx[xp] + (QuantError * 7) shr 4, 0, 255);
-        ppx[yp + xm] := EnsureRange(ppx[yp + xm] + (QuantError * 3) shr 4, 0, 255);
-        ppx[yp] := EnsureRange(ppx[yp] + (QuantError * 5) shr 4, 0, 255);
-        ppx[yp + xp] := EnsureRange(ppx[yp + xp] + (QuantError * 1) shr 4, 0, 255);
-
-        Inc(ppx);
-      end;
-    end;
 end;
 
 procedure TTilingEncoder.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
@@ -2996,6 +2977,12 @@ begin
   InitLuts(FPaletteSize, FPaletteCount);
 end;
 
+procedure TTilingEncoder.SetFrameCount(AValue: Integer);
+begin
+  if FFrameCount = AValue then Exit;
+  FFrameCount := Max(1, AValue);
+end;
+
 procedure TTilingEncoder.SetFramesPerSecond(AValue: Double);
 begin
   if FFramesPerSecond = AValue then Exit;
@@ -3025,6 +3012,18 @@ begin
   FGlobalTilingTileCount := min(round(AValue * EqualQualityTileCount(RawTileCount)), RawTileCount);
 end;
 
+procedure TTilingEncoder.SetPaletteCount(AValue: Integer);
+begin
+  if FPaletteCount = AValue then Exit;
+  FPaletteCount := EnsureRange(AValue, 1, 256);
+end;
+
+procedure TTilingEncoder.SetPaletteSize(AValue: Integer);
+begin
+  if FPaletteSize = AValue then Exit;
+  FPaletteSize := EnsureRange(AValue, 2, 64);
+end;
+
 procedure TTilingEncoder.SetGlobalTilingTileCount(AValue: Integer);
 var
   RawTileCount: Integer;
@@ -3034,6 +3033,30 @@ begin
 
   RawTileCount := Length(FFrames) * FTileMapSize;
   FGlobalTilingTileCount := EnsureRange(FGlobalTilingTileCount, 1, RawTileCount);
+end;
+
+procedure TTilingEncoder.SetScaling(AValue: TFloat);
+begin
+  if FScaling = AValue then Exit;
+  FScaling := Max(0.01, AValue);
+end;
+
+procedure TTilingEncoder.SetSmoothingAdditionalTilesThreshold(AValue: TFloat);
+begin
+  if FSmoothingAdditionalTilesThreshold = AValue then Exit;
+  FSmoothingAdditionalTilesThreshold := Max(0.0, AValue);
+end;
+
+procedure TTilingEncoder.SetSmoothingFactor(AValue: TFloat);
+begin
+  if FSmoothingFactor = AValue then Exit;
+  FSmoothingFactor := Max(0.0, AValue);
+end;
+
+procedure TTilingEncoder.SetStartFrame(AValue: Integer);
+begin
+  if FStartFrame = AValue then Exit;
+  FStartFrame := Max(0, AValue);
 end;
 
 procedure TTilingEncoder.SetRenderFrameIndex(AValue: Integer);
