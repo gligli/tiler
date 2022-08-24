@@ -332,21 +332,34 @@ type
 
   TTilingEncoder = class
   private
-    FGamma: array[0..1] of TFloat;
-    FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
-    FVecInv: array[0..256 * 4 - 1] of Cardinal;
-    FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
-    FPalettePattern : TFloatDynArray2;
+    // settings
 
+    FPaletteCount: Integer;
+    FPaletteSize: Integer;
+    FQuantizerDennisLeeBitsPerComponent: Integer;
+    FQuantizerUseYakmo: Boolean;
+    FDitheringUseThomasKnoll: Boolean;
+    FDitheringYliluoma2MixedColors: Integer;
     FDitheringUseGamma: Boolean;
-    FEncoderGammaValue: TFloat;
+    FGlobalTilingTileCount: Integer;
+    FGlobalTilingQualityBasedTileCount: TFloat;
     FFrameTilingBlendingSize: Integer;
     FFrameTilingBlendingThreshold: TFloat;
     FFrameTilingUseGamma: Boolean;
-    FOnProgress: TTilingEncoderProgressEvent;
-    FGlobalTilingQualityBasedTileCount: TFloat;
-    FQuantizerDennisLeeBitsPerComponent: Integer;
-    FQuantizerUseYakmo: Boolean;
+    FEncoderGammaValue: TFloat;
+
+    // video properties
+
+    FInputPath: String;
+    FTileMapWidth: Integer;
+    FTileMapHeight: Integer;
+    FTileMapSize: Integer;
+    FScreenWidth: Integer;
+    FScreenHeight: Integer;
+    FFramesPerSecond: Double;
+
+    // GUI state variables
+
     FRenderBlended: Boolean;
     FRenderFrameIndex: Integer;
     FRenderGammaValue: TFloat;
@@ -359,37 +372,28 @@ type
     FRenderPlaying: Boolean;
     FRenderSmoothed: Boolean;
     FRenderTilePage: Integer;
-    FGlobalTilingTileCount: Integer;
-    FAdditionalTiles: TThreadList;
-    FDitheringUseThomasKnoll: Boolean;
-    FDitheringYliluoma2MixedColors: Integer;
-    FInputPath: String;
-    FFramesPerSecond: Double;
-
-    FProgressStep: TEncoderStep;
-    FProgressStartTime, FProgressPrevTime: Int64;
-
-    FTileMapWidth: Integer;
-    FTileMapHeight: Integer;
-    FTileMapSize: Integer;
-    FScreenWidth: Integer;
-    FScreenHeight: Integer;
-
-    FPaletteCount: Integer;
-    FPaletteSize: Integer;
-
-    FCS: TRTLCriticalSection;
-    FLock: TSpinlock;
-    FConcurrentKModesBins: Integer;
-
     FOutputBitmap: TBitmap;
     FInputBitmap: TBitmap;
     FPaletteBitmap: TBitmap;
     FTilesBitmap: TBitmap;
+    FOnProgress: TTilingEncoderProgressEvent;
+    FProgressStep: TEncoderStep;
+    FProgressStartTime, FProgressPrevTime: Int64;
+
+    // encoder state variables
+
+    FCS: TRTLCriticalSection;
+    FLock: TSpinlock;
+
+    FGamma: array[0..1] of TFloat;
+    FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
+    FVecInv: array[0..256 * 4 - 1] of Cardinal;
+    FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
 
     FKeyFrames: TKeyFrameArray;
     FFrames: TFrameArray;
     FTiles: PTileArray;
+    FAdditionalTiles: TThreadList;
 
     function GetFrameCount: Integer;
     function GetKeyFrameCount: Integer;
@@ -484,9 +488,12 @@ type
     function DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; AScale: Double; out
       AFPS: Double): String;
   public
+    // constructor / destructor
 
     constructor Create;
     destructor Destroy; override;
+
+    // processes / functions
 
     procedure Load(AFileName: String; AStartFrame, AFrameCount, APaletteCount, ATilePaletteSize: Integer; AScaling: TFloat = 1.0);
     procedure Dither;
@@ -501,9 +508,13 @@ type
     procedure Render;
     procedure ReframeUI(AWidth, AHeight: Integer);
 
+    // encoder state variables
+
     property KeyFrames: TKeyFrameArray read FKeyFrames;
     property Frames: TFrameArray read FFrames;
     property Tiles: PTileArray read FTiles;
+
+    // video properties
 
     property ScreenWidth: Integer read FScreenWidth;
     property ScreenHeight: Integer read FScreenHeight;
@@ -511,14 +522,26 @@ type
     property TileMapWidth: Integer read FTileMapWidth;
     property TileMapHeight: Integer read FTileMapHeight;
     property TileMapSize: Integer read FTileMapSize;
-    property TilePaletteSize: Integer read FPaletteSize;
-    property PaletteCount: Integer read FPaletteCount;
     property FrameCount: Integer read GetFrameCount;
     property KeyFrameCount: Integer read GetKeyFrameCount;
 
-    property InputPath: String read FInputPath;
+    // settings
+
+    property PaletteSize: Integer read FPaletteSize;
+    property PaletteCount: Integer read FPaletteCount;
+    property QuantizerUseYakmo: Boolean read FQuantizerUseYakmo write FQuantizerUseYakmo;
+    property QuantizerDennisLeeBitsPerComponent: Integer read FQuantizerDennisLeeBitsPerComponent write SetQuantizerDennisLeeBitsPerComponent;
+    property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
+    property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
+    property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
+    property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
+    property GlobalTilingQualityBasedTileCount: TFloat read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
+    property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
+    property FrameTilingBlendingSize: Integer read FFrameTilingBlendingSize write SetFrameTilingBlendingSize;
+    property FrameTilingBlendingThreshold: TFloat read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
     property EncoderGammaValue: TFloat read FEncoderGammaValue write SetEncoderGammaValue;
-    property ProgressStep: TEncoderStep read FProgressStep;
+
+    // GUI state variables
 
     property RenderPlaying: Boolean read FRenderPlaying write FRenderPlaying;
     property RenderFrameIndex: Integer read FRenderFrameIndex write SetRenderFrameIndex;
@@ -529,29 +552,14 @@ type
     property RenderPaletteIndex: Integer read FRenderPaletteIndex write SetRenderPaletteIndex;
     property RenderTilePage: Integer read FRenderTilePage write SetRenderTilePage;
     property RenderGammaValue: TFloat read FRenderGammaValue write SetRenderGammaValue;
-
     property RenderPage: TRenderPage read FRenderPage write FRenderPage;
     property RenderTitleText: String read FRenderTitleText;
     property RenderPsychoVisualQuality: TFloat read FRenderPsychoVisualQuality;
-
-    property QuantizerUseYakmo: Boolean read FQuantizerUseYakmo write FQuantizerUseYakmo;
-    property QuantizerDennisLeeBitsPerComponent: Integer read FQuantizerDennisLeeBitsPerComponent write SetQuantizerDennisLeeBitsPerComponent;
-    property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
-    property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
-    property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
-
-    property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
-    property GlobalTilingQualityBasedTileCount: TFloat read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
-
-    property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
-    property FrameTilingBlendingSize: Integer read FFrameTilingBlendingSize write SetFrameTilingBlendingSize;
-    property FrameTilingBlendingThreshold: TFloat read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
-
     property OutputBitmap: TBitmap read FOutputBitmap;
     property InputBitmap: TBitmap read FInputBitmap;
     property PaletteBitmap: TBitmap read FPaletteBitmap;
     property TilesBitmap: TBitmap read FTilesBitmap;
-
+    property ProgressStep: TEncoderStep read FProgressStep;
     property OnProgress: TTilingEncoderProgressEvent read FOnProgress write FOnProgress;
   end;
 
@@ -1289,11 +1297,8 @@ end;
 { TTilingEncoder }
 
 procedure TTilingEncoder.InitLuts(ATilePaletteSize, APaletteCount: Integer);
-const
-  cCurvature = 2.0;
 var
-  g, i, j, v, u, y, x: Int64;
-  f, fp: TFloat;
+  g, i, v, u, y, x: Int64;
 begin
   // gamma
 
@@ -1320,24 +1325,6 @@ begin
           FDCTLut[i] := cos((x + 0.5) * u * PI / (cTileWidth * 2)) * cos((y + 0.5) * v * PI / (cTileWidth * 2)) * cDCTUVRatio[v, u];
           Inc(i);
         end;
-
-  // palette pattern
-
-  SetLength(FPalettePattern, APaletteCount, ATilePaletteSize);
-
-  f := 0;
-  for i := 0 to ATilePaletteSize - 1 do
-  begin
-    fp := f;
-    f := power(i + 2, cCurvature);
-
-    for j := 0 to APaletteCount - 1 do
-      FPalettePattern[j, i] := ((j + 1) / APaletteCount) * max(APaletteCount, f - fp) + fp;
-  end;
-
-  for j := 0 to APaletteCount - 1 do
-    for i := 0 to ATilePaletteSize - 1 do
-      FPalettePattern[j, i] /= FPalettePattern[APaletteCount - 1, ATilePaletteSize - 1];
 end;
 
 function TTilingEncoder.GammaCorrect(lut: Integer; x: Byte): TFloat;
@@ -2376,8 +2363,6 @@ var
   BIRCH: PBIRCH;
   Yakmo: PYakmoSingle;
 begin
-  Assert(FPaletteCount <= Length(FPalettePattern));
-
   SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
   SetLength(Clusters, Length(Dataset));
 
@@ -2660,8 +2645,6 @@ var
 var
   i: Integer;
 begin
-  Assert(FPaletteCount <= Length(FPalettePattern));
-
   AKeyFrame.PaletteUseCount[APalIdx].UseCount := 0;
 
   CMPal := TCountIndexList.Create;
@@ -4757,8 +4740,7 @@ var
   TileBin: TIntegerDynArray;
 begin
 
-  FConcurrentKModesBins := Sqr(cTileWidth) shr cBinCountShift;
-  SetLength(KMBins, FConcurrentKModesBins);
+  SetLength(KMBins, Sqr(cTileWidth) shr cBinCountShift);
   SetLength(cnt, Length(KMBins));
 
   // precompute dataset size
