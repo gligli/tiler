@@ -313,6 +313,8 @@ begin
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 48, 1), 12);
   seFTBlend.Value := 7;
   seFTBlendThres.Value := 1.0;
+
+  FTilingEncoder.Test;
 end;
 
 procedure TMainForm.btnDebug2Click(Sender: TObject);
@@ -323,6 +325,8 @@ begin
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);
   cbxScaling.ItemIndex := 2;
   seFTBlend.Value := 3;
+
+  FTilingEncoder.Test;
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);

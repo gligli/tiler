@@ -315,7 +315,7 @@ type
     end;
 
     FTPaletteDoneEvent: array of THandle;
-    FTPalettesLeft: Integer;
+    PalettesLeft: Integer;
     FTErrCml: TFloat;
 
     constructor Create(APaletteCount, AStartFrame, AEndFrame: Integer);
@@ -443,8 +443,8 @@ type
     procedure RGBToYUV(r, g, b: Byte; GammaCor: Integer; out y, u, v: TFloat);
     procedure RGBToLAB(r, g, b: TFloat; GammaCor: Integer; out ol, oa, ob: TFloat);
     procedure RGBToLAB(ir, ig, ib: Integer; GammaCor: Integer; out ol, oa, ob: TFloat);
-    function LABToRGB(ll, aa, bb: TFloat): Integer;
-    function YUVToRGB(y, u, v: TFloat): Integer;
+    function LABToRGB(ll, aa, bb: TFloat; GammaCor: Integer): Integer;
+    function YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
 
     procedure WaveletGS(Data: PFloat; Output: PFloat; dx, dy, depth: cardinal);
     procedure DeWaveletGS(wl: PFloat; pic: PFloat; dx, dy, depth: longint);
@@ -499,6 +499,7 @@ type
     procedure SaveStream(AStream: TStream; AFTBlend: Integer);
     procedure SaveRawTiles(OutFN: String);
 
+    procedure ReframeUI(AWidth, AHeight: Integer);
     function DoExternalFFMpeg(AFN: String; var AVidPath: String; AStartFrame, AFrameCount: Integer; AScale: Double; out
       AFPS: Double): String;
   public
@@ -520,7 +521,8 @@ type
     procedure GeneratePNGs;
 
     procedure Render;
-    procedure ReframeUI(AWidth, AHeight: Integer);
+
+    procedure Test;
 
     // encoder state variables
 
@@ -1402,7 +1404,7 @@ procedure TTilingEncoder.Dither;
     QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, FQuantizerUseYakmo, FQuantizerDennisLeeBitsPerComponent, IfThen(FDitheringUseGamma, 0, -1));
   end;
 
-  procedure DoFinish(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
@@ -1421,13 +1423,19 @@ begin
   ProgressRedraw(1);
 
   for i := 0 to High(FKeyFrames) do
+  begin
     SetLength(FKeyFrames[i].PaletteUseCount, FPaletteCount);
+    FKeyFrames[i].PalettesLeft := FPaletteCount;
+  end;
   ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Length(FKeyFrames) * FPaletteCount - 1);
   for i := 0 to High(FKeyFrames) do
+  begin
     FinishQuantizePalettes(FKeyFrames[i]);
+    FKeyFrames[i].PalettesLeft := -1;
+  end;
   ProgressRedraw(2);
 
-  ProcThreadPool.DoParallelLocalProc(@DoFinish, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
   ProgressRedraw(3);
   for i := 0 to High(FKeyFrames) do
     SetLength(FKeyFrames[i].PaletteUseCount, 0);
@@ -1491,7 +1499,7 @@ begin
 
   for kf := 0 to high(FKeyFrames) do
   begin
-    FKeyFrames[kf].FTPalettesLeft := FPaletteCount;
+    FKeyFrames[kf].PalettesLeft := FPaletteCount;
     SetLength(FKeyFrames[kf].TileDS, FPaletteCount);
     SetLength(FKeyFrames[kf].FTPaletteDoneEvent, FPaletteCount);
     for i := 0 to FPaletteCount - 1 do
@@ -2262,8 +2270,8 @@ end;
 
 procedure TTilingEncoder.ReframeUI(AWidth, AHeight: Integer);
 begin
-  FTileMapWidth := min(AWidth, 1920 div cTileWidth);
-  FTileMapHeight := min(AHeight, 1080 div cTileWidth);
+  FTileMapWidth := AWidth;
+  FTileMapHeight := AHeight;
 
   FTileMapSize := FTileMapWidth * FTileMapHeight;
   FScreenWidth := FTileMapWidth * cTileWidth;
@@ -2337,12 +2345,13 @@ var
   sx, sy, i, j, k, cnt, BIRCHClusterCount: Integer;
   GTile: PTile;
 
-  Dataset, YakmoDataset: TFloatDynArray2;
+  Dataset: TFloatDynArray2;
+  YakmoDataset: TDoubleDynArray2;
   Clusters, YakmoClusters: TIntegerDynArray;
   di: Integer;
 
   BIRCH: PBIRCH;
-  Yakmo: PYakmoSingle;
+  Yakmo: PYakmo;
 begin
   SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
   SetLength(Clusters, Length(Dataset));
@@ -2394,11 +2403,11 @@ begin
 
     if BIRCHClusterCount > FPaletteCount then
     begin
-      Yakmo := yakmo_single_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
-      yakmo_single_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
+      Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
+      yakmo_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
       SetLength(YakmoDataset, 0); // free up some memmory
-      yakmo_single_train_on_data(Yakmo, @YakmoClusters[0]);
-      yakmo_single_destroy(Yakmo);
+      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+      yakmo_destroy(Yakmo);
     end
     else
     begin
@@ -2536,10 +2545,11 @@ var
   var
     i, di, sy, sx, ty, tx: Integer;
     rr, gg, bb: Byte;
+    l, a, b: TFloat;
     GTile: PTile;
-    Dataset, Centroids: TFloatDynArray2;
+    Dataset, Centroids: TDoubleDynArray2;
     Clusters: TIntegerDynArray;
-    Yakmo: PYakmoSingle;
+    Yakmo: PYakmo;
     CMItem: PCountIndex;
   begin
     di := 0;
@@ -2553,12 +2563,6 @@ var
         end;
 
     SetLength(Centroids, FPaletteSize, cFeatureCount);
-    for i := 0 to FPaletteSize - 1 do
-    begin
-      Centroids[i, 0] := NaN;
-      Centroids[i, 1] := NaN;
-      Centroids[i, 2] := NaN;
-    end;
 
     if di >= FPaletteSize then
     begin
@@ -2580,9 +2584,10 @@ var
                 for tx := 0 to cTileWidth - 1 do
                 begin
                   FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
-                  Dataset[di, 0] := GammaCorrect(ADitheringGamma, rr);
-                  Dataset[di, 1] := GammaCorrect(ADitheringGamma, gg);
-                  Dataset[di, 2] := GammaCorrect(ADitheringGamma, bb);
+                  RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
+                  Dataset[di, 0] := l;
+                  Dataset[di, 1] := a;
+                  Dataset[di, 2] := b;
                   Inc(di);
                 end;
 
@@ -2592,14 +2597,14 @@ var
 
       // use KMeans to quantize to FPaletteSize elements
 
-      Yakmo := yakmo_single_create(FPaletteSize, 1, 200, 1, 0, 0, 0);
-      yakmo_single_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
+      Yakmo := yakmo_create(FPaletteSize, 1, -1, 1, 0, 0, 0);
+      yakmo_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
 
       SetLength(Dataset, 0); // free up some memmory
 
-      yakmo_single_train_on_data(Yakmo, @Clusters[0]);
-      yakmo_single_get_centroids(Yakmo, @Centroids[0]);
-      yakmo_single_destroy(Yakmo);
+      yakmo_train_on_data(Yakmo, @Clusters[0]);
+      yakmo_get_centroids(Yakmo, @Centroids[0]);
+      yakmo_destroy(Yakmo);
     end;
 
     // retrieve palette data
@@ -2611,9 +2616,11 @@ var
 
       if di >= FPaletteSize then
       begin
-        CMItem^.R := GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 0], 1.0));
-        CMItem^.G := GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 1], 1.0));
-        CMItem^.B := GammaUncorrect(ADitheringGamma, NanDef(Centroids[i, 2], 1.0));
+        CMItem^.R := 255;
+        CMItem^.G := 255;
+        CMItem^.B := 255;
+        if not IsNan(Centroids[i, 0]) and not IsNan(Centroids[i, 1]) and  not IsNan(Centroids[i, 2]) then
+          FromRGB(LABToRGB(Centroids[i, 0], Centroids[i, 1], Centroids[i, 2], ADitheringGamma), CMItem^.R, CMItem^.G, CMItem^.B);
       end;
 
       CMItem^.Count := 0;
@@ -2651,7 +2658,7 @@ begin
     CMPal.Free;
   end;
 
-  if APalIdx = FPaletteCount - 1 then
+  if InterLockedDecrement(AKeyFrame.PalettesLeft) <= 0 then
     WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Quantization end');
 end;
 
@@ -2839,7 +2846,7 @@ begin
   y := yy; u := uu; v := vv; // for safe "out" param
 end;
 
-function TTilingEncoder.YUVToRGB(y, u, v: TFloat): Integer;
+function TTilingEncoder.YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
 var
   r, g, b: TFloat;
 begin
@@ -2855,7 +2862,7 @@ begin
   {$error YUVToRGB not implemented!}
 {$endif}
 
-  Result := ToRGB(EnsureRange(Round(r * 255), 0, 255), EnsureRange(Round(g * 255), 0, 255), EnsureRange(Round(b * 255), 0, 255));
+  Result := ToRGB(GammaUncorrect(GammaCor, r), GammaUncorrect(GammaCor, g), GammaUncorrect(GammaCor, b));
 end;
 
 procedure TTilingEncoder.RGBToHSV(col: Integer; out h, s, v: TFloat);
@@ -2881,21 +2888,21 @@ begin
   if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
   if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
 
-  // CIE XYZ color space from the Wrightâ€“Guild data
+  // CIE XYZ color space from the Wright–Guild data
   x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
   y := (r * 0.17697 + g * 0.81240 + b * 0.01063) / 0.17697;
   z := (r * 0.00000 + g * 0.01000 + b * 0.99000) / 0.17697;
 
 {$if True}
   // Illuminant D50
-  x /= 96.6797 / 100;
-  y /= 100.000 / 100;
-  z /= 82.5188 / 100;
+  x *= 1 / (96.6797 / 100);
+  y *= 1 / (100.000 / 100);
+  z *= 1 / (82.5188 / 100);
 {$else}
   // Illuminant D65
-  x /= 95.0470 / 100;
-  y /= 100.000 / 100;
-  z /= 108.883 / 100;
+  x *= 1 / (95.0470 / 100);
+  y *= 1 / (100.000 / 100);
+  z *= 1 / (108.883 / 100);
 {$endif}
 
   if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
@@ -2917,7 +2924,7 @@ begin
   ob := bb;
 end;
 
-function TTilingEncoder.LABToRGB(ll, aa, bb: TFloat): Integer;
+function TTilingEncoder.LABToRGB(ll, aa, bb: TFloat; GammaCor: Integer): Integer;
 var
   x, y, z, r, g, b: TFloat;
 begin
@@ -2938,28 +2945,29 @@ begin
   else
     z := (z - 16 / 116) / 7.787;
 
+  // Illuminant D50
   x := 96.6797 / 100 * x;
   y := 100.000 / 100 * y;
-  z := 182.5188 / 100 * z;
+  z := 82.5188 / 100 * z;
 
   r := x * 0.41847 + y * (-0.15866) + z * (-0.082835);
   g := x * (-0.091169) + y * 0.25243 + z * 0.015708;
   b := x * 0.00092090 + y * (-0.0025498) + z * 0.17860;
 
-  if r > 0.04045 then
+  if r > 0.0031308 then
     r := 1.055 * Power(r, 1 / 2.4) - 0.055
   else
     r := 12.92 * r;
-  if g > 0.04045 then
+  if g > 0.0031308 then
     g := 1.055 * Power(g, 1 / 2.4) - 0.055
   else
     g := 12.92 * g;
-  if b > 0.04045 then
+  if b > 0.0031308 then
     b := 1.055 * Power(b, 1 / 2.4) - 0.055
   else
     b := 12.92 * b;
 
-  Result := ToRGB(EnsureRange(Round(r * 255), 0, 255), EnsureRange(Round(g * 255), 0, 255), EnsureRange(Round(b * 255), 0, 255));
+  Result := ToRGB(GammaUncorrect(GammaCor, r), GammaUncorrect(GammaCor, g), GammaUncorrect(GammaCor, b));
 end;
 
 procedure TTilingEncoder.SetDitheringYliluoma2MixedColors(AValue: Integer);
@@ -3939,6 +3947,25 @@ begin
   end;
 end;
 
+procedure TTilingEncoder.Test;
+var
+  i, rng: Integer;
+  rr, gg, bb: Byte;
+  l, a, b, y, u, v: TFloat;
+begin
+  for i := 0 to 10000 do
+  begin
+    rng := RandomRange(0, (1 shl 24) - 1);
+    FromRGB(rng, rr, gg, bb);
+
+    RGBToLAB(rr, gg, bb, -1, l, a, b);
+    assert(rng = LABToRGB(l, a ,b, -1));
+
+    RGBToYUV(rr, gg, bb, -1, y, u, v);
+    assert(rng = YUVToRGB(y, u, v, -1));
+  end;
+end;
+
 // from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
 procedure TTilingEncoder.RGBToHSV(col: Integer; out h, s, v: Byte);
 var
@@ -4244,11 +4271,11 @@ begin
 
   AKF.TileDS[APaletteIndex] := nil;
   SetEvent(AKF.FTPaletteDoneEvent[APaletteIndex]);
-  InterLockedDecrement(AKF.FTPalettesLeft);
+  InterLockedDecrement(AKF.PalettesLeft);
 
   Write('.');
 
-  if AKF.FTPalettesLeft <= 0 then
+  if AKF.PalettesLeft <= 0 then
   begin
     tileResd := Sqrt(AKF.FTErrCml / (FTileMapSize * AKF.FrameCount));
     WriteLn;
@@ -4617,18 +4644,19 @@ type
 
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  YakmoDataset, YakmoCentroids: TFloatDynArray2;
+  YakmoDataset, YakmoCentroids: TDoubleDynArray2;
   Clusters, YakmoClusters: TIntegerDynArray;
-  i, bin, cnt, lineIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
+  i, j, bin, cnt, lineIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
   q00, q01, q10, q11: Integer;
   v, best: TFloat;
   ToMerge: TFloatDynArray2;
   ToMergeIdxs: TIntegerDynArray;
   KMBin: PKModesBin;
-  Yakmo: PYakmoSingle;
+  Yakmo: PYakmo;
   BIRCH: PBIRCH;
   Dataset: TFloatDynArray2;
   TileIndices: TIntegerDynArray;
+  Centroid: array[0 .. cTileDCTSize - 1] of TFloat;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := KMBin^.DatasetLength;
@@ -4694,11 +4722,11 @@ begin
 
   if BIRCHClusterCount > KMBin^.ClusterCount then
   begin
-    Yakmo := yakmo_single_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 0);
-    yakmo_single_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
-    yakmo_single_train_on_data(Yakmo, @YakmoClusters[0]);
-    yakmo_single_get_centroids(Yakmo, @YakmoCentroids[0]);
-    yakmo_single_destroy(Yakmo);
+    Yakmo := yakmo_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 0);
+    yakmo_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
+    yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+    yakmo_get_centroids(Yakmo, @YakmoCentroids[0]);
+    yakmo_destroy(Yakmo);
 
     Assert(MaxIntValue(YakmoClusters) = KMBin^.ClusterCount - 1);
   end
@@ -4734,7 +4762,9 @@ begin
       clusterLineIdx := -1;
       for i := 0 to clusterLineCount - 1 do
       begin
-        v := CompareEuclideanDCT(ToMerge[i], YakmoCentroids[clusterIdx]);
+        for j := 0 to cTileDCTSize - 1 do
+          Centroid[j] := YakmoCentroids[clusterIdx, j];
+        v := CompareEuclideanDCT(ToMerge[i], Centroid);
         if v < best then
         begin
           best := v;
