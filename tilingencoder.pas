@@ -4732,8 +4732,6 @@ begin
     yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
     yakmo_get_centroids(Yakmo, @YakmoCentroids[0]);
     yakmo_destroy(Yakmo);
-
-    Assert(MaxIntValue(YakmoClusters) = KMBin^.ClusterCount - 1);
   end
   else
   begin
