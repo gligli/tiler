@@ -571,6 +571,7 @@ begin
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
+  FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
   FTilingEncoder.ReloadTileset := chkReload.Checked;
   FTilingEncoder.ReloadTilesetFileName := edReload.Text;
 

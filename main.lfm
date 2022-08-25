@@ -168,7 +168,7 @@ object MainForm: TMainForm
         Width = 71
         Increment = 1000
         MaxValue = 1000000000
-        OnChange = UpdateGUI
+        OnChange = seMaxTilesEditingDone
         OnEditingDone = seMaxTilesEditingDone
         TabOrder = 12
       end
@@ -398,7 +398,7 @@ object MainForm: TMainForm
         Increment = 0.1
         MaxValue = 100
         MinValue = 0.1
-        OnChange = UpdateGUI
+        OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
         TabOrder = 13
         Value = 2
