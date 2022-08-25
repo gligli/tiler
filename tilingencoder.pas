@@ -4675,12 +4675,17 @@ begin
     if bin <> AIndex then
       Continue;
 
+    // enforce a 'spin' on tiles mirrors (brighter top-left corner)
+
     q00 := GetTileZoneSum(FTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
     q01 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
     q10 := GetTileZoneSum(FTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
     q11 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
 
-    ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, q00 + q10 < q01 + q11, q00 + q01 < q10 + q11, -1, nil, @Dataset[cnt, 0]);
+    if (q00 + q10 < q01 + q11) then HMirrorPalTile(FTiles[i]^);
+    if (q00 + q01 < q10 + q11) then VMirrorPalTile(FTiles[i]^);
+
+    ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
 
     TileIndices[cnt] := i;
     Inc(cnt);
@@ -4756,7 +4761,7 @@ begin
 
     // choose a tile from the cluster
 
-    if clusterLineCount >= 2 then
+    if clusterLineCount >= 1 then
     begin
       best := MaxSingle;
       clusterLineIdx := -1;
