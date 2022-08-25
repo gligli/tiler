@@ -144,8 +144,10 @@ type
   // ShortTileIdx:      data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
   // LongTileIdx:       data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
   // LoadPalette:       data -> palette index (8 bits); palette format (8 bits) (0: RGBA32); RGBA bytes (32bits); commandBits -> none
-  // ShortBlendTileIdx: data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // LongLendTileIdx:   data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+  // ShortBlendTileIdx: data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
+  //                      commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+  // LongLendTileIdx:   data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
+  //                      commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
   //
   // (insert new commands here...)
   //
@@ -5060,18 +5062,13 @@ end;
 procedure TTilingEncoder.SaveStream(AStream: TStream; AFTBlend: Integer);
 const
   CGTMCommandsCount = Ord(High(TGTMCommand)) + 1;
-  CGTMCommandsBits = round(ln(CGTMCommandsCount) / ln(2));
-  CGTMAttributeBits = 16 - CGTMCommandsBits;
+  CGTMCommandCodeBits = round(ln(CGTMCommandsCount) / ln(2));
+  CGTMCommandBits = 16 - CGTMCommandCodeBits;
   CMinBlkSkipCount = 1;
-  CMaxBlkSkipCount = 1 shl CGTMAttributeBits;
+  CMaxBlkSkipCount = 1 shl CGTMCommandBits;
 
 var
   ZStream: TMemoryStream;
-
-  procedure DoDWord(v: Cardinal);
-  begin
-    ZStream.WriteDWord(v);
-  end;
 
   procedure Do3Bytes(v: Cardinal);
   begin
@@ -5081,6 +5078,11 @@ var
     ZStream.WriteByte(v and $ff);
     v := v shr 8;
     ZStream.WriteByte(v and $ff);
+  end;
+
+  procedure DoDWord(v: Cardinal);
+  begin
+    ZStream.WriteDWord(v);
   end;
 
   procedure DoWord(v: Word);
@@ -5095,34 +5097,41 @@ var
 
   procedure DoCmd(Cmd: TGTMCommand; Data: Cardinal);
   begin
-    assert(Data < (1 shl CGTMAttributeBits));
+    assert(Data < (1 shl CGTMCommandBits));
     assert(Ord(Cmd) < CGTMCommandsCount);
 
-    DoWord((Data shl CGTMCommandsBits) or Ord(Cmd));
+    DoWord((Data shl CGTMCommandCodeBits) or Ord(Cmd));
   end;
 
-  procedure DoTMI(TMI: TTileMapItem);
+  function ExtractTMIAttributes(const TMI: TTileMapItem; out attrs, blend: Word; out isBlend: Boolean): Integer;
+  begin
+    attrs := (TMI.SmoothedPalIdx shl 2) or (Ord(TMI.SmoothedVMirror) shl 1) or Ord(TMI.SmoothedHMirror);
+    blend := (Word(TMI.BlendY and $f) shl 12) or (Word(TMI.BlendX and $f) shl 8) or (Word(TMI.BlendPrev and $f) shl 4) or Word(TMI.BlendCur and $f);
+    isBlend := (AFTBlend < 0) or ((TMI.BlendPrev = 0) and (TMI.BlendCur = cMaxFTBlend - 1)) and not FTiles[TMI.TileIdx]^.Additional;
+    Result := TMI.SmoothedTileIdx;
+  end;
+
+  procedure DoTMI(const TMI: TTileMapItem);
   var
+    tileIdx: Integer;
     attrs, blend: Word;
     isBlend: Boolean;
   begin
     Assert((TMI.SmoothedPalIdx >= 0) and (TMI.SmoothedPalIdx < FPaletteCount));
 
-    attrs := (TMI.SmoothedPalIdx shl 2) or (Ord(TMI.SmoothedVMirror) shl 1) or Ord(TMI.SmoothedHMirror);
-    blend := (Word(TMI.BlendY and $f) shl 12) or (Word(TMI.BlendX and $f) shl 8) or (Word(TMI.BlendPrev and $f) shl 4) or Word(TMI.BlendCur and $f);
-    isBlend := (AFTBlend < 0) or ((TMI.BlendPrev = 0) and (TMI.BlendCur = cMaxFTBlend - 1)) and not FTiles[TMI.TileIdx]^.Additional;
+    tileIdx := ExtractTMIAttributes(TMI, attrs, blend, isBlend);
 
-    if TMI.TileIdx < (1 shl 16) then
+    if tileIdx < (1 shl 16) then
     begin
       if isBlend then
       begin
         DoCmd(gtShortTileIdx, attrs);
-        DoWord(TMI.SmoothedTileIdx);
+        DoWord(tileIdx);
       end
       else
       begin
         DoCmd(gtShortBlendTileIdx, attrs);
-        DoWord(TMI.SmoothedTileIdx);
+        DoWord(tileIdx);
         DoWord(blend);
       end;
     end
@@ -5131,12 +5140,12 @@ var
       if isBlend then
       begin
         DoCmd(gtLongTileIdx, attrs);
-        DoDWord(TMI.SmoothedTileIdx);
+        DoDWord(tileIdx);
       end
       else
       begin
         DoCmd(gtLongBlendTileIdx, attrs);
-        DoDWord(TMI.SmoothedTileIdx);
+        DoDWord(tileIdx);
         DoWord(blend);
       end;
     end;
@@ -5204,11 +5213,11 @@ var
         frm := FFrames[fri];
         for ty := 0 to FTileMapHeight - 1 do
           for tx := 0 to FTileMapWidth - 1 do
-           begin
-             tmi := @frm.TileMap[ty, tx];
-             if FTiles[tmi^.SmoothedTileIdx]^.IntraKF then
-               IntraList.Add(tmi^.SmoothedTileIdx);
-           end;
+          begin
+            tmi := @frm.TileMap[ty, tx];
+            if FTiles[tmi^.SmoothedTileIdx]^.IntraKF then
+              IntraList.Add(tmi^.SmoothedTileIdx);
+          end;
       end;
 
       WriteListTiles(IntraList);
