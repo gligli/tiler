@@ -6,7 +6,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, LazLogger,
-  Forms, Controls, Graphics, Dialogs, ExtCtrls, StdCtrls, ComCtrls, Spin, Menus, IntfGraphics,
+  Forms, Controls, Graphics, Dialogs, ExtCtrls, StdCtrls, ComCtrls, Spin, Menus, IntfGraphics, Buttons,
   FPimage, FPCanvas, FPWritePNG, GraphType, MTProcs, extern, tilingencoder;
 
 type
@@ -17,6 +17,7 @@ type
     btnInput: TButton;
     btnGTM: TButton;
     btnRunAll: TButton;
+    btnPM: TButton;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
@@ -58,13 +59,17 @@ type
     Label7: TLabel;
     Label9: TLabel;
     lblPct: TLabel;
-    MenuItem8: TMenuItem;
+    miLoadSettings: TMenuItem;
+    miGeneratePNGs: TMenuItem;
+    miSaveSettings: TMenuItem;
     odFFInput: TOpenDialog;
+    odSettings: TOpenDialog;
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
     sbTiles: TScrollBox;
     sdGTM: TSaveDialog;
+    sdSettings: TSaveDialog;
     sdGTS: TSaveDialog;
     seFTBlendThres: TFloatSpinEdit;
     seQbTiles: TFloatSpinEdit;
@@ -105,6 +110,7 @@ type
     procedure btnDoMakeUniqueClick(Sender: TObject);
     procedure btnDoGlobalTilingClick(Sender: TObject);
     procedure btnDoFrameTilingClick(Sender: TObject);
+    procedure btnPMClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
@@ -125,6 +131,8 @@ type
     procedure imgPaletteDblClick(Sender: TObject);
     procedure btnGeneratePNGsClick(Sender: TObject);
     procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
+    procedure miLoadSettingsClick(Sender: TObject);
+    procedure miSaveSettingsClick(Sender: TObject);
     procedure seMaxTilesEditingDone(Sender: TObject);
     procedure seQbTilesEditingDone(Sender: TObject);
     procedure UpdateVideo(Sender: TObject);
@@ -132,6 +140,7 @@ type
   private
     FLastIOTabSheet: TTabSheet;
     FTilingEncoder: TTilingEncoder;
+    FLockChanges: Boolean;
 
     procedure TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);
   end;
@@ -197,6 +206,16 @@ begin
   UpdateVideo(nil);
 end;
 
+procedure TMainForm.btnPMClick(Sender: TObject);
+var
+  pt: TPoint;
+begin
+  pt.X := btnPM.Left;
+  pt.Y := btnPM.Top + btnPM.Height;
+  pt := ClientToScreen(pt);
+  pmProcesses.PopUp(pt.X, pt.Y);
+end;
+
 procedure TMainForm.btnLoadClick(Sender: TObject);
 begin
   FTilingEncoder.Load;
@@ -233,6 +252,62 @@ begin
   ACanvas.Brush.Color := clBlack;
   ACanvas.Brush.Style := bsSolid;
   ACanvas.Clear;
+end;
+
+procedure TMainForm.miLoadSettingsClick(Sender: TObject);
+begin
+  if FileExists(edInput.Text) then
+    odSettings.FileName := ChangeFileExt(edInput.Text, '.gtm_settings');
+  if odSettings.Execute then
+  begin
+    FLockChanges := True;
+    try
+     FTilingEncoder.LoadSettings(odSettings.FileName);
+
+     edInput.Text := FTilingEncoder.InputFileName;
+     edOutput.Text := FTilingEncoder.OutputFileName;
+     seStartFrame.Value := FTilingEncoder.StartFrame;
+     seFrameCount.Value := FTilingEncoder.FrameCount;
+     cbxScaling.Text := FloatToStr(FTilingEncoder.Scaling);
+
+     cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
+     cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
+     chkUseKMQuant.Checked := FTilingEncoder.QuantizerUseYakmo;
+     cbxDLBPC.Text := IntToStr(FTilingEncoder.QuantizerDennisLeeBitsPerComponent);
+     chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
+     chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
+     cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
+
+     seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
+     seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
+     chkReload.Checked := FTilingEncoder.ReloadTileset;
+     edReload.Text := FTilingEncoder.ReloadTilesetFileName;
+
+     chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
+     seFTBlend.Value := FTilingEncoder.FrameTilingBlendingSize;
+     seFTBlendThres.Value := FTilingEncoder.FrameTilingBlendingThreshold;
+
+     seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
+     seAddlTiles.Value := FTilingEncoder.SmoothingAdditionalTilesThreshold;
+
+     seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
+    finally
+      FLockChanges := False;
+    end;
+
+    UpdateGUI(nil);
+  end;
+end;
+
+procedure TMainForm.miSaveSettingsClick(Sender: TObject);
+begin
+  if FileExists(edInput.Text) then
+    sdSettings.FileName := ChangeFileExt(edInput.Text, '.gtm_settings');
+  if sdSettings.Execute then
+  begin
+    UpdateGUI(nil);
+    FTilingEncoder.SaveSettings(sdSettings.FileName);
+  end;
 end;
 
 procedure TMainForm.btnRunAllClick(Sender: TObject);
@@ -315,6 +390,8 @@ begin
   seFTBlendThres.Value := 1.0;
 
   FTilingEncoder.Test;
+
+  UpdateGUI(nil);
 end;
 
 procedure TMainForm.btnDebug2Click(Sender: TObject);
@@ -327,6 +404,8 @@ begin
   seFTBlend.Value := 3;
 
   FTilingEncoder.Test;
+
+  UpdateGUI(nil);
 end;
 
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
@@ -459,11 +538,13 @@ end;
 
 procedure TMainForm.UpdateGUI(Sender: TObject);
 begin
+  if FLockChanges then
+    Exit;
+
   tbFrame.Min := 0;
   tbFrame.Max := FTilingEncoder.FrameCount - 1;
   IdleTimer.Interval := round(1000 / FTilingEncoder.FramesPerSecond);
   FLastIOTabSheet := pcPages.ActivePage;
-
 
   FTilingEncoder.InputFileName := edInput.Text;
   FTilingEncoder.OutputFileName := edOutput.Text;
@@ -490,8 +571,6 @@ begin
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
-  FTilingEncoder.GlobalTilingTileCount := seMaxTiles.Value;
-  FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
   FTilingEncoder.ReloadTileset := chkReload.Checked;
   FTilingEncoder.ReloadTilesetFileName := edReload.Text;
 

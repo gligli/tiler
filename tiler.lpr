@@ -44,16 +44,41 @@ end;
 
 var
   EvtHolder: TEvtHolder;
+  Encoder: TTilingEncoder;
 begin
-  EvtHolder := TEvtHolder.Create;
-  try
-    RequireDerivedFormResource:=True;
-    Application.Initialize;
-    Application.CreateForm(TMainForm, MainForm);
-    Application.OnException := @EvtHolder.AppException;
-    Application.Run;
-  finally
-    EvtHolder.Free;
+  if ParamCount <= 0 then
+  begin
+    EvtHolder := TEvtHolder.Create;
+    try
+      RequireDerivedFormResource:=True;
+      Application.Initialize;
+      Application.CreateForm(TMainForm, MainForm);
+      Application.OnException := @EvtHolder.AppException;
+      Application.Run;
+    finally
+      EvtHolder.Free;
+    end;
+  end
+  else
+  begin
+    Encoder := TTilingEncoder.Create;
+    try
+      Encoder.LoadSettings(ParamStr(1));
+
+      Encoder.Load;
+      Encoder.Dither;
+      Encoder.MakeUnique;
+      Encoder.GlobalTiling;
+      Encoder.FrameTiling;
+      Encoder.Reindex;
+      Encoder.Smooth;
+      Encoder.Save;
+
+    finally
+      Encoder.Free;
+    end;
+
+    ReadLn;
   end;
 end.
 

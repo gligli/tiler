@@ -9,7 +9,7 @@ unit tilingencoder;
 interface
 
 uses
-  windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger,
+  windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger, IniFiles,
   Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc;
 
 type
@@ -520,9 +520,11 @@ type
     procedure Reindex;
     procedure Smooth;
     procedure Save;
-    procedure GeneratePNGs;
 
     procedure Render;
+    procedure GeneratePNGs;
+    procedure SaveSettings(ASettingsFileName: String);
+    procedure LoadSettings(ASettingsFileName: String);
 
     procedure Test;
 
@@ -1551,8 +1553,9 @@ var
   fn: String;
   bmp: TPicture;
   wasAutoQ: Boolean;
+  qbTC: TFloat;
 begin
-  wasAutoQ := FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * EqualQualityTileCount(Length(FFrames) * FTileMapSize));
+  wasAutoQ := (Length(FFrames) > 0) and (FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * EqualQualityTileCount(Length(FFrames) * FTileMapSize)));
 
   ProgressRedraw(-1, esNone);
 
@@ -1622,8 +1625,9 @@ begin
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
   begin
+    qbTC := FGlobalTilingQualityBasedTileCount;
     SetGlobalTilingQualityBasedTileCount(0.0);
-    SetGlobalTilingQualityBasedTileCount(FGlobalTilingQualityBasedTileCount);
+    SetGlobalTilingQualityBasedTileCount(qbTC);
   end;
 
   ProgressRedraw(3);
@@ -3042,7 +3046,10 @@ begin
   FGlobalTilingTileCount := AValue;
 
   RawTileCount := Length(FFrames) * FTileMapSize;
-  FGlobalTilingTileCount := EnsureRange(FGlobalTilingTileCount, 1, RawTileCount);
+  if RawTileCount <> 0 then
+    FGlobalTilingTileCount := EnsureRange(FGlobalTilingTileCount, 0, RawTileCount)
+  else
+    FGlobalTilingTileCount := max(FGlobalTilingTileCount, 0);
 end;
 
 procedure TTilingEncoder.SetScaling(AValue: TFloat);
@@ -3946,6 +3953,86 @@ begin
     end;
   finally
     TTile.Dispose(PsyTile);
+  end;
+end;
+
+procedure TTilingEncoder.SaveSettings(ASettingsFileName: String);
+var
+  ini: TMemIniFile;
+begin
+  ini := TMemIniFile.Create(ASettingsFileName, []);
+  try
+
+    ini.WriteString('Load', 'InputFileName', InputFileName);
+    ini.WriteString('Load', 'OutputFileName', OutputFileName);
+    ini.WriteInteger('Load', 'StartFrame', StartFrame);
+    ini.WriteInteger('Load', 'FrameCount', FrameCount);
+    ini.WriteFloat('Load', 'Scaling', RoundTo(Double(Scaling), -7));
+
+    ini.WriteInteger('Dither', 'PaletteSize', PaletteSize);
+    ini.WriteInteger('Dither', 'PaletteCount', PaletteCount);
+    ini.WriteBool('Dither', 'QuantizerUseYakmo', QuantizerUseYakmo);
+    ini.WriteInteger('Dither', 'QuantizerDennisLeeBitsPerComponent', QuantizerDennisLeeBitsPerComponent);
+    ini.WriteBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
+    ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
+    ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
+
+    ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', RoundTo(Double(GlobalTilingQualityBasedTileCount), -7));
+    ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
+    ini.WriteBool('GlobalTiling', 'ReloadTileset', ReloadTileset);
+    ini.WriteString('GlobalTiling', 'ReloadTilesetFileName', ReloadTilesetFileName);
+
+    ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
+    ini.WriteInteger('FrameTiling', 'FrameTilingBlendingSize', FrameTilingBlendingSize);
+    ini.WriteFloat('FrameTiling', 'FrameTilingBlendingThreshold', RoundTo(Double(FrameTilingBlendingThreshold), -7));
+
+    ini.WriteFloat('Smoothing', 'SmoothingFactor', RoundTo(Double(SmoothingFactor), -7));
+    ini.WriteFloat('Smoothing', 'SmoothingAdditionalTilesThreshold', RoundTo(Double(SmoothingAdditionalTilesThreshold), -7));
+
+    ini.WriteFloat('Misc', 'EncoderGammaValue', RoundTo(Double(EncoderGammaValue), -7));
+
+  finally
+    ini.Free;
+  end;
+end;
+
+procedure TTilingEncoder.LoadSettings(ASettingsFileName: String);
+var
+  ini: TMemIniFile;
+begin
+  ini := TMemIniFile.Create(ASettingsFileName, []);
+  try
+
+    InputFileName := ini.ReadString('Load', 'InputFileName', '');
+    OutputFileName := ini.ReadString('Load', 'OutputFileName', '');
+    StartFrame := ini.ReadInteger('Load', 'StartFrame', 0);
+    FrameCount := ini.ReadInteger('Load', 'FrameCount', 0);
+    Scaling := ini.ReadFloat('Load', 'Scaling', 1.0);
+
+    PaletteSize := ini.ReadInteger('Dither', 'PaletteSize', 128);
+    PaletteCount := ini.ReadInteger('Dither', 'PaletteCount', 16);
+    QuantizerUseYakmo := ini.ReadBool('Dither', 'QuantizerUseYakmo', True);
+    QuantizerDennisLeeBitsPerComponent := ini.ReadInteger('Dither', 'QuantizerDennisLeeBitsPerComponent', 7);
+    DitheringUseGamma := ini.ReadBool('Dither', 'DitheringUseGamma', False);
+    DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', True);
+    DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', 4);
+
+    GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', 2.0);
+    GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', 0); // after GlobalTilingQualityBasedTileCount because has priority
+    ReloadTileset := ini.ReadBool('GlobalTiling', 'ReloadTileset', False);
+    ReloadTilesetFileName := ini.ReadString('GlobalTiling', 'ReloadTilesetFileName', '');
+
+    FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', False);
+    FrameTilingBlendingSize := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingSize', 3);
+    FrameTilingBlendingThreshold := ini.ReadFloat('FrameTiling', 'FrameTilingBlendingThreshold', 1.0);
+
+    SmoothingFactor := ini.ReadFloat('Smoothing', 'SmoothingFactor', 0.02);
+    SmoothingAdditionalTilesThreshold := ini.ReadFloat('Smoothing', 'SmoothingAdditionalTilesThreshold', 0.0);
+
+    EncoderGammaValue := ini.ReadFloat('Misc', 'EncoderGammaValue', 2.0);
+
+  finally
+    ini.Free;
   end;
 end;
 

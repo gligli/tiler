@@ -36,7 +36,7 @@ object MainForm: TMainForm
     TickMarks = tmBoth
     TickStyle = tsNone
     Anchors = [akLeft, akRight, akBottom]
-    TabOrder = 5
+    TabOrder = 6
   end
   object chkPlay: TCheckBox
     Left = 8
@@ -46,7 +46,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     Caption = 'Play (F11)'
     OnChange = UpdateVideo
-    TabOrder = 6
+    TabOrder = 7
   end
   object chkBlended: TCheckBox
     Left = 248
@@ -58,7 +58,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = UpdateVideo
     State = cbChecked
-    TabOrder = 9
+    TabOrder = 10
   end
   object chkMirrored: TCheckBox
     Left = 168
@@ -70,7 +70,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = UpdateVideo
     State = cbChecked
-    TabOrder = 8
+    TabOrder = 9
   end
   object chkGamma: TCheckBox
     Left = 448
@@ -81,7 +81,7 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Gamma'
     OnChange = UpdateVideo
-    TabOrder = 11
+    TabOrder = 12
   end
   object chkSmoothed: TCheckBox
     Left = 88
@@ -94,7 +94,7 @@ object MainForm: TMainForm
     Checked = True
     OnChange = UpdateVideo
     State = cbChecked
-    TabOrder = 7
+    TabOrder = 8
   end
   object lblCorrel: TLabel
     Left = 880
@@ -125,7 +125,7 @@ object MainForm: TMainForm
     AutoSize = False
     MinValue = -1
     OnChange = UpdateVideo
-    TabOrder = 10
+    TabOrder = 11
     Value = -1
   end
   object Label8: TLabel
@@ -145,7 +145,7 @@ object MainForm: TMainForm
     ActivePage = tsSettings
     Anchors = [akTop, akLeft, akRight, akBottom]
     TabIndex = 0
-    TabOrder = 4
+    TabOrder = 5
     OnChange = UpdateVideo
     object tsSettings: TTabSheet
       Caption = 'Settings'
@@ -391,14 +391,14 @@ object MainForm: TMainForm
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
-        Left = 398
+        Left = 400
         Height = 23
         Top = 119
         Width = 71
         Increment = 0.1
         MaxValue = 100
         MinValue = 0.1
-        OnChange = seQbTilesEditingDone
+        OnChange = UpdateGUI
         OnEditingDone = seQbTilesEditingDone
         TabOrder = 13
         Value = 2
@@ -687,18 +687,18 @@ object MainForm: TMainForm
     end
   end
   object cbxEndStep: TComboBox
-    Left = 244
+    Left = 288
     Height = 23
-    Top = 9
-    Width = 80
+    Top = 8
+    Width = 96
     ItemHeight = 15
     Style = csDropDownList
-    TabOrder = 2
+    TabOrder = 3
   end
   object btnRunAll: TButton
     Left = 8
     Height = 25
-    Top = 8
+    Top = 7
     Width = 72
     Caption = 'Run (F10)'
     OnClick = btnRunAllClick
@@ -706,38 +706,38 @@ object MainForm: TMainForm
     TabOrder = 0
   end
   object From: TLabel
-    Left = 84
+    Left = 112
     Height = 15
-    Top = 13
+    Top = 12
     Width = 28
     Caption = 'From'
     ParentColor = False
   end
   object cbxStartStep: TComboBox
-    Left = 124
+    Left = 152
     Height = 23
-    Top = 9
-    Width = 80
+    Top = 8
+    Width = 96
     ItemHeight = 15
     Style = csDropDownList
-    TabOrder = 1
+    TabOrder = 2
   end
   object To1: TLabel
-    Left = 220
+    Left = 264
     Height = 15
-    Top = 13
+    Top = 12
     Width = 14
     Caption = 'To'
     ParentColor = False
   end
   object pbProgress: TProgressBar
-    Left = 344
+    Left = 400
     Height = 16
     Top = 12
-    Width = 569
+    Width = 517
     Anchors = [akTop, akLeft, akRight]
     Smooth = True
-    TabOrder = 3
+    TabOrder = 4
   end
   object lblPct: TLabel
     Left = 913
@@ -751,14 +751,26 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object pnLbl: TPanel
-    Left = 344
+    Left = 400
     Height = 18
     Top = 40
-    Width = 611
+    Width = 555
     Anchors = [akTop, akLeft, akRight]
     BevelInner = bvLowered
     BevelOuter = bvNone
-    TabOrder = 12
+    TabOrder = 13
+  end
+  object btnPM: TButton
+    Left = 80
+    Height = 25
+    Top = 7
+    Width = 16
+    Caption = '6'
+    Font.Name = 'Marlett'
+    OnClick = btnPMClick
+    ParentFont = False
+    PopupMenu = pmProcesses
+    TabOrder = 1
   end
   object IdleTimer: TIdleTimer
     Interval = 42
@@ -809,9 +821,17 @@ object MainForm: TMainForm
       ShortCut = 120
       OnClick = btnSaveClick
     end
-    object MenuItem8: TMenuItem
+    object miGeneratePNGs: TMenuItem
       Caption = 'Generate PNGs'
       OnClick = btnGeneratePNGsClick
+    end
+    object miLoadSettings: TMenuItem
+      Caption = 'Load settings...'
+      OnClick = miLoadSettingsClick
+    end
+    object miSaveSettings: TMenuItem
+      Caption = 'Save settings as...'
+      OnClick = miSaveSettingsClick
     end
   end
   object odFFInput: TOpenDialog
@@ -820,18 +840,29 @@ object MainForm: TMainForm
   end
   object sdGTM: TSaveDialog
     DefaultExt = '.gtm'
-    FileName = 'C:\tiler\samples'
     Filter = 'GliGli''s TileMotion|*.gtm'
-    InitialDir = 'C:\tiler\'
     Left = 824
     Top = 368
   end
   object sdGTS: TSaveDialog
     DefaultExt = '.gts'
-    FileName = 'C:\tiler\samples.gtm'
     Filter = 'GliGli''s TileSet|*.gts'
-    InitialDir = 'C:\tiler\'
     Left = 888
     Top = 368
+  end
+  object odSettings: TOpenDialog
+    Title = 'Open settings'
+    DefaultExt = '.gtm_settings'
+    Filter = 'GTM Settings|*.gtm_settings'
+    Left = 824
+    Top = 272
+  end
+  object sdSettings: TSaveDialog
+    Title = 'Save settings as'
+    DefaultExt = '.gtm_settings'
+    Filter = 'GTM Settings|*.gtm_settings'
+    Options = [ofOverwritePrompt, ofEnableSizing, ofViewDetail]
+    Left = 888
+    Top = 272
   end
 end
