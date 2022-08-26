@@ -22,7 +22,7 @@ const
   cBitsPerComp = 8;
   cMaxFTBlend = 16;
   cFTQWeighting = False;
-  cFTBinSize = 64;
+  cFTBinSize = 512;
 
 {$if false}
   cRedMul = 2126;
@@ -486,8 +486,8 @@ type
 
     procedure ReloadPreviousTiling(AFN: String);
 
-    function HMirrorPalTile(var ATile: TTile): Boolean;
-    function VMirrorPalTile(var ATile: TTile): Boolean;
+    procedure HMirrorTile(var ATile: TTile);
+    procedure VMirrorTile(var ATile: TTile);
     procedure PrepareKFTiling(AKF: TKeyFrame; APaletteIndex, AFTGamma: Integer);
     procedure FinishKFTiling(AKF: TKeyFrame;  APaletteIndex: Integer);
     procedure DoTileBlending(AFrame: TFrame; APaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat;
@@ -3460,47 +3460,45 @@ begin
   end;
 end;
 
-function TTilingEncoder.VMirrorPalTile(var ATile: TTile): Boolean; // returns True if tile actually changed
+procedure TTilingEncoder.VMirrorTile(var ATile: TTile);
 var
   j, i: Integer;
   v, sv: Integer;
 begin
   // hardcode vertical mirror into the tile
 
-  Result := False;
   for j := 0 to cTileWidth div 2 - 1  do
     for i := 0 to cTileWidth - 1 do
     begin
       v := ATile.PalPixels[j, i];
       sv := ATile.PalPixels[cTileWidth - 1 - j, i];
       ATile.PalPixels[j, i] := sv;
-      if v <> sv then
-      begin
-        Result := True;
-        ATile.PalPixels[cTileWidth - 1 - j, i] := v;
-      end;
+      ATile.PalPixels[cTileWidth - 1 - j, i] := v;
+      v := ATile.RGBPixels[j, i];
+      sv := ATile.RGBPixels[cTileWidth - 1 - j, i];
+      ATile.RGBPixels[j, i] := sv;
+      ATile.RGBPixels[cTileWidth - 1 - j, i] := v;
     end;
 end;
 
-function TTilingEncoder.HMirrorPalTile(var ATile: TTile): Boolean; // returns True if tile actually changed
+procedure TTilingEncoder.HMirrorTile(var ATile: TTile);
 var
   i, j: Integer;
   v, sv: Integer;
 begin
   // hardcode horizontal mirror into the tile
 
-  Result := False;
   for j := 0 to cTileWidth - 1 do
     for i := 0 to cTileWidth div 2 - 1  do
     begin
       v := ATile.PalPixels[j, i];
       sv := ATile.PalPixels[j, cTileWidth - 1 - i];
       ATile.PalPixels[j, i] := sv;
-      if v <> sv then
-      begin
-        Result := True;
-        ATile.PalPixels[j, cTileWidth - 1 - i] := v;
-      end;
+      ATile.PalPixels[j, cTileWidth - 1 - i] := v;
+      v := ATile.RGBPixels[j, i];
+      sv := ATile.RGBPixels[j, cTileWidth - 1 - i];
+      ATile.RGBPixels[j, i] := sv;
+      ATile.RGBPixels[j, cTileWidth - 1 - i] := v;
     end;
 end;
 
@@ -4340,7 +4338,6 @@ begin
   New(DS^.FLANNParams);
   DS^.FLANNParams^ := CDefaultFLANNParameters;
   DS^.FLANNParams^.checks := cTileDCTSize;
-  DS^.FLANNParams^.cores := 2;
 
   DS^.FLANN := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
 
@@ -4378,84 +4375,90 @@ end;
 procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
 var
   i, blend, ox, oy, idx: Integer;
-  e, err, fc, rfc: TFloat;
+  e, err, fc, rfc, speedup: TFloat;
   prevTMI: PTileMapItem;
   DS: PTilingDataset;
-  PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
   SearchDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  SubFLANN: flann_index_t;
+  SubFLANNParams: TFLANNParameters;
+  SubDataset: array[0 .. cTileDCTSize * cFTBinSize - 1] of TFloat;
 begin
   DS := AFrame.PKeyFrame.TileDS[APaletteIndex];
 
-  // prepare KNN queries
+  for i := 0 to cFTBinSize - 1 do
+    if ACurIdxs[i] >= 0 then
+      Move(DS^.Dataset[ACurIdxs[i] * cTileDCTSize], SubDataset[i * cTileDCTSize], cTileDCTSize * SizeOf(TFloat));
 
-  for oy := y - AFTBlend to y + AFTBlend do
-  begin
-    if not InRange(oy, 0, FTileMapHeight - 1) then
-      Continue;
+  SubFLANNParams := CDefaultFLANNParameters;
+  SubFLANNParams.checks := cTileDCTSize;
+  SubFLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
+  SubFLANNParams.sorted := 0;
+  SubFLANNParams.max_neighbors := 1;
 
-    for ox := x - AFTBlend to x + AFTBlend do
+  SubFLANN := flann_build_index(@SubDataset[0], cFTBinSize, cTileDCTSize, @speedup, @SubFLANNParams);
+  try
+    for oy := y - AFTBlend to y + AFTBlend do
     begin
-      if not InRange(ox, 0, FTileMapWidth - 1) then
+      if not InRange(oy, 0, FTileMapHeight - 1) then
         Continue;
 
-      if AFrame.Index > 0 then
+      for ox := x - AFTBlend to x + AFTBlend do
       begin
-        prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
-
-        if prevTMI^.PalIdx <> APaletteIndex then
+        if not InRange(ox, 0, FTileMapWidth - 1) then
           Continue;
 
-        if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
+        if AFrame.Index > 0 then
         begin
-          ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
+          prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
+
+          if prevTMI^.PalIdx <> APaletteIndex then
+            Continue;
+
+          if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
+          begin
+            ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
+          end
+          else
+          begin
+            for i := 0 to cTileDCTSize - 1 do
+              PrevDCT[i] := DS^.Dataset[prevTMI^.FTTileDSIdx * cTileDCTSize + i];
+          end;
         end
         else
         begin
-          for i := 0 to cTileDCTSize - 1 do
-            PrevDCT[i] := DS^.Dataset[prevTMI^.FTTileDSIdx * cTileDCTSize + i];
+          if (ox <> x) or (oy <> y) then
+            Continue;
+
+          FillDWord(PrevDCT[0], cTileDCTSize, 0);
         end;
-      end
-      else
-      begin
-        if (ox <> x) or (oy <> y) then
-          Continue;
 
-        FillDWord(PrevDCT[0], cTileDCTSize, 0);
-      end;
-
-      for blend := 1 to cMaxFTBlend - 2 do
-      begin
-        fc := blend * (1.0 / (cMaxFTBlend - 1));
-        rfc := 1.0 / fc;
-
-        ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
-
-        idx := -1;
-        err := MaxSingle;
-        for i := 0 to cFTBinSize - 1 do
+        for blend := 1 to cMaxFTBlend - 2 do
         begin
-          e := CompareEuclideanDCTPtr_asm(@SearchDCT[0], @DS^.Dataset[ACurIdxs[i] * cTileDCTSize]);
-          if e < err then
+          fc := blend * (1.0 / (cMaxFTBlend - 1));
+          rfc := 1.0 / fc;
+
+          ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
+
+          flann_find_nearest_neighbors_index(SubFLANN, @SearchDCT[0], 1, @idx, @err, 1, @SubFLANNParams);
+
+          err := sqr(sqrt(err)*fc);
+
+          if (idx >= 0) and (err < AKFTilingBest.bestErr) then
           begin
-           err := e;
-           idx := ACurIdxs[i];
+            AKFTilingBest.bestErr := err;
+            AKFTilingBest.bestIdx := ACurIdxs[idx];
+            AKFTilingBest.bestBlendCur := blend;
+            AKFTilingBest.bestBlendPrev := cMaxFTBlend - 1 - blend;
+            AKFTilingBest.bestX := ox;
+            AKFTilingBest.bestY := oy;
           end;
-        end;
-
-        //
-        err := sqr(sqrt(err)*fc);
-
-        if err < AKFTilingBest.bestErr then
-        begin
-          AKFTilingBest.bestErr := err;
-          AKFTilingBest.bestIdx := idx;
-          AKFTilingBest.bestBlendCur := blend;
-          AKFTilingBest.bestBlendPrev := cMaxFTBlend - 1 - blend;
-          AKFTilingBest.bestX := ox;
-          AKFTilingBest.bestY := oy;
         end;
       end;
     end;
+
+  finally
+    flann_free_index(SubFLANN, @SubFLANNParams);
   end;
 end;
 
@@ -4749,6 +4752,7 @@ var
   Dataset: TFloatDynArray2;
   TileIndices: TIntegerDynArray;
   Centroid: array[0 .. cTileDCTSize - 1] of TFloat;
+  HMir, VMir: Boolean;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := KMBin^.DatasetLength;
@@ -4774,8 +4778,11 @@ begin
     q10 := GetTileZoneSum(FTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
     q11 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
 
-    if (q00 + q10 < q01 + q11) then HMirrorPalTile(FTiles[i]^);
-    if (q00 + q01 < q10 + q11) then VMirrorPalTile(FTiles[i]^);
+    HMir := q00 + q10 < q01 + q11;
+    VMir := q00 + q01 < q10 + q11;
+
+    if HMir then HMirrorTile(FTiles[i]^);
+    if VMir then VMirrorTile(FTiles[i]^);
 
     ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
 
