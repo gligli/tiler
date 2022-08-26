@@ -2590,10 +2590,9 @@ var
                 for tx := 0 to cTileWidth - 1 do
                 begin
                   FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
-                  RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
-                  Dataset[di, 0] := l;
-                  Dataset[di, 1] := a;
-                  Dataset[di, 2] := b;
+                  Dataset[di, 0] := rr;
+                  Dataset[di, 1] := gg;
+                  Dataset[di, 2] := bb;
                   Inc(di);
                 end;
 
@@ -2626,7 +2625,11 @@ var
         CMItem^.G := 255;
         CMItem^.B := 255;
         if not IsNan(Centroids[i, 0]) and not IsNan(Centroids[i, 1]) and  not IsNan(Centroids[i, 2]) then
-          FromRGB(LABToRGB(Centroids[i, 0], Centroids[i, 1], Centroids[i, 2], ADitheringGamma), CMItem^.R, CMItem^.G, CMItem^.B);
+        begin
+          CMItem^.R := EnsureRange(Round(Centroids[i, 0]), 0, 255);
+          CMItem^.G := EnsureRange(Round(Centroids[i, 1]), 0, 255);
+          CMItem^.B := EnsureRange(Round(Centroids[i, 2]), 0, 255);
+        end;
       end;
 
       CMItem^.Count := 0;
