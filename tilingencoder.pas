@@ -4860,6 +4860,8 @@ begin
 
     if clusterLineCount >= 1 then
     begin
+      // get the closest tile to the centroid
+
       best := MaxSingle;
       clusterLineIdx := -1;
       for i := 0 to clusterLineCount - 1 do
@@ -4873,6 +4875,8 @@ begin
           clusterLineIdx := i;
         end;
       end;
+
+      // merge centroid
 
       SpinEnter(@FLock);
       MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
