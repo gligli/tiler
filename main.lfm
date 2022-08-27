@@ -865,4 +865,10 @@ object MainForm: TMainForm
     Left = 888
     Top = 272
   end
+  object PsyVTimer: TTimer
+    Interval = 2000
+    OnTimer = PsyVTimerTimer
+    Left = 888
+    Top = 320
+  end
 end

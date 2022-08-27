@@ -67,6 +67,7 @@ type
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
+    PsyVTimer: TTimer;
     sbTiles: TScrollBox;
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
@@ -133,6 +134,7 @@ type
     procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
     procedure miLoadSettingsClick(Sender: TObject);
     procedure miSaveSettingsClick(Sender: TObject);
+    procedure PsyVTimerTimer(Sender: TObject);
     procedure seMaxTilesEditingDone(Sender: TObject);
     procedure seQbTilesEditingDone(Sender: TObject);
     procedure UpdateVideo(Sender: TObject);
@@ -308,6 +310,12 @@ begin
     UpdateGUI(nil);
     FTilingEncoder.SaveSettings(sdSettings.FileName);
   end;
+end;
+
+procedure TMainForm.PsyVTimerTimer(Sender: TObject);
+begin
+  PsyVTimer.Enabled := False;
+  UpdateVideo(Sender);
 end;
 
 procedure TMainForm.btnRunAllClick(Sender: TObject);
@@ -526,7 +534,9 @@ procedure TMainForm.UpdateVideo(Sender: TObject);
 begin
   UpdateGUI(Sender);
 
-  FTilingEncoder.Render;
+  FTilingEncoder.Render(not Assigned(Sender) or not (Sender is TTimer));
+  PsyVTimer.Enabled := False;
+  PsyVTimer.Enabled := True;
 
   imgSource.Picture.Bitmap := FTilingEncoder.InputBitmap;
   imgDest.Picture.Bitmap := FTilingEncoder.OutputBitmap;

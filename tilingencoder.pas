@@ -521,7 +521,7 @@ type
     procedure Smooth;
     procedure Save;
 
-    procedure Render;
+    procedure Render(AFast: Boolean);
     procedure GeneratePNGs;
     procedure SaveSettings(ASettingsFileName: String);
     procedure LoadSettings(ASettingsFileName: String);
@@ -1778,7 +1778,7 @@ begin
     for i := 0 to High(FFrames) do
     begin
       RenderFrameIndex := i;
-      Render;
+      Render(True);
 
       palPict.Canvas.Draw(0, 0, FOutputBitmap);
       palPict.SaveToFile(Format('%s_%.4d.png', [ChangeFileExt(FOutputFileName, ''), i]));
@@ -1787,7 +1787,7 @@ begin
     palPict.Free;
 
     RenderFrameIndex := oldRenderFrameIndex;
-    Render;
+    Render(False);
   end;
 end;
 
@@ -3675,7 +3675,7 @@ begin
   TTile.Array1DDispose(FTiles);
 end;
 
-procedure TTilingEncoder.Render;
+procedure TTilingEncoder.Render(AFast: Boolean);
 
   procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; psyTile: PTile; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean; prevtilePtr: PTile; prevPal: TIntegerDynArray; prevHmir, prevVmir: Boolean; blendCur, blendPrev: Integer);
   var
@@ -3761,7 +3761,7 @@ begin
 
   PsyTile := TTile.New(True, False);
   try
-    if not FRenderPlaying then
+    if not (FRenderPlaying or AFast) then
       SetLength(chgDCT, FTileMapHeight, FTileMapWidth, cTileDCTSize);
 
     // Global
@@ -3795,7 +3795,7 @@ begin
 
     // "Output" tab
 
-    if (FRenderPage = rpOutput) or not FRenderPlaying then
+    if (FRenderPage = rpOutput) or not (FRenderPlaying or AFast) then
     begin
       FOutputBitmap.BeginUpdate;
       try
@@ -3875,7 +3875,7 @@ begin
                 DrawTile(FOutputBitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, nil, nil, False, False, cMaxFTBlend - 1, 0);
               end;
 
-              if not FRenderPlaying then
+              if not (FRenderPlaying or AFast) then
                 ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, @chgDCT[sy, sx, 0]);
             end;
           end;
@@ -3931,7 +3931,7 @@ begin
       end;
     end;
 
-    if not FRenderPlaying then
+    if not (FRenderPlaying or AFast) then
     begin
       q := 0.0;
       i := 0;
