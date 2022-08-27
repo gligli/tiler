@@ -318,7 +318,7 @@ type
 
     FTPaletteDoneEvent: array of THandle;
     PalettesLeft: Integer;
-    FTErrCml: TFloat;
+    FTErrCml: Double;
 
     constructor Create(APaletteCount, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
@@ -2551,7 +2551,6 @@ var
   var
     i, di, sy, sx, ty, tx: Integer;
     rr, gg, bb: Byte;
-    l, a, b: TFloat;
     GTile: PTile;
     Dataset, Centroids: TDoubleDynArray2;
     Clusters: TIntegerDynArray;
@@ -3750,7 +3749,7 @@ var
   prevPal, pal: TIntegerDynArray;
   chgDCT: TFloatDynArray3;
   DCT: array[0 .. cTileDCTSize - 1] of TFloat;
-  q: TFloat;
+  q: Double;
 begin
   if Length(FFrames) <= 0 then
     Exit;
@@ -4253,6 +4252,7 @@ begin
     Inc(FTiles[BestIdx]^.UseCount, FTiles[j]^.UseCount);
 
     FTiles[j]^.Active := False;
+    FTiles[j]^.UseCount := 0;
     FTiles[j]^.MergeIndex := BestIdx;
 
     FTiles[j]^.ClearPixels;
@@ -4467,7 +4467,7 @@ procedure TTilingEncoder.DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTG
 var
   x, y, frmIdx, annQueryCount, annQueryPos: Integer;
   attrs: Byte;
-  errCml: TFloat;
+  errCml: Double;
 
   Frame: TFrame;
   tmiO: PTileMapItem;
@@ -4740,8 +4740,9 @@ type
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
   YakmoDataset, YakmoCentroids: TDoubleDynArray2;
-  Clusters, YakmoClusters: TIntegerDynArray;
-  i, j, bin, cnt, lineIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
+  BIRCHClusters, YakmoClusters: TIntegerDynArray;
+  BIRCHToDataset: TIntegerDynArray;
+  i, j, tx, ty, bin, cnt, lineIdx, birchDatasetIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
   q00, q01, q10, q11: Integer;
   v, best: TFloat;
   ToMerge: TFloatDynArray2;
@@ -4781,8 +4782,10 @@ begin
     HMir := q00 + q10 < q01 + q11;
     VMir := q00 + q01 < q10 + q11;
 
+{$if True}
     if HMir then HMirrorTile(FTiles[i]^);
     if VMir then VMirrorTile(FTiles[i]^);
+{$endif}
 
     ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
 
@@ -4793,14 +4796,31 @@ begin
 
   // cluster dataset using BIRCH + Yakmo
 
-  SetLength(Clusters, DSLen);
 
   BIRCH := birch_create(0.001, 64 * 1024 * 1024);
+
+  cnt := 0;
   for i := 0 to DSLen - 1 do
-    birch_insert_line(BIRCH, @Dataset[i, 0]);
-  birch_get_results(BIRCH, @Clusters[0]);
+    for j := 0 to FTiles[TileIndices[i]]^.UseCount - 1 do
+    begin
+      birch_insert_line(BIRCH, @Dataset[i, 0]);
+      Inc(cnt);
+    end;
+
+  SetLength(BIRCHClusters, cnt);
+  SetLength(BIRCHToDataset, cnt);
+
+  cnt := 0;
+  for i := 0 to DSLen - 1 do
+    for j := 0 to FTiles[TileIndices[i]]^.UseCount - 1 do
+    begin
+      BIRCHToDataset[cnt] := i;
+      Inc(cnt);
+    end;
+
+  birch_get_results(BIRCH, @BIRCHClusters[0]);
   birch_destroy(BIRCH);
-  BIRCHClusterCount := MaxIntValue(Clusters) + 1;
+  BIRCHClusterCount := MaxIntValue(BIRCHClusters) + 1;
 
   WriteLn('Bin: ', AIndex:2, ' DatasetSize: ', DSLen:8, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
 
@@ -4811,9 +4831,10 @@ begin
   for clusterIdx := 0 to BIRCHClusterCount - 1 do
   begin
     clusterLineCount := 0;
-    for lineIdx := 0 to DSLen - 1 do
-      if Clusters[lineIdx] = clusterIdx then
+    for birchDatasetIdx := 0 to High(BIRCHClusters) do
+      if BIRCHClusters[birchDatasetIdx] = clusterIdx then
       begin
+        lineIdx := BIRCHToDataset[birchDatasetIdx];
         for i := 0 to cTileDCTSize - 1 do
           YakmoDataset[clusterIdx, i] += Dataset[lineIdx, i];
         Inc(clusterLineCount)
@@ -4838,36 +4859,39 @@ begin
       YakmoClusters[i] := i;
   end;
 
-  SetLength(ToMerge, DSLen);
-  SetLength(ToMergeIdxs, DSLen);
+  SetLength(ToMerge, Length(BIRCHToDataset));
+  SetLength(ToMergeIdxs, Length(BIRCHToDataset));
 
   // build a list of this centroid tiles
 
   for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
   begin
     clusterLineCount := 0;
-    for lineIdx := 0 to High(TileIndices) do
-    begin
-      if YakmoClusters[Clusters[lineIdx]] = clusterIdx then
-      begin
-        ToMerge[clusterLineCount] := Dataset[lineIdx];
-        ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
-        Inc(clusterLineCount);
-      end;
-    end;
+    for yakmoDatasetIdx := 0 to High(YakmoClusters) do
+      if YakmoClusters[yakmoDatasetIdx] = clusterIdx then
+        for birchDatasetIdx := 0 to High(BIRCHClusters) do
+          if BIRCHClusters[birchDatasetIdx] = yakmoDatasetIdx then
+          begin
+            lineIdx := BIRCHToDataset[birchDatasetIdx];
+
+            ToMerge[clusterLineCount] := Dataset[lineIdx];
+            ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
+            Inc(clusterLineCount);
+          end;
 
     // choose a tile from the cluster
 
-    if clusterLineCount >= 1 then
+    if clusterLineCount >= 2 then
     begin
       // get the closest tile to the centroid
+
+      for j := 0 to cTileDCTSize - 1 do
+        Centroid[j] := YakmoCentroids[clusterIdx, j];
 
       best := MaxSingle;
       clusterLineIdx := -1;
       for i := 0 to clusterLineCount - 1 do
       begin
-        for j := 0 to cTileDCTSize - 1 do
-          Centroid[j] := YakmoCentroids[clusterIdx, j];
         v := CompareEuclideanDCT(ToMerge[i], Centroid);
         if v < best then
         begin
@@ -4934,7 +4958,7 @@ begin
   share := DesiredNbTiles / disCnt;
 
   for i := 0 to High(cnt) do
-    KMBins[i].ClusterCount := ceil(cnt[i] * share);
+    KMBins[i].ClusterCount := Max(1, Round(cnt[i] * share));
 
   InitMergeTiles;
 

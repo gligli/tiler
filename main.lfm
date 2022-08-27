@@ -430,7 +430,7 @@ object MainForm: TMainForm
         ParentColor = False
       end
       object cbxPalSize: TComboBox
-        Left = 398
+        Left = 400
         Height = 23
         Top = 96
         Width = 71
