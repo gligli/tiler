@@ -306,6 +306,7 @@ type
     FramesLeft: Integer;
 
     PaletteRGB: TIntegerDynArray2;
+    PaletteCentroids: TDoubleDynArray2;
     CS: TRTLCriticalSection;
     MixingPlans: array of TMixingPlan;
     TileDS: array of PTilingDataset;
@@ -364,7 +365,7 @@ type
     FInputFileName: String;
     FOutputFileName: String;
     FStartFrame: Integer;
-    FFrameCount: Integer;
+    FFrameCountSetting: Integer;
     FScaling: TFloat;
     FEncoderGammaValue: TFloat;
     FPaletteSize: Integer;
@@ -406,10 +407,11 @@ type
     FProgressStep: TEncoderStep;
     FProgressStartTime, FProgressPrevTime: Int64;
 
+    function GetFrameCount: Integer;
     function GetKeyFrameCount: Integer;
     procedure SetDitheringYliluoma2MixedColors(AValue: Integer);
     procedure SetEncoderGammaValue(AValue: TFloat);
-    procedure SetFrameCount(AValue: Integer);
+    procedure SetFrameCountSetting(AValue: Integer);
     procedure SetFramesPerSecond(AValue: Double);
     procedure SetFrameTilingBlendingSize(AValue: Integer);
     procedure SetFrameTilingBlendingThreshold(AValue: TFloat);
@@ -490,8 +492,8 @@ type
     procedure VMirrorTile(var ATile: TTile);
     procedure PrepareKFTiling(AKF: TKeyFrame; APaletteIndex, AFTGamma: Integer);
     procedure FinishKFTiling(AKF: TKeyFrame;  APaletteIndex: Integer);
-    procedure DoTileBlending(AFrame: TFrame; APaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat;
-      ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
+    procedure DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x, y: Integer;
+     ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
     procedure DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
@@ -542,6 +544,7 @@ type
     property TileMapWidth: Integer read FTileMapWidth;
     property TileMapHeight: Integer read FTileMapHeight;
     property TileMapSize: Integer read FTileMapSize;
+    property FrameCount: Integer read GetFrameCount;
     property KeyFrameCount: Integer read GetKeyFrameCount;
 
     // settings
@@ -549,7 +552,7 @@ type
     property InputFileName: String read FInputFileName write FInputFileName;
     property OutputFileName: String read FOutputFileName write FOutputFileName;
     property StartFrame: Integer read FStartFrame write SetStartFrame;
-    property FrameCount: Integer read FFrameCount write SetFrameCount;
+    property FrameCountSetting: Integer read FFrameCountSetting write SetFrameCountSetting;
     property Scaling: TFloat read FScaling write SetScaling;
     property EncoderGammaValue: TFloat read FEncoderGammaValue write SetEncoderGammaValue;
     property PaletteSize: Integer read FPaletteSize write SetPaletteSize;
@@ -865,6 +868,16 @@ begin
 end;
 
 function CompareEuclidean(const a, b: TFloatDynArray): TFloat; inline;
+var
+  i: Integer;
+begin
+  Result := 0;
+  for i := 0 to High(a) do
+    Result += sqr(a[i] - b[i]);
+  Result := sqrt(Result);
+end;
+
+function CompareEuclidean(const a, b: TDoubleDynArray): Double; inline;
 var
   i: Integer;
 begin
@@ -1569,7 +1582,7 @@ begin
 
   // load video
 
-  frc := FFrameCount;
+  frc := FFrameCountSetting;
 
   if FileExists(FInputFileName) then
   begin
@@ -1823,6 +1836,11 @@ end;
 function TTilingEncoder.GetKeyFrameCount: Integer;
 begin
   Result := Length(FKeyFrames);
+end;
+
+function TTilingEncoder.GetFrameCount: Integer;
+begin
+  Result := Length(FFrames);
 end;
 
 function TTilingEncoder.ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
@@ -2361,6 +2379,7 @@ var
 begin
   SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
   SetLength(Clusters, Length(Dataset));
+  SetLength(AKeyFrame.PaletteCentroids, FPaletteCount, cTileDCTSize);
 
   di := 0;
   for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
@@ -2413,6 +2432,7 @@ begin
       yakmo_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
       SetLength(YakmoDataset, 0); // free up some memmory
       yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+      yakmo_get_centroids(Yakmo, @AKeyFrame.PaletteCentroids[0]);
       yakmo_destroy(Yakmo);
     end
     else
@@ -2674,6 +2694,7 @@ procedure TTilingEncoder.FinishQuantizePalettes(AKeyFrame: TKeyFrame);
 var
   i, sy, sx, PalIdx: Integer;
   PalIdxLUT: TIntegerDynArray;
+  TmpCentroids: TDoubleDynArray2;
 begin
   SetLength(PalIdxLUT, FPaletteCount);
 
@@ -2694,6 +2715,9 @@ begin
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
         FFrames[i].TileMap[sy, sx].PalIdx := PalIdxLUT[FFrames[i].TileMap[sy, sx].PalIdx];
+  TmpCentroids := Copy(AKeyFrame.PaletteCentroids);
+  for PalIdx := 0 to FPaletteCount - 1 do
+    AKeyFrame.PaletteCentroids[PalIdxLUT[PalIdx]] := TmpCentroids[PalIdx];
 end;
 
 procedure TTilingEncoder.DitherTiles(AFrame: TFrame);
@@ -2993,10 +3017,10 @@ begin
   InitLuts(FPaletteSize, FPaletteCount);
 end;
 
-procedure TTilingEncoder.SetFrameCount(AValue: Integer);
+procedure TTilingEncoder.SetFrameCountSetting(AValue: Integer);
 begin
-  if FFrameCount = AValue then Exit;
-  FFrameCount := Max(1, AValue);
+  if FFrameCountSetting = AValue then Exit;
+  FFrameCountSetting := Max(0, AValue);
 end;
 
 procedure TTilingEncoder.SetFramesPerSecond(AValue: Double);
@@ -3966,7 +3990,7 @@ begin
     ini.WriteString('Load', 'InputFileName', InputFileName);
     ini.WriteString('Load', 'OutputFileName', OutputFileName);
     ini.WriteInteger('Load', 'StartFrame', StartFrame);
-    ini.WriteInteger('Load', 'FrameCount', FrameCount);
+    ini.WriteInteger('Load', 'FrameCount', FrameCountSetting);
     ini.WriteFloat('Load', 'Scaling', RoundTo(Double(Scaling), -7));
 
     ini.WriteInteger('Dither', 'PaletteSize', PaletteSize);
@@ -4006,7 +4030,7 @@ begin
     InputFileName := ini.ReadString('Load', 'InputFileName', '');
     OutputFileName := ini.ReadString('Load', 'OutputFileName', '');
     StartFrame := ini.ReadInteger('Load', 'StartFrame', 0);
-    FrameCount := ini.ReadInteger('Load', 'FrameCount', 0);
+    FrameCountSetting := ini.ReadInteger('Load', 'FrameCount', 0);
     Scaling := ini.ReadFloat('Load', 'Scaling', 1.0);
 
     PaletteSize := ini.ReadInteger('Dither', 'PaletteSize', 128);
@@ -4372,7 +4396,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
+procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
 var
   i, blend, ox, oy, idx: Integer;
   e, err, fc, rfc, speedup: TFloat;
@@ -4383,8 +4407,11 @@ var
   SubFLANN: flann_index_t;
   SubFLANNParams: TFLANNParameters;
   SubDataset: array[0 .. cTileDCTSize * cFTBinSize - 1] of TFloat;
+  LocalPrevPaletteDone: TBooleanDynArray;
 begin
   DS := AFrame.PKeyFrame.TileDS[APaletteIndex];
+
+  SetLength(LocalPrevPaletteDone, FPaletteCount);
 
   for i := 0 to cFTBinSize - 1 do
     if ACurIdxs[i] >= 0 then
@@ -4412,15 +4439,24 @@ begin
         begin
           prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
 
-          if prevTMI^.PalIdx <> APaletteIndex then
-            Continue;
-
           if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
           begin
+            if prevTMI^.PalIdx <> APrevKFPaletteIndex then
+              Continue;
+
+            if not LocalPrevPaletteDone[prevTMI^.PalIdx] then
+            begin
+              WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
+              LocalPrevPaletteDone[prevTMI^.PalIdx] := True;
+            end;
+
             ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
           end
           else
           begin
+            if prevTMI^.PalIdx <> APaletteIndex then
+              Continue;
+
             for i := 0 to cTileDCTSize - 1 do
               PrevDCT[i] := DS^.Dataset[prevTMI^.FTTileDSIdx * cTileDCTSize + i];
           end;
@@ -4465,9 +4501,9 @@ end;
 procedure TTilingEncoder.DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer;
   AFTBlendThres: TFloat);
 var
-  x, y, frmIdx, annQueryCount, annQueryPos: Integer;
+  x, y, frmIdx, annQueryCount, annQueryPos, palIdx, prevKFPalIdx: Integer;
   attrs: Byte;
-  errCml: Double;
+  errCml, bestPal, v: Double;
 
   Frame: TFrame;
   tmiO: PTileMapItem;
@@ -4484,6 +4520,24 @@ begin
     Exit;
 
   errCml := 0.0;
+
+  // match current KF palette to the closest prev KF palette
+
+  prevKFPalIdx := -1;
+  if AKF.StartFrame > 0 then
+  begin
+    bestPal := MaxSingle;
+    for palIdx := 0 to FPaletteCount - 1 do
+    begin
+      v := CompareEuclidean(AKF.PaletteCentroids[APaletteIndex], FFrames[AKF.StartFrame - 1].PKeyFrame.PaletteCentroids[palIdx]);
+      if v < bestPal then
+      begin
+        bestPal := v;
+        prevKFPalIdx := palIdx;
+      end;
+    end;
+  end;
+
 
   // compute KNN query count
 
@@ -4536,9 +4590,6 @@ begin
   begin
     Frame := FFrames[frmIdx];
 
-    if (frmIdx > 0) and (FFrames[frmIdx - 1].PKeyFrame <> Frame.PKeyFrame) then
-      WaitForSingleObject(FFrames[frmIdx - 1].PKeyFrame.FTPaletteDoneEvent[APaletteIndex], INFINITE); // wait prev keyframe for palette done
-
     for y := 0 to FTileMapHeight - 1 do
       for x := 0 to FTileMapWidth - 1 do
       begin
@@ -4555,7 +4606,7 @@ begin
         // try to blend a local tile of the previous frame to improve likeliness
 
         if (AFTBlend >= 0) and not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
-          DoTileBlending(Frame, APaletteIndex, AFTGamma, AFTBlend, x, y, @DCTs[annQueryPos * cTileDCTSize], @idxs[annQueryPos * cFTBinSize], @errs[annQueryPos * cFTBinSize], Best);
+          DoTileBlending(Frame, APaletteIndex, prevKFPalIdx, AFTGamma, AFTBlend, x, y, @DCTs[annQueryPos * cTileDCTSize], @idxs[annQueryPos * cFTBinSize], @errs[annQueryPos * cFTBinSize], Best);
 
         tmiO := @FFrames[Frame.Index].TileMap[y, x];
 

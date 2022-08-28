@@ -269,7 +269,7 @@ begin
      edInput.Text := FTilingEncoder.InputFileName;
      edOutput.Text := FTilingEncoder.OutputFileName;
      seStartFrame.Value := FTilingEncoder.StartFrame;
-     seFrameCount.Value := FTilingEncoder.FrameCount;
+     seFrameCount.Value := FTilingEncoder.FrameCountSetting;
      cbxScaling.Text := FloatToStr(FTilingEncoder.Scaling);
 
      cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
@@ -547,6 +547,8 @@ begin
 end;
 
 procedure TMainForm.UpdateGUI(Sender: TObject);
+var
+  i: Integer;
 begin
   if FLockChanges then
     Exit;
@@ -556,10 +558,17 @@ begin
   IdleTimer.Interval := round(1000 / FTilingEncoder.FramesPerSecond);
   FLastIOTabSheet := pcPages.ActivePage;
 
+  tbFrame.HandleNeeded;
+  for i := 0 to FTilingEncoder.FrameCount - 1 do
+    if Assigned(FTilingEncoder.Frames[i].PKeyFrame) and
+        (FTilingEncoder.Frames[i].Index = FTilingEncoder.Frames[i].PKeyFrame.StartFrame) then
+      tbFrame.SetTick(i);
+  tbFrame.PageSize := round(FTilingEncoder.FramesPerSecond);
+
   FTilingEncoder.InputFileName := edInput.Text;
   FTilingEncoder.OutputFileName := edOutput.Text;
   FTilingEncoder.StartFrame := seStartFrame.Value;
-  FTilingEncoder.FrameCount := seFrameCount.Value;
+  FTilingEncoder.FrameCountSetting := seFrameCount.Value;
   FTilingEncoder.PaletteCount := StrToIntDef(cbxPalCount.Text, 1);
   FTilingEncoder.PaletteSize := StrToIntDef(cbxPalSize.Text, 2);
   FTilingEncoder.Scaling := StrToFloatDef(cbxScaling.Text, 1.0, InvariantFormatSettings);

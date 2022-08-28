@@ -25,7 +25,7 @@ object MainForm: TMainForm
   LCLVersion = '2.2.2.0'
   object tbFrame: TTrackBar
     Left = -1
-    Height = 26
+    Height = 27
     Top = 486
     Width = 962
     Max = 0
@@ -33,9 +33,10 @@ object MainForm: TMainForm
     PageSize = 1
     Position = 0
     ShowSelRange = False
-    TickMarks = tmBoth
-    TickStyle = tsNone
+    TickStyle = tsManual
     Anchors = [akLeft, akRight, akBottom]
+    ParentColor = False
+    ParentFont = False
     TabOrder = 6
   end
   object chkPlay: TCheckBox
@@ -866,7 +867,6 @@ object MainForm: TMainForm
     Top = 272
   end
   object PsyVTimer: TTimer
-    Interval = 2000
     OnTimer = PsyVTimerTimer
     Left = 888
     Top = 320
