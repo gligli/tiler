@@ -404,7 +404,7 @@ end;
 
 procedure TMainForm.btnDebug2Click(Sender: TObject);
 begin
-  edInput.Text := 'C:\tiler_misc\factory_1080p30.y4m';
+  edInput.Text := 'C:\tiler_misc\sunflower_1080p25.y4m';
   edOutput.Text := 'C:\tiler\debug.gtm';
   edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);

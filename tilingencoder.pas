@@ -302,7 +302,7 @@ type
   { TKeyFrame }
 
   TKeyFrame = class
-    StartFrame, EndFrame, FrameCount: Integer;
+    Index, StartFrame, EndFrame, FrameCount: Integer;
     FramesLeft: Integer;
 
     PaletteRGB: TIntegerDynArray2;
@@ -321,7 +321,7 @@ type
     PalettesLeft: Integer;
     FTErrCml: Double;
 
-    constructor Create(APaletteCount, AStartFrame, AEndFrame: Integer);
+    constructor Create(AIndex, APaletteCount, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
   end;
 
@@ -1318,8 +1318,9 @@ end;
 
 { TKeyFrame }
 
-constructor TKeyFrame.Create(APaletteCount, AStartFrame, AEndFrame: Integer);
+constructor TKeyFrame.Create(AIndex, APaletteCount, AStartFrame, AEndFrame: Integer);
 begin
+  Index := AIndex;
   StartFrame := AStartFrame;
   EndFrame := AEndFrame;
   FrameCount := AEndFrame - AStartFrame + 1;
@@ -3647,10 +3648,11 @@ begin
 
     if isKf then
     begin
-      FKeyFrames[kfIdx] := TKeyFrame.Create(FPaletteCount, 0, 0);
-      Inc(kfIdx);
+      FKeyFrames[kfIdx] := TKeyFrame.Create(kfIdx, FPaletteCount, 0, 0);
 
       WriteLn('KF: ', i:8, ' (', kfIdx:3, ') Correlation: ', correl:12:9, ' Euclidean: ', euclidean:12:9);
+
+      Inc(kfIdx);
 
       euclidean := 0.0;
       LastKFIdx := i;
@@ -3900,7 +3902,7 @@ begin
               end;
 
               if not (FRenderPlaying or AFast) then
-                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, @chgDCT[sy, sx, 0]);
+                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, -1, nil, @chgDCT[sy, sx, 0]);
             end;
           end;
       finally
@@ -4805,6 +4807,8 @@ var
   TileIndices: TIntegerDynArray;
   Centroid: array[0 .. cTileDCTSize - 1] of TFloat;
   HMir, VMir: Boolean;
+  TileFrame: TFrame;
+  TileTMI: PTileMapItem;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := KMBin^.DatasetLength;
@@ -4838,7 +4842,9 @@ begin
     if VMir then VMirrorTile(FTiles[i]^);
 {$endif}
 
-    ComputeTilePsyVisFeatures(FTiles[i]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
+    TileTMI := GetTileIndexTMItem(i, TileFrame);
+
+    ComputeTilePsyVisFeatures(FTiles[i]^, True, False, False, False, False, -1, TileFrame.PKeyFrame.PaletteRGB[TileTMI^.PalIdx], @Dataset[cnt, 0]);
 
     TileIndices[cnt] := i;
     Inc(cnt);
