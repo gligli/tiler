@@ -60,7 +60,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 5, 1, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 2, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -231,6 +231,7 @@ type
     procedure ExtractPalPixels(AArray: PANNFloat);
     procedure LoadPalPixels(AArray: PANNFloat);
     function ComparePalPixelsTo(const ATile: TTile): Integer;
+    function CompareRGBPixelsTo(const ATile: TTile): Integer;
 
     property RGBPixels[y, x: Integer]: Integer read GetRGBPixels write SetRGBPixels;
     property PalPixels[y, x: Integer]: Byte read GetPalPixels write SetPalPixels;
@@ -398,6 +399,7 @@ type
     FRenderPaletteIndex: Integer;
     FRenderPlaying: Boolean;
     FRenderSmoothed: Boolean;
+    FRenderDithered: Boolean;
     FRenderTilePage: Integer;
     FOutputBitmap: TBitmap;
     FInputBitmap: TBitmap;
@@ -497,7 +499,7 @@ type
     procedure DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Integer): Integer;
-    procedure ReindexTiles;
+    procedure ReindexTiles(KeepRGBPixels: Boolean);
     procedure DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat; AddlTilesThres: TFloat; NonAddlCount: Integer);
 
     procedure SaveStream(AStream: TStream; AFTBlend: Integer);
@@ -579,6 +581,7 @@ type
     property RenderBlended: Boolean read FRenderBlended write FRenderBlended;
     property RenderMirrored: Boolean read FRenderMirrored write FRenderMirrored;
     property RenderSmoothed: Boolean read FRenderSmoothed write FRenderSmoothed;
+    property RenderDithered: Boolean read FRenderDithered write FRenderDithered;
     property RenderUseGamma: Boolean read FRenderUseGamma write FRenderUseGamma;
     property RenderPaletteIndex: Integer read FRenderPaletteIndex write SetRenderPaletteIndex;
     property RenderTilePage: Integer read FRenderTilePage write SetRenderTilePage;
@@ -1300,6 +1303,11 @@ begin
   Result := CompareDWord(GetPalPixelsPtr^[0, 0], ATile.GetPalPixelsPtr^[0, 0], sqr(cTileWidth) div SizeOf(DWORD));
 end;
 
+function TTileHelper.CompareRGBPixelsTo(const ATile: TTile): Integer;
+begin
+  Result := CompareDWord(GetRGBPixelsPtr^[0, 0], ATile.GetRGBPixelsPtr^[0, 0], sqr(cTileWidth));
+end;
+
 procedure TTileHelper.CopyFrom(const ATile: TTile);
 begin
   Active := ATile.Active;
@@ -1401,7 +1409,7 @@ begin
     SaveRawTiles(FReloadTilesetFileName);
   end;
 
-  ProgressRedraw(5);
+  ProgressRedraw(4);
 end;
 
 procedure TTilingEncoder.Dither;
@@ -1515,6 +1523,10 @@ begin
 
   ProgressRedraw(0, esFrameTiling);
 
+  ReindexTiles(False);
+
+  ProgressRedraw(1);
+
   for kf := 0 to high(FKeyFrames) do
   begin
     FKeyFrames[kf].PalettesLeft := FPaletteCount;
@@ -1535,7 +1547,7 @@ begin
     end;
   end;
 
-  ProgressRedraw(1);
+  ProgressRedraw(2);
 end;
 
 procedure TTilingEncoder.Load;
@@ -1673,7 +1685,7 @@ begin
 
   ProgressRedraw(1);
 
-  ReindexTiles;
+  ReindexTiles(False);
 
   ProgressRedraw(2);
 end;
@@ -2764,13 +2776,13 @@ begin
   LeaveCriticalSection(AFrame.PKeyFrame.CS);
 end;
 
-function CompareTilePalPixels(Item1, Item2:Pointer):Integer;
+function CompareTilePixels(Item1, Item2:Pointer):Integer;
 var
   t1, t2: PTile;
 begin
   t1 := PTile(Item1);
   t2 := PTile(Item2);
-  Result := t1^.ComparePalPixelsTo(t2^);
+  Result := t1^.CompareRGBPixelsTo(t2^);
 end;
 
 procedure TTilingEncoder.MakeTilesUnique(FirstTileIndex, TileCount: Integer);
@@ -2811,13 +2823,13 @@ begin
       end;
     sortList.Count := pos;
 
-    sortList.Sort(@CompareTilePalPixels);
+    sortList.Sort(@CompareTilePixels);
 
     // merge exactly similar tiles (so, consecutive after prev code)
 
     firstSameIdx := 0;
     for i := 1 to sortList.Count - 1 do
-      if PTile(sortList[i - 1])^.ComparePalPixelsTo(PTile(sortList[i])^) <> 0 then
+      if PTile(sortList[i - 1])^.CompareRGBPixelsTo(PTile(sortList[i])^) <> 0 then
         DoOneMerge;
 
     i := sortList.Count;
@@ -3729,18 +3741,30 @@ procedure TTilingEncoder.Render(AFast: Boolean);
         if tilePtr^.Active then
         begin
           if Assigned(pal) then
-            FromRGB(pal[tilePtr^.PalPixels[tym, txm]], r, g, b)
+          begin
+            if tilePtr^.HasPalPixels then
+              FromRGB(pal[tilePtr^.PalPixels[tym, txm]], r, g, b)
+          end
           else
-            FromRGB(tilePtr^.RGBPixels[tym, txm], r, g, b);
+          begin
+            if tilePtr^.HasRGBPixels then
+              FromRGB(tilePtr^.RGBPixels[tym, txm], r, g, b);
+          end;
         end;
 
         pr := 0; pg := 255; pb := 255;
         if Assigned(prevtilePtr) and prevtilePtr^.Active then
         begin
           if Assigned(prevPal) then
-            FromRGB(prevPal[prevtilePtr^.PalPixels[ptym, ptxm]], pr, pg, pb)
+          begin
+            if prevtilePtr^.HasPalPixels then
+              FromRGB(prevPal[prevtilePtr^.PalPixels[ptym, ptxm]], pr, pg, pb)
+          end
           else
-            FromRGB(prevtilePtr^.RGBPixels[ptym, ptxm], pr, pg, pb);
+          begin
+            if prevtilePtr^.HasRGBPixels then
+              FromRGB(prevtilePtr^.RGBPixels[ptym, ptxm], pr, pg, pb);
+          end;
         end;
 
         r := min((r * blendCur + pr * blendPrev) div (cMaxFTBlend - 1), 255);
@@ -3798,15 +3822,15 @@ begin
 
     if FRenderPage = rpInput then
     begin
+      FInputBitmap.Canvas.Brush.Color := clBlack;
+      FInputBitmap.Canvas.Brush.Style := bsSolid;
+      FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
+      FInputBitmap.Canvas.Brush.Color := $202020;
+      FInputBitmap.Canvas.Brush.Style := bsDiagCross;
+      FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
+
       FInputBitmap.BeginUpdate;
       try
-        FInputBitmap.Canvas.Brush.Color := clBlack;
-        FInputBitmap.Canvas.Brush.Style := bsSolid;
-        FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
-        FInputBitmap.Canvas.Brush.Color := $202020;
-        FInputBitmap.Canvas.Brush.Style := bsDiagCross;
-        FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
-
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
           begin
@@ -3823,15 +3847,15 @@ begin
 
     if (FRenderPage = rpOutput) or not (FRenderPlaying or AFast) then
     begin
+      FOutputBitmap.Canvas.Brush.Color := clBlack;
+      FOutputBitmap.Canvas.Brush.Style := bsSolid;
+      FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
+      FOutputBitmap.Canvas.Brush.Color := $202020;
+      FOutputBitmap.Canvas.Brush.Style := bsDiagCross;
+      FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
+
       FOutputBitmap.BeginUpdate;
       try
-        FOutputBitmap.Canvas.Brush.Color := clBlack;
-        FOutputBitmap.Canvas.Brush.Style := bsSolid;
-        FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
-        FOutputBitmap.Canvas.Brush.Color := $202020;
-        FOutputBitmap.Canvas.Brush.Style := bsDiagCross;
-        FOutputBitmap.Canvas.FillRect(FOutputBitmap.Canvas.ClipRect);
-
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
           begin
@@ -3866,18 +3890,19 @@ begin
             if InRange(TMItem.TileIdx, 0, High(FTiles)) then
             begin
               pal := nil;
-              if FRenderPaletteIndex < 0 then
-              begin
-                if not InRange(TMItem.PalIdx, 0, High(Frame.PKeyFrame.PaletteRGB)) then
-                  Continue;
-                pal := Frame.PKeyFrame.PaletteRGB[TMItem.PalIdx]
-              end
-              else
-              begin
-                if FRenderPaletteIndex <> TMItem.PalIdx then
-                  Continue;
-                pal := Frame.PKeyFrame.PaletteRGB[FRenderPaletteIndex];
-              end;
+              if FRenderDithered then
+                if FRenderPaletteIndex < 0 then
+                begin
+                  if not InRange(TMItem.PalIdx, 0, High(Frame.PKeyFrame.PaletteRGB)) then
+                    Continue;
+                  pal := Frame.PKeyFrame.PaletteRGB[TMItem.PalIdx]
+                end
+                else
+                begin
+                  if FRenderPaletteIndex <> TMItem.PalIdx then
+                    Continue;
+                  pal := Frame.PKeyFrame.PaletteRGB[FRenderPaletteIndex];
+                end;
 
               prevTilePtr := nil;
               tilePtr := FTiles[TMItem.TileIdx];
@@ -3888,7 +3913,10 @@ begin
               begin
                 if prevTMItem.TileIdx >= 0 then
                 begin
-                  prevPal := FFrames[prevFrmIdx].PKeyFrame.PaletteRGB[prevTMItem.PalIdx];
+                  prevPal := nil;
+                  if FRenderDithered then
+                    prevPal := FFrames[prevFrmIdx].PKeyFrame.PaletteRGB[prevTMItem.PalIdx];
+
                   DrawTile(FOutputBitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, prevTilePtr, prevPal, prevTMItem.HMirror, prevTMItem.VMirror, TMItem.BlendCur, TMItem.BlendPrev);
                 end
                 else
@@ -4540,7 +4568,6 @@ begin
     end;
   end;
 
-
   // compute KNN query count
 
   annQueryCount := 0;
@@ -4623,8 +4650,6 @@ begin
         tmiO^.BlendY := Best.bestY - y;
 
         errCml += Best.bestErr;
-
-        InterLockedIncrement(FTiles[tmiO^.TileIdx]^.UseCount);
 
         Inc(annQueryPos);
       end;
@@ -4834,15 +4859,13 @@ begin
     q10 := GetTileZoneSum(FTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
     q11 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
 
-    HMir := q00 + q10 < q01 + q11;
-    VMir := q00 + q01 < q10 + q11;
-
-{$if True}
-    if HMir then HMirrorTile(FTiles[i]^);
-    if VMir then VMirrorTile(FTiles[i]^);
-{$endif}
-
     TileTMI := GetTileIndexTMItem(i, TileFrame);
+
+    TileTMI^.HMirror := q00 + q10 < q01 + q11;
+    TileTMI^.VMirror := q00 + q01 < q10 + q11;
+
+    if TileTMI^.HMirror then HMirrorTile(FTiles[i]^);
+    if TileTMI^.VMirror then VMirrorTile(FTiles[i]^);
 
     ComputeTilePsyVisFeatures(FTiles[i]^, True, False, False, False, False, -1, TileFrame.PKeyFrame.PaletteRGB[TileTMI^.PalIdx], @Dataset[cnt, 0]);
 
@@ -4914,6 +4937,7 @@ begin
   begin
     for i := 0 to BIRCHClusterCount - 1 do
       YakmoClusters[i] := i;
+    YakmoCentroids := YakmoDataset;
   end;
 
   SetLength(ToMerge, Length(BIRCHToDataset));
@@ -5017,17 +5041,15 @@ begin
   for i := 0 to High(cnt) do
     KMBins[i].ClusterCount := Max(1, Round(cnt[i] * share));
 
-  InitMergeTiles;
-
   ProgressRedraw(1);
 
   // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
+  InitMergeTiles;
   ProcThreadPool.DoParallel(@DoGlobalKMeans, 0, High(KMBins), @KMBins);
+  FinishMergeTiles;
 
   ProgressRedraw(2);
-
-  FinishMergeTiles;
 
   // ensure inter block tile unicity
 
@@ -5036,12 +5058,6 @@ begin
   FinishMergeTiles;
 
   ProgressRedraw(3);
-
-  // put most probable tiles first and remove unused tiles
-
-  ReindexTiles;
-
-  ProgressRedraw(4);
 end;
 
 procedure TTilingEncoder.ReloadPreviousTiling(AFN: String);
@@ -5130,13 +5146,13 @@ begin
     ParallelCount := ProcThreadPool.MaxThreadCount * 10;
     ProcThreadPool.DoParallelLocalProc(@DoFindBest, 0, ParallelCount - 1);
 
-    ProgressRedraw(3);
+    ProgressRedraw(2);
 
     InitMergeTiles;
     MakeTilesUnique(0, Length(FTiles));
     FinishMergeTiles;
 
-    ProgressRedraw(4);
+    ProgressRedraw(3);
   finally
     if Assigned(FLANN) then
       flann_free_index(FLANN, @FLANNParameters);
@@ -5158,7 +5174,7 @@ begin
     Result := CompareValue(t1^.TmpIndex, t2^.TmpIndex);
 end;
 
-procedure TTilingEncoder.ReindexTiles;
+procedure TTilingEncoder.ReindexTiles(KeepRGBPixels: Boolean);
 var
   i, j, x, y, cnt, idx: Integer;
   IdxMap: TIntegerDynArray;
@@ -5174,9 +5190,12 @@ begin
       Inc(cnt);
   end;
 
+  if cnt <= 0 then
+    Exit;
+
   // pack the global Tiles, removing inactive ones
 
-  LocTiles := TTile.Array1DNew(cnt, False, True);
+  LocTiles := TTile.Array1DNew(cnt, KeepRGBPixels, True);
   j := 0;
   for i := 0 to High(FTiles) do
     if (FTiles[i]^.Active) and (FTiles[i]^.UseCount > 0) then

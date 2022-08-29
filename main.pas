@@ -25,6 +25,7 @@ type
     cbxYilMix: TComboBox;
     cbxPalSize: TComboBox;
     cbxDLBPC: TComboBox;
+    chkDithered: TCheckBox;
     chkFTGamma: TCheckBox;
     chkUseKMQuant: TCheckBox;
     chkGamma: TCheckBox;
@@ -394,8 +395,8 @@ begin
   edOutput.Text := 'C:\tiler\debug.gtm';
   edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 48, 1), 12);
+  cbxScaling.ItemIndex := 4;
   seFTBlend.Value := 7;
-  seFTBlendThres.Value := 1.0;
 
   FTilingEncoder.Test;
 
@@ -498,9 +499,18 @@ begin
 end;
 
 procedure TMainForm.imgContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
+var
+  pt: TPoint;
 begin
-  Handled := True;
-  sedPalIdx.Value := -1;
+  pt := TImage(Sender).ScreenToClient(Mouse.CursorPos);
+
+  pt.X -= (TImage(Sender).Width - FTilingEncoder.ScreenWidth) div 2;
+  pt.Y -= (TImage(Sender).Height - FTilingEncoder.ScreenHeight) div 2;
+
+  Handled := InRange(pt.X, 0, FTilingEncoder.ScreenWidth - 1) and InRange(pt.Y, 0, FTilingEncoder.ScreenHeight - 1);
+
+  if Handled then
+    sedPalIdx.Value := -1;
 end;
 
 procedure TMainForm.imgPaletteClick(Sender: TObject);
@@ -579,6 +589,7 @@ begin
   FTilingEncoder.RenderBlended := chkBlended.Checked;
   FTilingEncoder.RenderMirrored := chkMirrored.Checked;
   FTilingEncoder.RenderSmoothed := chkSmoothed.Checked;
+  FTilingEncoder.RenderDithered := chkDithered.Checked;
   FTilingEncoder.RenderUseGamma := chkGamma.Checked;
   FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;
   FTilingEncoder.RenderTilePage := sePage.Value;
