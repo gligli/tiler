@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 610
+  Left = 304
   Height = 540
-  Top = 530
+  Top = 416
   Width = 960
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 1

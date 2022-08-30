@@ -134,7 +134,7 @@ procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFun
 
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
-function DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Clusters: TIntegerDynArray): Integer;
+function DoExternalBICO(Dataset: TDoubleDynArray2; ClusterCount, CoresetSize, RandomProjections: Integer; var Clusters: TIntegerDynArray; var Centroids: TFloatDynArray): Integer;
 procedure DoExternalSKLearn(Dataset: TByteDynArray2; ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
@@ -499,13 +499,17 @@ begin
   end;
 end;
 
-function DoExternalBIRCH(Dataset: TFloatDynArray2; Threshold: TFloat; var Clusters: TIntegerDynArray): Integer;
+function DoExternalBICO(Dataset: TDoubleDynArray2; ClusterCount, CoresetSize, RandomProjections: Integer; var Clusters: TIntegerDynArray; var Centroids: TFloatDynArray): Integer;
 var
-  i, j, st: Integer;
+  i, j, k, st: Integer;
   InFN, Line, TextOutput, ErrOut: String;
   SL, Parser: TStringList;
   Process: TProcess;
   OutputStream: TMemoryStream;
+  FLANN: flann_index_t;
+  FLANNParams: TFLANNParameters;
+  speedup: TFloat;
+  DSLine: TFloatDynArray;
 begin
   SL := TStringList.Create;
   Parser := TStringList.Create;
@@ -515,7 +519,11 @@ begin
     begin
       Line := '';
       for j := 0 to High(Dataset[0]) do
-        Line := Line + FloatToStr(Dataset[i, j]) + ' ';
+      begin
+        if Line <> '' then
+           Line += ' ';
+        Line := Line + FloatToStr(Dataset[i, j]);
+      end;
       SL.Add(Line);
     end;
 
@@ -525,9 +533,9 @@ begin
 
     Process := TProcess.Create(nil);
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-    Process.Executable := 'BIRCH.exe';
+    Process.Executable := 'BICO_Experiments.exe';
 
-    Process.Parameters.Add('"' + InFN + '" ' + FloatToStr(Threshold, InvariantFormatSettings) + ' "' + InFN + '.membership"');
+    Process.Parameters.Add('"' + InFN + '" ' + IntToStr(Length(Dataset)) + ' ' + IntToStr(ClusterCount) + ' ' + IntToStr(Length(Dataset[0])) + ' ' + IntToStr(CoresetSize) + ' "' + InFN + '.membership" ' + IntToStr(RandomProjections) + ' 0x42381337');
     Process.ShowWindow := swoHIDE;
     Process.Priority := ppIdle;
 
@@ -543,13 +551,45 @@ begin
 
     Parser.Delimiter := ' ';
     Result := -1;
+    k := 0;
     for i := 0 to SL.Count - 1 do
     begin
       Parser.DelimitedText := SL[i];
-      Clusters[i] := StrToIntDef(Parser[Parser.Count - 1], 0);
-      Result := max(Result, Clusters[i]);
+      if i = 0 then
+      begin
+        Result := StrToIntDef(Parser[0], 0);
+        SetLength(Centroids, Result * Length(Dataset[0]));
+      end
+      else
+      begin
+        for j := 1 to High(Dataset[0]) + 1 do
+        begin
+          Centroids[k] := StrToFloatDef(Parser[j], 0);
+          Inc(k);
+        end;
+      end;
     end;
-    Inc(Result);
+
+    Assert(k = Length(Centroids));
+
+    FLANNParams := CDefaultFLANNParameters;
+    FLANNParams.checks := Length(Dataset[0]);
+    FLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
+
+    SetLength(DSLine, Length(Dataset[0]));
+    SetLength(Clusters, length(Dataset));
+
+    FLANN := flann_build_index(@Centroids[0], Result, Length(Dataset[0]), @speedup, @FLANNParams);
+    for i := 0 to High(Dataset) do
+    begin
+      for j := 0 to High(DSLine) do
+        DSLine[j] := Dataset[i, j];
+
+      flann_find_nearest_neighbors_index(FLANN, @DSLine[0], 1, @k, @speedup, 1, @FLANNParams);
+      Clusters[i] := k;
+    end;
+    flann_free_index(FLANN, @FLANNParams);
+
   finally
     OutputStream.Free;
     Parser.Free;

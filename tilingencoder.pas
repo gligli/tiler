@@ -4360,23 +4360,27 @@ procedure TTilingEncoder.ProgressRedraw(ASubStepIdx: Integer; AProgressStep: TEn
 const
   cProgressMul = 100;
 var
-  t: Int64;
+  curTime: Int64;
   ProgressPosition, ProgressStepPosition, ProgressMax: Integer;
   ProgressHourGlass: Boolean;
 begin
   scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, nil); // force the mem allocator to release unused memory
 
-  if AProgressStep <> esNone then // new step?
-  begin
-    FProgressStep := AProgressStep;
-    FProgressPrevTime := GetTickCount64;
-  end;
+  curTime := GetTickCount64;
 
   if (ASubStepIdx < 0) and (AProgressStep = esNone) then // reset
   begin
     FProgressStep := esNone;
     FProgressPrevTime := GetTickCount64;
     FProgressStartTime := FProgressPrevTime;
+  end
+  else if AProgressStep <> esNone then // new step?
+  begin
+    if ASubStepIdx = 0 then
+      FProgressStartTime += curTime - FProgressPrevTime;
+
+    FProgressStep := AProgressStep;
+    FProgressPrevTime := GetTickCount64;
   end;
 
   ProgressMax := (Ord(High(TEncoderStep)) + 1) * cProgressMul;
@@ -4388,13 +4392,12 @@ begin
 
   ProgressHourGlass := (AProgressStep <> esNone) and (ASubStepIdx < cEncoderStepLen[FProgressStep]);
 
-  t := GetTickCount64;
   if ASubStepIdx >= 0 then
   begin
     WriteLn('Step: ', Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), 3), ' / ', ProgressStepPosition,
-      #9'Time: ', FormatFloat('0.000', (t - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (t - FProgressStartTime) / 1000));
+      #9'Time: ', FormatFloat('0.000', (curTime - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (curTime - FProgressStartTime) / 1000));
   end;
-  FProgressPrevTime := t;
+  FProgressPrevTime := curTime;
 
   if Assigned(FOnProgress) then
     FOnProgress(Self, ProgressPosition + ProgressStepPosition, ProgressMax, ProgressHourGlass);
