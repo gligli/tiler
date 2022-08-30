@@ -4136,7 +4136,9 @@ begin
             if InRange(ti, 0, High(FTiles)) then
             begin
               tilePtr := FTiles[ti];
-              pal := Frame.PKeyFrame.PaletteRGB[Max(0, FRenderPaletteIndex)];
+              pal := nil;
+              if FRenderDithered then
+                pal := Frame.PKeyFrame.PaletteRGB[Max(0, FRenderPaletteIndex)];
 
               DrawTile(FTilesBitmap, sx, sy, nil, tilePtr, pal, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
             end;
