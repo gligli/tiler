@@ -420,9 +420,10 @@ end;
 procedure TMainForm.FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
 var
   k: Word;
+  i: Integer;
 begin
   k := Key;
-  if k in [VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10, VK_F11, VK_F12] then
+  if k in [VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10, VK_F11, VK_F12, VK_PRIOR, VK_NEXT] then
     Key := 0; // KLUDGE: workaround event called twice
   case k of
     VK_F2: btnLoadClick(nil);
@@ -462,6 +463,13 @@ begin
         end;
         UpdateVideo(nil);
       end;
+    VK_PRIOR, VK_NEXT:
+      for i := 0 to FTilingEncoder.KeyFrameCount - 1 do
+        if InRange(tbFrame.Position, FTilingEncoder.KeyFrames[i].StartFrame, FTilingEncoder.KeyFrames[i].EndFrame) then
+        begin
+          tbFrame.Position := FTilingEncoder.KeyFrames[(i + IfThen(k = VK_NEXT, 1, FTilingEncoder.KeyFrameCount - 1)) mod FTilingEncoder.KeyFrameCount].StartFrame;
+          Break;
+        end;
   end;
 end;
 
