@@ -336,11 +336,11 @@ begin
   if OkStep(esLoad) then
     btnLoadClick(nil);
 
-  if OkStep(esDither) then
-    btnDitherClick(nil);
-
   if OkStep(esMakeUnique) then
     btnDoMakeUniqueClick(nil);
+
+  if OkStep(esDither) then
+    btnDitherClick(nil);
 
   if OkStep(esGlobalTiling) then
     btnDoGlobalTilingClick(nil);
@@ -426,8 +426,8 @@ begin
     Key := 0; // KLUDGE: workaround event called twice
   case k of
     VK_F2: btnLoadClick(nil);
-    VK_F3: btnDitherClick(nil);
-    VK_F4: btnDoMakeUniqueClick(nil);
+    VK_F3: btnDoMakeUniqueClick(nil);
+    VK_F4: btnDitherClick(nil);
     VK_F5: btnDoGlobalTilingClick(nil);
     VK_F6: btnDoFrameTilingClick(nil);
     VK_F7: btnReindexClick(nil);

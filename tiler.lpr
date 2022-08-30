@@ -66,8 +66,8 @@ begin
       Encoder.LoadSettings(ParamStr(1));
 
       Encoder.Load;
-      Encoder.Dither;
       Encoder.MakeUnique;
+      Encoder.Dither;
       Encoder.GlobalTiling;
       Encoder.FrameTiling;
       Encoder.Reindex;

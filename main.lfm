@@ -799,15 +799,15 @@ object MainForm: TMainForm
       ShortCut = 113
       OnClick = btnLoadClick
     end
-    object MenuItem1: TMenuItem
-      Caption = 'Dither'
-      ShortCut = 114
-      OnClick = btnDitherClick
-    end
     object MenuItem7: TMenuItem
       Caption = 'Tile (make unique)'
-      ShortCut = 115
+      ShortCut = 114
       OnClick = btnDoMakeUniqueClick
+    end
+    object MenuItem1: TMenuItem
+      Caption = 'Dither'
+      ShortCut = 115
+      OnClick = btnDitherClick
     end
     object MenuItem2: TMenuItem
       Caption = 'Tile (global)'

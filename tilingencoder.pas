@@ -14,7 +14,7 @@ uses
   Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc;
 
 type
-  TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
+  TEncoderStep = (esNone = -1, esLoad = 0, esMakeUnique, esDither, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
 
 const
@@ -61,7 +61,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 3, 1, 4, 2, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 2, 3, 4, 2, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -476,7 +476,7 @@ type
     procedure LoadTiles;
     function GetGlobalTileCount: Integer;
     function GetFrameTileCount(AFrame: TFrame): Integer;
-    function GetTileIndexTMItem(ATileIndex: Integer; out AFrame: TFrame): PTileMapItem;
+    function GetTileIndexTMItem(const ATile: TTile; out AFrame: TFrame): PTileMapItem;
 
     procedure PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
     procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
@@ -522,8 +522,8 @@ type
     // processes / functions
 
     procedure Load;
-    procedure Dither;
     procedure MakeUnique;
+    procedure Dither;
     procedure GlobalTiling;
     procedure FrameTiling;
     procedure Reindex;
@@ -1199,8 +1199,8 @@ begin
   SetLength(AArray, ANewX);
 
   // recompute existing array pointers
-  for i := 0 to prevLen - 1 do
-    AArray[i] := PTile(PByte(AArray[i]) - PByte(smallest) + data);
+  for i := 0 to min(ANewX, prevLen) - 1 do
+    AArray[i] := PTile(PByte(AArray[i]) + (data - PByte(smallest)));
 
   // init new pointers
   Inc(data, size * prevLen);
@@ -1467,8 +1467,12 @@ begin
   end;
   ProgressRedraw(2);
 
+  for i := 0 to High(FTiles) do
+    FTiles[i]^.TmpIndex := -1;
+
   ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
   ProgressRedraw(3);
+
   for i := 0 to High(FKeyFrames) do
     SetLength(FKeyFrames[i].PaletteUseCount, 0);
 end;
@@ -1485,6 +1489,8 @@ var
     MakeTilesUnique(AIndex * TilesAtATime, Min(Length(FTiles) - AIndex * TilesAtATime, TilesAtATime));
   end;
 
+var
+  i, copyPos: Integer;
 begin
   TilesAtATime := FTileMapSize * 25;
 
@@ -1494,12 +1500,43 @@ begin
   ProgressRedraw(0, esMakeUnique);
 
   InitMergeTiles;
-
   ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
-
   FinishMergeTiles;
 
   ProgressRedraw(1);
+
+  InitMergeTiles;
+
+  // pack tiles
+
+  copyPos := 0;
+  for i := High(FTiles) downto 0 do
+  begin
+    if FTiles[i]^.Active then
+    begin
+      while FTiles[copyPos]^.Active do
+        Inc(copyPos);
+
+      if copyPos < i then
+      begin
+        FTiles[copyPos]^.CopyFrom(FTiles[i]^);
+        FTiles[i]^.MergeIndex := copyPos;
+        FTiles[i]^.Active := False;
+      end
+      else
+      begin
+        Break;
+      end;
+    end;
+  end;
+
+  FinishMergeTiles;
+
+  // redim tile list
+
+  TTile.Array1DRealloc(FTiles, copyPos + 1);
+
+  ProgressRedraw(2);
 end;
 
 function CompareFrames(Item1,Item2,UserParameter:Pointer):Integer;
@@ -2721,13 +2758,15 @@ begin
     begin
       T := FTiles[AFrame.TileMap[sy, sx].TileIdx];
 
-      if T^.Active then
+      if T^.Active and (T^.TmpIndex = -1) then
       begin
         // dither tile in chosen palette
 
         PalIdx := AFrame.TileMap[sy, sx].PalIdx;
         Assert(InRange(PalIdx, 0, FPaletteCount - 1));
         DitherTile(T^, AFrame.PKeyFrame.MixingPlans[PalIdx]);
+
+        T^.TmpIndex := AFrame.Index * FTileMapSize + sy * FTileMapWidth + sx;
       end;
     end;
 
@@ -4087,7 +4126,7 @@ begin
       try
         FTilesBitmap.Canvas.Brush.Color := clAqua;
         FTilesBitmap.Canvas.Brush.Style := bsSolid;
-        FTilesBitmap.Canvas.Clear;
+        FTilesBitmap.Canvas.FillRect(FTilesBitmap.Canvas.ClipRect);
 
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
@@ -4391,17 +4430,19 @@ begin
     Inc(Result, Used[i]);
 end;
 
-function TTilingEncoder.GetTileIndexTMItem(ATileIndex: Integer; out AFrame: TFrame): PTileMapItem;
+function TTilingEncoder.GetTileIndexTMItem(const ATile: TTile; out AFrame: TFrame): PTileMapItem;
 var
   frmIdx, int, sy, sx: Integer;
 begin
-  DivMod(ATileIndex, FTileMapSize, frmIdx, int);
+  Assert(ATile.TmpIndex >= 0);
+
+  DivMod(ATile.TmpIndex , FTileMapSize, frmIdx, int);
   DivMod(int, FTileMapWidth, sy, sx);
 
   Result := @FFrames[frmIdx].TileMap[sy, sx];
   AFrame := FFrames[frmIdx];
 
-  Assert(Result^.TileIdx = ATileIndex);
+  Assert(FTiles[Result^.TileIdx] = @ATile);
 end;
 
 procedure TTilingEncoder.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer;
@@ -4979,7 +5020,7 @@ begin
     q10 := GetTileZoneSum(FTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
     q11 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
 
-    TileTMI := GetTileIndexTMItem(i, TileFrame);
+    TileTMI := GetTileIndexTMItem(FTiles[i]^, TileFrame);
 
     TileTMI^.HMirror := q00 + q10 < q01 + q11;
     TileTMI^.VMirror := q00 + q01 < q10 + q11;
