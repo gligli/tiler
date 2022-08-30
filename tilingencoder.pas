@@ -2,6 +2,7 @@ unit tilingencoder;
 
 {$mode ObjFPC}{$H+}
 {$ModeSwitch advancedrecords}
+{$TYPEDADDRESS ON}
 
 {$define ASM_DBMP}
 
@@ -193,6 +194,7 @@ type
   TRGBPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
   TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
   TCpnPixels = array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
+  TCpnPixelsDouble = array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of Double;
   PRGBPixels = ^TRGBPixels;
   PPalPixels = ^TPalPixels;
   PCpnPixels = ^TCpnPixels;
@@ -345,6 +347,7 @@ type
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
     FVecInv: array[0..256 * 4 - 1] of Cardinal;
     FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
+    FDCTLutDouble:array[0..sqr(sqr(cTileWidth)) - 1] of Double;
 
     FKeyFrames: TKeyFrameArray;
     FFrames: TFrameArray;
@@ -455,7 +458,9 @@ type
     procedure WaveletGS(Data: PFloat; Output: PFloat; dx, dy, depth: cardinal);
     procedure DeWaveletGS(wl: PFloat; pic: PFloat; dx, dy, depth: longint);
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
-      VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline;
+      VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
+    procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
+      GammaCor: Integer; const pal: TIntegerDynArray; DCT: TDoubleDynArray); inline; overload;
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -1372,7 +1377,8 @@ begin
       for y := 0 to (cTileWidth - 1) do
         for x := 0 to (cTileWidth - 1) do
         begin
-          FDCTLut[i] := cos((x + 0.5) * u * PI / (cTileWidth * 2)) * cos((y + 0.5) * v * PI / (cTileWidth * 2)) * cDCTUVRatio[v, u];
+          FDCTLutDouble[i] := cos((x + 0.5) * u * PI / (cTileWidth * 2)) * cos((y + 0.5) * v * PI / (cTileWidth * 2)) * cDCTUVRatio[v, u];
+          FDCTLut[i] := FDCTLutDouble[i];
           Inc(i);
         end;
 end;
@@ -2379,19 +2385,17 @@ end;
 
 procedure TTilingEncoder.PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
 var
-  sx, sy, i, j, k, cnt, BIRCHClusterCount: Integer;
+  sx, sy, i: Integer;
   GTile: PTile;
 
-  Dataset: TFloatDynArray2;
   YakmoDataset: TDoubleDynArray2;
-  Clusters, YakmoClusters: TIntegerDynArray;
+  YakmoClusters: TIntegerDynArray;
   di: Integer;
 
-  BIRCH: PBIRCH;
   Yakmo: PYakmo;
 begin
-  SetLength(Dataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
-  SetLength(Clusters, Length(Dataset));
+  SetLength(YakmoDataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
+  SetLength(YakmoClusters, Length(YakmoDataset));
   SetLength(AKeyFrame.PaletteCentroids, FPaletteCount, cTileDCTSize);
 
   di := 0;
@@ -2400,59 +2404,22 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @Dataset[di, 0]);
+        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, YakmoDataset[di]);
+
         Inc(di);
       end;
-  assert(di = Length(Dataset));
+  assert(di = Length(YakmoDataset));
 
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization start');
 
   if (di > 1) and (FPaletteCount > 1) then
   begin
-    BIRCH := birch_create(100000, 64 * 1024 * 1024);
-    for i := 0 to di - 1 do
-      birch_insert_line(BIRCH, @Dataset[i, 0]);
-    birch_get_results(BIRCH, @Clusters[0]);
-    birch_destroy(BIRCH);
-    BIRCHClusterCount := MaxIntValue(Clusters) + 1;
-
-    WriteLn('KF: ', AKeyFrame.StartFrame:8, ' DatasetSize: ', di:8, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
-
-    SetLength(YakmoClusters, BIRCHClusterCount);
-    SetLength(YakmoDataset, BIRCHClusterCount, cTileDCTSize);
-
-    for i := 0 to BIRCHClusterCount - 1 do
-    begin
-      cnt := 0;
-      for j := 0 to di - 1 do
-        if Clusters[j] = i then
-        begin
-          for k := 0 to cTileDCTSize - 1 do
-            YakmoDataset[i, k] += Dataset[j, k];
-          Inc(cnt)
-        end;
-
-      if cnt > 0 then
-        for k := 0 to cTileDCTSize - 1 do
-          YakmoDataset[i, k] /= cnt;
-    end;
-
-    SetLength(Dataset, 0); // free up some memmory
-
-    if BIRCHClusterCount > FPaletteCount then
-    begin
-      Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
-      yakmo_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
-      SetLength(YakmoDataset, 0); // free up some memmory
-      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-      yakmo_get_centroids(Yakmo, @AKeyFrame.PaletteCentroids[0]);
-      yakmo_destroy(Yakmo);
-    end
-    else
-    begin
-      for i := 0 to BIRCHClusterCount - 1 do
-        YakmoClusters[i] := i;
-    end;
+    Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
+    yakmo_load_train_data(Yakmo, di, cTileDCTSize, PPDouble(@YakmoDataset[0]));
+    SetLength(YakmoDataset, 0); // free up some memmory
+    yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+    yakmo_get_centroids(Yakmo, PPDouble(@AKeyFrame.PaletteCentroids[0]));
+    yakmo_destroy(Yakmo);
   end
   else
   begin
@@ -2464,10 +2431,10 @@ begin
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
       begin
-        FFrames[i].TileMap[sy, sx].PalIdx := YakmoClusters[Clusters[di]];
+        FFrames[i].TileMap[sy, sx].PalIdx := YakmoClusters[di];
         Inc(di);
       end;
-  assert(di = Length(Clusters));
+  assert(di = Length(YakmoClusters));
 
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization end');
 end;
@@ -2635,12 +2602,12 @@ var
       // use KMeans to quantize to FPaletteSize elements
 
       Yakmo := yakmo_create(FPaletteSize, 1, -1, 1, 0, 0, 0);
-      yakmo_load_train_data(Yakmo, di, cFeatureCount, @Dataset[0]);
+      yakmo_load_train_data(Yakmo, di, cFeatureCount, PPDouble(@Dataset[0]));
 
       SetLength(Dataset, 0); // free up some memmory
 
       yakmo_train_on_data(Yakmo, @Clusters[0]);
-      yakmo_get_centroids(Yakmo, @Centroids[0]);
+      yakmo_get_centroids(Yakmo, PPDouble(@Centroids[0]));
       yakmo_destroy(Yakmo);
     end;
 
@@ -3496,6 +3463,161 @@ begin
   end;
 end;
 
+procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
+  VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: TDoubleDynArray);
+var
+  u, v, x, y, xx, yy, cpn: Integer;
+  z: Double;
+  CpnPixels: TCpnPixelsDouble;
+  pDCT, pCpn, pLut: PDouble;
+
+  procedure ToCpn(col, x, y: Integer); inline;
+  var
+    r, g, b: Byte;
+    yy, uu, vv: TFloat;
+  begin
+    FromRGB(col, r, g, b);
+
+    if UseLAB then
+      RGBToLAB(r, g, b, GammaCor, yy, uu, vv)
+    else
+      RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
+
+    CpnPixels[0, y, x] := yy;
+    CpnPixels[1, y, x] := uu;
+    CpnPixels[2, y, x] := vv;
+  end;
+
+begin
+  if FromPal then
+  begin
+    for y := 0 to (cTileWidth - 1) do
+      for x := 0 to (cTileWidth - 1) do
+      begin
+        xx := x;
+        yy := y;
+        if HMirror then xx := cTileWidth - 1 - x;
+        if VMirror then yy := cTileWidth - 1 - y;
+
+        ToCpn(pal[ATile.PalPixels[yy,xx]], x, y);
+      end;
+  end
+  else
+  begin
+    for y := 0 to (cTileWidth - 1) do
+      for x := 0 to (cTileWidth - 1) do
+      begin
+        xx := x;
+        yy := y;
+        if HMirror then xx := cTileWidth - 1 - x;
+        if VMirror then yy := cTileWidth - 1 - y;
+
+        ToCpn(ATile.RGBPixels[yy,xx], x, y);
+      end;
+  end;
+
+  pDCT := @DCT[0];
+  for cpn := 0 to cColorCpns - 1 do
+  begin
+    pLut := @FDCTLutDouble[0];
+
+    for v := 0 to (cTileWidth - 1) do
+      for u := 0 to (cTileWidth - 1) do
+      begin
+  		  z := 0.0;
+        pCpn := @CpnPixels[cpn, 0, 0];
+
+        // unroll y by cTileWidth
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        // unroll x by cTileWidth
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+        if QWeighting then
+           z *= cDCTQuantization[cpn, v, u];
+
+        pDCT^ := z;
+        Inc(pDCT);
+      end;
+  end;
+end;
+
 procedure TTilingEncoder.VMirrorTile(var ATile: TTile);
 var
   j, i: Integer;
@@ -3930,7 +4052,7 @@ begin
               end;
 
               if not (FRenderPlaying or AFast) then
-                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, -1, nil, @chgDCT[sy, sx, 0]);
+                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
             end;
           end;
       finally
@@ -3995,7 +4117,7 @@ begin
           tilePtr :=  Frame.Tiles[sy * FTileMapWidth + sx];
           if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
           begin
-            ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, @DCT[0]);
+            ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
             q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
             Inc(i);
           end;
@@ -4356,7 +4478,7 @@ var
           DS^.TDToTileIdx[di] := ti;
           DS^.TDToAttrs[di] := hvmir;
 
-          ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], @DS^.Dataset[di * cTileDCTSize]);
+          ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], PFloat(@DS^.Dataset[di * cTileDCTSize]));
 
           // prune redundancies
           if (di <= 0) or (CompareDWord(DS^.Dataset[(di - 1) * cTileDCTSize], DS^.Dataset[di * cTileDCTSize], cTileDCTSize) <> 0) then
@@ -4429,7 +4551,7 @@ end;
 procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
 var
   i, blend, ox, oy, idx: Integer;
-  e, err, fc, rfc, speedup: TFloat;
+  err, fc, rfc, speedup: TFloat;
   prevTMI: PTileMapItem;
   DS: PTilingDataset;
   SearchDCT: array[0 .. cTileDCTSize - 1] of TFloat;
@@ -4480,7 +4602,7 @@ begin
               LocalPrevPaletteDone[prevTMI^.PalIdx] := True;
             end;
 
-            ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], @PrevDCT[0]);
+            ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PFloat(@PrevDCT[0]));
           end
           else
           begin
@@ -4602,7 +4724,7 @@ begin
         if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
           Continue;
 
-        ComputeTilePsyVisFeatures(Frame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, @DCTs[annQueryCount * cTileDCTSize]);
+        ComputeTilePsyVisFeatures(Frame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, PFloat(@DCTs[annQueryCount * cTileDCTSize]));
 
         Inc(annQueryCount);
       end;
@@ -4677,7 +4799,7 @@ begin
   for sx := 0 to FTileMapWidth - 1 do
   begin
     PrevTMI := @APrevFrame.TileMap[Y, sx];
-    ComputeTilePsyVisFeatures(FTiles[PrevTMI^.SmoothedTileIdx]^, True, False, True, PrevTMI^.SmoothedHMirror, PrevTMI^.SmoothedVMirror, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx], @PrevDCT[0]);
+    ComputeTilePsyVisFeatures(FTiles[PrevTMI^.SmoothedTileIdx]^, True, False, True, PrevTMI^.SmoothedHMirror, PrevTMI^.SmoothedVMirror, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx], PFloat(@PrevDCT[0]));
 
     // prevent smoothing from crossing keyframes (to ensure proper seek)
 
@@ -4686,7 +4808,7 @@ begin
       // compare DCT of current tile with tile from prev frame tilemap
 
       TMI := @AFrame.TileMap[Y, sx];
-      ComputeTilePsyVisFeatures(FTiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], @DCT[0]);
+      ComputeTilePsyVisFeatures(FTiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], PFloat(@DCT[0]));
 
       cmp := CompareEuclideanDCT(DCT, PrevDCT);
       cmp := sqrt(cmp * cSqrtFactor);
@@ -4720,7 +4842,7 @@ begin
 
     // compare the DCT of previous tile with the plaintext tile, if the difference is too high, add it to "additional tiles"
 
-    ComputeTilePsyVisFeatures(APrevFrame.Tiles[Y * FTileMapWidth + sx]^, False, False, True, False, False, -1, nil, @PrevPlainDCT[0]);
+    ComputeTilePsyVisFeatures(APrevFrame.Tiles[Y * FTileMapWidth + sx]^, False, False, True, False, False, -1, nil, PFloat(@PrevPlainDCT[0]));
 
     cmp := CompareEuclideanDCT(PrevDCT, PrevPlainDCT);
     cmp := sqrt(cmp * cSqrtFactor);
@@ -4817,21 +4939,19 @@ type
 
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
+  Dataset: TDoubleDynArray2;
   YakmoDataset, YakmoCentroids: TDoubleDynArray2;
   BIRCHClusters, YakmoClusters: TIntegerDynArray;
   BIRCHToDataset: TIntegerDynArray;
-  i, j, tx, ty, bin, cnt, lineIdx, birchDatasetIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
+  i, j, bin, cnt, lineIdx, birchDatasetIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
   q00, q01, q10, q11: Integer;
   v, best: TFloat;
-  ToMerge: TFloatDynArray2;
+  ToMerge: TDoubleDynArray2;
   ToMergeIdxs: TIntegerDynArray;
   KMBin: PKModesBin;
   Yakmo: PYakmo;
   BIRCH: PBIRCH;
-  Dataset: TFloatDynArray2;
   TileIndices: TIntegerDynArray;
-  Centroid: array[0 .. cTileDCTSize - 1] of TFloat;
-  HMir, VMir: Boolean;
   TileFrame: TFrame;
   TileTMI: PTileMapItem;
 begin
@@ -4867,7 +4987,7 @@ begin
     if TileTMI^.HMirror then HMirrorTile(FTiles[i]^);
     if TileTMI^.VMirror then VMirrorTile(FTiles[i]^);
 
-    ComputeTilePsyVisFeatures(FTiles[i]^, True, False, False, False, False, -1, TileFrame.PKeyFrame.PaletteRGB[TileTMI^.PalIdx], @Dataset[cnt, 0]);
+    ComputeTilePsyVisFeatures(FTiles[i]^, True, False, False, False, False, -1, TileFrame.PKeyFrame.PaletteRGB[TileTMI^.PalIdx], Dataset[cnt]);
 
     TileIndices[cnt] := i;
     Inc(cnt);
@@ -4875,7 +4995,6 @@ begin
   Assert(cnt = DSLen);
 
   // cluster dataset using BIRCH + Yakmo
-
 
   BIRCH := birch_create(0.001, 64 * 1024 * 1024);
 
@@ -4920,7 +5039,7 @@ begin
         Inc(clusterLineCount)
       end;
 
-    if clusterLineCount > 0 then
+    if clusterLineCount > 1 then
       for i := 0 to cTileDCTSize - 1 do
         YakmoDataset[clusterIdx, i] /= clusterLineCount;
   end;
@@ -4928,9 +5047,9 @@ begin
   if BIRCHClusterCount > KMBin^.ClusterCount then
   begin
     Yakmo := yakmo_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 0);
-    yakmo_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, @YakmoDataset[0]);
+    yakmo_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, PPDouble(@YakmoDataset[0]));
     yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-    yakmo_get_centroids(Yakmo, @YakmoCentroids[0]);
+    yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
     yakmo_destroy(Yakmo);
   end
   else
@@ -4966,14 +5085,11 @@ begin
     begin
       // get the closest tile to the centroid
 
-      for j := 0 to cTileDCTSize - 1 do
-        Centroid[j] := YakmoCentroids[clusterIdx, j];
-
       best := MaxSingle;
       clusterLineIdx := -1;
       for i := 0 to clusterLineCount - 1 do
       begin
-        v := CompareEuclideanDCT(ToMerge[i], Centroid);
+        v := CompareEuclidean(ToMerge[i], YakmoCentroids[clusterIdx]);
         if v < best then
         begin
           best := v;

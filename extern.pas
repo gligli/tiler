@@ -165,9 +165,9 @@ function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; us
 
 function yakmo_create(k: Cardinal; restartCount: Cardinal; maxIter: Integer; initType: Integer; initSeed: Integer; doNormalize: Integer; isVerbose: Integer): PYakmo; stdcall; external 'yakmo.dll';
 procedure yakmo_destroy(ay: PYakmo); stdcall; external 'yakmo.dll';
-procedure yakmo_load_train_data(ay: PYakmo; rowCount: Cardinal; colCount: Cardinal; dataset: PPFloat); stdcall; external 'yakmo.dll';
+procedure yakmo_load_train_data(ay: PYakmo; rowCount: Cardinal; colCount: Cardinal; dataset: PPDouble); stdcall; external 'yakmo.dll';
 procedure yakmo_train_on_data(ay: PYakmo; pointToCluster: PInteger); stdcall; external 'yakmo.dll';
-procedure yakmo_get_centroids(ay: PYakmo; centroids: PPFloat); stdcall; external 'yakmo.dll';
+procedure yakmo_get_centroids(ay: PYakmo; centroids: PPDouble); stdcall; external 'yakmo.dll';
 
 function yakmo_single_create(k: Cardinal; restartCount: Cardinal; maxIter: Integer; initType: Integer; initSeed: Integer; doNormalize: Integer; isVerbose: Integer): PYakmoSingle; stdcall; external 'yakmo_single.dll' name 'yakmo_create';
 procedure yakmo_single_destroy(ay: PYakmoSingle); stdcall; external 'yakmo_single.dll' name 'yakmo_destroy';
@@ -177,7 +177,7 @@ procedure yakmo_single_get_centroids(ay: PYakmoSingle; centroids: PPANNFloat); s
 
 function birch_create(dist_threshold: TFloat; mem_limit: UInt64): PBIRCH; stdcall; external 'BIRCH.dll';
 procedure birch_destroy(birch: PBIRCH); stdcall; external 'BIRCH.dll';
-procedure birch_insert_line(birch: PBIRCH; line: PFloat); stdcall; external 'BIRCH.dll';
+procedure birch_insert_line(birch: PBIRCH; line: PDouble); stdcall; external 'BIRCH.dll';
 procedure birch_get_results(birch: PBIRCH; pointToCluster: PInteger); stdcall; external 'BIRCH.dll';
 
 

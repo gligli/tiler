@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 305
+  Left = 610
   Height = 540
-  Top = 377
+  Top = 530
   Width = 960
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 1
@@ -879,6 +879,7 @@ object MainForm: TMainForm
     Top = 272
   end
   object PsyVTimer: TTimer
+    Enabled = False
     OnTimer = PsyVTimerTimer
     Left = 888
     Top = 320
