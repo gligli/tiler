@@ -5042,7 +5042,7 @@ begin
 
   // cluster dataset using BIRCH + Yakmo
 
-  BIRCH := birch_create(0.01, 0);
+  BIRCH := birch_create(0.01, 256 * 1024 * 1024);
 
   cnt := 0;
   for i := 0 to DSLen - 1 do
