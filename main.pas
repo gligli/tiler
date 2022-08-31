@@ -315,8 +315,8 @@ end;
 
 procedure TMainForm.PsyVTimerTimer(Sender: TObject);
 begin
-  PsyVTimer.Enabled := False;
   UpdateVideo(Sender);
+  PsyVTimer.Enabled := False;
 end;
 
 procedure TMainForm.btnRunAllClick(Sender: TObject);
@@ -549,12 +549,16 @@ begin
 end;
 
 procedure TMainForm.UpdateVideo(Sender: TObject);
+var
+  fromTimer: Boolean;
 begin
   UpdateGUI(Sender);
 
-  FTilingEncoder.Render(not Assigned(Sender) or not (Sender is TTimer));
+  fromTimer := Assigned(Sender) and (Sender is TTimer);
+
+  FTilingEncoder.Render(not fromTimer);
   PsyVTimer.Enabled := False;
-  PsyVTimer.Enabled := True;
+  PsyVTimer.Enabled := not fromTimer;
 
   imgSource.Picture.Bitmap := FTilingEncoder.InputBitmap;
   imgDest.Picture.Bitmap := FTilingEncoder.OutputBitmap;
