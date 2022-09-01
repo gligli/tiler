@@ -296,8 +296,19 @@ type
 
     TileMap: array of array of TTileMapItem;
 
-    Tiles: array of PTile;
+    FrameTiles: array of PTile;
     FSPixels: TByteDynArray;
+
+    FrameTilesRefCount: Integer;
+    FrameTilesEvent: THandle;
+    CompressedFrameTiles: TMemoryStream;
+
+    procedure CompressFrameTiles;
+    procedure AcquireFrameTiles;
+    procedure ReleaseFrameTiles;
+
+    constructor Create;
+    destructor Destroy; override;
   end;
 
   TFrameArray =  array of TFrame;
@@ -1090,6 +1101,76 @@ begin
   Result := round(sqrt(tileCount) * log2(1 + tileCount));
 end;
 
+{ TFrame }
+
+procedure TFrame.CompressFrameTiles;
+var
+  CompStream: Tcompressionstream;
+begin
+  CompStream := Tcompressionstream.create(Tcompressionlevel.clfastest, CompressedFrameTiles, True);
+  try
+    CompStream.WriteBuffer(FrameTiles[0]^, Length(TileMap) * Length(TileMap[0]) * (SizeOf(TTile) + SizeOf(TRGBPixels)));
+    CompStream.flush;
+  finally
+    CompStream.Free;
+  end;
+
+  // now that FrameTiles are compressed, dispose them
+
+  TTile.Array1DDispose(FrameTiles);
+end;
+
+procedure TFrame.AcquireFrameTiles;
+var
+  CompStream: Tdecompressionstream;
+begin
+  if InterLockedIncrement(FrameTilesRefCount) = 1 then
+  begin
+    Assert(CompressedFrameTiles.Size > 0);
+
+    CompressedFrameTiles.Position := 0;
+    FrameTiles := TTile.Array1DNew(Length(TileMap) * Length(TileMap[0]), True, False);
+
+    CompStream := Tdecompressionstream.create(CompressedFrameTiles, True);
+    try
+      CompStream.ReadBuffer(FrameTiles[0]^, Length(TileMap) * Length(TileMap[0]) * (SizeOf(TTile) + SizeOf(TRGBPixels)));
+    finally
+      CompStream.Free;
+    end;
+
+    // signal other threads decompression is done
+    SetEvent(FrameTilesEvent);
+  end
+  else
+  begin
+    WaitForSingleObject(FrameTilesEvent, INFINITE);
+  end;
+end;
+
+procedure TFrame.ReleaseFrameTiles;
+begin
+  if InterLockedDecrement(FrameTilesRefCount) <= 0 then
+  begin
+    ResetEvent(FrameTilesEvent);
+    TTile.Array1DDispose(FrameTiles);
+    Assert(FrameTilesRefCount = 0);
+  end;
+end;
+
+constructor TFrame.Create;
+begin
+  CompressedFrameTiles := TMemoryStream.Create;
+  FrameTilesEvent := CreateEvent(nil, True, False, nil);
+end;
+
+destructor TFrame.Destroy;
+begin
+  CompressedFrameTiles.Free;
+  CloseHandle(FrameTilesEvent);
+
+  inherited Destroy;
+end;
+
 { TFastPortableNetworkGraphic }
 
 procedure TFastPortableNetworkGraphic.InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter);
@@ -1345,8 +1426,8 @@ end;
 
 destructor TKeyFrame.Destroy;
 begin
-  inherited Destroy;
   DeleteCriticalSection(CS);
+  inherited Destroy;
 end;
 
 { TTilingEncoder }
@@ -1686,11 +1767,11 @@ begin
 
   ProgressRedraw(2);
 
-  LoadTiles;
-
   // free up frame memory
   for i := 0 to High(FFrames) do
     SetLength(FFrames[i].FSPixels, 0);
+
+  LoadTiles;
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
   begin
@@ -2543,7 +2624,7 @@ var
               begin
                 for tx := 0 to cTileWidth - 1 do
                 begin
-                  FromRGB(FFrames[i].Tiles[k]^.RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
+                  FromRGB(FFrames[i].FrameTiles[k]^.RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
                   Inc(j, 3);
                 end;
                 Inc(j, (tileFx - 1) * cTileWidth * 3);
@@ -2847,8 +2928,22 @@ begin
 end;
 
 procedure TTilingEncoder.LoadTiles;
+
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    j: Integer;
+    tilePos: Integer;
+  begin
+    // copy frame tiles to global tiles
+    tilePos := AIndex * FTileMapSize;
+    for j := 0 to FTileMapSize - 1 do
+      FTiles[tilePos + j]^.CopyFrom(FFrames[AIndex].FrameTiles[j]^);
+
+    // also compress frame tiles to save memory
+    FFrames[AIndex].CompressFrameTiles;
+  end;
+
 var
-  i, j: Integer;
   tileCnt: Integer;
 begin
   // free memory from a prev run
@@ -2859,13 +2954,7 @@ begin
   // allocate tiles
   FTiles := TTile.Array1DNew(tileCnt, True, True);
 
-  // copy frame tiles to global tiles
-  for i := 0 to High(FFrames) do
-  begin
-    tileCnt := i * FTileMapSize;
-    for j := 0 to FTileMapSize - 1 do
-      FTiles[tileCnt + j]^.CopyFrom(FFrames[i].Tiles[j]^);
-  end;
+  ProcThreadPool.DoParallelLocalProc(@DoFrame, 0, High(FFrames));
 end;
 
 procedure TTilingEncoder.RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat); inline;
@@ -3712,10 +3801,10 @@ begin
   SetLength(AFrame.TileMap, FTileMapHeight, FTileMapWidth);
   SetLength(AFrame.FSPixels, FScreenHeight * FScreenWidth * 3);
 
-  AFrame.Tiles := TTile.Array1DNew(FTileMapSize, True, False);
+  AFrame.FrameTiles := TTile.Array1DNew(FTileMapSize, True, False);
   for i := 0 to (FTileMapSize - 1) do
   begin
-    T := AFrame.Tiles[i];
+    T := AFrame.FrameTiles[i];
 
     T^.Active := True;
     T^.UseCount := 1;
@@ -3765,7 +3854,7 @@ begin
         ty := j and (cTileWidth - 1);
         col := SwapRB(col);
 
-        AFrame.Tiles[ti]^.RGBPixels[ty, tx] := col;
+        AFrame.FrameTiles[ti]^.RGBPixels[ty, tx] := col;
 
         FromRGB(col, pfs[0], pfs[1], pfs[2]);
         Inc(pfs, 3);
@@ -3860,10 +3949,7 @@ var
 begin
   for i := 0 to High(FFrames) do
     if Assigned(FFrames[i]) then
-    begin
-      TTile.Array1DDispose(FFrames[i].Tiles);
       FreeAndNil(FFrames[i]);
-    end;
   SetLength(FFrames, 0);
 
   for i := 0 to High(FKeyFrames) do
@@ -3991,15 +4077,17 @@ begin
       FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
 
       FInputBitmap.BeginUpdate;
+      Frame.AcquireFrameTiles;
       try
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
           begin
-            tilePtr :=  Frame.Tiles[sy * FTileMapWidth + sx];
+            tilePtr :=  Frame.FrameTiles[sy * FTileMapWidth + sx];
             if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
               DrawTile(FInputBitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
           end;
       finally
+        Frame.ReleaseFrameTiles;
         FInputBitmap.EndUpdate;
       end;
     end;
@@ -4150,23 +4238,28 @@ begin
 
     if not (FRenderPlaying or AFast) then
     begin
-      q := 0.0;
-      i := 0;
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          tilePtr :=  Frame.Tiles[sy * FTileMapWidth + sx];
-          if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
+      Frame.AcquireFrameTiles;
+      try
+        q := 0.0;
+        i := 0;
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
           begin
-            ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
-            q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
-            Inc(i);
+            tilePtr :=  Frame.FrameTiles[sy * FTileMapWidth + sx];
+            if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
+            begin
+              ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, False, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
+              q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
+              Inc(i);
+            end;
           end;
-        end;
-      if i <> 0 then
-        q /= i;
+        if i <> 0 then
+          q /= i;
 
-      FRenderPsychoVisualQuality := Sqrt(q);
+        FRenderPsychoVisualQuality := Sqrt(q);
+      finally
+        Frame.ReleaseFrameTiles;
+      end;
     end;
   finally
     TTile.Dispose(PsyTile);
@@ -4764,16 +4857,21 @@ begin
   begin
     Frame := FFrames[frmIdx];
 
-    for y := 0 to FTileMapHeight - 1 do
-      for x := 0 to FTileMapWidth - 1 do
-      begin
-        if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
-          Continue;
+    Frame.AcquireFrameTiles;
+    try
+      for y := 0 to FTileMapHeight - 1 do
+        for x := 0 to FTileMapWidth - 1 do
+        begin
+          if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
+            Continue;
 
-        ComputeTilePsyVisFeatures(Frame.Tiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, PFloat(@DCTs[annQueryCount * cTileDCTSize]));
+          ComputeTilePsyVisFeatures(Frame.FrameTiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, PFloat(@DCTs[annQueryCount * cTileDCTSize]));
 
-        Inc(annQueryCount);
-      end;
+          Inc(annQueryCount);
+        end;
+    finally
+      Frame.ReleaseFrameTiles;
+    end;
   end;
 
   // query KNN
@@ -4842,80 +4940,85 @@ var
   addlTile: PTile;
   plan: TMixingPlan;
 begin
-  for sx := 0 to FTileMapWidth - 1 do
-  begin
-    PrevTMI := @APrevFrame.TileMap[Y, sx];
-    ComputeTilePsyVisFeatures(FTiles[PrevTMI^.SmoothedTileIdx]^, True, False, True, PrevTMI^.SmoothedHMirror, PrevTMI^.SmoothedVMirror, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx], PFloat(@PrevDCT[0]));
-
-    // prevent smoothing from crossing keyframes (to ensure proper seek)
-
-    if AFrame.PKeyFrame = APrevFrame.PKeyFrame then
+  APrevFrame.AcquireFrameTiles;
+  try
+    for sx := 0 to FTileMapWidth - 1 do
     begin
-      // compare DCT of current tile with tile from prev frame tilemap
+      PrevTMI := @APrevFrame.TileMap[Y, sx];
+      ComputeTilePsyVisFeatures(FTiles[PrevTMI^.SmoothedTileIdx]^, True, False, True, PrevTMI^.SmoothedHMirror, PrevTMI^.SmoothedVMirror, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx], PFloat(@PrevDCT[0]));
 
-      TMI := @AFrame.TileMap[Y, sx];
-      ComputeTilePsyVisFeatures(FTiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], PFloat(@DCT[0]));
+      // prevent smoothing from crossing keyframes (to ensure proper seek)
 
-      cmp := CompareEuclideanDCT(DCT, PrevDCT);
-      cmp := sqrt(cmp * cSqrtFactor);
-
-      // if difference is low enough, mark the tile as smoothed for tilemap compression use
-
-      if (cmp <= Strength) then
+      if AFrame.PKeyFrame = APrevFrame.PKeyFrame then
       begin
-        if TMI^.SmoothedTileIdx >= PrevTMI^.SmoothedTileIdx then // lower tile index means the tile is used more often
+        // compare DCT of current tile with tile from prev frame tilemap
+
+        TMI := @AFrame.TileMap[Y, sx];
+        ComputeTilePsyVisFeatures(FTiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], PFloat(@DCT[0]));
+
+        cmp := CompareEuclideanDCT(DCT, PrevDCT);
+        cmp := sqrt(cmp * cSqrtFactor);
+
+        // if difference is low enough, mark the tile as smoothed for tilemap compression use
+
+        if (cmp <= Strength) then
         begin
-          TMI^.SmoothedTileIdx := PrevTMI^.SmoothedTileIdx;
-          TMI^.SmoothedPalIdx := PrevTMI^.SmoothedPalIdx;
-          TMI^.SmoothedHMirror := PrevTMI^.SmoothedHMirror;
-          TMI^.SmoothedVMirror := PrevTMI^.SmoothedVMirror;
+          if TMI^.SmoothedTileIdx >= PrevTMI^.SmoothedTileIdx then // lower tile index means the tile is used more often
+          begin
+            TMI^.SmoothedTileIdx := PrevTMI^.SmoothedTileIdx;
+            TMI^.SmoothedPalIdx := PrevTMI^.SmoothedPalIdx;
+            TMI^.SmoothedHMirror := PrevTMI^.SmoothedHMirror;
+            TMI^.SmoothedVMirror := PrevTMI^.SmoothedVMirror;
+          end
+          else
+          begin
+            PrevTMI^.SmoothedTileIdx := TMI^.SmoothedTileIdx;
+            PrevTMI^.SmoothedPalIdx := TMI^.SmoothedPalIdx;
+            PrevTMI^.SmoothedHMirror := TMI^.SmoothedHMirror;
+            PrevTMI^.SmoothedVMirror := TMI^.SmoothedVMirror;
+          end;
+
+          TMI^.Smoothed := True;
         end
         else
         begin
-          PrevTMI^.SmoothedTileIdx := TMI^.SmoothedTileIdx;
-          PrevTMI^.SmoothedPalIdx := TMI^.SmoothedPalIdx;
-          PrevTMI^.SmoothedHMirror := TMI^.SmoothedHMirror;
-          PrevTMI^.SmoothedVMirror := TMI^.SmoothedVMirror;
+          TMI^.Smoothed := False;
         end;
+      end;
 
-        TMI^.Smoothed := True;
-      end
-      else
+      // compare the DCT of previous tile with the plaintext tile, if the difference is too high, add it to "additional tiles"
+
+      ComputeTilePsyVisFeatures(APrevFrame.FrameTiles[Y * FTileMapWidth + sx]^, False, False, True, False, False, -1, nil, PFloat(@PrevPlainDCT[0]));
+
+      cmp := CompareEuclideanDCT(PrevDCT, PrevPlainDCT);
+      cmp := sqrt(cmp * cSqrtFactor);
+
+      if (AddlTilesThres <> 0.0) and (cmp > AddlTilesThres) then
       begin
-        TMI^.Smoothed := False;
+        ATList := FAdditionalTiles.LockList;
+        try
+          addlTile := TTile.New(True, True);
+          addlTile^.CopyFrom(APrevFrame.FrameTiles[Y * FTileMapWidth + sx]^);
+          addlTile^.UseCount := 1;
+          addlTile^.Active := True;
+          addlTile^.Additional := True;
+          ATList.Add(addlTile);
+
+          // redither tile (frame tiles don't have the paletted version)
+          PreparePlan(plan, FDitheringYliluoma2MixedColors, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx]);
+          DitherTile(addlTile^, plan);
+          TerminatePlan(plan);
+
+          PrevTMI^.SmoothedTileIdx := NonAddlCount + ATList.Count - 1;
+          PrevTMI^.SmoothedHMirror := False;
+          PrevTMI^.SmoothedVMirror := False;
+        finally
+          FAdditionalTiles.UnlockList;
+        end;
       end;
     end;
-
-    // compare the DCT of previous tile with the plaintext tile, if the difference is too high, add it to "additional tiles"
-
-    ComputeTilePsyVisFeatures(APrevFrame.Tiles[Y * FTileMapWidth + sx]^, False, False, True, False, False, -1, nil, PFloat(@PrevPlainDCT[0]));
-
-    cmp := CompareEuclideanDCT(PrevDCT, PrevPlainDCT);
-    cmp := sqrt(cmp * cSqrtFactor);
-
-    if (AddlTilesThres <> 0.0) and (cmp > AddlTilesThres) then
-    begin
-      ATList := FAdditionalTiles.LockList;
-      try
-        addlTile := TTile.New(True, True);
-        addlTile^.CopyFrom(APrevFrame.Tiles[Y * FTileMapWidth + sx]^);
-        addlTile^.UseCount := 1;
-        addlTile^.Active := True;
-        addlTile^.Additional := True;
-        ATList.Add(addlTile);
-
-        // redither tile (frame tiles don't have the paletted version)
-        PreparePlan(plan, FDitheringYliluoma2MixedColors, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx]);
-        DitherTile(addlTile^, plan);
-        TerminatePlan(plan);
-
-        PrevTMI^.SmoothedTileIdx := NonAddlCount + ATList.Count - 1;
-        PrevTMI^.SmoothedHMirror := False;
-        PrevTMI^.SmoothedVMirror := False;
-      finally
-        FAdditionalTiles.UnlockList;
-      end;
-    end;
+  finally
+    APrevFrame.ReleaseFrameTiles;
   end;
 end;
 
