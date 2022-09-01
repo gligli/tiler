@@ -24,6 +24,10 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 */
 
+/*
+modified by GliGli to allow continue after EOS and to extract next streams
+*/
+
 var LZMA = LZMA || {};
 var WLZMA = WLZMA || {};
 
@@ -61,31 +65,48 @@ var WLZMA = WLZMA || {};
     this.idle = workers;
     // next worker
     this.next = 0;
+	// gligli: 
+	this.nextStreams = [];
   }
 
   // called in worker context
   function onResult(msg) {
-    // local variable access
-    var wid = msg.data[0],
-        // Uint8Array result
-        buffers = msg.data[1],
-        // optional error msg
-        error = msg.data[2],
-        // parent manager
-        mgr = this.manager;
-    // mark us idle again
-    this.idle = true, mgr.idle ++;
-    // use us if we are lower in slots
-    if (mgr.next == -1 || mgr.next > wid) {
-      mgr.next = wid;
-    }
-    // invoke the promise handlers
-    if (error) { this.reject(error); }
-    else if (!buffers) { this.reject(null); }
-    else { this.resolve(new LZMA.oStream(buffers)); }
-    // reset promise interface
-    this.resolve = null;
-    this.reject = null;
+	// parent manager
+	var mgr = this.manager;
+	  
+	if (msg.data === "finished")
+	{
+		mgr.nextStreams.push(null);
+	}
+	else
+	{
+		// local variable access
+		var wid = msg.data[0],
+			// Uint8Array result
+			buffers = msg.data[1],
+			// optional error msg
+			error = msg.data[2];
+		// mark us idle again
+		this.idle = true, mgr.idle ++;
+		// use us if we are lower in slots
+		if (mgr.next == -1 || mgr.next > wid) {
+		  mgr.next = wid;
+		}
+		
+		var stream = new LZMA.oStream(buffers);
+		mgr.nextStreams.push(stream);
+
+		if (this.resolve != null && this.reject != null)
+		{
+			// invoke the promise handlers
+			if (error) { this.reject(error); }
+			else if (!buffers) { this.reject(null); }
+			else { this.resolve(stream); }
+			// reset promise interface
+			this.resolve = null;
+			this.reject = null;
+		}
+	}
     // continue working
     tick.call(mgr);
   }

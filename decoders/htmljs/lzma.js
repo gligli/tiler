@@ -28,10 +28,6 @@ References:
   https://github.com/joachimmetz/xz/blob/master/doc/lzma-file-format.txt
 */
 
-/*
-modified by GliGli to add LZMA.decodeMaxSize
-*/
-
 var LZMA = LZMA || {};
 
 (function(LZMA) {
@@ -352,12 +348,6 @@ LZMA.Decoder = function(){
   this._literalDecoder = new LZMA.LiteralDecoder();
   this._dictionarySize = -1;
   this._dictionarySizeCheck = -1;
-  this._uncompressedSize = 0;
-  
-  this._decodeState = {
-    state: 0, rep0: 0, rep1: 0, rep2: 0, rep3: 0, nowPos64: 0, prevByte: 0,
-    posState: 0, decoder2: 0, len: 0, distance: 0, posSlot: 0, numDirectBits: 0
-  }
 
   this._posSlotDecoder[0] = new LZMA.BitTreeDecoder(6);
   this._posSlotDecoder[1] = new LZMA.BitTreeDecoder(6);
@@ -431,7 +421,7 @@ LZMA.Decoder.prototype.decodeHeader = function(inStream){
   uncompressedSize |= inStream.readByte() << 8;
   uncompressedSize |= inStream.readByte() << 16;
   uncompressedSize += inStream.readByte() * 16777216;
-  
+
   inStream.readByte();
   inStream.readByte();
   inStream.readByte();
@@ -484,32 +474,14 @@ LZMA.Decoder.prototype.init = function(){
   this._rangeDecoder.init();
 };
 
-LZMA.Decoder.prototype.decodeBody = function(inStream, outStream, maxSize, doInit, doFlush){
+LZMA.Decoder.prototype.decodeBody = function(inStream, outStream, maxSize){
   var state = 0, rep0 = 0, rep1 = 0, rep2 = 0, rep3 = 0, nowPos64 = 0, prevByte = 0,
       posState, decoder2, len, distance, posSlot, numDirectBits;
-  let res = 1; // succeeded
 
-  if (doInit) {
-    this._rangeDecoder.setStream(inStream);
-    this._outWindow.setStream(outStream);
-    this.init();
-  } else {
-    state = this._decodeState.state;
-    rep0 = this._decodeState.rep0;
-    rep1 = this._decodeState.rep1;
-    rep2 = this._decodeState.rep2;
-    rep3 = this._decodeState.rep3;
-    nowPos64 = this._decodeState.nowPos64;
-    prevByte = this._decodeState.prevByte;
-    posState = this._decodeState.posState;
-    decoder2 = this._decodeState.decoder2;
-    len = this._decodeState.len;
-    distance = this._decodeState.distance;
-    posSlot = this._decodeState.posSlot;
-    numDirectBits = this._decodeState.numDirectBits;
+  this._rangeDecoder.setStream(inStream);
+  this._outWindow.setStream(outStream);
 
-    maxSize += this._decodeState.nowPos64; // fixup for already decoded data
-  }
+  this.init();
 
   while(maxSize < 0 || nowPos64 < maxSize){
     posState = nowPos64 & this._posStateMask;
@@ -576,12 +548,9 @@ LZMA.Decoder.prototype.decodeBody = function(inStream, outStream, maxSize, doIni
             rep0 += this._posAlignDecoder.reverseDecode(this._rangeDecoder);
             if (rep0 < 0){
               if (rep0 === -1){
-                res = 2; // interrupted by eos
-                doFlush = true;
                 break;
               }
-              res = 0; // error
-              return res;
+              return false;
             }
           }
         }else{
@@ -590,8 +559,7 @@ LZMA.Decoder.prototype.decodeBody = function(inStream, outStream, maxSize, doIni
       }
 
       if (rep0 >= nowPos64 || rep0 >= this._dictionarySizeCheck){
-        res = 0; // error
-        return res;
+        return false;
       }
 
       this._outWindow.copyBlock(rep0, len);
@@ -600,28 +568,11 @@ LZMA.Decoder.prototype.decodeBody = function(inStream, outStream, maxSize, doIni
     }
   }
 
-  if (doFlush) {
-    this._outWindow.flush();
-    this._outWindow.releaseStream();
-    this._rangeDecoder.releaseStream();
-  } else {
-    this._decodeState.state = state;
-    this._decodeState.rep0 = rep0;
-    this._decodeState.rep1 = rep1;
-    this._decodeState.rep2 = rep2;
-    this._decodeState.rep3 = rep3;
-    this._decodeState.nowPos64 = nowPos64;
-    this._decodeState.prevByte = prevByte;
-    this._decodeState.posState = posState;
-    this._decodeState.decoder2 = decoder2;
-    this._decodeState.len = len;
-    this._decodeState.distance = distance;
-    this._decodeState.posSlot = posSlot;
-    this._decodeState.numDirectBits = numDirectBits;
-    res = 3; // unfinished
-  }
+  this._outWindow.flush();
+  this._outWindow.releaseStream();
+  this._rangeDecoder.releaseStream();
 
-  return res;
+  return true;
 };
 
 LZMA.Decoder.prototype.setDecoderProperties = function(properties){
@@ -656,7 +607,7 @@ LZMA.decompress = function(properties, inStream, outStream, outSize){
     throw Error("Incorrect lzma stream properties");
   }
 
-  if ( !decoder.decodeBody(inStream, outStream, outSize, true, true) ){
+  if ( !decoder.decodeBody(inStream, outStream, outSize) ){
     throw Error("Error in lzma data stream");
   }
 
@@ -681,7 +632,7 @@ LZMA.decompressFile = function(inStream, outStream){
   // setup/init decoder states
   decoder.setProperties(header);
   // invoke the main decoder function
-  if ( !decoder.decodeBody(inStream, outStream, maxSize, true, true) ){
+  if ( !decoder.decodeBody(inStream, outStream, maxSize) ){
     // only generic error given here
     throw Error("Error in lzma data stream");
   }
@@ -689,38 +640,6 @@ LZMA.decompressFile = function(inStream, outStream){
   return outStream;
 };
 
-// from LZMA.decompressFile, added maxDecodeSize
-LZMA.decompressFileMaxSize = function(decoder, inStream, outStream, maxDecodeSize) {
-  // 
-  let wasFinished = decoder._uncompressedSize <= 0;
-  if (wasFinished) {
-    // read all the header properties
-    var header = decoder.decodeHeader(inStream);
-    // setup/init decoder states
-    decoder.setProperties(header);
-    decoder._uncompressedSize = header.uncompressedSize;
-  }
-  // get maximum output size (very big!?)
-  var maxSize = Math.min(maxDecodeSize, decoder._uncompressedSize);
-  decoder._uncompressedSize -= maxSize;
-  let isFinishing = decoder._uncompressedSize <= 0;
-  // invoke the main decoder function
-  let res = decoder.decodeBody(inStream, outStream, maxSize, wasFinished, isFinishing);
-  if (!res) {
-    // only generic error given here
-    throw Error("Error in lzma data stream");
-  }
-  if (res === 2) { // interrupted by eos
-    decoder._uncompressedSize = 0;
-    return outStream;
-  } else if (res === 1) { // succeeded
-    return outStream;
-  } else { // error; unfinished
-    return null;
-  }
-}
-
 LZMA.decode = LZMA.decompressFile;
-LZMA.decodeMaxSize = LZMA.decompressFileMaxSize;
 
 })(LZMA);

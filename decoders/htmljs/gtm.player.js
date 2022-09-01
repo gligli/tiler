@@ -53,14 +53,14 @@ const CTileWidth = 8;
 const CTMAttrBits = 1 + 1 + 8; // HMir + VMir + PalIdx
 const CShortIdxBits = 16 - CTMAttrBits;
 
+var gtmWLZMA = new WLZMA.Manager(1, "./wlzma.wrk.js");
+
 let gtmCanvasId = '';
-let gtmInStream = null;
+let gtmInBuffer = null;
 let gtmOutStream = null;
 let gtmHeader = null;
-let gtmLzmaDecoder = new LZMA.Decoder();
 let gtmLzmaBytesPerSecond = 1024 * 1024;
 let gtmTiles = null;
-let gtmFrameData = null;
 let gtmTMImageData = null;
 let gtmPaletteR = new Array(512);
 let gtmPaletteG = new Array(512);
@@ -76,6 +76,7 @@ let gtmAwaitingURL = null
 
 let gtmReady = false;
 let gtmPlaying = true;
+let gtmUnpackingFinished = false;
 let gtmDataPos = 0;
 let gtmWidth = 0;
 let gtmHeight = 0;
@@ -101,8 +102,7 @@ function gtmPlayFromFile(file, canvasId) {
 		var oReader = new FileReader();
 		
 		oReader.onload = function (oEvent) {
-			gtmInStream = new LZMA.iStream(oReader.result);
-			startFromReader();
+			startFromReader(oReader.result);
 		};
 		
 		oReader.readAsArrayBuffer(file);
@@ -124,8 +124,7 @@ function gtmPlayFromURL(url, canvasId) {
 		oReq.responseType = "arraybuffer";
 		
 		oReq.onload = function (oEvent) {
-			gtmInStream = new LZMA.iStream(oReq.response);
-			startFromReader();
+			startFromReader(oReq.response);
 		};
 		
 		oReq.send(null);
@@ -143,15 +142,14 @@ function resetDecoding() {
 	}
 	
 	gtmCanvasId = '';
-	gtmInStream = null;
+	gtmInBuffer = null;
 	gtmOutStream = null;
 	gtmHeader = null;
-	gtmLzmaDecoder = new LZMA.Decoder();
 	gtmLzmaBytesPerSecond = 1024 * 1024;
 	gtmTiles = null;
-	gtmFrameData = null;
-
+	
 	gtmReady = false;
+	gtmUnpackingFinished = false;
 	gtmDataPos = 0;
 	gtmFrameLength = 0;
 	gtmTileCount = 0;
@@ -163,52 +161,85 @@ function resetDecoding() {
 	gtmLoopCount = 0;
 }
 
-function startFromReader() {
-	parseHeader();
-	
+function startFromReader(buffer) {
+	gtmInBuffer = parseHeader(buffer);
 	gtmOutStream = new LZMA.oStream();
-	LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, Infinity);
-	gtmFrameData = gtmOutStream.toUint8Array();
-	
-	if (!gtmReady) {
-		gtmDataPos = 0;
-		gtmReady = true;
-		setTimeout(decodeFrame, 10);
-	}
+
+	// invoke synchronous decoding of the first keyframe (EOS terminated)
+	gtmWLZMA.decode(gtmInBuffer)
+	.then(function (outStream) {
+		unpackNextKeyframe();
+		
+		if (!gtmReady) {
+			gtmDataPos = 0;
+			gtmReady = true;
+			decodeFrame();
+		}
+
+	})
+	.catch(function(err) {
+		throw new Error(err.message);
+	})	
 }
 
-function getHeaderDWord () {
-	let v = gtmInStream.readByte();
-	v |= gtmInStream.readByte() << 8;
-	v |= gtmInStream.readByte() << 16;
-	v |= gtmInStream.readByte() << 24;
+function getHeaderDWord(stream) {
+	let v = stream.readByte();
+	v |= stream.readByte() << 8;
+	v |= stream.readByte() << 16;
+	v |= stream.readByte() << 24;
 	return v;
 }
 
-function parseHeader() {
-	let fcc = getHeaderDWord();
+function parseHeader(buffer) {
+	let stream = new LZMA.iStream(buffer)
+	
+	let fcc = getHeaderDWord(stream);
 	
 	if (fcc == 0x764D5447) { // "GTMv"; file header
-		let hdrsize = getHeaderDWord();
-		let whlsize = getHeaderDWord();
+		let hdrsize = getHeaderDWord(stream);
+		let whlsize = getHeaderDWord(stream);
 		
 		gtmHeader = new Array(whlsize >>> 2);
 		gtmHeader[GTMHeader.FourCC] = fcc;
 		gtmHeader[GTMHeader.RIFFSize] = hdrsize;
 		gtmHeader[GTMHeader.WholeHeaderSize] = whlsize;
 		for (let p = GTMHeader.WholeHeaderSize + 1; p < whlsize >>> 2; p++) {
-			gtmHeader[p] = getHeaderDWord();
+			gtmHeader[p] = getHeaderDWord(stream);
 		}
 		
 		gtmWidth = (gtmHeader[GTMHeader.FramePixelWidth] / CTileWidth) >>> 0;
 		gtmHeight = (gtmHeader[GTMHeader.FramePixelHeight] / CTileWidth) >>> 0;
 		gtmLzmaBytesPerSecond = gtmHeader[GTMHeader.KFMaxBytesPerSec];
-		console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',', Math.round(gtmHeader[GTMHeader.AverageBytesPerSec] * 8 / 1024), 'KBps');
+		console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',',
+			Math.round(gtmHeader[GTMHeader.AverageBytesPerSec] * 8 / 1024), 'KBps (average)', ',',
+			Math.round(gtmHeader[GTMHeader.KFMaxBytesPerSec] * 8 / 1024), 'KBps (max)');
+		
+		stream.offset = whlsize; // position on start of LZMA bitstream
 		
 		redimFrame();
 	} else {
-		gtmInStream.offset -= 4;
+		stream.offset -= 4;
 	}
+	
+	buffer = buffer.slice(stream.offset, buffer.length); // remove header from buffer
+	return buffer;
+}
+
+function unpackNextKeyframe() {
+	if (gtmWLZMA.nextStreams.length <= 0) {
+		return;
+	}
+	
+	if (gtmWLZMA.nextStreams.length >= 1 && gtmWLZMA.nextStreams[gtmWLZMA.nextStreams.length - 1] == null) {
+		gtmWLZMA.nextStreams.pop();
+		console.log('Finished Unpacking LZMA')
+		gtmUnpackingFinished = true;
+		return;
+	}
+	
+	let outStream = gtmWLZMA.nextStreams.shift();
+	gtmOutStream.buffers.push(outStream.buffers[0]);
+	gtmOutStream.size += outStream.size;
 }
 
 function redimFrame() {
@@ -227,21 +258,6 @@ function redimFrame() {
 		gtmTMIndexes[1] = new Uint32Array(gtmWidth * gtmHeight);
 		gtmTMAttrs[0] = new Uint16Array(gtmWidth * gtmHeight);
 		gtmTMAttrs[1] = new Uint16Array(gtmWidth * gtmHeight);
-	}
-}
-
-function unpackData() {
-	if (gtmInStream.offset >= gtmInStream.size) {
-		return;
-	}
-	
-	let maxSize = Math.max(Math.round(gtmLzmaBytesPerSecond * gtmFrameLength / 1000),  65536); // 65536 -> low-res threshold
-	
-	let res = LZMA.decodeMaxSize(gtmLzmaDecoder, gtmInStream, gtmOutStream, maxSize);
-	
-	if (res != null) {
-		gtmOutStream = res;
-		gtmFrameData = gtmOutStream.toUint8Array();
 	}
 }
 
@@ -340,7 +356,16 @@ function skipBlock(skipCount) {
 }
 
 function readByte() {
-	return gtmFrameData[gtmDataPos++];
+	let bufIdx = 0;
+	let bufPos = gtmDataPos++;
+	
+	while (gtmOutStream.buffers[bufIdx].length <= bufPos)
+	{
+		bufPos -= gtmOutStream.buffers[bufIdx].length;
+		bufIdx++;
+	}
+	
+	return gtmOutStream.buffers[bufIdx][bufPos];
 }
 
 function readWord() {
@@ -361,7 +386,7 @@ function readCommand() {
 }
 
 function decodeFrame() {
-	gtmReady |= gtmDataPos < gtmFrameData.length;
+	gtmReady |= gtmDataPos < gtmOutStream.size;
 	
 	if (gtmReady && gtmPlaying) {
 		renderEnd();
@@ -470,17 +495,17 @@ function decodeFrame() {
 				break;
 			}
 			
-			gtmReady = (gtmDataPos < gtmFrameData.length);
+			gtmReady = (gtmDataPos < gtmOutStream.size);
 		} while (doContinue && gtmReady);
 		
-		if (!doContinue && !gtmReady && gtmInStream.offset >= gtmInStream.size) {
+		if (!doContinue && !gtmReady && gtmUnpackingFinished) {
 			gtmDataPos = 0;
 			gtmLoopCount++;
 			gtmReady = true;
 		}
 	}
 	
-	unpackData();
+	unpackNextKeyframe();
 	
 	if(gtmAwaitingFile != null || gtmAwaitingURL != null) {
 		console.log('Processing awaiting video...');

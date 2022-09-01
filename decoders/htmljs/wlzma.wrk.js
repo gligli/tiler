@@ -25,6 +25,10 @@ THE SOFTWARE.
 
 */
 
+/*
+modified by GliGli to allow continue after EOS and to extract next streams
+*/
+
 "use strict";
 
 // maybe already existing?
@@ -41,19 +45,23 @@ onmessage = function(e) {
       buffer = e.data[1];
   // create the input stream instance
   var inStream = new LZMA.iStream(buffer);
-  // create the output stream instance
-  var outStream = new LZMA.oStream();
   // catch stream errors
   try {
-    // invoke main decompress function
-    LZMA.decompressFile(inStream, outStream)
-    // create a continous byte array
-    var buffers = outStream.buffers, pass = [];
-    for (var i = 0; i < buffers.length; i++) {
-      pass[i] = buffers[i].buffer;
-    }
-    // pass back the continous buffer
-    postMessage([wid, buffers], pass);
+	while (inStream.offset < inStream.size) // gligli: allow continue after EOS
+	{
+		// create the output stream instance
+		var outStream = new LZMA.oStream();
+		// invoke main decompress function
+		LZMA.decompressFile(inStream, outStream)
+		// create a continous byte array
+		var buffers = outStream.buffers, pass = [];
+		for (var i = 0; i < buffers.length; i++) {
+		  pass[i] = buffers[i].buffer;
+		}
+		// pass back the continous buffer
+		postMessage([wid, buffers], pass);
+	}
+	postMessage("finished");
   }
   catch (err) {
     // need to create a poor mans clone as not transferable
