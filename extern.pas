@@ -515,6 +515,7 @@ begin
   Parser := TStringList.Create;
   OutputStream := TMemoryStream.Create;
   try
+    SL.LineBreak := #10;
     for i := 0 to High(Dataset) do
     begin
       Line := '';
@@ -533,16 +534,14 @@ begin
 
     Process := TProcess.Create(nil);
     Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-    Process.Executable := 'BICO_Experiments.exe';
+    Process.Executable := 'BICO_vs2022.exe';
 
     Process.Parameters.Add('"' + InFN + '" ' + IntToStr(Length(Dataset)) + ' ' + IntToStr(ClusterCount) + ' ' + IntToStr(Length(Dataset[0])) + ' ' + IntToStr(CoresetSize) + ' "' + InFN + '.membership" ' + IntToStr(RandomProjections) + ' 0x42381337');
     Process.ShowWindow := swoHIDE;
     Process.Priority := ppIdle;
 
     st := 0;
-    internalRuncommand(Process, TextOutput, ErrOut, st, True); // destroys Process
-    WriteLn(TextOutput);
-    WriteLn(ErrOut);
+    internalRuncommand(Process, TextOutput, ErrOut, st, False); // destroys Process
 
     SL.LoadFromFile(InFN + '.membership');
 
@@ -572,23 +571,26 @@ begin
 
     Assert(k = Length(Centroids));
 
-    FLANNParams := CDefaultFLANNParameters;
-    FLANNParams.checks := Length(Dataset[0]);
-    FLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
-
-    SetLength(DSLine, Length(Dataset[0]));
-    SetLength(Clusters, length(Dataset));
-
-    FLANN := flann_build_index(@Centroids[0], Result, Length(Dataset[0]), @speedup, @FLANNParams);
-    for i := 0 to High(Dataset) do
+    if Result > 0 then
     begin
-      for j := 0 to High(DSLine) do
-        DSLine[j] := Dataset[i, j];
+      FLANNParams := CDefaultFLANNParameters;
+      FLANNParams.checks := Length(Dataset[0]);
+      FLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
 
-      flann_find_nearest_neighbors_index(FLANN, @DSLine[0], 1, @k, @speedup, 1, @FLANNParams);
-      Clusters[i] := k;
+      SetLength(DSLine, Length(Dataset[0]));
+      SetLength(Clusters, length(Dataset));
+
+      FLANN := flann_build_index(@Centroids[0], Result, Length(Dataset[0]), @speedup, @FLANNParams);
+      for i := 0 to High(Dataset) do
+      begin
+        for j := 0 to High(DSLine) do
+          DSLine[j] := Dataset[i, j];
+
+        flann_find_nearest_neighbors_index(FLANN, @DSLine[0], 1, @k, @speedup, 1, @FLANNParams);
+        Clusters[i] := k;
+      end;
+      flann_free_index(FLANN, @FLANNParams);
     end;
-    flann_free_index(FLANN, @FLANNParams);
 
   finally
     OutputStream.Free;

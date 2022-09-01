@@ -5089,10 +5089,11 @@ type
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
   Dataset: TDoubleDynArray2;
-  YakmoDataset, YakmoCentroids: TDoubleDynArray2;
-  BIRCHClusters, YakmoClusters: TIntegerDynArray;
-  BIRCHToDataset: TIntegerDynArray;
-  i, j, bin, cnt, lineIdx, birchDatasetIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BIRCHClusterCount: Integer;
+  YakmoDataset, YakmoCentroids, BICODataset: TDoubleDynArray2;
+  BICOClusters, YakmoClusters: TIntegerDynArray;
+  BICOToDataset: TIntegerDynArray;
+  BICOCentroids: TFloatDynArray;
+  i, j, bin, cnt, lineIdx, bicoDatasetIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BICOClusterCount: Integer;
   q00, q01, q10, q11: Integer;
   v, best: TFloat;
   ToMerge: TDoubleDynArray2;
@@ -5145,71 +5146,56 @@ begin
 
   // cluster dataset using BIRCH + Yakmo
 
-  BIRCH := birch_create(0.01, 256 * 1024 * 1024);
+  cnt := 0;
+  for i := 0 to DSLen - 1 do
+    for j := 0 to FTiles[TileIndices[i]]^.UseCount - 1 do
+      Inc(cnt);
+
+  SetLength(BICOClusters, cnt);
+  SetLength(BICOToDataset, cnt);
+  SetLength(BICODataset, cnt);
 
   cnt := 0;
   for i := 0 to DSLen - 1 do
     for j := 0 to FTiles[TileIndices[i]]^.UseCount - 1 do
     begin
-      birch_insert_line(BIRCH, @Dataset[i, 0]);
+      BICODataset[cnt] := Dataset[i];
+      BICOToDataset[cnt] := i;
       Inc(cnt);
     end;
 
-  SetLength(BIRCHClusters, cnt);
-  SetLength(BIRCHToDataset, cnt);
+  BICOClusterCount := DoExternalBICO(BICODataset, KMBin^.ClusterCount, KMBin^.ClusterCount * 2, 4, BICOClusters, BICOCentroids);
 
-  cnt := 0;
-  for i := 0 to DSLen - 1 do
-    for j := 0 to FTiles[TileIndices[i]]^.UseCount - 1 do
-    begin
-      BIRCHToDataset[cnt] := i;
-      Inc(cnt);
-    end;
+  WriteLn('Bin: ', AIndex:2, ' DatasetSize: ', cnt:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', KMBin^.ClusterCount:6);
 
-  birch_get_results(BIRCH, @BIRCHClusters[0]);
-  birch_destroy(BIRCH);
-  BIRCHClusterCount := MaxIntValue(BIRCHClusters) + 1;
+  if BICOClusterCount <= 0 then
+    Exit;
 
-  WriteLn('Bin: ', AIndex:2, ' DatasetSize: ', DSLen:8, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
-
-  SetLength(YakmoClusters, BIRCHClusterCount);
-  SetLength(YakmoDataset, BIRCHClusterCount, cTileDCTSize);
+  SetLength(YakmoClusters, BICOClusterCount);
+  SetLength(YakmoDataset, BICOClusterCount, cTileDCTSize);
   SetLength(YakmoCentroids, KMBin^.ClusterCount, cTileDCTSize);
 
-  for clusterIdx := 0 to BIRCHClusterCount - 1 do
-  begin
-    clusterLineCount := 0;
-    for birchDatasetIdx := 0 to High(BIRCHClusters) do
-      if BIRCHClusters[birchDatasetIdx] = clusterIdx then
-      begin
-        lineIdx := BIRCHToDataset[birchDatasetIdx];
-        for i := 0 to cTileDCTSize - 1 do
-          YakmoDataset[clusterIdx, i] += Dataset[lineIdx, i];
-        Inc(clusterLineCount)
-      end;
+  for clusterIdx := 0 to BICOClusterCount - 1 do
+    for i := 0 to cTileDCTSize - 1 do
+      YakmoDataset[clusterIdx, i] := BICOCentroids[clusterIdx * cTileDCTSize + i];
 
-    if clusterLineCount > 1 then
-      for i := 0 to cTileDCTSize - 1 do
-        YakmoDataset[clusterIdx, i] /= clusterLineCount;
-  end;
-
-  if BIRCHClusterCount > KMBin^.ClusterCount then
+  if BICOClusterCount > KMBin^.ClusterCount then
   begin
     Yakmo := yakmo_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 0);
-    yakmo_load_train_data(Yakmo, BIRCHClusterCount, cTileDCTSize, PPDouble(@YakmoDataset[0]));
+    yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, PPDouble(@YakmoDataset[0]));
     yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
     yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
     yakmo_destroy(Yakmo);
   end
   else
   begin
-    for i := 0 to BIRCHClusterCount - 1 do
+    for i := 0 to BICOClusterCount - 1 do
       YakmoClusters[i] := i;
     YakmoCentroids := YakmoDataset;
   end;
 
-  SetLength(ToMerge, Length(BIRCHToDataset));
-  SetLength(ToMergeIdxs, Length(BIRCHToDataset));
+  SetLength(ToMerge, Length(BICOToDataset));
+  SetLength(ToMergeIdxs, Length(BICOToDataset));
 
   // build a list of this centroid tiles
 
@@ -5218,10 +5204,10 @@ begin
     clusterLineCount := 0;
     for yakmoDatasetIdx := 0 to High(YakmoClusters) do
       if YakmoClusters[yakmoDatasetIdx] = clusterIdx then
-        for birchDatasetIdx := 0 to High(BIRCHClusters) do
-          if BIRCHClusters[birchDatasetIdx] = yakmoDatasetIdx then
+        for bicoDatasetIdx := 0 to High(BICOClusters) do
+          if BICOClusters[bicoDatasetIdx] = yakmoDatasetIdx then
           begin
-            lineIdx := BIRCHToDataset[birchDatasetIdx];
+            lineIdx := BICOToDataset[bicoDatasetIdx];
 
             ToMerge[clusterLineCount] := Dataset[lineIdx];
             ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
