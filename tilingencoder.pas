@@ -1148,12 +1148,15 @@ begin
 end;
 
 procedure TFrame.ReleaseFrameTiles;
+var
+  ftrc: Integer;
 begin
-  if InterLockedDecrement(FrameTilesRefCount) <= 0 then
+  ftrc := InterLockedDecrement(FrameTilesRefCount);
+  if ftrc <= 0 then
   begin
     ResetEvent(FrameTilesEvent);
     TTile.Array1DDispose(FrameTiles);
-    Assert(FrameTilesRefCount = 0);
+    Assert(ftrc = 0);
   end;
 end;
 
@@ -5164,7 +5167,7 @@ begin
       Inc(cnt);
     end;
 
-  BICOClusterCount := DoExternalBICO(BICODataset, KMBin^.ClusterCount, KMBin^.ClusterCount * 2, 4, BICOClusters, BICOCentroids);
+  BICOClusterCount := DoExternalBICO(BICODataset, KMBin^.ClusterCount, KMBin^.ClusterCount * 2, 1, BICOClusters, BICOCentroids);
 
   WriteLn('Bin: ', AIndex:2, ' DatasetSize: ', cnt:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', KMBin^.ClusterCount:6);
 
