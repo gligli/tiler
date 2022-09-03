@@ -230,8 +230,8 @@ type
     procedure ClearPalPixels;
     procedure ClearRGBPixels;
     procedure ClearPixels;
-    procedure ExtractPalPixels(AArray: PANNFloat);
-    procedure LoadPalPixels(AArray: PANNFloat);
+    procedure ExtractPalPixels(AArray: PFloat);
+    procedure LoadPalPixels(AArray: PFloat);
     function ComparePalPixelsTo(const ATile: TTile): Integer;
     function CompareRGBPixelsTo(const ATile: TTile): Integer;
 
@@ -252,7 +252,7 @@ type
   TTileMapItems = array of TTileMapItem;
 
   TTilingDataset = record
-    Dataset: TANNFloatDynArray;
+    Dataset: TFloatDynArray;
     TDToTileIdx: TIntegerDynArray;
     TDToAttrs: TByteDynArray;
     FLANN: flann_index_t;
@@ -471,7 +471,7 @@ type
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
       VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
-      GammaCor: Integer; const pal: TIntegerDynArray; DCT: TDoubleDynArray); inline; overload;
+      GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -1353,11 +1353,11 @@ begin
   ClearRGBPixels;
 end;
 
-procedure TTileHelper.ExtractPalPixels(AArray: PANNFloat);
+procedure TTileHelper.ExtractPalPixels(AArray: PFloat);
 var
   i: Integer;
   PB: PByte;
-  PF: PANNFloat;
+  PF: PFloat;
 begin
   Assert(HasPalPixels);
   PB := @GetPalPixelsPtr^[0, 0];
@@ -1370,11 +1370,11 @@ begin
   end;
 end;
 
-procedure TTileHelper.LoadPalPixels(AArray: PANNFloat);
+procedure TTileHelper.LoadPalPixels(AArray: PFloat);
 var
   i: Integer;
   PB: PByte;
-  PF: PANNFloat;
+  PF: PFloat;
 begin
   Assert(HasPalPixels);
   PB := @GetPalPixelsPtr^[0, 0];
@@ -2525,7 +2525,7 @@ begin
       for sx := 0 to FTileMapWidth - 1 do
       begin
         GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, YakmoDataset[di]);
+        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @YakmoDataset[di, 0]);
 
         Inc(di);
       end;
@@ -3594,8 +3594,8 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
-  VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: TDoubleDynArray);
+procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
+  GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble);
 var
   u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
@@ -4804,7 +4804,7 @@ var
 
   DS: PTilingDataset;
   idxs: TIntegerDynArray;
-  errs: TANNFloatDynArray;
+  errs: TFloatDynArray;
   DCTs: TFloatDynArray;
 
   Best: TKFTilingBest;
@@ -5091,127 +5091,144 @@ type
 
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  Dataset: TDoubleDynArray2;
-  YakmoDataset, YakmoCentroids, BICODataset: TDoubleDynArray2;
-  BICOClusters, YakmoClusters: TIntegerDynArray;
-  BICOToDataset: TIntegerDynArray;
-  BICOCentroids: TFloatDynArray;
-  i, j, bin, cnt, lineIdx, bicoDatasetIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BICOClusterCount: Integer;
+  i, j, bin, cnt, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BICOClusterCount, BICOCoresetSize: Integer;
   q00, q01, q10, q11: Integer;
+  err: Double;
   v, best: TFloat;
-  ToMerge: TDoubleDynArray2;
-  ToMergeIdxs: TIntegerDynArray;
-  KMBin: PKModesBin;
-  Yakmo: PYakmo;
-  BIRCH: PBIRCH;
-  TileIndices: TIntegerDynArray;
   TileFrame: TFrame;
   TileTMI: PTileMapItem;
+
+  KMBin: PKModesBin;
+  BICO: PBICO;
+  ANN: PANNkdtree;
+  Yakmo: PYakmo;
+
+  TileIndices: TIntegerDynArray;
+  Dataset: TDoubleDynArray2;
+  YakmoCentroids: TDoubleDynArray2;
+  ANNClusters, YakmoClusters: TIntegerDynArray;
+  BICOCentroids, BICOWeights: TDoubleDynArray;
+  ANNDataset: array of PANNFloat;
+  ToMerge: TDoubleDynArray2;
+  ToMergeIdxs: TIntegerDynArray;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := KMBin^.DatasetLength;
   if (DSLen <= KMBin^.ClusterCount) or (KMBin^.ClusterCount <= 1) then
     Exit;
 
-  // build bin dataset
+  // use BICO to prepare a noise-aware set of centroids that will be used as dataset for Yakmo
 
-  SetLength(TileIndices, DSLen);
-  SetLength(Dataset, DSLen, cTileDCTSize);
-  cnt := 0;
-  for i := 0 to High(FTiles) do
-  begin
-    bin := KMBin^.TileBin[i];
+  BICOCoresetSize := KMBin^.ClusterCount * 2;
+  BICO := bico_create(cTileDCTSize, DSLen, KMBin^.ClusterCount, 1, BICOCoresetSize, $42381337);
+  try
+    // parse bin dataset
 
-    if bin <> AIndex then
-      Continue;
-
-    // enforce a 'spin' on tiles mirrors (brighter top-left corner)
-
-    q00 := GetTileZoneSum(FTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
-    q01 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
-    q10 := GetTileZoneSum(FTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-    q11 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-
-    TileTMI := GetTileIndexTMItem(FTiles[i]^, TileFrame);
-
-    TileTMI^.HMirror := q00 + q10 < q01 + q11;
-    TileTMI^.VMirror := q00 + q01 < q10 + q11;
-
-    if TileTMI^.HMirror then HMirrorTile(FTiles[i]^);
-    if TileTMI^.VMirror then VMirrorTile(FTiles[i]^);
-
-    ComputeTilePsyVisFeatures(FTiles[i]^, True, False, False, False, False, -1, TileFrame.PKeyFrame.PaletteRGB[TileTMI^.PalIdx], Dataset[cnt]);
-
-    TileIndices[cnt] := i;
-    Inc(cnt);
-  end;
-  Assert(cnt = DSLen);
-
-  // cluster dataset using BIRCH + Yakmo
-
-  cnt := 0;
-  for i := 0 to DSLen - 1 do
-    for j := 0 to FTiles[TileIndices[i]]^.UseCount - 1 do
-      Inc(cnt);
-
-  SetLength(BICOClusters, cnt);
-  SetLength(BICOToDataset, cnt);
-  SetLength(BICODataset, cnt);
-
-  cnt := 0;
-  for i := 0 to DSLen - 1 do
-    for j := 0 to FTiles[TileIndices[i]]^.UseCount - 1 do
+    SetLength(TileIndices, DSLen);
+    SetLength(Dataset, DSLen, cTileDCTSize);
+    cnt := 0;
+    for i := 0 to High(FTiles) do
     begin
-      BICODataset[cnt] := Dataset[i];
-      BICOToDataset[cnt] := i;
+      bin := KMBin^.TileBin[i];
+
+      if bin <> AIndex then
+        Continue;
+
+      // enforce a 'spin' on tiles mirrors (brighter top-left corner)
+
+      q00 := GetTileZoneSum(FTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
+      q01 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
+      q10 := GetTileZoneSum(FTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+      q11 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+
+      TileTMI := GetTileIndexTMItem(FTiles[i]^, TileFrame);
+
+      TileTMI^.HMirror := q00 + q10 < q01 + q11;
+      TileTMI^.VMirror := q00 + q01 < q10 + q11;
+
+      if TileTMI^.HMirror then HMirrorTile(FTiles[i]^);
+      if TileTMI^.VMirror then VMirrorTile(FTiles[i]^);
+
+      ComputeTilePsyVisFeatures(FTiles[i]^, True, False, False, False, False, -1, TileFrame.PKeyFrame.PaletteRGB[TileTMI^.PalIdx], @Dataset[cnt, 0]);
+
+      // insert line into BICO, UseCount as weight to avoid repeat
+      bico_insert_line(BICO, @Dataset[cnt, 0], FTiles[i]^.UseCount);
+
+      TileIndices[cnt] := i;
       Inc(cnt);
     end;
+    Assert(cnt = DSLen);
 
-  BICOClusterCount := DoExternalBICO(BICODataset, KMBin^.ClusterCount, KMBin^.ClusterCount * 2, 1, BICOClusters, BICOCentroids);
+    // get BICO results
 
-  WriteLn('Bin: ', AIndex:2, ' DatasetSize: ', cnt:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', KMBin^.ClusterCount:6);
+    SetLength(BICOCentroids, BICOCoresetSize * cTileDCTSize);
+    SetLength(BICOWeights, BICOCoresetSize);
+
+    BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
+
+    WriteLn('Bin: ', AIndex:2, ' DatasetSize: ', cnt:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', KMBin^.ClusterCount:6);
+
+  finally
+    bico_destroy(BICO);
+  end;
 
   if BICOClusterCount <= 0 then
     Exit;
 
-  SetLength(YakmoClusters, BICOClusterCount);
-  SetLength(YakmoDataset, BICOClusterCount, cTileDCTSize);
-  SetLength(YakmoCentroids, KMBin^.ClusterCount, cTileDCTSize);
+  // use ANN to compute cluster indexes
+
+  SetLength(ANNDataset, BICOClusterCount);
+  SetLength(ANNClusters, DSLen);
 
   for clusterIdx := 0 to BICOClusterCount - 1 do
-    for i := 0 to cTileDCTSize - 1 do
-      YakmoDataset[clusterIdx, i] := BICOCentroids[clusterIdx * cTileDCTSize + i];
+    ANNDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
+
+  ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_STD);
+  try
+    for i := 0 to DSLen - 1 do
+      ANNClusters[i] := ann_kdtree_search(ANN, @Dataset[i, 0], 0.0, @err);
+  finally
+    ann_kdtree_destroy(ANN);
+  end;
+
+  // use Yakmo to extract final centroids
+
+  SetLength(YakmoClusters, BICOClusterCount);
+  SetLength(YakmoCentroids, KMBin^.ClusterCount, cTileDCTSize);
 
   if BICOClusterCount > KMBin^.ClusterCount then
   begin
     Yakmo := yakmo_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 0);
-    yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, PPDouble(@YakmoDataset[0]));
-    yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-    yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
-    yakmo_destroy(Yakmo);
+    try
+      yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, @ANNDataset[0]);
+      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+      yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
+    finally
+      yakmo_destroy(Yakmo);
+    end;
   end
   else
   begin
     for i := 0 to BICOClusterCount - 1 do
       YakmoClusters[i] := i;
-    YakmoCentroids := YakmoDataset;
+    for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
+      for i := 0 to cTileDCTSize - 1 do
+        YakmoCentroids[clusterIdx, i] := BICOCentroids[clusterIdx * cTileDCTSize + i];
   end;
 
-  SetLength(ToMerge, Length(BICOToDataset));
-  SetLength(ToMergeIdxs, Length(BICOToDataset));
-
   // build a list of this centroid tiles
+
+  SetLength(ToMerge, DSLen);
+  SetLength(ToMergeIdxs, DSLen);
 
   for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
   begin
     clusterLineCount := 0;
     for yakmoDatasetIdx := 0 to High(YakmoClusters) do
       if YakmoClusters[yakmoDatasetIdx] = clusterIdx then
-        for bicoDatasetIdx := 0 to High(BICOClusters) do
-          if BICOClusters[bicoDatasetIdx] = yakmoDatasetIdx then
+        for lineIdx := 0 to DSLen - 1 do
+          if ANNClusters[lineIdx] = yakmoDatasetIdx then
           begin
-            lineIdx := BICOToDataset[bicoDatasetIdx];
-
             ToMerge[clusterLineCount] := Dataset[lineIdx];
             ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
             Inc(clusterLineCount);
@@ -5293,7 +5310,7 @@ begin
   share := DesiredNbTiles / disCnt;
 
   for i := 0 to High(cnt) do
-    KMBins[i].ClusterCount := Max(1, Round(cnt[i] * share));
+    KMBins[i].ClusterCount := Max(1, Trunc(cnt[i] * share));
 
   ProgressRedraw(1);
 
@@ -5317,15 +5334,15 @@ end;
 procedure TTilingEncoder.ReloadPreviousTiling(AFN: String);
 var
   ParallelCount: PtrUInt;
-  KNNDataset: TANNFloatDynArray;
+  KNNDataset: TFloatDynArray;
   FLANN: flann_index_t;
   FLANNParameters: TFLANNParameters;
 
   procedure DoFindBest(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     last, bin, i, tidx: Integer;
-    DataLine: array[0 .. sqr(cTileWidth) - 1] of TANNFloat;
-    err: TANNFloat;
+    DataLine: array[0 .. sqr(cTileWidth) - 1] of TFloat;
+    err: TFloat;
   begin
     if not InRange(AIndex, 0, ParallelCount - 1) then
       Exit;
@@ -5918,7 +5935,7 @@ begin
   SpinLeave(@FLock);
 
 {$ifdef DEBUG}
-  //ProcThreadPool.MaxThreadCount := 1;
+  ProcThreadPool.MaxThreadCount := 1;
 {$else}
   SetPriorityClass(GetCurrentProcess(), IDLE_PRIORITY_CLASS);
 {$endif}

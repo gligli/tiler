@@ -31,7 +31,7 @@ type
   		ANN_KD_SUGGEST = 5 // the authors' suggestion for best
   );
 
-  TANNFloat = Single;
+  TANNFloat = Double;
   PANNFloat = ^TANNFloat;
   PPANNFloat = ^PANNFloat;
   TANNFloatDynArray = array of TANNFloat;
@@ -59,6 +59,11 @@ type
   end;
 
   PBIRCH = ^TBIRCH;
+
+  TBICO = record
+  end;
+
+  PBICO = ^TBICO;
 
   flann_index_t = Pointer;
 
@@ -134,13 +139,8 @@ procedure QuickSort(var AData;AFirstItem,ALastItem,AItemSize:Integer;ACompareFun
 
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
-function DoExternalBICO(Dataset: TDoubleDynArray2; ClusterCount, CoresetSize, RandomProjections: Integer; var Clusters: TIntegerDynArray; var Centroids: TFloatDynArray): Integer;
 procedure DoExternalSKLearn(Dataset: TByteDynArray2; ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
-procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
-  OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
-
-procedure DoExternalSColorQ(inbuf: PByte; width, height, quant_to: Integer; userpal: PDLUserPal);
 
 procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; Header: Boolean);
 function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
@@ -180,6 +180,10 @@ procedure birch_destroy(birch: PBIRCH); stdcall; external 'BIRCH.dll';
 procedure birch_insert_line(birch: PBIRCH; line: PDouble); stdcall; external 'BIRCH.dll';
 procedure birch_get_results(birch: PBIRCH; pointToCluster: PInteger); stdcall; external 'BIRCH.dll';
 
+function bico_create(dimension, npoints, k, nrandproj, coresetsize: Int64; randomSeed: Integer): PBICO; stdcall; external 'BICO.dll';
+procedure bico_destroy(bico: PBICO); stdcall; external 'BICO.dll';
+procedure bico_insert_line(bico: PBICO; line: PDouble; weight: Double); stdcall; external 'BICO.dll';
+function bico_get_results(bico: PBICO; centroids: PDouble; weights: PDouble): Int64; stdcall; external 'BICO.dll';
 
 function NumberOfProcessors: Integer;
 function HalfNumberOfProcessors: Integer;
@@ -499,106 +503,6 @@ begin
   end;
 end;
 
-function DoExternalBICO(Dataset: TDoubleDynArray2; ClusterCount, CoresetSize, RandomProjections: Integer; var Clusters: TIntegerDynArray; var Centroids: TFloatDynArray): Integer;
-var
-  i, j, k, st: Integer;
-  InFN, Line, TextOutput, ErrOut: String;
-  SL, Parser: TStringList;
-  Process: TProcess;
-  OutputStream: TMemoryStream;
-  FLANN: flann_index_t;
-  FLANNParams: TFLANNParameters;
-  speedup: TFloat;
-  DSLine: TFloatDynArray;
-begin
-  SL := TStringList.Create;
-  Parser := TStringList.Create;
-  OutputStream := TMemoryStream.Create;
-  try
-    SL.LineBreak := #10;
-    for i := 0 to High(Dataset) do
-    begin
-      Line := '';
-      for j := 0 to High(Dataset[0]) do
-      begin
-        if Line <> '' then
-           Line += ' ';
-        Line := Line + FloatToStr(Dataset[i, j]);
-      end;
-      SL.Add(Line);
-    end;
-
-    InFN := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
-    SL.SaveToFile(InFN);
-    SL.Clear;
-
-    Process := TProcess.Create(nil);
-    Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-    Process.Executable := 'BICO_vs2022.exe';
-
-    Process.Parameters.Add('"' + InFN + '" ' + IntToStr(Length(Dataset)) + ' ' + IntToStr(ClusterCount) + ' ' + IntToStr(Length(Dataset[0])) + ' ' + IntToStr(CoresetSize) + ' "' + InFN + '.membership" ' + IntToStr(RandomProjections) + ' 0x42381337');
-    Process.ShowWindow := swoHIDE;
-    Process.Priority := ppIdle;
-
-    st := 0;
-    internalRuncommand(Process, TextOutput, ErrOut, st, False); // destroys Process
-
-    SL.LoadFromFile(InFN + '.membership');
-
-    DeleteFile(PChar(InFN));
-    DeleteFile(PChar(InFN + '.membership'));
-
-    Parser.Delimiter := ' ';
-    Result := -1;
-    k := 0;
-    for i := 0 to SL.Count - 1 do
-    begin
-      Parser.DelimitedText := SL[i];
-      if i = 0 then
-      begin
-        Result := StrToIntDef(Parser[0], 0);
-        SetLength(Centroids, Result * Length(Dataset[0]));
-      end
-      else
-      begin
-        for j := 1 to High(Dataset[0]) + 1 do
-        begin
-          Centroids[k] := StrToFloatDef(Parser[j], 0);
-          Inc(k);
-        end;
-      end;
-    end;
-
-    Assert(k = Length(Centroids));
-
-    if Result > 0 then
-    begin
-      FLANNParams := CDefaultFLANNParameters;
-      FLANNParams.checks := Length(Dataset[0]);
-      FLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
-
-      SetLength(DSLine, Length(Dataset[0]));
-      SetLength(Clusters, length(Dataset));
-
-      FLANN := flann_build_index(@Centroids[0], Result, Length(Dataset[0]), @speedup, @FLANNParams);
-      for i := 0 to High(Dataset) do
-      begin
-        for j := 0 to High(DSLine) do
-          DSLine[j] := Dataset[i, j];
-
-        flann_find_nearest_neighbors_index(FLANN, @DSLine[0], 1, @k, @speedup, 1, @FLANNParams);
-        Clusters[i] := k;
-      end;
-      flann_free_index(FLANN, @FLANNParams);
-    end;
-
-  finally
-    OutputStream.Free;
-    Parser.Free;
-    SL.Free;
-  end;
-end;
-
 procedure DoExternalKMeans(Dataset: TFloatDynArray2; ClusterCount, ThreadCount: Integer; PrintProgress: Boolean;
   var Clusters: TIntegerDynArray);
 var
@@ -665,196 +569,6 @@ begin
     OutputStream.Free;
     Shuffler.Free;
     OutSL.Free;
-  end;
-end;
-
-procedure DoExternalYakmo(TrainDS, TestDS: TFloatDynArray2; ClusterCount, RestartCount, IterationCount: Integer;
-  OutputClusters, PrintProgress: Boolean; Centroids: TStringList; var Clusters: TIntegerDynArray);
-var
-  i, PrevLen, Clu, Inp, RetCode: Integer;
-  TrainFN, TrainStmt, TestFN, CrFN, Line, Output, ErrOut, CmdLine: String;
-  SL: TStringList;
-  FS: TFileStream;
-  Process: TProcess;
-begin
-  if Assigned(TrainDS) and (ClusterCount >= Length(TrainDS)) then
-  begin
-    // force a valid dataset by duplicating lines
-    PrevLen := Length(TrainDS);
-    SetLength(TrainDS, PrevLen * 2);
-    for i := PrevLen to PrevLen * 2 - 1 do
-      TrainDS[i] := TrainDS[i - PrevLen];
-  end;
-
-  Process := TProcess.Create(nil);
-  SL := TStringList.Create;
-  try
-    if Assigned(TrainDS) then
-    begin
-      TrainFN := GetTempFileName('', 'dataset-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.bin');
-      FS := TFileStream.Create(TrainFN, fmCreate or fmShareDenyWrite);
-      try
-        FS.WriteDWord(Length(TrainDS));
-        FS.WriteDWord(Length(TrainDS[0]));
-        for i := 0 to High(TrainDS) do
-          FS.Write(TrainDS[i, 0], Length(TrainDS[0]) * SizeOf(TrainDS[i, 0]));
-      finally
-        FS.Free;
-      end;
-    end;
-
-    if Assigned(TestDS) then
-      TestFN := GenerateSVMLightFile(TestDS, False);
-
-    if Assigned(Centroids) then
-    begin
-      CrFN := GetTempFileName('', 'centroids-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.txt');
-      if not Assigned(TrainDS) then
-        Centroids.SaveToFile(CrFN)
-    end;
-
-    Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-    Process.Executable := IfThen(SizeOf(TFloat) = SizeOf(Double), 'yakmo.exe', 'yakmo_single.exe');
-
-    CmdLine := IfThen(OutputClusters, ' --binary --output=2 ');
-    CmdLine += IfThen(IterationCount < 0, ' --iteration=10000 ', ' --iteration=' + IntToStr(IterationCount) + ' ');
-    CmdLine += IfThen((ClusterCount >= 0) and Assigned(TrainDS), ' --num-cluster=' + IntToStr(ClusterCount) + ' ');
-    CmdLine += IfThen(RestartCount >= 0, ' --num-result=' + IntToStr(RestartCount) + ' ');
-
-    TrainStmt := IfThen(TrainFN = '', '-', '"' + TrainFN + '"');
-
-    if Assigned(TestDS) then
-      CmdLine := TrainStmt + ' "' + CrFN + '" "' + TestFN + '" ' + CmdLine
-    else if Assigned(Centroids) then
-      CmdLine := TrainStmt + ' "' + CrFN + '" - ' + CmdLine
-    else
-      CmdLine := TrainStmt + ' - - ' + CmdLine;
-
-    Process.Parameters.Add(CmdLine);
-    Process.ShowWindow := swoHIDE;
-    Process.Priority := ppIdle;
-
-    RetCode := 0;
-    internalRuncommand(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
-
-    if RetCode <> 0 then
-    begin
-      DebugLn('Yakmo failed! RetCode: ' + IntToStr(RetCode) + sLineBreak + 'Msg: ' + ErrOut + sLineBreak + 'CmdLine: ' + CmdLine);
-      Exit;
-    end;
-
-    if Assigned(TrainDS) then
-      DeleteFile(PChar(TrainFN));
-
-    if Assigned(TestDS) then
-      DeleteFile(PChar(TestFN));
-
-    if Assigned(Centroids) then
-    begin
-      if Assigned(TrainDS) then
-      begin
-        if FileExists(CrFN) then
-          Centroids.LoadFromFile(CrFN)
-        else
-          GenerateSVMLightData(TrainDS, Centroids, True);
-      end;
-
-      DeleteFile(PChar(CrFN));
-    end;
-
-    if OutputClusters then
-    begin
-      if (Pos(#10, Output) <> Pos(#13#10, Output) + 1) then
-        SL.LineBreak := #10;
-
-      SL.Text := Output;
-
-      SetLength(Clusters, SL.Count);
-      for i := 0 to SL.Count - 1 do
-      begin
-        Line := SL[i];
-        if TryStrToInt(Copy(Line, 1, Pos(' ', Line) - 1), Inp) and
-            TryStrToInt(RightStr(Line, Pos(' ', ReverseString(Line)) - 1), Clu) then
-          Clusters[Inp] := Clu;
-      end;
-    end;
-  finally
-    SL.Free;
-  end;
-end;
-
-procedure DoExternalSColorQ(inbuf: PByte; width, height, quant_to: Integer; userpal: PDLUserPal);
-var
-  InTmpFN, OutTmpFN, Output, ErrOut: String;
-  FS: TFileStream;
-  rr, gg, bb: Byte;
-  i, j, ppos, RetCode: Integer;
-  found: Boolean;
-  Process: TProcess;
-begin
-  InTmpFN := GetTempFileName('', 'in-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.rgb');
-  OutTmpFN := GetTempFileName('', 'out-'+IntToStr(InterLockedIncrement(GTempAutoInc))+'.rgb');
-
-  FS := TFileStream.Create(InTmpFN, fmCreate or fmShareDenyNone);
-  try
-    FS.WriteBuffer(inbuf^, width * height * 3);
-  finally
-    FS.Free;
-  end;
-
-  Process := TProcess.Create(nil);
-  Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-  Process.Executable := 'scolorq\spatial_color_quant.exe';
-
-  Process.Parameters.Add(InTmpFN);
-  Process.Parameters.Add(IntToStr(width));
-  Process.Parameters.Add(IntToStr(height));
-  Process.Parameters.Add(IntToStr(quant_to));
-  Process.Parameters.Add(OutTmpFN);
-  //Process.Parameters.Add('0.0');
-  //Process.Parameters.Add('5');
-  Process.ShowWindow := swoHIDE;
-  Process.Priority := ppIdle;
-
-  RetCode := 0;
-  internalRuncommand(Process, Output, ErrOut, RetCode, False); // destroys Process
-
-  FS := TFileStream.Create(OutTmpFN, fmOpenRead or fmShareDenyNone);
-  try
-    ppos := 0;
-    for i := 0 to width * height - 1 do
-    begin
-      rr := FS.ReadByte;
-      gg := FS.ReadByte;
-      bb := FS.ReadByte;
-
-      found := False;
-      for j := 0 to ppos - 1 do
-      begin
-        if (userpal^[0][j] = rr) and (userpal^[1][j] = gg) and (userpal^[2][j] = bb) then
-        begin
-          found := True;
-          Break;
-        end;
-      end;
-
-      if not found and (ppos < quant_to) then
-      begin
-        userpal^[0][ppos] := rr;
-        userpal^[1][ppos] := gg;
-        userpal^[2][ppos] := bb;
-        Inc(ppos);
-      end;
-    end;
-
-    for i := ppos to quant_to - 1 do
-    begin
-      userpal^[0][i] := $ff;
-      userpal^[1][i] := $00;
-      userpal^[2][i] := $ff;
-    end;
-  finally
-    FS.Free;
   end;
 end;
 
