@@ -53,7 +53,7 @@ const CTileWidth = 8;
 const CTMAttrBits = 1 + 1 + 8; // HMir + VMir + PalIdx
 const CShortIdxBits = 16 - CTMAttrBits;
 
-var gtmWLZMA = new WLZMA.Manager(1, "./wlzma.wrk.js");
+let gtmWLZMA = null;
 
 let gtmCanvasId = '';
 let gtmInBuffer = null;
@@ -140,6 +140,7 @@ function resetDecoding() {
 		clearInterval(gtmFrameInterval);
 		gtmFrameInterval = null;
 	}
+	gtmWLZMA = new WLZMA.Manager(1, URL.createObjectURL(new Blob(["("+worker_function.toString()+")(\""+ document.URL +"\")"], {type: 'text/javascript'})));
 	
 	gtmCanvasId = '';
 	gtmInBuffer = null;
@@ -165,7 +166,7 @@ function startFromReader(buffer) {
 	gtmInBuffer = parseHeader(buffer);
 	gtmOutStream = new LZMA.oStream();
 
-	// invoke synchronous decoding of the first keyframe (EOS terminated)
+	// invoke asynchronous decoding of the first keyframe (EOS terminated)
 	gtmWLZMA.decode(gtmInBuffer)
 	.then(function (outStream) {
 		unpackNextKeyframe();
@@ -173,7 +174,7 @@ function startFromReader(buffer) {
 		if (!gtmReady) {
 			gtmDataPos = 0;
 			gtmReady = true;
-			decodeFrame();
+			setTimeout(decodeFrame, 10);
 		}
 
 	})
@@ -331,7 +332,8 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 	
 	for (let ty = 0; ty < CTileWidth; ty++) {
 		for (let tx = 0; tx < CTileWidth; tx++) {
-			let pv = prevTile[prevTOff++];
+			let pv = 0;
+			if (prevTile) pv = prevTile[prevTOff++]; // can be undefined when changing video
 			let cv = tile[tOff++];
 			data[p++] = Math.min(255, ((palR[cv] * blendCur + prevPalR[pv] * blendPrev) / 15) >> 0);
 			data[p++] = Math.min(255, ((palG[cv] * blendCur + prevPalG[pv] * blendPrev) / 15) >> 0);
@@ -495,7 +497,7 @@ function decodeFrame() {
 				break;
 			}
 			
-			gtmReady = (gtmDataPos < gtmOutStream.size);
+			gtmReady = gtmDataPos < gtmOutStream.size;
 		} while (doContinue && gtmReady);
 		
 		if (!doContinue && !gtmReady && gtmUnpackingFinished) {

@@ -26,50 +26,57 @@ THE SOFTWARE.
 */
 
 /*
-modified by GliGli to allow continue after EOS and to extract next streams
+modified by GliGli to allow continue after EOS and to extract next streams and to allow local webworkers
 */
 
 "use strict";
 
-// maybe already existing?
-// sources might be joined?
-var LZMA = LZMA;
+function worker_function(URL) {
+	var path = URL.substring(0, URL.lastIndexOf("/") + 1);
 
-// optional imports
-if (!LZMA) importScripts('lzma.js');
-if (!LZMA.oStream) importScripts('lzma.shim.js');
+	// imports
+	importScripts(path + 'lzma.js');
+	importScripts(path + 'lzma.shim.js');
 
-onmessage = function(e) {
-  // get buffer from data
-  var wid = e.data[0],
-      buffer = e.data[1];
-  // create the input stream instance
-  var inStream = new LZMA.iStream(buffer);
-  // catch stream errors
-  try {
-	while (inStream.offset < inStream.size) // gligli: allow continue after EOS
-	{
-		// create the output stream instance
-		var outStream = new LZMA.oStream();
-		// invoke main decompress function
-		LZMA.decompressFile(inStream, outStream)
-		// create a continous byte array
-		var buffers = outStream.buffers, pass = [];
-		for (var i = 0; i < buffers.length; i++) {
-		  pass[i] = buffers[i].buffer;
+	onmessage = function(e) {
+	  // get buffer from data
+	  var wid = e.data[0],
+		  buffer = e.data[1];
+	  // create the input stream instance
+	  var inStream = new LZMA.iStream(buffer);
+	  // catch stream errors
+	  try {
+		while (inStream.offset < inStream.size) // gligli: allow continue after EOS
+		{
+			// create the output stream instance
+			var outStream = new LZMA.oStream();
+			// invoke main decompress function
+			LZMA.decompressFile(inStream, outStream)
+			// create a continous byte array
+			var buffers = outStream.buffers, pass = [];
+			for (var i = 0; i < buffers.length; i++) {
+			  pass[i] = buffers[i].buffer;
+			}
+			// pass back the continous buffer
+			postMessage([wid, buffers], pass);
 		}
-		// pass back the continous buffer
-		postMessage([wid, buffers], pass);
-	}
-	postMessage("finished");
-  }
-  catch (err) {
-    // need to create a poor mans clone as not transferable
-    var error = { message: err.message, stack: err.stack };
-    // pass back the complete error object
-    postMessage([wid, null, error]);
-  }
+		postMessage("finished");
+	  }
+	  catch (err) {
+		// need to create a poor mans clone as not transferable
+		var error = { message: err.message, stack: err.stack };
+		// pass back the complete error object
+		postMessage([wid, null, error]);
+	  }
 
+	}
+
+	postMessage("ready");
 }
 
-postMessage("ready");
+// This is in case of normal worker start
+// "window" is not defined in web worker
+// so if you load this file directly using `new Worker`
+// the worker code will still execute properly
+if(window!=self)
+  worker_function();
