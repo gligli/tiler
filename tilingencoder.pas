@@ -4542,8 +4542,6 @@ begin
 
   Result := @FFrames[frmIdx].TileMap[sy, sx];
   AFrame := FFrames[frmIdx];
-
-  Assert(FTiles[Result^.TileIdx] = @ATile);
 end;
 
 procedure TTilingEncoder.MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer;
@@ -4770,9 +4768,11 @@ begin
 
           ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
 
+          idx := -1;
+          err := MaxSingle;
           flann_find_nearest_neighbors_index(SubFLANN, @SearchDCT[0], 1, @idx, @err, 1, @SubFLANNParams);
 
-          err := sqr(sqrt(err)*fc);
+          err := sqr(sqrt(NanDef(err, MaxSingle))*fc);
 
           if (idx >= 0) and (err < AKFTilingBest.bestErr) then
           begin
@@ -4824,7 +4824,7 @@ begin
     for palIdx := 0 to FPaletteCount - 1 do
     begin
       v := CompareEuclidean(AKF.PaletteCentroids[APaletteIndex], FFrames[AKF.StartFrame - 1].PKeyFrame.PaletteCentroids[palIdx]);
-      if v < bestPal then
+      if not IsNan(v) and (v < bestPal) then
       begin
         bestPal := v;
         prevKFPalIdx := palIdx;
