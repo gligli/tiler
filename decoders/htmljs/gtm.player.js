@@ -239,7 +239,11 @@ function unpackNextKeyframe() {
 	}
 	
 	let outStream = gtmWLZMA.nextStreams.shift();
-	gtmOutStream.buffers.push(outStream.buffers[0]);
+	
+	for (let i = 0; i < outStream.buffers.length; ++i)
+	{
+		gtmOutStream.buffers.push(outStream.buffers[i]);
+	}
 	gtmOutStream.size += outStream.size;
 }
 
