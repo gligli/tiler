@@ -201,7 +201,7 @@ type
 
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
     UseCount, TmpIndex, MergeIndex, KFSoleIndex: Integer;
-    Active, IntraKF, Additional, HasRGBPixels, HasPalPixels: Boolean;
+    Flags: set of (tfActive, tfIntraKF, tfAdditional, tfHasRGBPixels, tfHasPalPixels);
   end;
 
   PTileArray = array of PTile;
@@ -209,6 +209,18 @@ type
   { TTileHelper }
 
   TTileHelper = record helper for TTile
+  private
+    function GetActive: Boolean;
+    function GetAdditional: Boolean;
+    function GetHasPalPixels: Boolean;
+    function GetHasRGBPixels: Boolean;
+    function GetIntraKF: Boolean;
+    procedure SetActive(AValue: Boolean);
+    procedure SetAdditional(AValue: Boolean);
+    procedure SetHasPalPixels(AValue: Boolean);
+    procedure SetHasRGBPixels(AValue: Boolean);
+    procedure SetIntraKF(AValue: Boolean);
+  public
     function GetRGBPixelsPtr: PRGBPixels;
     function GetPalPixelsPtr: PPalPixels;
 
@@ -237,6 +249,12 @@ type
 
     property RGBPixels[y, x: Integer]: Integer read GetRGBPixels write SetRGBPixels;
     property PalPixels[y, x: Integer]: Byte read GetPalPixels write SetPalPixels;
+
+    property Active: Boolean read GetActive write SetActive;
+    property IntraKF: Boolean read GetIntraKF write SetIntraKF;
+    property Additional: Boolean read GetAdditional write SetAdditional;
+    property HasRGBPixels: Boolean read GetHasRGBPixels write SetHasRGBPixels;
+    property HasPalPixels: Boolean read GetHasPalPixels write SetHasPalPixels;
   end;
 
   PTileMapItem = ^TTileMapItem;
@@ -244,12 +262,35 @@ type
   TTileMapItem = packed record
     TileIdx, SmoothedTileIdx, FTTileDSIdx: Integer;
     PalIdx, SmoothedPalIdx: SmallInt;
-    Smoothed, HMirror, VMirror, SmoothedHMirror, SmoothedVMirror: Boolean;
+    Flags: set of (tmfSmoothed, tmfHMirror, tmfVMirror, tmfSmoothedHMirror, tmfSmoothedVMirror);
     BlendCur, BlendPrev: Byte;
     BlendX, BlendY: ShortInt;
   end;
 
   TTileMapItems = array of TTileMapItem;
+
+  { TTileMapItemHelper }
+
+  TTileMapItemHelper = record helper for TTileMapItem
+  private
+    function GetHMirror: Boolean;
+    function GetSmoothed: Boolean;
+    function GetSmoothedHMirror: Boolean;
+    function GetSmoothedVMirror: Boolean;
+    function GetVMirror: Boolean;
+    procedure SetHMirror(AValue: Boolean);
+    procedure SetSmoothed(AValue: Boolean);
+    procedure SetSmoothedHMirror(AValue: Boolean);
+    procedure SetSmoothedVMirror(AValue: Boolean);
+    procedure SetVMirror(AValue: Boolean);
+  public
+    property Smoothed: Boolean read GetSmoothed write SetSmoothed;
+    property HMirror: Boolean read GetHMirror write SetHMirror;
+    property VMirror: Boolean read GetVMirror write SetVMirror;
+    property SmoothedHMirror: Boolean read GetSmoothedHMirror write SetSmoothedHMirror;
+    property SmoothedVMirror: Boolean read GetSmoothedVMirror write SetSmoothedVMirror;
+  end;
+
 
   TTilingDataset = record
     Dataset: TFloatDynArray;
@@ -1101,6 +1142,73 @@ begin
   Result := round(sqrt(tileCount) * log2(1 + tileCount));
 end;
 
+{ TTileMapItemHelper }
+
+function TTileMapItemHelper.GetHMirror: Boolean;
+begin
+  Result := tmfHMirror in Flags;
+end;
+
+function TTileMapItemHelper.GetSmoothed: Boolean;
+begin
+  Result := tmfSmoothed in Flags;
+end;
+
+function TTileMapItemHelper.GetSmoothedHMirror: Boolean;
+begin
+  Result := tmfSmoothedHMirror in Flags;
+end;
+
+function TTileMapItemHelper.GetSmoothedVMirror: Boolean;
+begin
+  Result := tmfSmoothedVMirror in Flags;
+end;
+
+function TTileMapItemHelper.GetVMirror: Boolean;
+begin
+  Result := tmfVMirror in Flags;
+end;
+
+procedure TTileMapItemHelper.SetHMirror(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfHMirror]
+  else
+    Flags -= [tmfHMirror];
+end;
+
+procedure TTileMapItemHelper.SetSmoothed(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfSmoothed]
+  else
+    Flags -= [tmfSmoothed];
+end;
+
+procedure TTileMapItemHelper.SetSmoothedHMirror(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfSmoothedHMirror]
+  else
+    Flags -= [tmfSmoothedHMirror];
+end;
+
+procedure TTileMapItemHelper.SetSmoothedVMirror(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfSmoothedVMirror]
+  else
+    Flags -= [tmfSmoothedVMirror];
+end;
+
+procedure TTileMapItemHelper.SetVMirror(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfVMirror]
+  else
+    Flags -= [tmfVMirror];
+end;
+
 { TFrame }
 
 procedure TFrame.CompressFrameTiles;
@@ -1186,6 +1294,71 @@ end;
 
 { TTileHelper }
 
+function TTileHelper.GetActive: Boolean;
+begin
+  Result := tfActive in Flags;
+end;
+
+function TTileHelper.GetAdditional: Boolean;
+begin
+  Result := tfAdditional in Flags;
+end;
+
+function TTileHelper.GetHasPalPixels: Boolean;
+begin
+  Result := tfHasPalPixels in Flags;
+end;
+
+function TTileHelper.GetHasRGBPixels: Boolean;
+begin
+  Result := tfHasRGBPixels in Flags;
+end;
+
+function TTileHelper.GetIntraKF: Boolean;
+begin
+  Result := tfIntraKF in Flags;
+end;
+
+procedure TTileHelper.SetActive(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tfActive]
+  else
+    Flags -= [tfActive];
+end;
+
+procedure TTileHelper.SetAdditional(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tfAdditional]
+  else
+    Flags -= [tfAdditional];
+end;
+
+procedure TTileHelper.SetHasPalPixels(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tfHasPalPixels]
+  else
+    Flags -= [tfHasPalPixels];
+end;
+
+procedure TTileHelper.SetHasRGBPixels(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tfHasRGBPixels]
+  else
+    Flags -= [tfHasRGBPixels];
+end;
+
+procedure TTileHelper.SetIntraKF(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tfIntraKF]
+  else
+    Flags -= [tfIntraKF];
+end;
+
 function TTileHelper.GetRGBPixelsPtr: PRGBPixels;
 begin
   Assert(HasRGBPixels, 'TTileHelper !HasRGBPixels');
@@ -1262,7 +1435,7 @@ var
   prevLen, i, size: Integer;
   data: PByte;
   smallest: PTile;
-  HasPalPixels, HasRGBPixels: Boolean;
+  HasPalPx, HasRGBPx: Boolean;
 begin
   Assert(Length(AArray) > 0);
 
@@ -1273,10 +1446,10 @@ begin
       smallest := AArray[i];
 
   prevLen := Length(AArray);
-  HasPalPixels := smallest^.HasPalPixels;
-  HasRGBPixels := smallest^.HasRGBPixels;
+  HasPalPx := smallest^.HasPalPixels;
+  HasRGBPx := smallest^.HasRGBPixels;
 
-  size := SizeOf(TTile) + IfThen(HasPalPixels, SizeOf(TPalPixels)) + IfThen(HasRGBPixels, SizeOf(TRGBPixels));
+  size := SizeOf(TTile) + IfThen(HasPalPx, SizeOf(TPalPixels)) + IfThen(HasRGBPx, SizeOf(TRGBPixels));
   data := PByte(smallest);
 
   data := ReAllocMem(data, size * ANewX);
@@ -1291,8 +1464,8 @@ begin
   for i := prevLen to ANewX - 1 do
   begin
     AArray[i] := PTile(data);
-    AArray[i]^.HasPalPixels := HasPalPixels;
-    AArray[i]^.HasRGBPixels := HasRGBPixels;
+    AArray[i]^.HasPalPixels := HasPalPx;
+    AArray[i]^.HasRGBPixels := HasRGBPx;
     Inc(data, size);
   end;
 end;
