@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 304
+  Left = 310
   Height = 540
-  Top = 416
+  Top = 420
   Width = 960
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 1
@@ -243,7 +243,7 @@ object MainForm: TMainForm
       object seFrameCount: TSpinEdit
         Left = 872
         Height = 23
-        Top = 31
+        Top = 32
         Width = 71
         MaxValue = 2000000000
         OnChange = UpdateGUI
@@ -328,7 +328,7 @@ object MainForm: TMainForm
       object Label3: TLabel
         Left = 656
         Height = 15
-        Top = 33
+        Top = 35
         Width = 144
         Caption = 'Frame count (0: automatic)'
         ParentColor = False
@@ -380,7 +380,7 @@ object MainForm: TMainForm
         Value = 2
       end
       object seVisGamma: TFloatSpinEdit
-        Left = 398
+        Left = 400
         Height = 23
         Top = 334
         Width = 71
@@ -394,7 +394,7 @@ object MainForm: TMainForm
       object seQbTiles: TFloatSpinEdit
         Left = 400
         Height = 23
-        Top = 119
+        Top = 120
         Width = 71
         Increment = 0.1
         MaxValue = 100
@@ -506,7 +506,7 @@ object MainForm: TMainForm
       object cbxScaling: TComboBox
         Left = 872
         Height = 23
-        Top = 54
+        Top = 56
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -530,7 +530,7 @@ object MainForm: TMainForm
       object Label15: TLabel
         Left = 656
         Height = 15
-        Top = 56
+        Top = 59
         Width = 65
         Caption = 'Scaling ratio'
         ParentColor = False

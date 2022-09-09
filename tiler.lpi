@@ -56,7 +56,7 @@
           </Linking>
           <Other>
             <CompilerMessages>
-              <IgnoredMessages idx5044="True" idx5024="True"/>
+              <IgnoredMessages idx7122="True" idx7121="True" idx6058="True" idx5044="True" idx5024="True"/>
             </CompilerMessages>
           </Other>
         </CompilerOptions>
@@ -104,7 +104,7 @@
               <ShowAll Value="True"/>
             </Verbosity>
             <CompilerMessages>
-              <IgnoredMessages idx5044="True" idx5024="True"/>
+              <IgnoredMessages idx7122="True" idx7121="True" idx6058="True" idx5044="True" idx5024="True"/>
             </CompilerMessages>
             <CustomOptions Value="-Xs-
 -FWlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo
@@ -193,7 +193,7 @@
     </Linking>
     <Other>
       <CompilerMessages>
-        <IgnoredMessages idx5044="True" idx5024="True"/>
+        <IgnoredMessages idx7122="True" idx7121="True" idx6058="True" idx5044="True" idx5024="True"/>
       </CompilerMessages>
       <CustomOptions Value="-Si-
 -dDEBUG"/>
