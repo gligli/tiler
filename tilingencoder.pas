@@ -354,7 +354,7 @@ type
     TileMap: array of array of TTileMapItem;
 
     FrameTiles: array of PTile;
-    FSPixels: TByteDynArray;
+    FSPixels: TIntegerDynArray;
 
     FrameTilesRefCount: Integer;
     FrameTilesEvent: THandle;
@@ -2012,10 +2012,6 @@ begin
 
   ProgressRedraw(2);
 
-  // free up frame memory
-  for i := 0 to High(FFrames) do
-    SetLength(FFrames[i].FSPixels, 0);
-
   LoadTiles;
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
@@ -2273,16 +2269,20 @@ function TTilingEncoder.ComputeInterFrameCorrelation(a, b: TFrame; out Euclidean
 var
   sz, i: Integer;
   ya, yb: TFloatDynArray;
+  rr, gg, bb: Byte;
 begin
   Assert(Length(a.FSPixels) = Length(b.FSPixels));
-  sz := Length(a.FSPixels) div 3;
+  sz := Length(a.FSPixels);
   SetLength(ya, sz * 3);
   SetLength(yb, sz * 3);
 
   for i := 0 to sz - 1 do
   begin
-    RGBToLAB(a.FSPixels[i * 3 + 0], a.FSPixels[i * 3 + 1], a.FSPixels[i * 3 + 2], -1, ya[i + sz * 0], ya[i + sz * 1], ya[i + sz * 2]);
-    RGBToLAB(b.FSPixels[i * 3 + 0], b.FSPixels[i * 3 + 1], b.FSPixels[i * 3 + 2], -1, yb[i + sz * 0], yb[i + sz * 1], yb[i + sz * 2]);
+    FromRGB(a.FSPixels[i], rr, gg, bb);
+    RGBToLAB(rr, gg, bb, -1, ya[i + sz * 0], ya[i + sz * 1], ya[i + sz * 2]);
+
+    FromRGB(b.FSPixels[i], rr, gg, bb);
+    RGBToLAB(rr, gg, bb, -1, yb[i + sz * 0], yb[i + sz * 1], yb[i + sz * 2]);
   end;
 
   Result := PearsonCorrelation(ya, yb);
@@ -3178,16 +3178,56 @@ procedure TTilingEncoder.LoadTiles;
 
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    j: Integer;
+    i, j, col, ti, tx, ty: Integer;
     tilePos: Int64;
+    Frame: TFrame;
+    pcol: PInteger;
+    T: PTile;
   begin
+    Frame := FFrames[AIndex];
+
+    // create frame tiles from FSPixels
+
+    Frame.FrameTiles := TTile.Array1DNew(FTileMapSize, True, False);
+
+    for i := 0 to FTileMapSize - 1 do
+    begin
+      T := Frame.FrameTiles[i];
+
+      T^.Active := True;
+      T^.UseCount := 1;
+      T^.TmpIndex := -1;
+      T^.MergeIndex := -1;
+      T^.KFSoleIndex := -1;
+    end;
+
+    pcol := @Frame.FSPixels[0];
+    for j := 0 to FScreenHeight - 1 do
+    begin
+      for i := 0 to FScreenWidth - 1 do
+        begin
+          col := pcol^;
+          Inc(pcol);
+
+          ti := FTileMapWidth * (j shr cTileWidthBits) + (i shr cTileWidthBits);
+          tx := i and (cTileWidth - 1);
+          ty := j and (cTileWidth - 1);
+          col := SwapRB(col);
+
+          Frame.FrameTiles[ti]^.RGBPixels[ty, tx] := col;
+        end;
+    end;
+
+    // free up frame memory
+    SetLength(Frame.FSPixels, 0);
+
     // copy frame tiles to global tiles
     tilePos := AIndex * FTileMapSize;
     for j := 0 to FTileMapSize - 1 do
-      FTiles[tilePos + j]^.CopyFrom(FFrames[AIndex].FrameTiles[j]^);
+      FTiles[tilePos + j]^.CopyFrom(Frame.FrameTiles[j]^);
 
     // also compress frame tiles to save memory
-    FFrames[AIndex].CompressFrameTiles;
+    Frame.CompressFrameTiles;
   end;
 
 var
@@ -4037,31 +4077,17 @@ end;
 
 procedure TTilingEncoder.LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; const ABitmap: TRawImage);
 var
-  i, j, col, ti, tx, ty: Integer;
-  pcol: PInteger;
-  pfs: PByte;
+  i, j: Integer;
+  pfs, pcol: PInteger;
   TMI: PTileMapItem;
-  T: PTile;
 begin
   AFrame := TFrame.Create;
 
   SetLength(AFrame.TileMap, FTileMapHeight, FTileMapWidth);
-  SetLength(AFrame.FSPixels, FScreenHeight * FScreenWidth * 3);
+  SetLength(AFrame.FSPixels, FScreenHeight * FScreenWidth);
 
-  AFrame.FrameTiles := TTile.Array1DNew(FTileMapSize, True, False);
-  for i := 0 to (FTileMapSize - 1) do
-  begin
-    T := AFrame.FrameTiles[i];
-
-    T^.Active := True;
-    T^.UseCount := 1;
-    T^.TmpIndex := -1;
-    T^.MergeIndex := -1;
-    T^.KFSoleIndex := -1;
-  end;
-
-  for j := 0 to (FTileMapHeight - 1) do
-    for i := 0 to (FTileMapWidth - 1) do
+  for j := 0 to FTileMapHeight - 1 do
+    for i := 0 to FTileMapWidth - 1 do
     begin
       TMI := @AFrame.TileMap[j, i];
 
@@ -4089,24 +4115,7 @@ begin
 
   pfs := @AFrame.FSPixels[0];
   pcol := PInteger(ABitmap.Data);
-  for j := 0 to (FScreenHeight - 1) do
-  begin
-    for i := 0 to (FScreenWidth - 1) do
-      begin
-        col := pcol^;
-        Inc(pcol);
-
-        ti := FTileMapWidth * (j shr cTileWidthBits) + (i shr cTileWidthBits);
-        tx := i and (cTileWidth - 1);
-        ty := j and (cTileWidth - 1);
-        col := SwapRB(col);
-
-        AFrame.FrameTiles[ti]^.RGBPixels[ty, tx] := col;
-
-        FromRGB(col, pfs[0], pfs[1], pfs[2]);
-        Inc(pfs, 3);
-      end;
-  end;
+  Move(pcol^, pfs^, FScreenHeight * FScreenWidth * SizeOf(Integer));
 end;
 
 procedure TTilingEncoder.FindKeyFrames;
