@@ -2759,7 +2759,7 @@ begin
 
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization start');
 
-  if (Length(YakmoDataset) > 1) and (FPaletteCount > 1) then
+  if (Length(YakmoDataset) >= FPaletteCount) and (FPaletteCount > 1) then
   begin
     Yakmo := yakmo_create(FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
     yakmo_load_train_data(Yakmo, Length(YakmoDataset), cTileDCTSize, PPDouble(@YakmoDataset[0]));
@@ -2770,10 +2770,10 @@ begin
   end
   else
   begin
-    SetLength(YakmoClusters, 1);
+    SetLength(YakmoClusters, Length(TileList));
   end;
 
-  for i := 0 to high(TileList) do
+  for i := 0 to High(TileList) do
     for frmIdx := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
@@ -5221,6 +5221,9 @@ begin
         Inc(annQueryCount);
       end;
   end;
+
+  if annQueryCount <= 0 then
+    Exit;
 
   SetLength(DCTs, annQueryCount * cTileDCTSize);
   SetLength(idxs, annQueryCount * cFTBinSize);
