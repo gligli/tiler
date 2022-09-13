@@ -546,11 +546,12 @@ type
     function GetFrameTileCount(AFrame: TFrame): Integer;
     function GetTileIndexTMItem(const ATile: TTile; out AFrame: TFrame): PTileMapItem;
 
+    procedure GetKeyFrameTileList(AKeyFrame: TKeyFrame; var ATileList: TInt64DynArray; var ATilesUseCount: TIntegerDynArray; APaletteIndex: Integer = -1);
     procedure PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
     procedure QuantizePalette(AKeyFrame: TKeyFrame; APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
     procedure FinishQuantizePalettes(AKeyFrame: TKeyFrame);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    procedure DitherTiles(AFrame: TFrame);
+    procedure DitherTiles(AKeyFrame: TKeyFrame);
 
     function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
@@ -960,12 +961,12 @@ begin
   Result := sqrt(Result);
 end;
 
-function CompareEuclidean(const a, b: TDoubleDynArray): Double; inline;
+function CompareEuclidean(a, b: PDouble; size: Integer): Double; inline;
 var
   i: Integer;
 begin
   Result := 0;
-  for i := 0 to High(a) do
+  for i := 0 to size - 1 do
     Result += sqr(a[i] - b[i]);
   Result := sqrt(Result);
 end;
@@ -1763,10 +1764,10 @@ procedure TTilingEncoder.Dither;
 
   procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    if not InRange(AIndex, 0, High(FFrames)) then
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    DitherTiles(FFrames[AIndex]);
+    DitherTiles(FKeyFrames[AIndex]);
   end;
 
 var
@@ -1796,7 +1797,7 @@ begin
   for tidx := 0 to High(FTiles) do
     FTiles[tidx]^.TmpIndex := -1;
 
-  ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FKeyFrames));
   ProgressRedraw(3);
 
   for i := 0 to High(FKeyFrames) do
@@ -1809,7 +1810,7 @@ var
 
   procedure DoMakeUnique(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    if not InRange(AIndex, 0, High(FTiles) div TilesAtATime) then
+    if not InRange(AIndex, 0, NumberOfProcessors - 1) then
       Exit;
 
     MakeTilesUnique(AIndex * TilesAtATime, Min(Length(FTiles) - AIndex * TilesAtATime, TilesAtATime));
@@ -1818,7 +1819,7 @@ var
 var
   tidx, copyPos: Int64;
 begin
-  TilesAtATime := FTileMapSize * 25;
+  TilesAtATime := ceil(Length(FTiles) / NumberOfProcessors);
 
   if Length(FFrames) = 0 then
     Exit;
@@ -1826,7 +1827,7 @@ begin
   ProgressRedraw(0, esMakeUnique);
 
   InitMergeTiles;
-  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FTiles) div TilesAtATime);
+  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, NumberOfProcessors - 1);
   FinishMergeTiles;
 
   ProgressRedraw(1);
@@ -1860,7 +1861,7 @@ begin
 
   // redim tile list
 
-  TTile.Array1DRealloc(FTiles, copyPos + 1);
+  TTile.Array1DRealloc(FTiles, copyPos);
 
   ProgressRedraw(2);
 end;
@@ -2012,14 +2013,14 @@ begin
 
   ProgressRedraw(2);
 
-  LoadTiles;
-
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
   begin
     qbTC := FGlobalTilingQualityBasedTileCount;
     SetGlobalTilingQualityBasedTileCount(0.0);
     SetGlobalTilingQualityBasedTileCount(qbTC);
   end;
+
+  LoadTiles;
 
   ProgressRedraw(3);
 end;
@@ -2750,37 +2751,34 @@ end;
 
 procedure TTilingEncoder.PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
 var
-  sx, sy, i: Integer;
+  sx, sy, frmIdx, i: Integer;
   GTile: PTile;
 
   YakmoDataset: TDoubleDynArray2;
   YakmoClusters: TIntegerDynArray;
-  di: Integer;
 
   Yakmo: PYakmo;
+  TileList: TInt64DynArray;
+  TileUseCount: TIntegerDynArray;
 begin
-  SetLength(YakmoDataset, AKeyFrame.FrameCount * FTileMapSize, cTileDCTSize);
+  GetKeyFrameTileList(AKeyFrame, TileList, TileUseCount);
+
+  SetLength(YakmoDataset, Length(TileList), cTileDCTSize);
   SetLength(YakmoClusters, Length(YakmoDataset));
   SetLength(AKeyFrame.PaletteCentroids, FPaletteCount, cTileDCTSize);
 
-  di := 0;
-  for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-    for sy := 0 to FTileMapHeight - 1 do
-      for sx := 0 to FTileMapWidth - 1 do
-      begin
-        GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-        ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @YakmoDataset[di, 0]);
-
-        Inc(di);
-      end;
-  assert(di = Length(YakmoDataset));
+  for i := 0 to High(TileList) do
+  begin
+    GTile := FTiles[TileList[i]];
+    ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @YakmoDataset[i, 0]);
+  end;
 
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization start');
 
-  if (di > 1) and (FPaletteCount > 1) then
+  if (Length(YakmoDataset) > 1) and (FPaletteCount > 1) then
   begin
     Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
-    yakmo_load_train_data(Yakmo, di, cTileDCTSize, PPDouble(@YakmoDataset[0]));
+    yakmo_load_train_data(Yakmo, Length(YakmoDataset), cTileDCTSize, PPDouble(@YakmoDataset[0]));
     SetLength(YakmoDataset, 0); // free up some memmory
     yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
     yakmo_get_centroids(Yakmo, PPDouble(@AKeyFrame.PaletteCentroids[0]));
@@ -2791,15 +2789,12 @@ begin
     SetLength(YakmoClusters, 1);
   end;
 
-  di := 0;
-  for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-    for sy := 0 to FTileMapHeight - 1 do
-      for sx := 0 to FTileMapWidth - 1 do
-      begin
-        FFrames[i].TileMap[sy, sx].PalIdx := YakmoClusters[di];
-        Inc(di);
-      end;
-  assert(di = Length(YakmoClusters));
+  for i := 0 to high(TileList) do
+    for frmIdx := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+          if FFrames[frmIdx].TileMap[sy, sx].TileIdx = TileList[i] then
+            FFrames[frmIdx].TileMap[sy, sx].PalIdx := YakmoClusters[i];
 
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization end');
 end;
@@ -2914,60 +2909,48 @@ var
   const
     cFeatureCount = 3;
   var
-    i, di, sy, sx, ty, tx: Integer;
+    i, di, ty, tx: Integer;
     rr, gg, bb: Byte;
     GTile: PTile;
     Dataset, Centroids: TDoubleDynArray2;
     Clusters: TIntegerDynArray;
     Yakmo: PYakmo;
     CMItem: PCountIndex;
-  begin
-    di := 0;
-    for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-          if GTile^.Active and (FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
-            Inc(di, Sqr(cTileWidth));
-        end;
 
+    TileList: TInt64DynArray;
+    TileUseCount: TIntegerDynArray;
+  begin
+    GetKeyFrameTileList(AKeyFrame, TileList, TileUseCount, APalIdx);
+
+    SetLength(Dataset, Length(TileList) * Sqr(cTileWidth), cFeatureCount);
+    SetLength(Clusters, Length(Dataset));
     SetLength(Centroids, FPaletteSize, cFeatureCount);
 
-    if di >= FPaletteSize then
+    // build a dataset of RGB pixels
+
+    di := 0;
+    for i := 0 to High(TileList) do
     begin
-      SetLength(Dataset, di, cFeatureCount);
-      SetLength(Clusters, di);
+      GTile := FTiles[TileList[i]];
+      for ty := 0 to cTileWidth - 1 do
+        for tx := 0 to cTileWidth - 1 do
+        begin
+          FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
+          Dataset[di, 0] := rr;
+          Dataset[di, 1] := gg;
+          Dataset[di, 2] := bb;
+          Inc(di);
+        end;
+      Inc(AKeyFrame.PaletteUseCount[APalIdx].UseCount, TileUseCount[i]);
+    end;
+    Assert(di = Length(Dataset));
 
-      // build a dataset of RGB pixels
+    // use KMeans to quantize to FPaletteSize elements
 
-      di := 0;
-      for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
-        for sy := 0 to FTileMapHeight - 1 do
-          for sx := 0 to FTileMapWidth - 1 do
-          begin
-            GTile := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
-
-            if GTile^.Active and (FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
-            begin
-              for ty := 0 to cTileWidth - 1 do
-                for tx := 0 to cTileWidth - 1 do
-                begin
-                  FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
-                  Dataset[di, 0] := rr;
-                  Dataset[di, 1] := gg;
-                  Dataset[di, 2] := bb;
-                  Inc(di);
-                end;
-
-              Inc(AKeyFrame.PaletteUseCount[APalIdx].UseCount);
-            end;
-          end;
-
-      // use KMeans to quantize to FPaletteSize elements
-
+    if Length(Dataset) >= FPaletteSize then
+    begin
       Yakmo := yakmo_create(FPaletteSize, 1, -1, 1, 0, 0, 0);
-      yakmo_load_train_data(Yakmo, di, cFeatureCount, PPDouble(@Dataset[0]));
+      yakmo_load_train_data(Yakmo, Length(Dataset), cFeatureCount, PPDouble(@Dataset[0]));
 
       SetLength(Dataset, 0); // free up some memmory
 
@@ -2983,7 +2966,7 @@ var
     begin
       New(CMItem);
 
-      if di >= FPaletteSize then
+      if Length(Clusters) >= FPaletteSize then
       begin
         CMItem^.R := 255;
         CMItem^.G := 255;
@@ -3065,49 +3048,38 @@ begin
     AKeyFrame.PaletteCentroids[PalIdxLUT[PalIdx]] := TmpCentroids[PalIdx];
 end;
 
-procedure TTilingEncoder.DitherTiles(AFrame: TFrame);
+procedure TTilingEncoder.DitherTiles(AKeyFrame: TKeyFrame);
 var
   i, PalIdx: Integer;
   sx, sy: Integer;
   T: PTile;
 begin
-  EnterCriticalSection(AFrame.PKeyFrame.CS);
-  if AFrame.PKeyFrame.FramesLeft < 0 then
-  begin
-    // build ditherer
-    for i := 0 to FPaletteCount - 1 do
-      PreparePlan(AFrame.PKeyFrame.MixingPlans[i], FDitheringYliluoma2MixedColors, AFrame.PKeyFrame.PaletteRGB[i]);
-    AFrame.PKeyFrame.FramesLeft := AFrame.PKeyFrame.FrameCount;
-  end;
-  LeaveCriticalSection(AFrame.PKeyFrame.CS);
+  // build ditherer
+  for i := 0 to FPaletteCount - 1 do
+    PreparePlan(AKeyFrame.MixingPlans[i], FDitheringYliluoma2MixedColors, AKeyFrame.PaletteRGB[i]);
 
-  for sy := 0 to FTileMapHeight - 1 do
-    for sx := 0 to FTileMapWidth - 1 do
-    begin
-      T := FTiles[AFrame.TileMap[sy, sx].TileIdx];
-
-      if T^.Active and (T^.TmpIndex = -1) then
+  // dither tile in chosen palette
+  for i := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
       begin
-        // dither tile in chosen palette
+        T := FTiles[FFrames[i].TileMap[sy, sx].TileIdx];
 
-        PalIdx := AFrame.TileMap[sy, sx].PalIdx;
-        Assert(InRange(PalIdx, 0, FPaletteCount - 1));
-        DitherTile(T^, AFrame.PKeyFrame.MixingPlans[PalIdx]);
+        if T^.Active and (T^.TmpIndex = -1) then
+        begin
+          PalIdx := FFrames[i].TileMap[sy, sx].PalIdx;
+          Assert(InRange(PalIdx, 0, FPaletteCount - 1));
+          DitherTile(T^, AKeyFrame.MixingPlans[PalIdx]);
 
-        T^.TmpIndex := Int64(AFrame.Index) * FTileMapSize + sy * FTileMapWidth + sx;
+          T^.TmpIndex := Int64(i) * FTileMapSize + sy * FTileMapWidth + sx;
+        end;
       end;
-    end;
 
-  EnterCriticalSection(AFrame.PKeyFrame.CS);
-  Dec(AFrame.PKeyFrame.FramesLeft);
-  if AFrame.PKeyFrame.FramesLeft <= 0 then
-  begin
-    // cleanup ditherer
-    for i := 0 to FPaletteCount - 1 do
-      TerminatePlan(AFrame.PKeyFrame.MixingPlans[i]);
-    WriteLn('KF: ', AFrame.PKeyFrame.StartFrame:8, ' Dithering end');
-  end;
-  LeaveCriticalSection(AFrame.PKeyFrame.CS);
+  // cleanup ditherer
+  for i := 0 to FPaletteCount - 1 do
+    TerminatePlan(AKeyFrame.MixingPlans[i]);
+
+  WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Dithering end');
 end;
 
 function CompareTilePixels(Item1, Item2:Pointer):Integer;
@@ -3175,15 +3147,33 @@ begin
 end;
 
 procedure TTilingEncoder.LoadTiles;
+const
+  CPerFrameTileCountMultiplier = 7;
+var
+  ClustersPerFrame: Integer;
 
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    i, j, col, ti, tx, ty: Integer;
+    i, j, col, ti, tx, ty, sx, sy, BICOClusterCount, clusterIdx, clusterLineCount, lineIdx, clusterLineIdx: Integer;
+    q00, q01, q10, q11: Integer;
     tilePos: Int64;
+    err, best, v: Double;
     Frame: TFrame;
     pcol: PInteger;
     T: PTile;
+    BICO: PBICO;
+    ANN: PANNkdtree;
+    Dataset: TDoubleDynArray2;
+    BICOCentroids, BICOWeights: TDoubleDynArray;
+    ANNClusters: TIntegerDynArray;
+    ANNDataset: array of PANNFloat;
+    ToMerge: TDoubleDynArray2;
+    ToMergeIdxs: TInt64DynArray;
+    HMirrors, VMirrors: TBooleanDynArray;
   begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
     Frame := FFrames[AIndex];
 
     // create frame tiles from FSPixels
@@ -3221,13 +3211,117 @@ procedure TTilingEncoder.LoadTiles;
     // free up frame memory
     SetLength(Frame.FSPixels, 0);
 
-    // copy frame tiles to global tiles
-    tilePos := AIndex * FTileMapSize;
-    for j := 0 to FTileMapSize - 1 do
-      FTiles[tilePos + j]^.CopyFrom(Frame.FrameTiles[j]^);
+    BICO := bico_create(cTileDCTSize, FTileMapSize, ClustersPerFrame, 1, ClustersPerFrame, $42381337);
+    try
+      SetLength(Dataset, FTileMapSize, cTileDCTSize);
+      SetLength(HMirrors, FTileMapSize);
+      SetLength(VMirrors, FTileMapSize);
+
+      for i := 0 to FTileMapSize - 1 do
+      begin
+        // enforce a 'spin' on tiles mirrors (brighter top-left corner)
+
+        q00 := GetTileZoneSum(Frame.FrameTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
+        q01 := GetTileZoneSum(Frame.FrameTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
+        q10 := GetTileZoneSum(Frame.FrameTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+        q11 := GetTileZoneSum(Frame.FrameTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+
+        HMirrors[i] := q00 + q10 < q01 + q11;
+        VMirrors[i] := q00 + q01 < q10 + q11;
+
+        ComputeTilePsyVisFeatures(Frame.FrameTiles[i]^, False, False, False, HMirrors[i], VMirrors[i], -1, nil, @Dataset[i, 0]);
+
+        // insert line into BICO
+        bico_insert_line(BICO, @Dataset[i, 0], 1);
+      end;
+
+      // get BICO results
+
+      SetLength(BICOCentroids, ClustersPerFrame * cTileDCTSize);
+      SetLength(BICOWeights, ClustersPerFrame);
+
+      BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
+    finally
+      bico_destroy(BICO);
+    end;
+
+    BICOClusterCount := Max(1, BICOClusterCount); // can't have 0 clusters
+
+    // use ANN to compute cluster indexes
+
+    SetLength(ANNDataset, BICOClusterCount);
+    SetLength(ANNClusters, FTileMapSize);
+
+    for i := 0 to BICOClusterCount - 1 do
+      ANNDataset[i] := @BICOCentroids[i * cTileDCTSize];
+
+    ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_STD);
+    try
+      for i := 0 to FTileMapSize - 1 do
+        ANNClusters[i] := ann_kdtree_search(ANN, @Dataset[i, 0], 0.0, @err);
+    finally
+      ann_kdtree_destroy(ANN);
+    end;
+
+    // build a list of this centroid tiles
+
+    SetLength(ToMerge, FTileMapSize);
+    SetLength(ToMergeIdxs, FTileMapSize);
+
+    tilePos := AIndex * ClustersPerFrame;
+    for clusterIdx := 0 to BICOClusterCount - 1 do
+    begin
+      clusterLineCount := 0;
+      for lineIdx := 0 to FTileMapSize - 1 do
+        if ANNClusters[lineIdx] = clusterIdx then
+        begin
+          ToMerge[clusterLineCount] := Dataset[lineIdx];
+          ToMergeIdxs[clusterLineCount] := lineIdx;
+          Inc(clusterLineCount);
+        end;
+
+      // choose a tile from the cluster
+
+      if clusterLineCount >= 1 then
+      begin
+        // get the closest tile to the centroid
+
+        best := MaxSingle;
+        clusterLineIdx := -1;
+        for i := 0 to clusterLineCount - 1 do
+        begin
+          v := CompareEuclidean(@ToMerge[i, 0], ANNDataset[clusterIdx], cTileDCTSize);
+          if v < best then
+          begin
+            best := v;
+            clusterLineIdx := i;
+          end;
+        end;
+
+        // compy centroid to tiles and prepare tilemap
+
+        FTiles[tilePos + clusterIdx]^.CopyFrom(Frame.FrameTiles[ToMergeIdxs[clusterLineIdx]]^);
+        FTiles[tilePos + clusterIdx]^.UseCount := Round(BICOWeights[clusterIdx]);
+
+        for i := 0 to clusterLineCount - 1 do
+        begin
+          DivMod(ToMergeIdxs[i], FTileMapWidth, sy, sx);
+          Frame.TileMap[sy, sx].TileIdx :=  tilePos + clusterIdx;
+          Frame.TileMap[sy, sx].HMirror :=  HMirrors[ToMergeIdxs[i]] xor HMirrors[ToMergeIdxs[clusterLineIdx]];
+          Frame.TileMap[sy, sx].VMirror :=  VMirrors[ToMergeIdxs[i]] xor VMirrors[ToMergeIdxs[clusterLineIdx]];
+        end;
+
+      end;
+    end;
+
+    // unused tiles
+    for i := BICOClusterCount to ClustersPerFrame - 1 do
+      FTiles[tilePos + i]^.Active := False;
 
     // also compress frame tiles to save memory
     Frame.CompressFrameTiles;
+
+    Write('.');
   end;
 
 var
@@ -3236,12 +3330,16 @@ begin
   // free memory from a prev run
   TTile.Array1DDispose(FTiles);
 
-  tileCnt := Length(FFrames) * FTileMapSize;
+  ClustersPerFrame := Max(1 , trunc(FGlobalTilingTileCount / Length(FFrames) * CPerFrameTileCountMultiplier));
+
+  tileCnt := Length(FFrames) * ClustersPerFrame;
 
   // allocate tiles
   FTiles := TTile.Array1DNew(tileCnt, True, True);
 
   ProcThreadPool.DoParallelLocalProc(@DoFrame, 0, High(FFrames));
+
+  WriteLn;
 end;
 
 procedure TTilingEncoder.RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat); inline;
@@ -4798,6 +4896,40 @@ begin
   AFrame := FFrames[frmIdx];
 end;
 
+procedure TTilingEncoder.GetKeyFrameTileList(AKeyFrame: TKeyFrame; var ATileList: TInt64DynArray;
+ var ATilesUseCount: TIntegerDynArray; APaletteIndex: Integer);
+var
+  i, frmIdx, sy, sx, pos, TileCount: Integer;
+  Ind: TIntegerDynArray;
+begin
+  SetLength(Ind, Length(FTiles));
+
+  TileCount := 0;
+  for frmIdx := AKeyFrame.StartFrame to AKeyFrame.EndFrame do
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
+        if (APaletteIndex < 0) or (FFrames[frmIdx].TileMap[sy, sx].PalIdx = APaletteIndex) then
+        begin
+          if Ind[FFrames[frmIdx].TileMap[sy, sx].TileIdx] <= 0 then
+            Inc(TileCount);
+          Inc(Ind[FFrames[frmIdx].TileMap[sy, sx].TileIdx]);
+        end;
+
+  SetLength(ATileList, TileCount);
+  SetLength(ATilesUseCount, TileCount);
+
+  pos := 0;
+  for i := 0 to High(Ind) do
+  begin
+    if Ind[i] > 0 then
+    begin
+      ATileList[pos] := i;
+      ATilesUseCount[pos] := Ind[i];
+      Inc(pos);
+    end;
+  end;
+end;
+
 procedure TTilingEncoder.MergeTiles(const TileIndexes: array of Int64; TileCount: Integer; BestIdx: Int64;
   NewTile: PPalPixels; NewTileRGB: PRGBPixels);
 var
@@ -5080,7 +5212,7 @@ begin
     bestPal := MaxSingle;
     for palIdx := 0 to FPaletteCount - 1 do
     begin
-      v := CompareEuclidean(AKF.PaletteCentroids[APaletteIndex], FFrames[AKF.StartFrame - 1].PKeyFrame.PaletteCentroids[palIdx]);
+      v := CompareEuclidean(@AKF.PaletteCentroids[APaletteIndex, 0], @FFrames[AKF.StartFrame - 1].PKeyFrame.PaletteCentroids[palIdx, 0], cTileDCTSize);
       if not IsNan(v) and (v < bestPal) then
       begin
         bestPal := v;
@@ -5502,7 +5634,7 @@ begin
       clusterLineIdx := -1;
       for i := 0 to clusterLineCount - 1 do
       begin
-        v := CompareEuclidean(ToMerge[i], YakmoCentroids[clusterIdx]);
+        v := CompareEuclidean(@ToMerge[i, 0], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
         if v < best then
         begin
           best := v;
