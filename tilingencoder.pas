@@ -62,7 +62,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 2, 3, 4, 2, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 2, 1, 4, 2, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -1747,62 +1747,43 @@ end;
 
 procedure TTilingEncoder.Dither;
 
-  procedure DoPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    palIdx: Integer;
   begin
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
     PreparePalettes(FKeyFrames[AIndex], IfThen(FDitheringUseGamma, 0, -1));
-  end;
 
-  procedure DoQuantize(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    if not InRange(AIndex, 0, Length(FKeyFrames) * FPaletteCount - 1) then
-      Exit;
+    SetLength(FKeyFrames[AIndex].PaletteUseCount, FPaletteCount);
+    FKeyFrames[AIndex].PalettesLeft := FPaletteCount;
 
-    QuantizePalette(FKeyFrames[AIndex div FPaletteCount], AIndex mod FPaletteCount, FQuantizerUseYakmo, FQuantizerDennisLeeBitsPerComponent, IfThen(FDitheringUseGamma, 0, -1));
-  end;
+    for palIdx := 0 to FPaletteCount - 1 do
+      QuantizePalette(FKeyFrames[AIndex], palIdx, FQuantizerUseYakmo, FQuantizerDennisLeeBitsPerComponent, IfThen(FDitheringUseGamma, 0, -1));
 
-  procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    if not InRange(AIndex, 0, High(FKeyFrames)) then
-      Exit;
+    FinishQuantizePalettes(FKeyFrames[AIndex]);
+    FKeyFrames[AIndex].PalettesLeft := -1;
 
     DitherTiles(FKeyFrames[AIndex]);
+
+    SetLength(FKeyFrames[AIndex].PaletteUseCount, 0);
   end;
 
 var
-  i: Integer;
   tidx: Int64;
 begin
   if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(0, esDither);
-  ProcThreadPool.DoParallelLocalProc(@DoPrepare, 0, High(FKeyFrames));
-  ProgressRedraw(1);
-
-  for i := 0 to High(FKeyFrames) do
-  begin
-    SetLength(FKeyFrames[i].PaletteUseCount, FPaletteCount);
-    FKeyFrames[i].PalettesLeft := FPaletteCount;
-  end;
-  ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Length(FKeyFrames) * FPaletteCount - 1);
-  for i := 0 to High(FKeyFrames) do
-  begin
-    FinishQuantizePalettes(FKeyFrames[i]);
-    FKeyFrames[i].PalettesLeft := -1;
-  end;
-  ProgressRedraw(2);
 
   for tidx := 0 to High(FTiles) do
     FTiles[tidx]^.TmpIndex := -1;
 
   ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FKeyFrames));
-  ProgressRedraw(3);
 
-  for i := 0 to High(FKeyFrames) do
-    SetLength(FKeyFrames[i].PaletteUseCount, 0);
+  ProgressRedraw(1);
 end;
 
 procedure TTilingEncoder.MakeUnique;
