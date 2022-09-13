@@ -21,9 +21,9 @@ const
   // tweakable constants
 
   cBitsPerComp = 8;
-  cMaxFTBlend = 16;
   cFTQWeighting = False;
   cFTBinSize = 512;
+  cYakmoMaxIterations = 300;
 
 {$if false}
   cRedMul = 2126;
@@ -38,6 +38,7 @@ const
 
   // don't change these
 
+  cMaxFTBlend = 16;
   cLumaDiv = cRedMul + cGreenMul + cBlueMul;
   cSmoothingPrevFrame = 1;
   cVecInvWidth = 16;
@@ -2777,7 +2778,7 @@ begin
 
   if (Length(YakmoDataset) > 1) and (FPaletteCount > 1) then
   begin
-    Yakmo := yakmo_create(FPaletteCount, 1, MaxInt, 1, 0, 0, 0);
+    Yakmo := yakmo_create(FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
     yakmo_load_train_data(Yakmo, Length(YakmoDataset), cTileDCTSize, PPDouble(@YakmoDataset[0]));
     SetLength(YakmoDataset, 0); // free up some memmory
     yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
@@ -2949,7 +2950,7 @@ var
 
     if Length(Dataset) >= FPaletteSize then
     begin
-      Yakmo := yakmo_create(FPaletteSize, 1, -1, 1, 0, 0, 0);
+      Yakmo := yakmo_create(FPaletteSize, 1, cYakmoMaxIterations, 1, 0, 0, 0);
       yakmo_load_train_data(Yakmo, Length(Dataset), cFeatureCount, PPDouble(@Dataset[0]));
 
       SetLength(Dataset, 0); // free up some memmory
@@ -5588,7 +5589,7 @@ begin
 
   if BICOClusterCount > KMBin^.ClusterCount then
   begin
-    Yakmo := yakmo_create(KMBin^.ClusterCount, 1, MaxInt, 1, 0, 0, 0);
+    Yakmo := yakmo_create(KMBin^.ClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
     try
       yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, @ANNDataset[0]);
       yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
