@@ -582,7 +582,7 @@ begin
 
   tbFrame.HandleNeeded;
   for i := 0 to FTilingEncoder.FrameCount - 1 do
-    if Assigned(FTilingEncoder.Frames[i].PKeyFrame) and
+    if Assigned(FTilingEncoder.Frames[i]) and Assigned(FTilingEncoder.Frames[i].PKeyFrame) and
         (FTilingEncoder.Frames[i].Index = FTilingEncoder.Frames[i].PKeyFrame.StartFrame) then
       tbFrame.SetTick(i);
   tbFrame.PageSize := round(FTilingEncoder.FramesPerSecond);

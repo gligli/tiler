@@ -62,7 +62,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 2, 1, 4, 2, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 2, 1, 4, 2, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -1927,7 +1927,7 @@ procedure TTilingEncoder.Load;
   end;
 
 var
-  i, frc: Integer;
+  i, frc, startFrmIdx: Integer;
   fn: String;
   bmp: TPicture;
   wasAutoQ: Boolean;
@@ -1952,12 +1952,13 @@ begin
   if FileExists(FInputFileName) then
   begin
     DoExternalFFMpeg(FInputFileName, FInputPath, FStartFrame, frc, FScaling, FFramesPerSecond);
-    FStartFrame := 1;
+    startFrmIdx := 1;
   end
   else
   begin
     FInputPath := FInputFileName;
     FFramesPerSecond := 24.0;
+    startFrmIdx := FStartFrame;
   end;
 
   // automaticaly count frames if needed
@@ -1966,7 +1967,7 @@ begin
   begin
     i := 0;
     repeat
-      fn := Format(FInputPath, [i + FStartFrame]);
+      fn := Format(FInputPath, [i + startFrmIdx]);
       Inc(i);
     until not FileExists(fn);
 
@@ -1975,25 +1976,26 @@ begin
 
   // load frames bitmap data
 
-  SetLength(FFrames, frc);
-
   bmp := TPicture.Create;
   try
     bmp.Bitmap.PixelFormat:=pf32bit;
-    bmp.LoadFromFile(Format(FInputPath, [FStartFrame]));
+    bmp.LoadFromFile(Format(FInputPath, [startFrmIdx]));
     ReframeUI(bmp.Width div cTileWidth, bmp.Height div cTileWidth);
   finally
     bmp.Free;
   end;
 
-  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(FStartFrame));
+  ProgressRedraw(1);
+
+  SetLength(FFrames, frc);
+  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(startFrmIdx));
   WriteLn;
 
-  ProgressRedraw(1);
+  ProgressRedraw(2);
 
   FindKeyFrames;
 
-  ProgressRedraw(2);
+  ProgressRedraw(3);
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
   begin
@@ -2004,7 +2006,7 @@ begin
 
   LoadTiles;
 
-  ProgressRedraw(3);
+  ProgressRedraw(4);
 end;
 
 procedure TTilingEncoder.Reindex;
@@ -4209,10 +4211,10 @@ var
   end;
 
 const
-  CShotTransMaxTilesPerKF = 96 * 1920 * 1080 div sqr(cTileWidth); // limiter for the amount of data in a keyframe
+  CShotTransMaxSecondsPerKF = 2.0;  // maximum seconds between keyframes
+  CShotTransMinSecondsPerKF = 0.25; // minimum seconds between keyframes
   CShotTransEuclideanHiThres = 1.0; // frame equivalent accumulated distance
-  CShotTransCorrelLoThres = 0.75; // interframe pearson correlation low limit
-  CShotTransGracePeriod = 12; // minimum frames between keyframes
+  CShotTransCorrelLoThres = 0.75;   // interframe pearson correlation low limit
 var
   i, j, LastKFIdx: Integer;
   correl, euclidean: TFloat;
@@ -4240,9 +4242,9 @@ begin
     euclidean += EuclideanDist[i];
 
     isKf := (correl < CShotTransCorrelLoThres) or (euclidean > CShotTransEuclideanHiThres) or
-      ((i - LastKFIdx) * FTileMapSize > CShotTransMaxTilesPerKF);
+      ((i - LastKFIdx) > (CShotTransMaxSecondsPerKF * FFramesPerSecond));
 
-    isKf := isKf and ((i - LastKFIdx) > CShotTransGracePeriod);
+    isKf := isKf and ((i - LastKFIdx) > (CShotTransMinSecondsPerKF * FFramesPerSecond));
 
     if isKf then
     begin
