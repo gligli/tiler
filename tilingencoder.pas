@@ -35,6 +35,8 @@ const
   cBlueMul = 114;
 {$endif}
   cRGBw = 13; // in 1 / 32th
+  cYUVLumaFactor = 1.5;
+  cYUVChromaFactor = 0.75;
 
   // don't change these
 
@@ -102,7 +104,7 @@ const
   );
 
 
-  cDCTUVRatio: array[0..cTileWidth-1,0..cTileWidth-1] of TFloat = (
+  cDCTUVRatio: array[0..7,0..7] of TFloat = (
     (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),
     (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
     (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
@@ -416,6 +418,8 @@ type
     FVecInv: array[0..256 * 4 - 1] of Cardinal;
     FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
     FDCTLutDouble:array[0..sqr(sqr(cTileWidth)) - 1] of Double;
+    FInvDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
+    FInvDCTLutDouble:array[0..sqr(sqr(cTileWidth)) - 1] of Double;
 
     FKeyFrames: TKeyFrameArray;
     FFrames: TFrameArray;
@@ -529,6 +533,8 @@ type
       VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
       GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
+    procedure ComputeInvTilePsyVisFeatures(DCT: PFloat; GammaCor: Integer; var ATile: TTile); overload;
+    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; GammaCor: Integer; var ATile: TTile); overload;
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -1698,13 +1704,15 @@ begin
   // DCT
 
   i := 0;
-  for v := 0 to (cTileWidth - 1) do
-    for u := 0 to (cTileWidth - 1) do
-      for y := 0 to (cTileWidth - 1) do
-        for x := 0 to (cTileWidth - 1) do
+  for v := 0 to cTileWidth - 1 do
+    for u := 0 to cTileWidth - 1 do
+      for y := 0 to cTileWidth - 1 do
+        for x := 0 to cTileWidth - 1 do
         begin
-          FDCTLutDouble[i] := cos((x + 0.5) * u * PI / (cTileWidth * 2)) * cos((y + 0.5) * v * PI / (cTileWidth * 2)) * cDCTUVRatio[v, u];
+          FDCTLutDouble[i] := cos((x + 0.5) * u * PI / cTileWidth) * cos((y + 0.5) * v * PI / cTileWidth) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
           FDCTLut[i] := FDCTLutDouble[i];
+          FInvDCTLutDouble[i] := cos((u + 0.5) * x * PI / cTileWidth) * cos((v + 0.5) * y * PI / cTileWidth) * cDCTUVRatio[Min(y, 7), Min(x, 7)] * 2 / cTileWidth * 2 / cTileWidth;
+          FInvDCTLut[i] := FInvDCTLutDouble[i];
           Inc(i);
         end;
 end;
@@ -3171,10 +3179,10 @@ var
 
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    i, sx, sy, BICOClusterCount, clusterIdx, clusterLineCount, lineIdx, clusterLineIdx: Integer;
+    i, sx, sy, BICOClusterCount, clusterIdx, clusterLineCount, lineIdx: Integer;
     q00, q01, q10, q11: Integer;
     tilePos: Int64;
-    err, best, v: Double;
+    err: Double;
     Frame: TFrame;
     BICO: PBICO;
     ANN: PANNkdtree;
@@ -3182,7 +3190,6 @@ var
     BICOCentroids, BICOWeights: TDoubleDynArray;
     ANNClusters: TIntegerDynArray;
     ANNDataset: array of PANNFloat;
-    ToMerge: TDoubleDynArray2;
     ToMergeIdxs: TInt64DynArray;
     HMirrors, VMirrors: TBooleanDynArray;
   begin
@@ -3247,7 +3254,6 @@ var
 
       // build a list of this centroid tiles
 
-      SetLength(ToMerge, FTileMapSize);
       SetLength(ToMergeIdxs, FTileMapSize);
 
       tilePos := AIndex * ClustersPerFrame;
@@ -3257,42 +3263,30 @@ var
         for lineIdx := 0 to FTileMapSize - 1 do
           if ANNClusters[lineIdx] = clusterIdx then
           begin
-            ToMerge[clusterLineCount] := Dataset[lineIdx];
             ToMergeIdxs[clusterLineCount] := lineIdx;
             Inc(clusterLineCount);
           end;
 
-        // choose a tile from the cluster
+        // choose a tile for the cluster
 
         if clusterLineCount >= 1 then
         begin
-          // get the closest tile to the centroid
+          // reverse the PsyV model to get the final tile
 
-          best := MaxSingle;
-          clusterLineIdx := -1;
-          for i := 0 to clusterLineCount - 1 do
-          begin
-            v := CompareEuclidean(@ToMerge[i, 0], ANNDataset[clusterIdx], cTileDCTSize);
-            if v < best then
-            begin
-              best := v;
-              clusterLineIdx := i;
-            end;
-          end;
-
-          // compy centroid to tiles and prepare tilemap
-
-          FTiles[tilePos + clusterIdx]^.CopyFrom(Frame.FrameTiles[ToMergeIdxs[clusterLineIdx]]^);
+          FTiles[tilePos + clusterIdx]^.CopyFrom(Frame.FrameTiles[ToMergeIdxs[0]]^);
           FTiles[tilePos + clusterIdx]^.UseCount := Round(BICOWeights[clusterIdx]);
+
+          ComputeInvTilePsyVisFeatures(ANNDataset[clusterIdx], -1, FTiles[tilePos + clusterIdx]^);
+
+          // update tilemap
 
           for i := 0 to clusterLineCount - 1 do
           begin
             DivMod(ToMergeIdxs[i], FTileMapWidth, sy, sx);
             Frame.TileMap[sy, sx].TileIdx :=  tilePos + clusterIdx;
-            Frame.TileMap[sy, sx].HMirror :=  HMirrors[ToMergeIdxs[i]] xor HMirrors[ToMergeIdxs[clusterLineIdx]];
-            Frame.TileMap[sy, sx].VMirror :=  VMirrors[ToMergeIdxs[i]] xor VMirrors[ToMergeIdxs[clusterLineIdx]];
+            Frame.TileMap[sy, sx].HMirror :=  HMirrors[ToMergeIdxs[i]];
+            Frame.TileMap[sy, sx].VMirror :=  VMirrors[ToMergeIdxs[i]];
           end;
-
         end;
       end;
 
@@ -3804,6 +3798,93 @@ BEGIN
    move(tempx[y*cTileWidth],pic[y*cTileWidth],dx*sizeof(TFloat)); //Copy to Pic
 END;
 
+generic function DCTInner<T>(pCpn, pLut: T): Double;
+begin
+  Result := 0;
+
+  // unroll y by cTileWidth
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+end;
+
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
   VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
 var
@@ -3820,9 +3901,14 @@ var
     FromRGB(col, r, g, b);
 
     if UseLAB then
+    begin
       RGBToLAB(r, g, b, GammaCor, yy, uu, vv)
+    end
     else
+    begin
       RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
+      yy *= cYUVLumaFactor; uu *= cYUVChromaFactor; vv *= cYUVChromaFactor;
+    end;
 
     CpnPixels[0, y, x] := yy;
     CpnPixels[1, y, x] := uu;
@@ -3861,100 +3947,17 @@ begin
   for cpn := 0 to cColorCpns - 1 do
   begin
     pLut := @FDCTLut[0];
-
-    for v := 0 to (cTileWidth - 1) do
-      for u := 0 to (cTileWidth - 1) do
+    for v := 0 to cTileWidth - 1 do
+      for u := 0 to cTileWidth - 1 do
       begin
-  		  z := 0.0;
-        pCpn := @CpnPixels[cpn, 0, 0];
-
-        // unroll y by cTileWidth
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  		  z := specialize DCTInner<PSingle>(@CpnPixels[cpn, 0, 0], pLut);
 
         if QWeighting then
            z *= cDCTQuantization[cpn, v, u];
 
         pDCT^ := z;
         Inc(pDCT);
+        Inc(pLut, Sqr(cTileWidth));
       end;
   end;
 end;
@@ -3975,9 +3978,14 @@ var
     FromRGB(col, r, g, b);
 
     if UseLAB then
+    begin
       RGBToLAB(r, g, b, GammaCor, yy, uu, vv)
+    end
     else
+    begin
       RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
+      yy *= cYUVLumaFactor; uu *= cYUVChromaFactor; vv *= cYUVChromaFactor;
+    end;
 
     CpnPixels[0, y, x] := yy;
     CpnPixels[1, y, x] := uu;
@@ -4016,102 +4024,96 @@ begin
   for cpn := 0 to cColorCpns - 1 do
   begin
     pLut := @FDCTLutDouble[0];
-
-    for v := 0 to (cTileWidth - 1) do
-      for u := 0 to (cTileWidth - 1) do
+    for v := 0 to cTileWidth - 1 do
+      for u := 0 to cTileWidth - 1 do
       begin
-  		  z := 0.0;
-        pCpn := @CpnPixels[cpn, 0, 0];
-
-        // unroll y by cTileWidth
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  		  z := specialize DCTInner<PDouble>(@CpnPixels[cpn, 0, 0], pLut);
 
         if QWeighting then
            z *= cDCTQuantization[cpn, v, u];
 
         pDCT^ := z;
         Inc(pDCT);
+        Inc(pLut, Sqr(cTileWidth));
       end;
   end;
+end;
+
+procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PFloat; GammaCor: Integer; var ATile: TTile);
+var
+  x, y, cpn: Integer;
+  CpnPixels: TCpnPixels;
+  pCpn, pLut: PFloat;
+
+  function FromCpn(x, y: Integer): Integer; inline;
+  var
+    yy, uu, vv: TFloat;
+  begin
+    yy := CpnPixels[0, y, x];
+    uu := CpnPixels[1, y, x];
+    vv := CpnPixels[2, y, x];
+
+    yy *= 1.0 / cYUVLumaFactor; uu *= 1.0 / cYUVChromaFactor; vv *= 1.0 / cYUVChromaFactor;
+    Result := YUVToRGB(yy, uu, vv, GammaCor);
+  end;
+
+begin
+  pCpn := @CpnPixels[0, 0, 0];
+  for cpn := 0 to cColorCpns - 1 do
+  begin
+    pLut := @FInvDCTLut[0];
+
+    for y := 0 to (cTileWidth - 1) do
+      for x := 0 to (cTileWidth - 1) do
+      begin
+        pCpn^ := specialize DCTInner<PSingle>(@DCT[cpn * (cTileDCTSize div cColorCpns)], pLut);
+        Inc(pCpn);
+        Inc(pLut, Sqr(cTileWidth));
+      end;
+  end;
+
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+      ATile.RGBPixels[y, x] := FromCpn(x, y);
+end;
+
+
+procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; GammaCor: Integer; var ATile: TTile);
+var
+  x, y, cpn: Integer;
+  CpnPixels: TCpnPixelsDouble;
+  pCpn, pLut: PDouble;
+
+  function FromCpn(x, y: Integer): Integer; inline;
+  var
+    yy, uu, vv: TFloat;
+  begin
+    yy := CpnPixels[0, y, x];
+    uu := CpnPixels[1, y, x];
+    vv := CpnPixels[2, y, x];
+
+    yy *= 1.0 / cYUVLumaFactor; uu *= 1.0 / cYUVChromaFactor; vv *= 1.0 / cYUVChromaFactor;
+    Result := YUVToRGB(yy, uu, vv, GammaCor);
+  end;
+
+begin
+  pCpn := @CpnPixels[0, 0, 0];
+  for cpn := 0 to cColorCpns - 1 do
+  begin
+    pLut := @FInvDCTLutDouble[0];
+
+    for y := 0 to (cTileWidth - 1) do
+      for x := 0 to (cTileWidth - 1) do
+      begin
+        pCpn^ := specialize DCTInner<PDouble>(@DCT[cpn * (cTileDCTSize div cColorCpns)], pLut);
+        Inc(pCpn);
+        Inc(pLut, Sqr(cTileWidth));
+      end;
+  end;
+
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+      ATile.RGBPixels[y, x] := FromCpn(x, y);
 end;
 
 procedure TTilingEncoder.VMirrorTile(var ATile: TTile);
@@ -4718,9 +4720,11 @@ end;
 
 procedure TTilingEncoder.Test;
 var
-  i, rng: Integer;
+  i, j, k, rng: Integer;
   rr, gg, bb: Byte;
   l, a, b, y, u, v: TFloat;
+  DCT: array [0..cTileDCTSize-1] of Double;
+  T, T2: PTile;
 begin
   for i := 0 to 10000 do
   begin
@@ -4728,11 +4732,36 @@ begin
     FromRGB(rng, rr, gg, bb);
 
     RGBToLAB(rr, gg, bb, -1, l, a, b);
-    assert(rng = LABToRGB(l, a ,b, -1));
+    assert(rng = LABToRGB(l, a ,b, -1), 'RGBToLAB/LABToRGB mismatch');
 
     RGBToYUV(rr, gg, bb, -1, y, u, v);
-    assert(rng = YUVToRGB(y, u, v, -1));
+    assert(rng = YUVToRGB(y, u, v, -1), 'RGBToYUV/YUVToRGB mismatch');
   end;
+
+  T := TTile.New(True, False);
+  T2 := TTile.New(True, False);
+
+  for i := 0 to 7 do
+    for j := 0 to 7 do
+      T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
+
+  ComputeTilePsyVisFeatures(T^, False, False, False, False, False, -1, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], -1, T2^);
+
+  //for i := 0 to 7 do
+  //  for j := 0 to 7 do
+  //    write(IntToHex(T^.RGBPixels[i, j], 6), '  ');
+  //WriteLn();
+  //for i := 0 to 7 do
+  //  for j := 0 to 7 do
+  //    write(IntToHex(T2^.RGBPixels[i, j], 6), '  ');
+  //WriteLn();
+
+
+  Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'DCT/InvDCT mismatch');
+
+  TTile.Dispose(T);
+  TTile.Dispose(T2);
 end;
 
 // from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
@@ -5498,11 +5527,10 @@ type
 
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  i, bin, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx, BICOClusterCount, BICOCoresetSize: Integer;
+  i, bin, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize: Integer;
   q00, q01, q10, q11: Integer;
   cnt, tidx: Int64;
   err: Double;
-  v, best: TFloat;
   TileFrame: TFrame;
   TileTMI: PTileMapItem;
 
@@ -5517,7 +5545,6 @@ var
   ANNClusters, YakmoClusters: TIntegerDynArray;
   BICOCentroids, BICOWeights: TDoubleDynArray;
   ANNDataset: array of PANNFloat;
-  ToMerge: TDoubleDynArray2;
   ToMergeIdxs: TInt64DynArray;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
@@ -5626,7 +5653,6 @@ begin
 
   // build a list of this centroid tiles
 
-  SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
   for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
@@ -5637,7 +5663,6 @@ begin
         for lineIdx := 0 to DSLen - 1 do
           if ANNClusters[lineIdx] = yakmoDatasetIdx then
           begin
-            ToMerge[clusterLineCount] := Dataset[lineIdx];
             ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
             Inc(clusterLineCount);
           end;
@@ -5646,24 +5671,14 @@ begin
 
     if clusterLineCount >= 2 then
     begin
-      // get the closest tile to the centroid
+      // reverse the PsyV model to get the final tile
 
-      best := MaxSingle;
-      clusterLineIdx := -1;
-      for i := 0 to clusterLineCount - 1 do
-      begin
-        v := CompareEuclidean(@ToMerge[i, 0], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
-        if v < best then
-        begin
-          best := v;
-          clusterLineIdx := i;
-        end;
-      end;
+      ComputeInvTilePsyVisFeatures(@YakmoCentroids[clusterIdx, 0], -1, FTiles[ToMergeIdxs[0]]^);
 
       // merge centroid
 
       SpinEnter(@FLock);
-      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
+      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[0], nil, nil);
       SpinLeave(@FLock);
     end;
   end;
