@@ -5528,7 +5528,6 @@ type
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
   i, bin, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize: Integer;
-  q00, q01, q10, q11: Integer;
   cnt, tidx: Int64;
   err: Double;
   TileFrame: TFrame;
@@ -5569,20 +5568,7 @@ begin
       if bin <> AIndex then
         Continue;
 
-      // enforce a 'spin' on tiles mirrors (brighter top-left corner)
-
-      q00 := GetTileZoneSum(FTiles[tidx]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
-      q01 := GetTileZoneSum(FTiles[tidx]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
-      q10 := GetTileZoneSum(FTiles[tidx]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-      q11 := GetTileZoneSum(FTiles[tidx]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-
       TileTMI := GetTileIndexTMItem(FTiles[tidx]^, TileFrame);
-
-      TileTMI^.HMirror := q00 + q10 < q01 + q11;
-      TileTMI^.VMirror := q00 + q01 < q10 + q11;
-
-      if TileTMI^.HMirror then HMirrorTile(FTiles[tidx]^);
-      if TileTMI^.VMirror then VMirrorTile(FTiles[tidx]^);
 
       ComputeTilePsyVisFeatures(FTiles[tidx]^, True, False, False, False, False, -1, TileFrame.PKeyFrame.PaletteRGB[TileTMI^.PalIdx], @Dataset[cnt, 0]);
 
