@@ -17,7 +17,7 @@ object MainForm: TMainForm
   OnDestroy = FormDestroy
   OnKeyDown = FormKeyDown
   Position = poScreenCenter
-  LCLVersion = '2.2.0.4'
+  LCLVersion = '2.2.2.0'
   object pbProgress: TProgressBar
     Left = 8
     Height = 16
@@ -84,6 +84,7 @@ object MainForm: TMainForm
     Width = 256
     Anchors = [akLeft, akBottom]
     AutoSize = False
+    ParentColor = False
   end
   object chkDithered: TCheckBox
     Left = 320
@@ -103,6 +104,7 @@ object MainForm: TMainForm
     Top = 170
     Width = 118
     Caption = 'Tile limit (all; Q based)'
+    ParentColor = False
   end
   object seFrameCount: TSpinEdit
     Left = 208
@@ -119,6 +121,7 @@ object MainForm: TMainForm
     Top = 94
     Width = 144
     Caption = 'Frame count (0: automatic)'
+    ParentColor = False
   end
   object edInput: TEdit
     Left = 88
@@ -135,6 +138,7 @@ object MainForm: TMainForm
     Top = 10
     Width = 28
     Caption = 'Input'
+    ParentColor = False
   end
   object btnRunAll: TButton
     Left = 8
@@ -161,6 +165,7 @@ object MainForm: TMainForm
     Top = 373
     Width = 77
     Caption = 'Show tile page'
+    ParentColor = False
   end
   object Label7: TLabel
     Left = 8
@@ -168,6 +173,7 @@ object MainForm: TMainForm
     Top = 198
     Width = 100
     Caption = 'Max tiles per frame'
+    ParentColor = False
   end
   object seMaxTPF: TSpinEdit
     Left = 208
@@ -185,6 +191,7 @@ object MainForm: TMainForm
     Top = 66
     Width = 69
     Caption = 'WAV (mono)'
+    ParentColor = False
   end
   object edWAV: TEdit
     Left = 88
@@ -200,6 +207,7 @@ object MainForm: TMainForm
     Top = 38
     Width = 55
     Caption = 'Output dir'
+    ParentColor = False
   end
   object edOutputDir: TEdit
     Left = 88
@@ -215,6 +223,7 @@ object MainForm: TMainForm
     Top = 250
     Width = 159
     Caption = 'Temporal smoothing strength'
+    ParentColor = False
   end
   object imgPalette: TImage
     Left = 8
@@ -255,6 +264,7 @@ object MainForm: TMainForm
     Alignment = taRightJustify
     AutoSize = False
     Caption = '0%'
+    ParentColor = False
   end
   object chkSprite: TCheckBox
     Left = 536
@@ -309,6 +319,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = '0.0000'
+    ParentColor = False
   end
   object Label5: TLabel
     Left = 696
@@ -317,6 +328,7 @@ object MainForm: TMainForm
     Width = 35
     Anchors = [akLeft, akBottom]
     Caption = 'Correl:'
+    ParentColor = False
   end
   object cbxYilMix: TComboBox
     Left = 208
@@ -324,7 +336,7 @@ object MainForm: TMainForm
     Top = 119
     Width = 56
     ItemHeight = 15
-    ItemIndex = 4
+    ItemIndex = 3
     Items.Strings = (
       '1'
       '2'
@@ -334,7 +346,7 @@ object MainForm: TMainForm
     )
     OnChange = cbxYilMixChange
     TabOrder = 5
-    Text = '16'
+    Text = '8'
   end
   object Label11: TLabel
     Left = 8
@@ -342,6 +354,7 @@ object MainForm: TMainForm
     Top = 121
     Width = 157
     Caption = 'Yiluoma 2 mixed colors count'
+    ParentColor = False
   end
   object chkUseTK: TCheckBox
     Left = 8
@@ -390,7 +403,7 @@ object MainForm: TMainForm
     MaxValue = 100
     OnEditingDone = seQbTilesEditingDone
     TabOrder = 22
-    Value = 1
+    Value = 0.5
   end
   object IdleTimer: TIdleTimer
     Enabled = False

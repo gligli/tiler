@@ -8,7 +8,8 @@ interface
 
 uses
   LazLogger, Classes, SysUtils, windows, FileUtil, Forms, Controls, Graphics, Dialogs, ExtCtrls, FPimage, FPReadPNG,
-  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, kmeans, extern, typinfo;
+  StdCtrls, ComCtrls, Spin, Menus, Math, types, Process, strutils, kmodes, MTProcs, correlation, kmeans, extern, typinfo,
+  tbbmalloc;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esMakeUnique, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -25,7 +26,7 @@ const
   cKFQWeighting = True;
   cKFNBTilesEpsilon = 3;
 
-{$if true}
+{$if false}
   cRedMul = 2126;
   cGreenMul = 7152;
   cBlueMul = 722;
@@ -36,6 +37,8 @@ const
 {$endif}
   cLumaDiv = cRedMul + cGreenMul + cBlueMul;
   cRGBw = 13; // in 1 / 32th
+  cYUVLumaFactor = 1.5;
+  cYUVChromaFactor = 1.0;
 
   // SMS consts
   cVecInvWidth = 16;
@@ -90,7 +93,7 @@ const
     (343 + 688 + 40, 289 + 17 + 688, 91 + 5, 213 + 12 + 688, 113 + 7),
     (347 + 344 + 40, 309 + 18 + 344, 91 + 5, 233 + 14 + 344, 113 + 7)
   );
-  cLineJitterCompensation = 2;
+  cLineJitterCompensation = 3;
   cTileIndexesInitialLine = 202; // algo starts in VBlank
 
   cColorCpns = 3;
@@ -133,6 +136,17 @@ const
     )
   );
 
+  cDCTUVRatio: array[0..7,0..7] of TFloat = (
+    (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
+    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1)
+  );
+
   cDitheringListLen = 256;
   cDitheringMap : array[0..8*8 - 1] of Byte = (
      0, 48, 12, 60,  3, 51, 15, 63,
@@ -159,6 +173,7 @@ type
 
   TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
   TRGBPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
+  TCpnPixels = array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
   PPalPixels = ^TPalPixels;
 
   TTile = record
@@ -208,10 +223,6 @@ type
     LumaPal: array of Integer;
     Y2Palette: array of array[0..3] of Integer;
     Y2MixedColors: Integer;
-    // dynamic
-    CacheLock: TSpinlock;
-    ListCache: TList;
-    CountCache: TIntegerDynArray;
   end;
 
   TKeyFrame = record
@@ -351,7 +362,6 @@ type
     FUseThomasKnoll: Boolean;
     FPalBasedFrmTiling: Boolean;
     FY2MixedColors: Integer;
-    FLowMem: Boolean;
 
     FProgressStep: TEncoderStep;
     FProgressPosition, FOldProgressPosition, FProgressStartTime, FProgressPrevTime: Integer;
@@ -371,11 +381,13 @@ type
     procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
     procedure RGBToHSV(col: Integer; out h, s, v: TFloat); overload;
     procedure RGBToYUV(r, g, b: Byte; GammaCor: Integer; out y, u, v: TFloat);
+    function YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
     procedure RGBToLAB(r, g, b: TFloat; GammaCor: Integer; out ol, oa, ob: TFloat);
     procedure RGBToLAB(ir, ig, ib: Integer; GammaCor: Integer; out ol, oa, ob: TFloat);
 
     procedure ComputeTileDCT(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean; GammaCor: Integer;
       const pal: TIntegerDynArray; var DCT: array of TFloat); inline;
+    procedure ComputeInvTilePsyVisFeatures(DCT: PFloat; GammaCor: Integer; var ATile: TTile);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -399,7 +411,9 @@ type
     procedure FinishDitherTiles(AFrame: PFrame);
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 
+    function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
+    function GetTileIndexTMItem(const ATile: TTile; out AFrame: TFrame): PTileMapItem;
 
     procedure MergeTiles(const TileIndexes: array of Integer; TileCount: Integer; BestIdx: Integer; NewTile: PPalPixels);
     procedure InitMergeTiles;
@@ -409,8 +423,8 @@ type
     procedure DoGlobalTiling(DesiredNbTiles, RestartCount: Integer);
 
     function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat = 0.0; Epsilon: TFloat = 1e-12; Data: Pointer = nil): TFloat;
-    procedure HMirrorPalTile(var ATile: TTile);
-    procedure VMirrorPalTile(var ATile: TTile);
+    procedure HMirrorTile(var ATile: TTile);
+    procedure VMirrorTile(var ATile: TTile);
     function TestTMICount(PassX: TFloat; Data: Pointer): TFloat;
     procedure DoKeyFrameTiling(AFTD: PFrameTilingData);
     procedure DoFrameTiling(AKF: PKeyFrame; DesiredNbTiles: Integer);
@@ -538,6 +552,7 @@ var
   gGammaCorLut: array[-1..High(cGamma), 0..High(Byte)] of TFloat;
   gVecInv: array[0..256 * 4 - 1] of Cardinal;
   gDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
+  gInvDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
   gPalettePattern : array[0 .. cPaletteCount - 1, 0 .. cTilePaletteSize - 1] of TFloat;
 
 procedure InitLuts;
@@ -563,7 +578,8 @@ begin
       for y := 0 to (cTileWidth - 1) do
         for x := 0 to (cTileWidth - 1) do
         begin
-          gDCTLut[i] := cos((x + 0.5) * u * PI / 16.0) * cos((y + 0.5) * v * PI / 16.0);
+          gDCTLut[i] := cos((x + 0.5) * u * PI / cTileWidth) * cos((y + 0.5) * v * PI / cTileWidth) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
+          gInvDCTLut[i] := cos((u + 0.5) * x * PI / cTileWidth) * cos((v + 0.5) * y * PI / cTileWidth) * cDCTUVRatio[Min(y, 7), Min(x, 7)] * 2 / cTileWidth * 2 / cTileWidth;
           Inc(i);
         end;
 
@@ -585,6 +601,13 @@ end;
 function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
 begin
   Result := gGammaCorLut[lut, x];
+end;
+
+function GammaUncorrect(lut: Integer; x: TFloat): Byte;
+begin
+  if lut >= 0 then
+    x := power(x, 1 / cGamma[lut]);
+  Result := EnsureRange(Round(x * 255.0), 0, 255);
 end;
 
 function lerp(x, y, alpha: TFloat): TFloat; inline;
@@ -1369,6 +1392,48 @@ begin
   end;
 end;
 
+procedure TMainForm.HMirrorTile(var ATile: TTile);
+var
+  i, j: Integer;
+  v, sv: Integer;
+begin
+  // hardcode horizontal mirror into the tile
+
+  for j := 0 to cTileWidth - 1 do
+    for i := 0 to cTileWidth div 2 - 1  do
+    begin
+      v := ATile.PalPixels[j, i];
+      sv := ATile.PalPixels[j, cTileWidth - 1 - i];
+      ATile.PalPixels[j, i] := sv;
+      ATile.PalPixels[j, cTileWidth - 1 - i] := v;
+      v := ATile.RGBPixels[j, i];
+      sv := ATile.RGBPixels[j, cTileWidth - 1 - i];
+      ATile.RGBPixels[j, i] := sv;
+      ATile.RGBPixels[j, cTileWidth - 1 - i] := v;
+    end;
+end;
+
+procedure TMainForm.VMirrorTile(var ATile: TTile);
+var
+  j, i: Integer;
+  v, sv: Integer;
+begin
+  // hardcode vertical mirror into the tile
+
+  for j := 0 to cTileWidth div 2 - 1  do
+    for i := 0 to cTileWidth - 1 do
+    begin
+      v := ATile.PalPixels[j, i];
+      sv := ATile.PalPixels[cTileWidth - 1 - j, i];
+      ATile.PalPixels[j, i] := sv;
+      ATile.PalPixels[cTileWidth - 1 - j, i] := v;
+      v := ATile.RGBPixels[j, i];
+      sv := ATile.RGBPixels[cTileWidth - 1 - j, i];
+      ATile.RGBPixels[j, i] := sv;
+      ATile.RGBPixels[cTileWidth - 1 - j, i] := v;
+    end;
+end;
+
 
 function TMainForm.ColorCompare(r1, g1, b1, r2, g2, b2: Int64): Int64;
 var
@@ -1399,20 +1464,6 @@ var
   cachePos: Integer;
   pb: PByte;
 begin
-  if not FLowMem then
-  begin
-    SpinEnter(@Plan.CacheLock);
-    cachePos := Plan.CountCache[col];
-    if cachePos >= 0 then
-    begin
-      Result := PByte(Plan.ListCache[cachePos])[0];
-      Move(PByte(Plan.ListCache[cachePos])[1], List[0], Result);
-      SpinLeave(@Plan.CacheLock);
-      Exit;
-    end;
-    SpinLeave(@Plan.CacheLock);
-  end;
-
   FromRGB(col, r, g, b);
 
 {$if defined(ASM_DBMP) and defined(CPUX86_64)}
@@ -1621,21 +1672,6 @@ begin
     add rsp, 16 * 6
   end;
 {$endif}
-
-  if not FLowMem then
-  begin
-    SpinEnter(@Plan.CacheLock);
-    if Plan.CountCache[col] < 0 then
-    begin
-      cachePos := Plan.ListCache.Count;
-      pb := GetMem(Result + 1);
-      pb[0] := Result;
-      Move(List[0], pb[1], Result);
-      Plan.ListCache.Add(pb);
-      Plan.CountCache[col] := cachePos;
-    end;
-    SpinLeave(@Plan.CacheLock);
-  end;
 end;
 
 function TMainForm.ColorCompareTK(r1, g1, b1, r2, g2, b2: Int64): Int64;
@@ -1664,14 +1700,6 @@ begin
   SetLength(Plan.LumaPal, Length(pal));
   SetLength(Plan.Y2Palette, Length(pal));
 
-  if not FLowMem then
-  begin
-    SpinLeave(@Plan.CacheLock);
-    SetLength(Plan.CountCache, 1 shl 24);
-    FillDWord(Plan.CountCache[0], 1 shl 24, $ffffffff);
-    Plan.ListCache := TList.Create;
-  end;
-
   for i := 0 to High(pal) do
   begin
     col := pal[i];
@@ -1692,14 +1720,6 @@ procedure TMainForm.TerminatePlan(var Plan: TMixingPlan);
 var
   i: Integer;
 begin
-  if not FLowMem then
-  begin
-    for i := 0 to Plan.ListCache.Count - 1 do
-      Freemem(Plan.ListCache[i]);
-    Plan.ListCache.Free;
-    SetLength(Plan.CountCache, 0);
-  end;
-
   SetLength(Plan.LumaPal, 0);
   SetLength(Plan.Y2Palette, 0);
 end;
@@ -1855,50 +1875,13 @@ begin
   begin
     SetLength(list, cDitheringLen);
 
-    if FLowMem then
-    begin
-     for y := 0 to (cTileWidth - 1) do
-       for x := 0 to (cTileWidth - 1) do
-       begin
-         map_value := cDitheringMap[(y shl 3) + x];
-         DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
-         ATile.PalPixels[y, x] := list[map_value];
-       end;
-    end
-    else
-    begin
-      for y := 0 to (cTileWidth - 1) do
-        for x := 0 to (cTileWidth - 1) do
-        begin
-          col := ATile.RGBPixels[y, x];
-          map_value := cDitheringMap[(y shl 3) + x];
-          SpinEnter(@Plan.CacheLock);
-          cachePos := Plan.CountCache[col];
-          if cachePos >= 0 then
-          begin
-            ATile.PalPixels[y, x] := PByte(Plan.ListCache[cachePos])[map_value];
-            SpinLeave(@Plan.CacheLock);
-          end
-          else
-          begin
-            SpinLeave(@Plan.CacheLock);
-
-            DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
-            ATile.PalPixels[y, x] := list[map_value];
-
-            SpinEnter(@Plan.CacheLock);
-            if Plan.CountCache[col] < 0 then
-            begin
-              cachePos := Plan.ListCache.Count;
-              pb := GetMem(cDitheringLen);
-              Move(List[0], pb^, cDitheringLen);
-              Plan.ListCache.Add(pb);
-              Plan.CountCache[col] := cachePos;
-            end;
-            SpinLeave(@Plan.CacheLock);
-          end;
-        end;
-    end;
+   for y := 0 to (cTileWidth - 1) do
+     for x := 0 to (cTileWidth - 1) do
+     begin
+       map_value := cDitheringMap[(y shl 3) + x];
+       DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], list);
+       ATile.PalPixels[y, x] := list[map_value];
+     end;
   end
   else
   begin
@@ -1913,6 +1896,20 @@ begin
         ATile.PalPixels[y, x] := list[map_value];
       end;
   end;
+end;
+
+function TMainForm.GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
+var
+  i, j: Integer;
+  r, g, b: Byte;
+begin
+  Result := 0;
+  for j := y to y + h - 1 do
+    for i := x to x + w - 1 do
+    begin
+      FromRGB(ATile.RGBPixels[j, i], r, g, b);
+      Result += ToLuma(r, g, b);
+    end;
 end;
 
 function CompareCMIntraPalette(Item1,Item2,UserParameter:Pointer):Integer;
@@ -2157,7 +2154,6 @@ end;
 
 procedure TMainForm.FinishDitherTiles(AFrame: PFrame);
 var
-  i: Integer;
   sx, sy: Integer;
   OrigTile: PTile;
   SpritePal: Boolean;
@@ -2198,6 +2194,8 @@ begin
         SetLength(OrigTile^.PaletteIndexes, 0);
         SetLength(OrigTile^.PaletteRGB, 0);
         CopyTile(OrigTile^, FTiles[AFrame^.TileMap[sy, sx].TileIdx]^);
+
+        OrigTile^.TmpIndex := AFrame^.Index * cTileMapSize + sy * cTileMapWidth + sx;
       end;
     end;
 
@@ -2338,10 +2336,32 @@ begin
   fb := GammaCorrect(GammaCor, b);
 
   yy := fr * (cRedMul / cLumaDiv) + fg * (cGreenMul / cLumaDiv) + fb * (cBlueMul / cLumaDiv);
-  uu := (fb - yy) * (0.5 / (1.0 - cBlueMul / cLumaDiv));
-  vv := (fr - yy) * (0.5 / (1.0 - cRedMul / cLumaDiv));
+  uu := (fb - yy) * 0.492;
+  vv := (fr - yy) * 0.877;
+{$if cRedMul <> 299}
+  {$error RGBToYUV should be changed!}
+{$endif}
 
   y := yy; u := uu; v := vv; // for safe "out" param
+end;
+
+function TMainForm.YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
+var
+  r, g, b: TFloat;
+begin
+{$if cRedMul = 299}
+  r := y + v * 1.13983;
+  g := y - u * 0.39465 - v * 0.58060;
+  b := y + u * 2.03211;
+{$elseif cRedMul = 2126}
+  r := y + v * 1.28033;
+  g := y - u * 0.21482 - v * 0.38059;
+  b := y + u * 2.12798;
+{$else}
+  {$error YUVToRGB not implemented!}
+{$endif}
+
+  Result := ToRGB(GammaUncorrect(GammaCor, r), GammaUncorrect(GammaCor, g), GammaUncorrect(GammaCor, b));
 end;
 
 procedure TMainForm.RGBToLAB(ir, ig, ib: Integer; GammaCor: Integer; out ol, oa, ob: TFloat); inline;
@@ -2392,24 +2412,100 @@ begin
   ob := bb;
 end;
 
+generic function DCTInner<T>(pCpn, pLut: T): Double;
+begin
+  Result := 0;
+
+  // unroll y by cTileWidth
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+  // unroll x by cTileWidth
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+end;
+
 procedure TMainForm.ComputeTileDCT(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
   VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; var DCT: array of TFloat);
-const
-  cUVRatio: array[0..cTileWidth-1,0..cTileWidth-1] of TFloat = (
-    (0.5, sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5), sqrt(0.5)),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1),
-    (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1)
-  );
 var
   u, v, x, y, xx, yy, cpn: Integer;
-  z: TFloat;
-  CpnPixels: array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
-  pRatio, pDCT, pCpn, pLut: PFloat;
+  z: Double;
+  CpnPixels: TCpnPixels;
+  pDCT, pCpn, pLut: PFloat;
 
   procedure ToCpn(col, x, y: Integer); inline;
   var
@@ -2419,9 +2515,14 @@ var
     FromRGB(col, r, g, b);
 
     if UseLAB then
+    begin
       RGBToLAB(r, g, b, GammaCor, yy, uu, vv)
+    end
     else
+    begin
       RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
+      yy *= cYUVLumaFactor; uu *= cYUVChromaFactor; vv *= cYUVChromaFactor;
+    end;
 
     CpnPixels[0, y, x] := yy;
     CpnPixels[1, y, x] := uu;
@@ -2429,8 +2530,6 @@ var
   end;
 
 begin
-  Assert(Length(DCT) >= cTileDCTSize, 'DCT too small!');
-
   if FromPal then
   begin
     for y := 0 to (cTileWidth - 1) do
@@ -2461,137 +2560,58 @@ begin
   pDCT := @DCT[0];
   for cpn := 0 to cColorCpns - 1 do
   begin
-    pRatio := @cUVRatio[0, 0];
     pLut := @gDCTLut[0];
-
-    for v := 0 to (cTileWidth - 1) do
-      for u := 0 to (cTileWidth - 1) do
+    for v := 0 to cTileWidth - 1 do
+      for u := 0 to cTileWidth - 1 do
       begin
-  		  z := 0.0;
-        pCpn := @CpnPixels[cpn, 0, 0];
-
-        // unroll y by cTileWidth
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-        // unroll x by cTileWidth
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-        z += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+  		  z := specialize DCTInner<PFloat>(@CpnPixels[cpn, 0, 0], pLut);
 
         if QWeighting then
            z *= cDCTQuantization[cpn, v, u];
 
-        pDCT^ := z * pRatio^;
+        pDCT^ := z;
         Inc(pDCT);
-        Inc(pRatio);
+        Inc(pLut, Sqr(cTileWidth));
       end;
   end;
 end;
 
-procedure TMainForm.VMirrorPalTile(var ATile: TTile);
+procedure TMainForm.ComputeInvTilePsyVisFeatures(DCT: PFloat; GammaCor: Integer; var ATile: TTile);
 var
-  j, i: Integer;
-  v: Integer;
+  x, y, cpn: Integer;
+  CpnPixels: TCpnPixels;
+  pCpn, pLut: PFloat;
+
+  function FromCpn(x, y: Integer): Integer; inline;
+  var
+    yy, uu, vv: TFloat;
+  begin
+    yy := CpnPixels[0, y, x];
+    uu := CpnPixels[1, y, x];
+    vv := CpnPixels[2, y, x];
+
+    yy *= 1.0 / cYUVLumaFactor; uu *= 1.0 / cYUVChromaFactor; vv *= 1.0 / cYUVChromaFactor;
+    Result := YUVToRGB(yy, uu, vv, GammaCor);
+  end;
+
 begin
-  // hardcode vertical mirror into the tile
+  pCpn := @CpnPixels[0, 0, 0];
+  for cpn := 0 to cColorCpns - 1 do
+  begin
+    pLut := @gInvDCTLut[0];
 
-  for j := 0 to cTileWidth div 2 - 1  do
-    for i := 0 to cTileWidth - 1 do
-    begin
-      v := ATile.PalPixels[j, i];
-      ATile.PalPixels[j, i] := ATile.PalPixels[cTileWidth - 1 - j, i];
-      ATile.PalPixels[cTileWidth - 1 - j, i] := v;
-    end;
-end;
+    for y := 0 to (cTileWidth - 1) do
+      for x := 0 to (cTileWidth - 1) do
+      begin
+        pCpn^ := specialize DCTInner<PFloat>(@DCT[cpn * (cTileDCTSize div cColorCpns)], pLut);
+        Inc(pCpn);
+        Inc(pLut, Sqr(cTileWidth));
+      end;
+  end;
 
-procedure TMainForm.HMirrorPalTile(var ATile: TTile);
-var
-  i, j: Integer;
-  v: Integer;
-begin
-  // hardcode horizontal mirror into the tile
-
-  for j := 0 to cTileWidth - 1 do
-    for i := 0 to cTileWidth div 2 - 1  do
-    begin
-      v := ATile.PalPixels[j, i];
-      ATile.PalPixels[j, i] := ATile.PalPixels[j, cTileWidth - 1 - i];
-      ATile.PalPixels[j, cTileWidth - 1 - i] := v;
-    end;
+  for y := 0 to (cTileWidth - 1) do
+    for x := 0 to (cTileWidth - 1) do
+      ATile.RGBPixels[y, x] := FromCpn(x, y);
 end;
 
 procedure TMainForm.LoadFrame(AFrame: PFrame; ABitmap: TCustomBitmap);
@@ -2968,6 +2988,8 @@ var
   esLen: Integer;
   t: Integer;
 begin
+  scalable_allocation_command(TBBMALLOC_CLEAN_ALL_BUFFERS, nil); // force the mem allocator to release unused memory
+
   pbProgress.Max := (Ord(High(TEncoderStep)) + 1) * cProgressMul;
 
   if CurFrameIdx >= 0 then
@@ -3512,6 +3534,19 @@ begin
   end;
 end;
 
+function TMainForm.GetTileIndexTMItem(const ATile: TTile; out AFrame: TFrame): PTileMapItem;
+var
+  frmIdx, int, sy, sx: Integer;
+begin
+  Assert(ATile.TmpIndex >= 0);
+
+  DivMod(ATile.TmpIndex , cTileMapSize, frmIdx, int);
+  DivMod(int, cTileMapWidth, sy, sx);
+
+  Result := @FFrames[frmIdx].TileMap[sy, sx];
+  AFrame := FFrames[frmIdx];
+end;
+
 function TMainForm.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
 var
   x, y: Integer;
@@ -3634,6 +3669,9 @@ var
   acc, i, j, signi: Integer;
   dis: Integer;
   best: Integer;
+  q00, q01, q10, q11: Integer;
+  TileFrame: TFrame;
+  TileTMI: PTileMapItem;
 begin
   SetLength(Dataset, Length(FTiles), cKModesFeatureCount);
   SetLength(TileIndices, Length(FTiles));
@@ -3648,6 +3686,21 @@ begin
   begin
     if not FTiles[i]^.Active then
       Continue;
+
+    // enforce a 'spin' on tiles mirrors (brighter top-left corner)
+
+    q00 := GetTileZoneSum(FTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
+    q01 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
+    q10 := GetTileZoneSum(FTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+    q11 := GetTileZoneSum(FTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+
+    TileTMI := GetTileIndexTMItem(FTiles[i]^, TileFrame);
+
+    TileTMI^.HMirror := q00 + q10 < q01 + q11;
+    TileTMI^.VMirror := q00 + q01 < q10 + q11;
+
+    if TileTMI^.HMirror then HMirrorTile(FTiles[i]^);
+    if TileTMI^.VMirror then VMirrorTile(FTiles[i]^);
 
     WriteTileDatasetLine(FTiles[i]^, Dataset[dis], signi);
 
@@ -4523,8 +4576,6 @@ procedure TMainForm.FormCreate(Sender: TObject);
 var
   r,g,b,i,mx,mn,col,prim_col,sr: Integer;
 begin
-  FLowMem := True;
-
   IdleTimer.Interval := 20 * cRefreshRateDiv;
   IdleTimer.Enabled := True;
 

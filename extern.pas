@@ -47,6 +47,11 @@ type
 
   TYakmoCallback = procedure(cbData: Pointer); stdcall;
 
+  TBICO = record
+  end;
+
+  PBICO = ^TBICO;
+
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 
 procedure DoExternalSKLearn(Dataset: TFloatDynArray2;  ClusterCount, Precision: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
@@ -73,6 +78,11 @@ procedure yakmo_destroy(ay: PYakmo); stdcall; external 'yakmo.dll';
 procedure yakmo_load_train_data(ay: PYakmo; rowCount: Cardinal; colCount: Cardinal; dataset: PPFloat); stdcall; external 'yakmo.dll';
 procedure yakmo_train_on_data(ay: PYakmo; pointToCluster: PInteger); stdcall; external 'yakmo.dll';
 procedure yakmo_get_centroids(ay: PYakmo; centroids: PPFloat); stdcall; external 'yakmo.dll';
+
+function bico_create(dimension, npoints, k, nrandproj, coresetsize: Int64; randomSeed: Integer): PBICO; stdcall; external 'BICO.dll';
+procedure bico_destroy(bico: PBICO); stdcall; external 'BICO.dll';
+procedure bico_insert_line(bico: PBICO; line: PDouble; weight: Double); stdcall; external 'BICO.dll';
+function bico_get_results(bico: PBICO; centroids: PDouble; weights: PDouble): Int64; stdcall; external 'BICO.dll';
 
 function InvariantFormatSettings: TFormatSettings;
 function internalRuncommand(p:TProcess;var outputstring:string;
