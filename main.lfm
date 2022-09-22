@@ -819,6 +819,10 @@ object MainForm: TMainForm
       ShortCut = 117
       OnClick = btnDoFrameTilingClick
     end
+    object MenuItem8: TMenuItem
+      Caption = 'ReColor'
+      OnClick = btnReColorClick
+    end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'
       ShortCut = 118

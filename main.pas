@@ -60,6 +60,7 @@ type
     Label7: TLabel;
     Label9: TLabel;
     lblPct: TLabel;
+    MenuItem8: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
     miSaveSettings: TMenuItem;
@@ -113,6 +114,7 @@ type
     procedure btnDoGlobalTilingClick(Sender: TObject);
     procedure btnDoFrameTilingClick(Sender: TObject);
     procedure btnPMClick(Sender: TObject);
+    procedure btnReColorClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
@@ -217,6 +219,12 @@ begin
   pt.Y := btnPM.Top + btnPM.Height;
   pt := ClientToScreen(pt);
   pmProcesses.PopUp(pt.X, pt.Y);
+end;
+
+procedure TMainForm.btnReColorClick(Sender: TObject);
+begin
+  FTilingEncoder.ReColor;
+  UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnLoadClick(Sender: TObject);

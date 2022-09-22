@@ -602,6 +602,7 @@ type
     procedure Dither;
     procedure GlobalTiling;
     procedure FrameTiling;
+    procedure ReColor;
     procedure Reindex;
     procedure Smooth;
     procedure Save;
@@ -1907,6 +1908,84 @@ begin
   end;
 
   ProgressRedraw(2);
+end;
+
+procedure TTilingEncoder.ReColor;
+
+  procedure DoReColor(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    sx, sy, tx, ty, mtx, mty, frmIdx, palIdx, colIdx, cnt: Integer;
+    r, g, b: Byte;
+    Frame: TFrame;
+    TMI: PTileMapItem;
+    FTTile, TMTile: PTile;
+    Accumulators: array of array of array[0 .. cColorCpns - 1 + 1] of Cardinal;
+  begin
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
+      Exit;
+
+    SetLength(Accumulators, FPaletteCount, FPaletteSize);
+
+    for frmIdx := FKeyFrames[AIndex].StartFrame to FKeyFrames[AIndex].EndFrame do
+    begin
+      Frame := FFrames[frmIdx];
+
+      Frame.AcquireFrameTiles;
+      try
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            TMI := @Frame.TileMap[sy, sx];
+            FTTile := Frame.FrameTiles[sy * FTileMapWidth + sx];
+            TMTile := FTiles[TMI^.TileIdx];
+
+            for ty := 0 to cTileWidth - 1 do
+              for tx := 0 to cTileWidth - 1 do
+              begin
+                // tilemap til is potentially mirrored
+                mtx := tx;
+                mty := ty;
+                if TMI^.HMirror then mtx := cTileWidth - 1 - mtx;
+                if TMI^.VMirror then mty := cTileWidth - 1 - mty;
+
+                colIdx := TMTile^.PalPixels[mty, mtx];
+
+                FromRGB(FTTile^.RGBPixels[ty, tx], r, g, b);
+
+                Accumulators[TMI^.PalIdx, colIdx, 0] += r;
+                Accumulators[TMI^.PalIdx, colIdx, 1] += g;
+                Accumulators[TMI^.PalIdx, colIdx, 2] += b;
+                Accumulators[TMI^.PalIdx, colIdx, 3] += 1;
+              end;
+          end;
+      finally
+        Frame.ReleaseFrameTiles;
+      end;
+    end;
+
+    for palIdx := 0 to FPaletteCount - 1 do
+      for colIdx := 0 to FPaletteSize - 1 do
+      begin
+        cnt := Accumulators[palIdx, colIdx, 3];
+        r := iDiv0(Accumulators[palIdx, colIdx, 0] + cnt div 2, cnt);
+        g := iDiv0(Accumulators[palIdx, colIdx, 1] + cnt div 2, cnt);
+        b := iDiv0(Accumulators[palIdx, colIdx, 2] + cnt div 2, cnt);
+
+        FKeyFrames[AIndex].PaletteRGB[palIdx, colIdx] := ToRGB(r, g, b);
+      end;
+  end;
+
+var
+  tidx: Int64;
+begin
+  if Length(FFrames) = 0 then
+    Exit;
+
+  ProgressRedraw(0, esDither);
+
+  ProcThreadPool.DoParallelLocalProc(@DoReColor, 0, High(FKeyFrames));
+
+  ProgressRedraw(1);
 end;
 
 procedure TTilingEncoder.Load;
@@ -5527,11 +5606,10 @@ type
 
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  i, bin, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize: Integer;
+  i, bin, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
   cnt, tidx: Int64;
   err: Double;
-  TileFrame: TFrame;
-  TileTMI: PTileMapItem;
+  v, best: TFloat;
 
   KMBin: PKModesBin;
   BICO: PBICO;
@@ -5544,6 +5622,7 @@ var
   ANNClusters, YakmoClusters: TIntegerDynArray;
   BICOCentroids, BICOWeights: TDoubleDynArray;
   ANNDataset: array of PANNFloat;
+  ToMerge: TDoubleDynArray2;
   ToMergeIdxs: TInt64DynArray;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
@@ -5568,9 +5647,7 @@ begin
       if bin <> AIndex then
         Continue;
 
-      TileTMI := GetTileIndexTMItem(FTiles[tidx]^, TileFrame);
-
-      ComputeTilePsyVisFeatures(FTiles[tidx]^, True, False, False, False, False, -1, TileFrame.PKeyFrame.PaletteRGB[TileTMI^.PalIdx], @Dataset[cnt, 0]);
+      ComputeTilePsyVisFeatures(FTiles[tidx]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
 
       // insert line into BICO, UseCount as weight to avoid repeat
       bico_insert_line(BICO, @Dataset[cnt, 0], FTiles[tidx]^.UseCount);
@@ -5639,6 +5716,7 @@ begin
 
   // build a list of this centroid tiles
 
+  SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
   for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
@@ -5649,6 +5727,7 @@ begin
         for lineIdx := 0 to DSLen - 1 do
           if ANNClusters[lineIdx] = yakmoDatasetIdx then
           begin
+            ToMerge[clusterLineCount] := Dataset[lineIdx];
             ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
             Inc(clusterLineCount);
           end;
@@ -5657,14 +5736,24 @@ begin
 
     if clusterLineCount >= 2 then
     begin
-      // reverse the PsyV model to get the final tile
+       // get the closest tile to the centroid
 
-      ComputeInvTilePsyVisFeatures(@YakmoCentroids[clusterIdx, 0], -1, FTiles[ToMergeIdxs[0]]^);
+       best := MaxSingle;
+       clusterLineIdx := -1;
+       for i := 0 to clusterLineCount - 1 do
+       begin
+         v := CompareEuclidean(@ToMerge[i, 0], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
+         if v < best then
+         begin
+           best := v;
+           clusterLineIdx := i;
+         end;
+       end;
 
       // merge centroid
 
       SpinEnter(@FLock);
-      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[0], nil, nil);
+      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
       SpinLeave(@FLock);
     end;
   end;
