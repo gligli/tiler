@@ -64,7 +64,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 2, 1, 4, 2, 2, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 4, 2, 1, 3, 1, 2, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -562,6 +562,7 @@ type
     function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Int64);
+    procedure PackTiles;
     procedure MergeTiles(const TileIndexes: array of Int64; TileCount: Integer; BestIdx: Int64; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
@@ -1750,7 +1751,15 @@ begin
     SaveRawTiles(FReloadTilesetFileName);
   end;
 
-  ProgressRedraw(4);
+  // ensure inter block tile unicity
+
+  InitMergeTiles;
+  MakeTilesUnique(0, Length(FTiles));
+  FinishMergeTiles;
+
+  PackTiles;
+
+  ProgressRedraw(3);
 end;
 
 procedure TTilingEncoder.Dither;
@@ -1806,8 +1815,6 @@ var
     MakeTilesUnique(AIndex * TilesAtATime, Min(Length(FTiles) - AIndex * TilesAtATime, TilesAtATime));
   end;
 
-var
-  tidx, copyPos: Int64;
 begin
   TilesAtATime := ceil(Length(FTiles) / NumberOfProcessors);
 
@@ -1822,36 +1829,7 @@ begin
 
   ProgressRedraw(1);
 
-  InitMergeTiles;
-
-  // pack tiles
-
-  copyPos := 0;
-  for tidx := High(FTiles) downto 0 do
-  begin
-    if FTiles[tidx]^.Active then
-    begin
-      while FTiles[copyPos]^.Active do
-        Inc(copyPos);
-
-      if copyPos < tidx then
-      begin
-        FTiles[copyPos]^.CopyFrom(FTiles[tidx]^);
-        FTiles[tidx]^.MergeIndex := copyPos;
-        FTiles[tidx]^.Active := False;
-      end
-      else
-      begin
-        Break;
-      end;
-    end;
-  end;
-
-  FinishMergeTiles;
-
-  // redim tile list
-
-  TTile.Array1DRealloc(FTiles, copyPos);
+  PackTiles;
 
   ProgressRedraw(2);
 end;
@@ -1883,10 +1861,6 @@ begin
 
   ProgressRedraw(0, esFrameTiling);
 
-  ReindexTiles(False);
-
-  ProgressRedraw(1);
-
   for kf := 0 to high(FKeyFrames) do
   begin
     FKeyFrames[kf].PalettesLeft := FPaletteCount;
@@ -1907,7 +1881,7 @@ begin
     end;
   end;
 
-  ProgressRedraw(2);
+  ProgressRedraw(1);
 end;
 
 procedure TTilingEncoder.ReColor;
@@ -1942,7 +1916,7 @@ procedure TTilingEncoder.ReColor;
             for ty := 0 to cTileWidth - 1 do
               for tx := 0 to cTileWidth - 1 do
               begin
-                // tilemap til is potentially mirrored
+                // tilemap tile is potentially mirrored
                 mtx := tx;
                 mty := ty;
                 if TMI^.HMirror then mtx := cTileWidth - 1 - mtx;
@@ -1952,10 +1926,10 @@ procedure TTilingEncoder.ReColor;
 
                 FromRGB(FTTile^.RGBPixels[ty, tx], r, g, b);
 
-                Accumulators[TMI^.PalIdx, colIdx, 0] += r;
-                Accumulators[TMI^.PalIdx, colIdx, 1] += g;
-                Accumulators[TMI^.PalIdx, colIdx, 2] += b;
-                Accumulators[TMI^.PalIdx, colIdx, 3] += 1;
+                Accumulators[TMI^.PalIdx, colIdx, 0] += r * TMI^.BlendCur;
+                Accumulators[TMI^.PalIdx, colIdx, 1] += g * TMI^.BlendCur;
+                Accumulators[TMI^.PalIdx, colIdx, 2] += b * TMI^.BlendCur;
+                Accumulators[TMI^.PalIdx, colIdx, 3] += TMI^.BlendCur;
               end;
           end;
       finally
@@ -3248,6 +3222,42 @@ begin
   finally
     sortList.Free;
   end;
+end;
+
+procedure TTilingEncoder.PackTiles;
+var
+  tidx, copyPos: Int64;
+begin
+  InitMergeTiles;
+
+  // pack tiles
+
+  copyPos := 0;
+  for tidx := High(FTiles) downto 0 do
+  begin
+    if FTiles[tidx]^.Active then
+    begin
+      while FTiles[copyPos]^.Active do
+        Inc(copyPos);
+
+      if copyPos < tidx then
+      begin
+        FTiles[copyPos]^.CopyFrom(FTiles[tidx]^);
+        FTiles[tidx]^.MergeIndex := copyPos;
+        FTiles[tidx]^.Active := False;
+      end
+      else
+      begin
+        Break;
+      end;
+    end;
+  end;
+
+  FinishMergeTiles;
+
+  // redim tile list
+
+  TTile.Array1DRealloc(FTiles, copyPos);
 end;
 
 procedure TTilingEncoder.LoadTiles;
@@ -5820,14 +5830,6 @@ begin
   FinishMergeTiles;
 
   ProgressRedraw(2);
-
-  // ensure inter block tile unicity
-
-  InitMergeTiles;
-  MakeTilesUnique(0, Length(FTiles));
-  FinishMergeTiles;
-
-  ProgressRedraw(3);
 end;
 
 procedure TTilingEncoder.ReloadPreviousTiling(AFN: String);
@@ -5919,11 +5921,6 @@ begin
 
     ProgressRedraw(2);
 
-    InitMergeTiles;
-    MakeTilesUnique(0, Length(FTiles));
-    FinishMergeTiles;
-
-    ProgressRedraw(3);
   finally
     if Assigned(FLANN) then
       flann_free_index(FLANN, @FLANNParameters);
