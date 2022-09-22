@@ -437,7 +437,7 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 3
+        ItemIndex = 4
         Items.Strings = (
           '2'
           '4'
@@ -448,7 +448,7 @@ object MainForm: TMainForm
         )
         OnChange = UpdateGUI
         TabOrder = 11
-        Text = '16'
+        Text = '32'
       end
       object cbxPalCount: TComboBox
         Left = 328
@@ -583,7 +583,7 @@ object MainForm: TMainForm
         MaxValue = 1000
         OnChange = UpdateGUI
         TabOrder = 15
-        Value = 1
+        Value = 0.5
       end
     end
     object tsInput: TTabSheet
