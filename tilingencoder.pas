@@ -1898,9 +1898,9 @@ procedure TTilingEncoder.ReColor;
   procedure DoReColor(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     sx, sy, tx, ty, mtx, mty, frmIdx, palIdx, colIdx, cnt: Integer;
-    r, g, b: Byte;
-    Frame: TFrame;
-    TMI: PTileMapItem;
+    r, g, b, pr, pg, pb: Byte;
+    Frame, PrevFrame: TFrame;
+    TMI, PrevTMI: PTileMapItem;
     FTTile, TMTile: PTile;
     Accumulators: array of array of array[0 .. cColorCpns - 1 + 1] of Int64;
   begin
@@ -1912,6 +1912,9 @@ procedure TTilingEncoder.ReColor;
     for frmIdx := FKeyFrames[AIndex].StartFrame to FKeyFrames[AIndex].EndFrame do
     begin
       Frame := FFrames[frmIdx];
+      PrevFrame := nil;
+      if frmIdx > 0 then
+        PrevFrame := FFrames[frmIdx - 1];
 
       Frame.AcquireFrameTiles;
       try
@@ -1935,10 +1938,23 @@ procedure TTilingEncoder.ReColor;
 
                 FromRGB(FTTile^.RGBPixels[ty, tx], r, g, b);
 
-                Accumulators[TMI^.PalIdx, colIdx, 0] += r * TMI^.BlendCur;
-                Accumulators[TMI^.PalIdx, colIdx, 1] += g * TMI^.BlendCur;
-                Accumulators[TMI^.PalIdx, colIdx, 2] += b * TMI^.BlendCur;
-                Accumulators[TMI^.PalIdx, colIdx, 3] += TMI^.BlendCur;
+                pr := 0; pg := 0; pb := 0;
+                if Assigned(PrevFrame) then
+                begin
+                  PrevTMI := @PrevFrame.TileMap[sy + TMI^.BlendY, sx + TMI^.BlendX];
+
+                  mtx := tx;
+                  mty := ty;
+                  if PrevTMI^.HMirror then mtx := cTileWidth - 1 - mtx;
+                  if PrevTMI^.VMirror then mty := cTileWidth - 1 - mty;
+
+                  FromRGB(PrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.PalIdx, FTiles[PrevTMI^.TileIdx]^.PalPixels[mty, mtx]], pr, pg, pb);
+                end;
+
+                Accumulators[TMI^.PalIdx, colIdx, 0] += EnsureRange((r * (cMaxFTBlend - 1) - pr * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
+                Accumulators[TMI^.PalIdx, colIdx, 1] += EnsureRange((g * (cMaxFTBlend - 1) - pg * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
+                Accumulators[TMI^.PalIdx, colIdx, 2] += EnsureRange((b * (cMaxFTBlend - 1) - pb * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
+                Accumulators[TMI^.PalIdx, colIdx, 3] += 1;
               end;
           end;
       finally
