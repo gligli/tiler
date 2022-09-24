@@ -687,7 +687,8 @@ type
   end;
 
 
-  function iDiv0(x,y:Integer):Integer;inline;
+  function iDiv0(x, y: Integer): Integer;overload;inline;
+  function iDiv0(x, y: Int64): Int64;overload;inline;
 
 implementation
 
@@ -724,7 +725,14 @@ begin
   a := tmp;
 end;
 
-function iDiv0(x, y: Integer): Integer;inline;
+function iDiv0(x, y: Integer): Integer;overload;inline;
+begin
+  Result := 0;
+  if y <> 0 then
+    Result := x div y;
+end;
+
+function iDiv0(x, y: Int64): Int64;overload;inline;
 begin
   Result := 0;
   if y <> 0 then
@@ -1893,7 +1901,7 @@ procedure TTilingEncoder.ReColor;
     Frame: TFrame;
     TMI: PTileMapItem;
     FTTile, TMTile: PTile;
-    Accumulators: array of array of array[0 .. cColorCpns - 1 + 1] of Cardinal;
+    Accumulators: array of array of array[0 .. cColorCpns - 1 + 1] of Int64;
   begin
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
@@ -4215,14 +4223,21 @@ begin
   for j := 0 to cTileWidth div 2 - 1  do
     for i := 0 to cTileWidth - 1 do
     begin
-      v := ATile.PalPixels[j, i];
-      sv := ATile.PalPixels[cTileWidth - 1 - j, i];
-      ATile.PalPixels[j, i] := sv;
-      ATile.PalPixels[cTileWidth - 1 - j, i] := v;
-      v := ATile.RGBPixels[j, i];
-      sv := ATile.RGBPixels[cTileWidth - 1 - j, i];
-      ATile.RGBPixels[j, i] := sv;
-      ATile.RGBPixels[cTileWidth - 1 - j, i] := v;
+      if ATile.HasPalPixels then
+      begin
+        v := ATile.PalPixels[j, i];
+        sv := ATile.PalPixels[cTileWidth - 1 - j, i];
+        ATile.PalPixels[j, i] := sv;
+        ATile.PalPixels[cTileWidth - 1 - j, i] := v;
+      end;
+
+      if ATile.HasRGBPixels then
+      begin
+        v := ATile.RGBPixels[j, i];
+        sv := ATile.RGBPixels[cTileWidth - 1 - j, i];
+        ATile.RGBPixels[j, i] := sv;
+        ATile.RGBPixels[cTileWidth - 1 - j, i] := v;
+      end;
     end;
 end;
 
@@ -4236,14 +4251,21 @@ begin
   for j := 0 to cTileWidth - 1 do
     for i := 0 to cTileWidth div 2 - 1  do
     begin
-      v := ATile.PalPixels[j, i];
-      sv := ATile.PalPixels[j, cTileWidth - 1 - i];
-      ATile.PalPixels[j, i] := sv;
-      ATile.PalPixels[j, cTileWidth - 1 - i] := v;
-      v := ATile.RGBPixels[j, i];
-      sv := ATile.RGBPixels[j, cTileWidth - 1 - i];
-      ATile.RGBPixels[j, i] := sv;
-      ATile.RGBPixels[j, cTileWidth - 1 - i] := v;
+      if ATile.HasPalPixels then
+      begin
+        v := ATile.PalPixels[j, i];
+        sv := ATile.PalPixels[j, cTileWidth - 1 - i];
+        ATile.PalPixels[j, i] := sv;
+        ATile.PalPixels[j, cTileWidth - 1 - i] := v;
+      end;
+
+      if ATile.HasRGBPixels then
+      begin
+        v := ATile.RGBPixels[j, i];
+        sv := ATile.RGBPixels[j, cTileWidth - 1 - i];
+        ATile.RGBPixels[j, i] := sv;
+        ATile.RGBPixels[j, cTileWidth - 1 - i] := v;
+      end;
     end;
 end;
 
@@ -5616,7 +5638,7 @@ type
 
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  i, bin, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
+  i, bin, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, clusterLineIdx: Integer;
   cnt, tidx: Int64;
   err: Double;
   v, best: TFloat;
@@ -5628,8 +5650,7 @@ var
 
   TileIndices: TInt64DynArray;
   Dataset: TDoubleDynArray2;
-  YakmoCentroids: TDoubleDynArray2;
-  ANNClusters, YakmoClusters: TIntegerDynArray;
+  ANNClusters: TIntegerDynArray;
   BICOCentroids, BICOWeights: TDoubleDynArray;
   ANNDataset: array of PANNFloat;
   ToMerge: TDoubleDynArray2;
@@ -5640,10 +5661,9 @@ begin
   if (DSLen <= KMBin^.ClusterCount) or (KMBin^.ClusterCount <= 1) then
     Exit;
 
-  // use BICO to prepare a noise-aware set of centroids that will be used as dataset for Yakmo
+  // use BICO to compute a noise-aware set of centroids
 
-  BICOCoresetSize := KMBin^.ClusterCount * 2;
-  BICO := bico_create(cTileDCTSize, DSLen, KMBin^.ClusterCount, 1, BICOCoresetSize, $42381337);
+  BICO := bico_create(cTileDCTSize, DSLen, KMBin^.ClusterCount, 1, KMBin^.ClusterCount, $42381337);
   try
     // parse bin dataset
 
@@ -5669,8 +5689,8 @@ begin
 
     // get BICO results
 
-    SetLength(BICOCentroids, BICOCoresetSize * cTileDCTSize);
-    SetLength(BICOWeights, BICOCoresetSize);
+    SetLength(BICOCentroids, KMBin^.ClusterCount * cTileDCTSize);
+    SetLength(BICOWeights, KMBin^.ClusterCount);
 
     BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
 
@@ -5699,48 +5719,21 @@ begin
     ann_kdtree_destroy(ANN);
   end;
 
-  // use Yakmo to extract final centroids
-
-  SetLength(YakmoClusters, BICOClusterCount);
-  SetLength(YakmoCentroids, KMBin^.ClusterCount, cTileDCTSize);
-
-  if BICOClusterCount > KMBin^.ClusterCount then
-  begin
-    Yakmo := yakmo_create(KMBin^.ClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-    try
-      yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, @ANNDataset[0]);
-      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-      yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
-    finally
-      yakmo_destroy(Yakmo);
-    end;
-  end
-  else
-  begin
-    for i := 0 to BICOClusterCount - 1 do
-      YakmoClusters[i] := i;
-    for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
-      for i := 0 to cTileDCTSize - 1 do
-        YakmoCentroids[clusterIdx, i] := BICOCentroids[clusterIdx * cTileDCTSize + i];
-  end;
-
   // build a list of this centroid tiles
 
   SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
-  for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
+  for clusterIdx := 0 to BICOClusterCount - 1 do
   begin
     clusterLineCount := 0;
-    for yakmoDatasetIdx := 0 to High(YakmoClusters) do
-      if YakmoClusters[yakmoDatasetIdx] = clusterIdx then
-        for lineIdx := 0 to DSLen - 1 do
-          if ANNClusters[lineIdx] = yakmoDatasetIdx then
-          begin
-            ToMerge[clusterLineCount] := Dataset[lineIdx];
-            ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
-            Inc(clusterLineCount);
-          end;
+    for lineIdx := 0 to DSLen - 1 do
+      if ANNClusters[lineIdx] = clusterIdx then
+      begin
+        ToMerge[clusterLineCount] := Dataset[lineIdx];
+        ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
+        Inc(clusterLineCount);
+      end;
 
     // choose a tile from the cluster
 
@@ -5752,7 +5745,7 @@ begin
        clusterLineIdx := -1;
        for i := 0 to clusterLineCount - 1 do
        begin
-         v := CompareEuclidean(@ToMerge[i, 0], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
+         v := CompareEuclidean(@ToMerge[i, 0], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
          if v < best then
          begin
            best := v;
