@@ -1871,6 +1871,7 @@ begin
 
   for kf := 0 to high(FKeyFrames) do
   begin
+    FKeyFrames[kf].FTErrCml := 0.0;
     FKeyFrames[kf].PalettesLeft := FPaletteCount;
     SetLength(FKeyFrames[kf].TileDS, FPaletteCount);
     SetLength(FKeyFrames[kf].FTPaletteDoneEvent, FPaletteCount);
@@ -5646,7 +5647,6 @@ var
   KMBin: PKModesBin;
   BICO: PBICO;
   ANN: PANNkdtree;
-  Yakmo: PYakmo;
 
   TileIndices: TInt64DynArray;
   Dataset: TDoubleDynArray2;
@@ -5679,8 +5679,8 @@ begin
 
       ComputeTilePsyVisFeatures(FTiles[tidx]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
 
-      // insert line into BICO, UseCount as weight to avoid repeat
-      bico_insert_line(BICO, @Dataset[cnt, 0], FTiles[tidx]^.UseCount);
+      // insert line into BICO
+      bico_insert_line(BICO, @Dataset[cnt, 0], 1.0);
 
       TileIndices[cnt] := tidx;
       Inc(cnt);
@@ -5711,7 +5711,7 @@ begin
   for clusterIdx := 0 to BICOClusterCount - 1 do
     ANNDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
 
-  ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_STD);
+  ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_SUGGEST);
   try
     for i := 0 to DSLen - 1 do
       ANNClusters[i] := ann_kdtree_search(ANN, @Dataset[i, 0], 0.0, @err);
