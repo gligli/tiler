@@ -88,6 +88,7 @@ let gtmTMDblBuff = 0;
 let gtmKFCurDblBuff = 0;
 let gtmKFPrevDblBuff = 0;
 let gtmLoopCount = 0;
+let gtmMaxFTBlend = 16;
 
 function gtmPlayFromFile(file, canvasId) {
 	if (gtmReady) {
@@ -217,6 +218,12 @@ function parseHeader(buffer) {
 		
 		stream.offset = whlsize; // position on start of LZMA bitstream
 		
+		// KLUDGE: before version 2, blending had wrong extents
+		if (gtmHeader[GTMHeader.EncoderVersion] < 2)
+			gtmMaxFTBlend = 15
+		else
+			gtmMaxFTBlend = 16;
+		
 		redimFrame();
 	} else {
 		stream.offset -= 4;
@@ -339,9 +346,9 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 			let pv = 0;
 			if (prevTile) pv = prevTile[prevTOff++]; // can be undefined when changing video
 			let cv = tile[tOff++];
-			data[p++] = Math.min(255, ((palR[cv] * blendCur + prevPalR[pv] * blendPrev) / 15) >> 0);
-			data[p++] = Math.min(255, ((palG[cv] * blendCur + prevPalG[pv] * blendPrev) / 15) >> 0);
-			data[p++] = Math.min(255, ((palB[cv] * blendCur + prevPalB[pv] * blendPrev) / 15) >> 0);
+			data[p++] = Math.min(255, ((palR[cv] * blendCur + prevPalR[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
+			data[p++] = Math.min(255, ((palG[cv] * blendCur + prevPalG[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
+			data[p++] = Math.min(255, ((palB[cv] * blendCur + prevPalB[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
 			data[p++] = palA[cv];
 		}
 		p += (gtmWidth - 1) * CTileWidth * 4;

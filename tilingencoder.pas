@@ -11,7 +11,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger, IniFiles,
-  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc;
+  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, kmodes;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esMakeUnique, esDither, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -412,6 +412,7 @@ type
 
     FCS: TRTLCriticalSection;
     FLock: TSpinlock;
+    FConcurrentKModesBins: Integer;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -566,7 +567,8 @@ type
     procedure MergeTiles(const TileIndexes: array of Int64; TileCount: Integer; BestIdx: Int64; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
-    procedure DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    function WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
+    procedure DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
     procedure DoGlobalTiling(DesiredNbTiles: Integer);
 
     procedure ReloadPreviousTiling(AFN: String);
@@ -1951,9 +1953,9 @@ procedure TTilingEncoder.ReColor;
                   FromRGB(PrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.PalIdx, FTiles[PrevTMI^.TileIdx]^.PalPixels[mty, mtx]], pr, pg, pb);
                 end;
 
-                Accumulators[TMI^.PalIdx, colIdx, 0] += EnsureRange((r * (cMaxFTBlend - 1) - pr * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
-                Accumulators[TMI^.PalIdx, colIdx, 1] += EnsureRange((g * (cMaxFTBlend - 1) - pg * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
-                Accumulators[TMI^.PalIdx, colIdx, 2] += EnsureRange((b * (cMaxFTBlend - 1) - pb * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
+                Accumulators[TMI^.PalIdx, colIdx, 0] += EnsureRange((r * cMaxFTBlend - pr * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
+                Accumulators[TMI^.PalIdx, colIdx, 1] += EnsureRange((g * cMaxFTBlend - pg * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
+                Accumulators[TMI^.PalIdx, colIdx, 2] += EnsureRange((b * cMaxFTBlend - pb * TMI^.BlendPrev) div TMI^.BlendCur, 0, 255);
                 Accumulators[TMI^.PalIdx, colIdx, 3] += 1;
               end;
           end;
@@ -4313,7 +4315,7 @@ begin
       TMI^.SmoothedHMirror := False;
       TMI^.SmoothedVMirror := False;
 
-      TMI^.BlendCur := cMaxFTBlend - 1;
+      TMI^.BlendCur := cMaxFTBlend;
       TMI^.BlendPrev := 0;
       TMI^.BlendX := 0;
       TMI^.BlendY := 0;
@@ -4513,9 +4515,9 @@ procedure TTilingEncoder.Render(AFast: Boolean);
           end;
         end;
 
-        r := min((r * blendCur + pr * blendPrev) div (cMaxFTBlend - 1), 255);
-        g := min((g * blendCur + pg * blendPrev) div (cMaxFTBlend - 1), 255);
-        b := min((b * blendCur + pb * blendPrev) div (cMaxFTBlend - 1), 255);
+        r := EnsureRange((r * blendCur + pr * blendPrev) div cMaxFTBlend, 0, 255);
+        g := EnsureRange((g * blendCur + pg * blendPrev) div cMaxFTBlend, 0, 255);
+        b := EnsureRange((b * blendCur + pb * blendPrev) div cMaxFTBlend, 0, 255);
 
         if FRenderUseGamma then
         begin
@@ -4584,7 +4586,7 @@ begin
           begin
             tilePtr :=  Frame.FrameTiles[sy * FTileMapWidth + sx];
             if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
-              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
+              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, nil, False, False, nil, nil, False, False, cMaxFTBlend, 0);
           end;
       finally
         Frame.ReleaseFrameTiles;
@@ -4625,7 +4627,7 @@ begin
             end;
 
             prevTMItem.TileIdx := -1;
-            if (frmIdx > 0) and (TMItem.BlendCur < cMaxFTBlend - 1) and (TMItem.BlendPrev > 0) then
+            if (frmIdx > 0) and (TMItem.BlendCur < cMaxFTBlend) and (TMItem.BlendPrev > 0) then
             begin
               prevFrmIdx := frmIdx - 1;
               prevTMItem := FFrames[prevFrmIdx].TileMap[sy + TMItem.BlendY, sx + TMItem.BlendX];
@@ -4675,7 +4677,7 @@ begin
               end
               else
               begin
-                DrawTile(FOutputBitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, nil, nil, False, False, cMaxFTBlend - 1, 0);
+                DrawTile(FOutputBitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror, nil, nil, False, False, cMaxFTBlend, 0);
               end;
 
               if not (FRenderPlaying or AFast) then
@@ -4728,7 +4730,7 @@ begin
               if FRenderDithered then
                 pal := Frame.PKeyFrame.PaletteRGB[Max(0, FRenderPaletteIndex)];
 
-              DrawTile(FTilesBitmap, sx, sy, nil, tilePtr, pal, False, False, nil, nil, False, False, cMaxFTBlend - 1, 0);
+              DrawTile(FTilesBitmap, sx, sy, nil, tilePtr, pal, False, False, nil, nil, False, False, cMaxFTBlend, 0);
             end;
           end;
       finally
@@ -5322,9 +5324,9 @@ begin
           FillDWord(PrevDCT[0], cTileDCTSize, 0);
         end;
 
-        for blend := 1 to cMaxFTBlend - 2 do
+        for blend := 1 to cMaxFTBlend - 1 do
         begin
-          fc := blend * (1.0 / (cMaxFTBlend - 1));
+          fc := blend * (1.0 / cMaxFTBlend);
           rfc := 1.0 / fc;
 
           ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
@@ -5340,7 +5342,7 @@ begin
             AKFTilingBest.bestErr := err;
             AKFTilingBest.bestIdx := ACurIdxs[idx];
             AKFTilingBest.bestBlendCur := blend;
-            AKFTilingBest.bestBlendPrev := cMaxFTBlend - 1 - blend;
+            AKFTilingBest.bestBlendPrev := cMaxFTBlend - blend;
             AKFTilingBest.bestX := ox;
             AKFTilingBest.bestY := oy;
           end;
@@ -5460,7 +5462,7 @@ begin
 
         Best.bestIdx := idxs[annQueryPos * cFTBinSize];
         Best.bestErr := errs[annQueryPos * cFTBinSize];
-        Best.bestBlendCur := cMaxFTBlend - 1;
+        Best.bestBlendCur := cMaxFTBlend;
         Best.bestBlendPrev := 0;
         Best.bestX := x;
         Best.bestY := y;
@@ -5644,140 +5646,134 @@ end;
 
 type
   TKModesBin = record
-    TileBin: TShortIntDynArray;
+    Dataset: TByteDynArray2;
+    TileIndices: TIntegerDynArray;
     ClusterCount: Integer;
-    DatasetLength: Int64;
+    StartingPoint: Integer;
   end;
 
   PKModesBin = ^TKModesBin;
   TKModesBinArray = array of TKModesBin;
   PKModesBinArray = ^TKModesBinArray;
 
-procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+function TTilingEncoder.WriteTileDatasetLine(const ATile: TTile; DataLine: TByteDynArray; out PalSigni: Integer): Integer;
 var
-  i, bin, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, clusterLineIdx: Integer;
-  cnt, tidx: Int64;
-  err: Double;
-  v, best: TFloat;
+  x, y: Integer;
+  hsv: array[0..3, 0..2] of Word;
+  ph, ps, pv: Byte;
+begin
+  Result := 0;
 
-  KMBin: PKModesBin;
-  BICO: PBICO;
-  ANN: PANNkdtree;
+  // tile pixels
 
-  TileIndices: TInt64DynArray;
-  Dataset: TDoubleDynArray2;
-  ANNClusters: TIntegerDynArray;
-  BICOCentroids, BICOWeights: TDoubleDynArray;
-  ANNDataset: array of PANNFloat;
-  ToMerge: TDoubleDynArray2;
+  for y := 0 to cTileWidth - 1 do
+    for x := 0 to cTileWidth - 1 do
+    begin
+      DataLine[Result] := ATile.PalPixels[y, x];
+      Inc(Result);
+    end;
+
+  // HSV for 4x4 quadrants
+
+  FillChar(hsv, SizeOf(hsv), 0);
+  for y := 0 to cTileWidth div 2 - 1 do
+    for x := 0 to cTileWidth div 2 - 1 do
+    begin
+      RGBToHSV(ATile.RGBPixels[y, x], ph, ps, pv);
+      hsv[0, 0] += ph; hsv[0, 1] += ps; hsv[0, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y, x + cTileWidth div 2], ph, ps, pv);
+      hsv[1, 0] += ph; hsv[1, 1] += ps; hsv[1, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x], ph, ps, pv);
+      hsv[2, 0] += ph; hsv[2, 1] += ps; hsv[2, 2] += pv;
+
+      RGBToHSV(ATile.RGBPixels[y + cTileWidth div 2, x + cTileWidth div 2], ph, ps, pv);
+      hsv[3, 0] += ph; hsv[3, 1] += ps; hsv[3, 2] += pv;
+    end;
+
+  for y := 0 to 3 do
+  begin
+    DataLine[Result] := hsv[y, 0] shr 8; // to 4 bits from 8 bits * sqr(cTileWidth div 2)=16
+    Inc(Result);
+    DataLine[Result] := hsv[y, 1] shr 8;
+    Inc(Result);
+    DataLine[Result] := hsv[y, 2] shr 8;
+    Inc(Result);
+  end;
+
+  // count of most used index per 4x4 quadrant
+
+  PalSigni := GetTilePalZoneThres(ATile, sqr(cTileWidth) div 16, @DataLine[Result]);
+  Inc(Result, sqr(cTileWidth) div 16);
+
+  Assert(Result = cKModesFeatureCount);
+end;
+
+procedure TTilingEncoder.DoGlobalKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+var
+  KModes: TKModes;
+  LocCentroids: TByteDynArray2;
+  LocClusters: TIntegerDynArray;
+  lineIdx, clusterIdx, clusterLineCount, DSLen, clusterLineIdx: Integer;
+  ToMerge: TByteDynArray2;
   ToMergeIdxs: TInt64DynArray;
+  KMBin: PKModesBin;
+  dummy: UInt64;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
-  DSLen := KMBin^.DatasetLength;
-  if (DSLen <= KMBin^.ClusterCount) or (KMBin^.ClusterCount <= 1) then
+  DSLen := Length(KMBin^.Dataset);
+  if DSLen <= KMBin^.ClusterCount then
     Exit;
 
-  // use BICO to compute a noise-aware set of centroids
+  SetLength(LocClusters, DSLen);
+  SetLength(LocCentroids, KMBin^.ClusterCount, cTileDCTSize);
 
-  BICO := bico_create(cTileDCTSize, DSLen, KMBin^.ClusterCount, 1, KMBin^.ClusterCount, $42381337);
+  KModes := TKModes.Create(1, -1, False, 'Bin: ' + IntToStr(AIndex) + #9, @FConcurrentKModesBins);
   try
-    // parse bin dataset
-
-    SetLength(TileIndices, DSLen);
-    SetLength(Dataset, DSLen, cTileDCTSize);
-    cnt := 0;
-    for tidx := 0 to High(FTiles) do
-    begin
-      bin := KMBin^.TileBin[tidx];
-
-      if bin <> AIndex then
-        Continue;
-
-      ComputeTilePsyVisFeatures(FTiles[tidx]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
-
-      // insert line into BICO
-      bico_insert_line(BICO, @Dataset[cnt, 0], 1.0);
-
-      TileIndices[cnt] := tidx;
-      Inc(cnt);
-    end;
-    Assert(cnt = DSLen);
-
-    // get BICO results
-
-    SetLength(BICOCentroids, KMBin^.ClusterCount * cTileDCTSize);
-    SetLength(BICOWeights, KMBin^.ClusterCount);
-
-    BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
-
-    WriteLn('Bin: ', AIndex:2, ' DatasetSize: ', cnt:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', KMBin^.ClusterCount:6);
-
+    KMBin^.ClusterCount := KModes.ComputeKModes(KMBin^.Dataset, round(KMBin^.ClusterCount), -KMBin^.StartingPoint, FPaletteSize, LocClusters, LocCentroids);
+    Assert(Length(LocCentroids) = KMBin^.ClusterCount);
+    Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
   finally
-    bico_destroy(BICO);
+    KModes.Free;
+    InterLockedDecrement(FConcurrentKModesBins);
   end;
 
-  if BICOClusterCount <= 0 then
-    Exit;
-
-  // use ANN to compute cluster indexes
-
-  SetLength(ANNDataset, BICOClusterCount);
-  SetLength(ANNClusters, DSLen);
-
-  for clusterIdx := 0 to BICOClusterCount - 1 do
-    ANNDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
-
-  ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_SUGGEST);
-  try
-    for i := 0 to DSLen - 1 do
-      ANNClusters[i] := ann_kdtree_search(ANN, @Dataset[i, 0], 0.0, @err);
-  finally
-    ann_kdtree_destroy(ANN);
-  end;
-
-  // build a list of this centroid tiles
+  Assert(Length(LocCentroids) = KMBin^.ClusterCount);
+  Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
 
   SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
-  for clusterIdx := 0 to BICOClusterCount - 1 do
+  // build a list of this centroid tiles
+
+  for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
   begin
     clusterLineCount := 0;
-    for lineIdx := 0 to DSLen - 1 do
-      if ANNClusters[lineIdx] = clusterIdx then
+    for lineIdx := 0 to High(KMBin^.TileIndices) do
+    begin
+      if LocClusters[lineIdx] = clusterIdx then
       begin
-        ToMerge[clusterLineCount] := Dataset[lineIdx];
-        ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
+        ToMerge[clusterLineCount] := KMBin^.Dataset[lineIdx];
+        ToMergeIdxs[clusterLineCount] := KMBin^.TileIndices[lineIdx];
         Inc(clusterLineCount);
       end;
+    end;
 
     // choose a tile from the cluster
 
     if clusterLineCount >= 2 then
     begin
-       // get the closest tile to the centroid
-
-       best := MaxSingle;
-       clusterLineIdx := -1;
-       for i := 0 to clusterLineCount - 1 do
-       begin
-         v := CompareEuclidean(@ToMerge[i, 0], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
-         if v < best then
-         begin
-           best := v;
-           clusterLineIdx := i;
-         end;
-       end;
-
-      // merge centroid
-
+      clusterLineIdx := GetMinMatchingDissim(ToMerge, LocCentroids[clusterIdx], clusterLineCount, dummy);
       SpinEnter(@FLock);
       MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
       SpinLeave(@FLock);
     end;
   end;
 
-  WriteLn('Bin: ', AIndex:2, ' Done!');
+  // free up memory
+
+  SetLength(KMBin^.TileIndices, 0);
 end;
 
 
@@ -5786,38 +5782,69 @@ const
   cBinCountShift = 0;
 var
   KMBins: TKModesBinArray;
-  bin: Integer;
-  i, disCnt, tidx: Int64;
-  cnt: TInt64DynArray;
+  acc, i, j, disCnt, bin: Integer;
+  cnt: TIntegerDynArray;
+  best: TIntegerDynArray;
+  DataLine: TByteDynArray;
   share: TFloat;
-  TileBin: TShortIntDynArray;
 begin
 
-  SetLength(KMBins, Sqr(cTileWidth) shr cBinCountShift);
+  // prepare KModes dataset, one line per tile, tiles indices as features
+  // also choose KModes starting point
+
+  FConcurrentKModesBins := sqr(cTileWidth) shr cBinCountShift;
+  SetLength(KMBins, FConcurrentKModesBins);
   SetLength(cnt, Length(KMBins));
+  SetLength(best, Length(KMBins));
+  SetLength(DataLine, cKModesFeatureCount);
 
   // precompute dataset size
 
-  SetLength(TileBin, Length(FTiles));
-  FillByte(TileBin[0], Length(TileBin), Byte(-1));
-  FillQWord(cnt[0], Length(cnt), 0);
-  for tidx := 0 to High(FTiles) do
+  FillDWord(cnt[0], Length(cnt), 0);
+  for i := 0 to High(FTiles) do
   begin
-    if not FTiles[tidx]^.Active then
+    if not FTiles[i]^.Active then
       Continue;
 
-    bin := GetTilePalZoneThres(FTiles[tidx]^, sqr(cTileWidth), nil);
+    WriteTileDatasetLine(FTiles[i]^, DataLine, bin);
     bin := bin shr cBinCountShift;
-
-    TileBin[tidx] := bin;
 
     Inc(cnt[bin]);
   end;
 
   for i := 0 to High(KMBins) do
   begin
-    KMBins[i].TileBin := TileBin;
-    KMBins[i].DatasetLength := cnt[i];
+    SetLength(KMBins[i].TileIndices, cnt[i]);
+    SetLength(KMBins[i].Dataset, cnt[i], cKModesFeatureCount);
+  end;
+  FillDWord(cnt[0], Length(cnt), 0);
+  FillDWord(best[0], Length(best), MaxInt);
+
+  // bin tiles by PalSigni (highest number of pixels the same color from the tile)
+
+  for i := 0 to High(FTiles) do
+  begin
+    if not FTiles[i]^.Active then
+      Continue;
+
+    WriteTileDatasetLine(FTiles[i]^, DataLine, bin);
+    bin := bin shr cBinCountShift;
+
+    KMBins[bin].TileIndices[cnt[bin]] := i;
+
+    acc := 0;
+    for j := 0 to cKModesFeatureCount - 1 do
+    begin
+      KMBins[bin].Dataset[cnt[bin], j] := DataLine[j];
+      acc += DataLine[j];
+    end;
+    if acc <= best[bin] then
+    begin
+      KMBins[bin].StartingPoint := cnt[bin];
+      best[bin] := acc;
+    end;
+
+    Inc(cnt[bin]);
   end;
 
   // share DesiredNbTiles among bins, proportional to amount of tiles
@@ -5832,10 +5859,10 @@ begin
 
   ProgressRedraw(1);
 
-  // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
+  // run the KModes algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
   InitMergeTiles;
-  ProcThreadPool.DoParallel(@DoGlobalKMeans, 0, High(KMBins), @KMBins);
+  ProcThreadPool.DoParallel(@DoGlobalKModes, 0, High(KMBins), @KMBins);
   FinishMergeTiles;
 
   ProgressRedraw(2);
@@ -6086,7 +6113,7 @@ var
   begin
     attrs := (TMI.SmoothedPalIdx shl 2) or (Ord(TMI.SmoothedVMirror) shl 1) or Ord(TMI.SmoothedHMirror);
     blend := (Word(TMI.BlendY and $f) shl 12) or (Word(TMI.BlendX and $f) shl 8) or (Word(TMI.BlendPrev and $f) shl 4) or Word(TMI.BlendCur and $f);
-    isBlend := (AFTBlend < 0) or ((TMI.BlendPrev = 0) and (TMI.BlendCur = cMaxFTBlend - 1)) and not FTiles[TMI.TileIdx]^.Additional;
+    isBlend := (AFTBlend < 0) or ((TMI.BlendPrev = 0) and (TMI.BlendCur >= cMaxFTBlend)) and not FTiles[TMI.TileIdx]^.Additional;
     Result := TMI.SmoothedTileIdx;
   end;
 
@@ -6241,7 +6268,7 @@ begin
   FillChar(Header, SizeOf(Header), 0);
   Header.FourCC := 'GTMv';
   Header.RIFFSize := SizeOf(Header) - SizeOf(Header.FourCC) - SizeOf(Header.RIFFSize);
-  Header.EncoderVersion := 1;
+  Header.EncoderVersion := 2; // 2 -> fixed blending extents
   Header.FramePixelWidth := FScreenWidth;
   Header.FramePixelHeight := FScreenHeight;
   Header.KFCount := Length(FKeyFrames);
