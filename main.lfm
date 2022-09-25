@@ -16,10 +16,12 @@ object MainForm: TMainForm
   Caption = 'GliGli''s TileMotion encoder'
   ClientHeight = 540
   ClientWidth = 960
+  DoubleBuffered = True
   KeyPreview = True
   OnCreate = FormCreate
   OnDestroy = FormDestroy
   OnKeyDown = FormKeyDown
+  ParentDoubleBuffered = False
   PopupMenu = pmProcesses
   Position = poScreenCenter
   LCLVersion = '2.2.2.0'
