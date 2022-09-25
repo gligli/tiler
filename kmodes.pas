@@ -241,19 +241,11 @@ begin
 end;
 
 function MatchingDissim(const a: TByteDynArray; const b: TByteDynArray): UInt64; inline; overload;
-var
-  i: Integer;
 begin
-  Result := 0;
-  for i := 0 to High(a) do
-  begin
-    if a[i] <> b[i] then
-      Result += UInt64(1) shl cDissimSubMatchingSize;
-    Result += abs(Int64(a[i]) - Int64(b[i]));
-  end;
+  Result := MatchingDissim(@a[0], @b[0], Length(a));
 end;
 
-function MatchingDissim(a: PBYTE; b: PByte; count: Integer): UInt64; inline; overload;
+function MatchingDissim(a: PByte; b: PByte; count: Integer): UInt64; inline; overload;
 var
   i: Integer;
 begin
@@ -1073,10 +1065,10 @@ begin
       totalmoves += moves;
 
       if Log then
-        WriteLn(LogLabel, 'Itr: ', itr:3, #9'Moves: ', moves: 6, #9'Cost: ', cost:10);
+        WriteLn(LogLabel, 'Itr: ', itr:3, ' Moves: ', moves: 6, ' Cost: ', cost:16);
     end;
 
-    WriteLn(LogLabel, 'Itr: ', itr:3, ' Finished!',#9'BestItr: ', bestitr:3, #9'BestCost: ', bestcost:10);
+    WriteLn(LogLabel, 'Itr: ', itr:3, ' Finished!'#9'BestItr: ', bestitr:3, ' BestCost: ', bestcost:16);
 
     all[init_no].Labels := bestmembship;
     all[init_no].Centroids := bestcentroids;
