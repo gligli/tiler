@@ -5736,11 +5736,11 @@ begin
 
   for y := 0 to 3 do
   begin
-    DataLine[Result] := hsv[y, 0] shr 8; // to 4 bits from 8 bits * sqr(cTileWidth div 2)=16
+    DataLine[Result] := hsv[y, 0] * (FPaletteSize div 2) shr 12; // 8 bits * sqr(cTileWidth div 2); half importance
     Inc(Result);
-    DataLine[Result] := hsv[y, 1] shr 8;
+    DataLine[Result] := hsv[y, 1] * (FPaletteSize div 2) shr 12;
     Inc(Result);
-    DataLine[Result] := hsv[y, 2] shr 8;
+    DataLine[Result] := hsv[y, 2] * (FPaletteSize div 2) shr 12;
     Inc(Result);
   end;
 
