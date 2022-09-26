@@ -11,7 +11,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger, IniFiles,
-  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, kmodes;
+  Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, kmodes, sle;
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esMakeUnique, esDither, esGlobalTiling, esFrameTiling, esReindex, esSmooth, esSave);
@@ -22,7 +22,7 @@ const
 
   cBitsPerComp = 8;
   cFTQWeighting = False;
-  cFTBinSize = 512;
+  cFTBinSize = 16;
   cYakmoMaxIterations = 300;
 
 {$if false}
@@ -578,7 +578,7 @@ type
     procedure PrepareKFTiling(AKF: TKeyFrame; APaletteIndex, AFTGamma: Integer);
     procedure FinishKFTiling(AKF: TKeyFrame;  APaletteIndex: Integer);
     procedure DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x, y: Integer;
-     ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
+     APlainDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
     procedure DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Int64): Integer;
@@ -1157,6 +1157,24 @@ asm
   pop rdx
   pop rcx
   pop rax
+end;
+
+function ComputeBlendingError(PPlain, PCur, PPrev: PFloat; bc, bp: TFloat): TFloat; inline;
+var
+  i: Integer;
+begin
+  Result := 0.0;
+  for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
+  begin
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+  end;
 end;
 
 const
@@ -5251,35 +5269,79 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
+procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x, y: Integer; APlainDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
 var
-  i, blend, ox, oy, idx: Integer;
-  err, fc, rfc, speedup: TFloat;
+  i, ox, oy, bucketIdx: Integer;
   prevTMI: PTileMapItem;
   DS: PTilingDataset;
-  SearchDCT: array[0 .. cTileDCTSize - 1] of TFloat;
   PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
-  SubFLANN: flann_index_t;
-  SubFLANNParams: TFLANNParameters;
-  SubDataset: array[0 .. cTileDCTSize * cFTBinSize - 1] of TFloat;
+  CurPrevDCT: array[0 .. cTileDCTSize * 2 - 1] of TFloat;
   LocalPrevPaletteDone: TBooleanDynArray;
+
+  procedure TestBestErr(err: TANNFloat; bc, bp: Integer);
+  begin
+    if CompareValue(err, AKFTilingBest.bestErr, FFrameTilingBlendingThreshold * 0.01) = LessThanValue then
+    begin
+      AKFTilingBest.bestErr := err;
+      AKFTilingBest.bestIdx := ACurIdxs[bucketIdx];
+      AKFTilingBest.bestBlendCur := bc;
+      AKFTilingBest.bestBlendPrev := bp;
+      AKFTilingBest.bestX := ox;
+      AKFTilingBest.bestY := oy;
+    end;
+  end;
+
+  procedure SearchBlending2P(Plain: PFloat);
+  var
+    term, bc, bp: Integer;
+    fcp: array[0 .. 1] of ArbFloat;
+    fc, fp, err: TFloat;
+  begin
+    slegls(CurPrevDCT[0], cTileDCTSize, 2, 2, Plain[0], fcp[0], term);
+    if term = 1 then
+    begin
+      bc := EnsureRange(round(fcp[0] * cMaxFTBlend), 1, cMaxFTBlend - 1);
+      fc := bc * (1.0 / cMaxFTBlend);
+
+      // try to compensate for rounding to 16 levels by sending rounding error to other parameter
+
+      fp := fcp[1] + fcp[0] - fc;
+      bp := EnsureRange(round(fp * cMaxFTBlend), 1, cMaxFTBlend - 1);
+      fp := bp * (1.0 / cMaxFTBlend);
+
+      err := ComputeBlendingError(@Plain[0], @DS^.Dataset[ACurIdxs[bucketIdx] * cTileDCTSize], @PrevDCT[0], fc, fp);
+      TestBestErr(err, bc, bp);
+    end;
+  end;
+
+  procedure SearchBlending1P(Plain, Cur: PFloat);
+  var
+    term, bc: Integer;
+    fc: ArbFloat;
+    err: TFloat;
+  begin
+    slegls(Cur[0], cTileDCTSize, 1, 1, Plain[0], fc, term);
+    if term = 1 then
+    begin
+      bc := EnsureRange(round(fc * cMaxFTBlend), 1, cMaxFTBlend - 1);
+      fc := bc * (1.0 / cMaxFTBlend);
+      err := ComputeBlendingError(@Plain[0], @Cur[0], @Cur[0], fc, 0.0);
+      TestBestErr(err, bc, 0);
+    end;
+  end;
+
 begin
   DS := AFrame.PKeyFrame.TileDS[APaletteIndex];
 
   SetLength(LocalPrevPaletteDone, FPaletteCount);
 
-  for i := 0 to cFTBinSize - 1 do
-    if ACurIdxs[i] >= 0 then
-      Move(DS^.Dataset[ACurIdxs[i] * cTileDCTSize], SubDataset[i * cTileDCTSize], cTileDCTSize * SizeOf(TFloat));
+  // try to blend a local tile of the previous frame to improve likeliness
 
-  SubFLANNParams := CDefaultFLANNParameters;
-  SubFLANNParams.checks := cTileDCTSize;
-  SubFLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
-  SubFLANNParams.sorted := 0;
-  SubFLANNParams.max_neighbors := 1;
+  for bucketIdx := 0 to cFTBinSize - 1 do
+  begin
+    for i := 0 to cTileDCTSize - 1 do
+      CurPrevDCT[i * 2] := DS^.Dataset[ACurIdxs[bucketIdx] * cTileDCTSize + i];
 
-  SubFLANN := flann_build_index(@SubDataset[0], cFTBinSize, cTileDCTSize, @speedup, @SubFLANNParams);
-  try
     for oy := y - AFTBlend to y + AFTBlend do
     begin
       if not InRange(oy, 0, FTileMapHeight - 1) then
@@ -5315,6 +5377,11 @@ begin
             for i := 0 to cTileDCTSize - 1 do
               PrevDCT[i] := DS^.Dataset[prevTMI^.FTTileDSIdx * cTileDCTSize + i];
           end;
+
+           for i := 0 to cTileDCTSize - 1 do
+            CurPrevDCT[i * 2 + 1] := PrevDCT[i];
+
+          SearchBlending2P(APlainDCT);
         end
         else
         begin
@@ -5322,36 +5389,11 @@ begin
             Continue;
 
           FillDWord(PrevDCT[0], cTileDCTSize, 0);
-        end;
 
-        for blend := 1 to cMaxFTBlend - 1 do
-        begin
-          fc := blend * (1.0 / cMaxFTBlend);
-          rfc := 1.0 / fc;
-
-          ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
-
-          idx := -1;
-          err := MaxSingle;
-          flann_find_nearest_neighbors_index(SubFLANN, @SearchDCT[0], 1, @idx, @err, 1, @SubFLANNParams);
-
-          err := sqr(sqrt(NanDef(err, MaxSingle))*fc);
-
-          if (idx >= 0) and (err < AKFTilingBest.bestErr) then
-          begin
-            AKFTilingBest.bestErr := err;
-            AKFTilingBest.bestIdx := ACurIdxs[idx];
-            AKFTilingBest.bestBlendCur := blend;
-            AKFTilingBest.bestBlendPrev := cMaxFTBlend - blend;
-            AKFTilingBest.bestX := ox;
-            AKFTilingBest.bestY := oy;
-          end;
+          SearchBlending1P(APlainDCT, @DS^.Dataset[ACurIdxs[bucketIdx] * cTileDCTSize]);
         end;
       end;
     end;
-
-  finally
-    flann_free_index(SubFLANN, @SubFLANNParams);
   end;
 end;
 
