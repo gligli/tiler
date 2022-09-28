@@ -3137,6 +3137,7 @@ begin
   Dest.TmpIndex := Src.TmpIndex;
   Dest.MergeIndex := Src.MergeIndex;
   Dest.UseCount := Src.UseCount;
+  Dest.SpritePal := Src.SpritePal;
 
   SetLength(Dest.PaletteIndexes, Length(Src.PaletteIndexes));
   SetLength(Dest.PaletteRGB, Length(Src.PaletteRGB));
