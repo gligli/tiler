@@ -2219,6 +2219,7 @@ begin
 
     FrameTiling;
     ReColor;
+    Smooth;
 
     ms := TMemoryStream.Create;
     try
