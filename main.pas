@@ -53,6 +53,7 @@ type
     Label15: TLabel;
     Label17: TLabel;
     Label18: TLabel;
+    Label19: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
@@ -61,6 +62,7 @@ type
     Label9: TLabel;
     lblPct: TLabel;
     MenuItem8: TMenuItem;
+    MenuItem9: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
     miSaveSettings: TMenuItem;
@@ -77,6 +79,7 @@ type
     seFTBlendThres: TFloatSpinEdit;
     seQbTiles: TFloatSpinEdit;
     seFTBlend: TSpinEdit;
+    seSoftClustering: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -108,6 +111,7 @@ type
     tbFrame: TTrackBar;
 
     // processes
+    procedure BitrateLoopClick(Sender: TObject);
     procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
     procedure btnDoMakeUniqueClick(Sender: TObject);
@@ -231,6 +235,16 @@ procedure TMainForm.btnLoadClick(Sender: TObject);
 begin
   FTilingEncoder.Load;
   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
+  UpdateVideo(nil);
+end;
+
+procedure TMainForm.BitrateLoopClick(Sender: TObject);
+var
+  br: TFloat;
+begin
+  br := StrToFloatDef(InputBox('Choose bitrate', 'Bitrate: (in Kbps)', '1000.0'), 1000.0, InvariantFormatSettings);
+  WriteLn('TargetBitrate: ', br:12:2);
+  FTilingEncoder.BitrateLoop(br);
   UpdateVideo(nil);
 end;
 
@@ -402,7 +416,7 @@ begin
   edInput.Text := 'C:\tiler_misc\Star.Wars.Despecialized.Edition.v2.5.avi';
   edOutput.Text := 'C:\tiler\debug.gtm';
   edReload.Text := '';
-  seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 48, 1), 12);
+  seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 48, 2), 12);
   cbxScaling.ItemIndex := 4;
   seFTBlend.Value := 7;
 
@@ -628,6 +642,7 @@ begin
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingBlendingSize := seFTBlend.Value;
   FTilingEncoder.FrameTilingBlendingThreshold := seFTBlendThres.Value;
+  FTilingEncoder.FrameTilingSoftClusteringFactor := seSoftClustering.Value;
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
   FTilingEncoder.SmoothingAdditionalTilesThreshold := seAddlTiles.Value;
@@ -657,9 +672,7 @@ begin
   else
     Screen.Cursor := crDefault;
 
-  UpdateGUI(nil);
-  Invalidate;
-  Repaint;
+  Application.ProcessMessages;
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);

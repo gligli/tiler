@@ -47,7 +47,7 @@ const
   cTileWidthBits = 3;
   cTileWidth = 1 shl cTileWidthBits;
   cColorCpns = 3;
-  cTileDCTSize = cColorCpns * sqr(cTileWidth);
+  cTileDCTSize = cColorCpns * sqr(cTileWidth) + 1;
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
 
@@ -187,6 +187,7 @@ type
   PPBoolean = ^PBoolean;
 
   TIntegerList=specialize TFPGList<Integer>;
+  TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat;
 
   PTile = ^TTile;
   PPTile = ^PTile;
@@ -204,6 +205,7 @@ type
 
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
     UseCount: Cardinal;
+    Weight: TFloat;
     TmpIndexUpper, MergeIndexUpper: Integer;
     KFSoleIndex: SmallInt;
     TmpIndexLower, MergeIndexLower: Byte;
@@ -459,6 +461,7 @@ type
     FFrameTilingUseGamma: Boolean;
     FFrameTilingBlendingSize: Integer;
     FFrameTilingBlendingThreshold: TFloat;
+    FFrameTilingSoftClusteringFactor: TFloat;
     FSmoothingFactor: TFloat;
     FSmoothingAdditionalTilesThreshold: TFloat;
 
@@ -586,7 +589,7 @@ type
     procedure DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat; AddlTilesThres: TFloat;
       NonAddlCount: Int64);
 
-    procedure SaveStream(AStream: TStream; AFTBlend: Integer);
+    procedure SaveStream(AStream: TStream; ASpecificKF: Integer = -1);
     procedure SaveRawTiles(OutFN: String);
 
     procedure ReframeUI(AWidth, AHeight: Integer);
@@ -609,6 +612,7 @@ type
     procedure Reindex;
     procedure Smooth;
     procedure Save;
+    procedure BitrateLoop(ABitrate: TFloat);
 
     procedure Render(AFast: Boolean);
     procedure GeneratePNGs;
@@ -656,6 +660,7 @@ type
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingBlendingSize: Integer read FFrameTilingBlendingSize write SetFrameTilingBlendingSize;
     property FrameTilingBlendingThreshold: TFloat read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
+    property FrameTilingSoftClusteringFactor: TFloat read FFrameTilingSoftClusteringFactor write FFrameTilingSoftClusteringFactor;
     property SmoothingFactor: TFloat read FSmoothingFactor write SetSmoothingFactor;
     property SmoothingAdditionalTilesThreshold: TFloat read FSmoothingAdditionalTilesThreshold write SetSmoothingAdditionalTilesThreshold;
 
@@ -1202,6 +1207,36 @@ begin
   Result := round(sqrt(tileCount) * log2(1 + tileCount));
 end;
 
+function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat = 0.0; Epsilon: TFloat = 1e-12; Data: Pointer = nil): TFloat;
+var
+  x, y: TFloat;
+begin
+  if SameValue(Mini, Maxi) then
+  begin
+    WriteLn('GoldenRatioSearch failed!');
+    Result := NaN;
+    Exit;
+  end;
+
+  if Mini < Maxi then
+    x := lerp(Mini, Maxi, 1.0 - cInvPhi)
+  else
+    x := lerp(Mini, Maxi, cInvPhi);
+
+  y := Func(x, Data);
+
+  WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
+
+  case CompareValue(y, ObjectiveY, Epsilon) of
+    LessThanValue:
+      Result := GoldenRatioSearch(Func, x, Maxi, ObjectiveY, Epsilon, Data);
+    GreaterThanValue:
+      Result := GoldenRatioSearch(Func, Mini, x, ObjectiveY, Epsilon, Data);
+  else
+      Result := x;
+  end;
+end;
+
 { TTileMapItemHelper }
 
 function TTileMapItemHelper.GetHMirror: Boolean;
@@ -1683,6 +1718,7 @@ begin
   UseCount := ATile.UseCount;
   KFSoleIndex := ATile.KFSoleIndex;
   Additional := ATile.Additional;
+  Weight := ATile.Weight;
 
   if HasPalPixels and ATile.HasPalPixels then
     CopyPalPixels(ATile.GetPalPixelsPtr^);
@@ -1883,6 +1919,7 @@ procedure TTilingEncoder.FrameTiling;
   end;
 var
   kf, i: Integer;
+  tidx: Int64;
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
@@ -1898,6 +1935,9 @@ begin
     for i := 0 to FPaletteCount - 1 do
       FKeyFrames[kf].FTPaletteDoneEvent[i] := CreateEvent(nil, True, False, nil);
   end;
+  for tidx := 0 to High(FTiles) do
+    FTiles[tidx]^.Active := False;
+
   try
     ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, Pointer(0));
   finally
@@ -2163,6 +2203,37 @@ begin
   end;
 
   ProgressRedraw(1);
+end;
+
+function GROne(x: TFloat; Data: Pointer): TFloat;
+var
+  Self: TTilingEncoder;
+  ms: TMemoryStream;
+begin
+  Self := TTilingEncoder(Data);
+
+  with Self do
+  begin
+
+    FFrameTilingSoftClusteringFactor := x;
+
+    FrameTiling;
+    ReColor;
+
+    ms := TMemoryStream.Create;
+    try
+      SaveStream(ms);
+
+      Result := ms.Size * (8.0 / 1024.0) * FFramesPerSecond / Length(FFrames);
+    finally
+      ms.Free;
+    end;
+  end;
+end;
+
+procedure TTilingEncoder.BitrateLoop(ABitrate: TFloat);
+begin
+  GoldenRatioSearch(@GROne, 0.0, 2.0, ABitrate, ABitrate * 0.01, Self);
 end;
 
 procedure TTilingEncoder.Smooth;
@@ -4556,7 +4627,7 @@ procedure TTilingEncoder.Render(AFast: Boolean);
   end;
 
 var
-  i, j, sx, sy, frmIdx, prevFrmIdx: Integer;
+  i, j, sx, sy, frmIdx, prevFrmIdx, globalTileCount: Integer;
   tidx: Int64;
   p: PInteger;
   prevTilePtr, tilePtr: PTile;
@@ -4583,7 +4654,12 @@ begin
 
     // Global
 
-    FRenderTitleText := 'Global: ' + IntToStr(Length(FTiles)) + ' / Frame #' + IntToStr(FRenderFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = FRenderFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
+    if not (FRenderPlaying or AFast) then
+      globalTileCount := GetGlobalTileCount
+    else
+      globalTileCount := Length(FTiles);
+
+    FRenderTitleText := 'Global: ' + IntToStr(globalTileCount) + ' / Frame #' + IntToStr(FRenderFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = FRenderFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
 
     // "Input" tab
 
@@ -5192,19 +5268,17 @@ var
     begin
       T := FTiles[tidx];
 
-      if T^.Active then
+      for hvmir := 0 to 3 do
       begin
-        for hvmir := 0 to 3 do
-        begin
-          DS^.TDToTileIdx[di] := tidx;
-          DS^.TDToAttrs[di] := hvmir;
+        DS^.TDToTileIdx[di] := tidx;
+        DS^.TDToAttrs[di] := hvmir;
 
-          ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], PFloat(@DS^.Dataset[di * cTileDCTSize]));
+        ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], PFloat(@DS^.Dataset[di * cTileDCTSize]));
+        DS^.Dataset[di * cTileDCTSize + cTileDCTSize - 1] := Div0(T^.Weight, max(FFrameTilingSoftClusteringFactor, 1e-7));
 
-          // prune redundancies
-          if (di <= 0) or (CompareDWord(DS^.Dataset[(di - 1) * cTileDCTSize], DS^.Dataset[di * cTileDCTSize], cTileDCTSize) <> 0) then
-            Inc(di);
-        end;
+        // prune redundancies
+        if (di <= 0) or (CompareDWord(DS^.Dataset[(di - 1) * cTileDCTSize], DS^.Dataset[di * cTileDCTSize], cTileDCTSize) <> 0) then
+          Inc(di);
       end;
     end;
 
@@ -5368,6 +5442,7 @@ begin
             end;
 
             ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PFloat(@PrevDCT[0]));
+            PrevDCT[cTileDCTSize - 1] := Div0(FTiles[prevTMI^.TileIdx]^.Weight, max(FFrameTilingSoftClusteringFactor, 1e-7));
           end
           else
           begin
@@ -5526,7 +5601,14 @@ begin
         tmiO^.BlendX := Best.bestX - x;
         tmiO^.BlendY := Best.bestY - y;
 
+        tmiO^.SmoothedTileIdx := tmiO^.TileIdx;
+        tmiO^.SmoothedPalIdx := tmiO^.PalIdx;
+        tmiO^.SmoothedHMirror := tmiO^.HMirror;
+        tmiO^.SmoothedVMirror := tmiO^.VMirror;
+
         errCml += Best.bestErr;
+
+        FTiles[tmiO^.TileIdx]^.Active := True;
 
         Inc(annQueryPos);
       end;
@@ -5761,7 +5843,7 @@ var
   ToMerge: TByteDynArray2;
   ToMergeIdxs: TInt64DynArray;
   KMBin: PKModesBin;
-  dummy: UInt64;
+  dissim: UInt64;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
   DSLen := Length(KMBin^.Dataset);
@@ -5784,6 +5866,17 @@ begin
   Assert(Length(LocCentroids) = KMBin^.ClusterCount);
   Assert(MaxIntValue(LocClusters) = KMBin^.ClusterCount - 1);
 
+{$if true}
+  // weight tiles for closeness to the centroid
+
+  for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
+    for lineIdx := 0 to High(KMBin^.TileIndices) do
+      if LocClusters[lineIdx] = clusterIdx then
+      begin
+        dissim := MatchingDissim(LocCentroids[clusterIdx], KMBin^.Dataset[lineIdx]);
+        FTiles[KMBin^.TileIndices[lineIdx]]^.Weight := (dissim shr cDissimSubMatchingSize) / cKModesFeatureCount + (dissim and ((1 shl cDissimSubMatchingSize) - 1)) / (cKModesFeatureCount * FPaletteSize);
+      end;
+{$else}
   SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
@@ -5806,12 +5899,13 @@ begin
 
     if clusterLineCount >= 2 then
     begin
-      clusterLineIdx := GetMinMatchingDissim(ToMerge, LocCentroids[clusterIdx], clusterLineCount, dummy);
+      clusterLineIdx := GetMinMatchingDissim(ToMerge, LocCentroids[clusterIdx], clusterLineCount, dissim);
       SpinEnter(@FLock);
       MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
       SpinLeave(@FLock);
     end;
   end;
+{$endif}
 
   // free up memory
 
@@ -6107,7 +6201,7 @@ begin
   WriteLn('ReindexTiles: ', cnt, ' / ', Length(FTiles), ' made intra');
 end;
 
-procedure TTilingEncoder.SaveStream(AStream: TStream; AFTBlend: Integer);
+procedure TTilingEncoder.SaveStream(AStream: TStream; ASpecificKF: Integer);
 const
   CGTMCommandsCount = Ord(High(TGTMCommand)) + 1;
   CGTMCommandCodeBits = round(ln(CGTMCommandsCount) / ln(2));
@@ -6155,7 +6249,7 @@ var
   begin
     attrs := (TMI.SmoothedPalIdx shl 2) or (Ord(TMI.SmoothedVMirror) shl 1) or Ord(TMI.SmoothedHMirror);
     blend := (Word(TMI.BlendY and $f) shl 12) or (Word(TMI.BlendX and $f) shl 8) or (Word(TMI.BlendPrev and $f) shl 4) or Word(TMI.BlendCur and $f);
-    isBlend := (AFTBlend < 0) or ((TMI.BlendPrev = 0) and (TMI.BlendCur >= cMaxFTBlend)) and not FTiles[TMI.TileIdx]^.Additional;
+    isBlend := (FFrameTilingBlendingSize < 0) or ((TMI.BlendPrev = 0) and (TMI.BlendCur >= cMaxFTBlend)) and not FTiles[TMI.TileIdx]^.Additional;
     Result := TMI.SmoothedTileIdx;
   end;
 
@@ -6288,7 +6382,7 @@ var
     GlobalList := TIntegerList.Create;
     try
       for i := 0 to High(FTiles) do
-        if not FTiles[i]^.IntraKF then
+        if FTiles[i]^.Active and not FTiles[i]^.IntraKF then
           GlobalList.Add(i);
 
       WriteListTiles(GlobalList);
@@ -6527,6 +6621,8 @@ begin
   FRenderPage := rpOutput;
   ReframeUI(80, 45);
   FFramesPerSecond := 24.0;
+
+  FFrameTilingSoftClusteringFactor := 1.0;
 end;
 
 destructor TTilingEncoder.Destroy;
