@@ -24,6 +24,7 @@ const
   cFTQWeighting = False;
   cFTBinSize = 16;
   cYakmoMaxIterations = 300;
+  cPerFrameTileCountMultiplier = 7;
 
 {$if false}
   cRedMul = 2126;
@@ -3378,8 +3379,6 @@ begin
 end;
 
 procedure TTilingEncoder.LoadTiles;
-const
-  CPerFrameTileCountMultiplier = 7;
 var
   ClustersPerFrame: Integer;
 
@@ -3513,7 +3512,7 @@ begin
   // free memory from a prev run
   TTile.Array1DDispose(FTiles);
 
-  ClustersPerFrame := Max(1 , trunc(FGlobalTilingTileCount / Length(FFrames) * CPerFrameTileCountMultiplier));
+  ClustersPerFrame := Max(1 , trunc(FGlobalTilingTileCount / Length(FFrames) * cPerFrameTileCountMultiplier));
 
   tileCnt := Length(FFrames) * ClustersPerFrame;
 
