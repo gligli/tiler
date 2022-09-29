@@ -538,8 +538,8 @@ type
       VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
       GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
-    procedure ComputeInvTilePsyVisFeatures(DCT: PFloat; GammaCor: Integer; var ATile: TTile); overload;
-    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; GammaCor: Integer; var ATile: TTile); overload;
+    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
+    procedure ComputeInvTilePsyVisFeatures(DCT: PFloat; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -3481,7 +3481,7 @@ var
           FTiles[tilePos + clusterIdx]^.CopyFrom(Frame.FrameTiles[ToMergeIdxs[0]]^);
           FTiles[tilePos + clusterIdx]^.UseCount := Round(BICOWeights[clusterIdx]);
 
-          ComputeInvTilePsyVisFeatures(ANNDataset[clusterIdx], -1, FTiles[tilePos + clusterIdx]^);
+          ComputeInvTilePsyVisFeatures(ANNDataset[clusterIdx], False, -1, FTiles[tilePos + clusterIdx]^);
 
           // update tilemap
 
@@ -4244,7 +4244,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PFloat; GammaCor: Integer; var ATile: TTile);
+procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PFloat; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
 var
   x, y, cpn: Integer;
   CpnPixels: TCpnPixels;
@@ -4259,7 +4259,11 @@ var
     vv := CpnPixels[2, y, x];
 
     yy *= 1.0 / cYUVLumaFactor; uu *= 1.0 / cYUVChromaFactor; vv *= 1.0 / cYUVChromaFactor;
-    Result := YUVToRGB(yy, uu, vv, GammaCor);
+
+    if UseLAB then
+      Result := LABToRGB(yy, uu, vv , GammaCor)
+    else
+      Result := YUVToRGB(yy, uu, vv, GammaCor);
   end;
 
 begin
@@ -4283,7 +4287,7 @@ begin
 end;
 
 
-procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; GammaCor: Integer; var ATile: TTile);
+procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
 var
   x, y, cpn: Integer;
   CpnPixels: TCpnPixelsDouble;
@@ -4298,7 +4302,11 @@ var
     vv := CpnPixels[2, y, x];
 
     yy *= 1.0 / cYUVLumaFactor; uu *= 1.0 / cYUVChromaFactor; vv *= 1.0 / cYUVChromaFactor;
-    Result := YUVToRGB(yy, uu, vv, GammaCor);
+
+    if UseLAB then
+      Result := LABToRGB(yy, uu, vv , GammaCor)
+    else
+      Result := YUVToRGB(yy, uu, vv, GammaCor);
   end;
 
 begin
@@ -4970,7 +4978,7 @@ begin
       T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
 
   ComputeTilePsyVisFeatures(T^, False, False, False, False, False, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], -1, T2^);
+  ComputeInvTilePsyVisFeatures(@DCT[0], False, -1, T2^);
 
   //for i := 0 to 7 do
   //  for j := 0 to 7 do
