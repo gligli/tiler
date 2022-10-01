@@ -204,6 +204,8 @@ type
   PPalPixels = ^TPalPixels;
   PCpnPixels = ^TCpnPixels;
 
+  { TTile }
+
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
     UseCount: Cardinal;
     Weight: TFloat;
@@ -272,7 +274,7 @@ type
     property MergeIndex: Int64 read GetMergeIndex write SetMergeIndex;
   end;
 
-  PTileMapItem = ^TTileMapItem;
+  { TTileMapItem }
 
   TTileMapItem = packed record
     TileIdxUpper, SmoothedTileIdxUpper, FTTileDSIdx: Integer;
@@ -282,6 +284,7 @@ type
     BlendX, BlendY: ShortInt;
     Flags: set of (tmfSmoothed, tmfHMirror, tmfVMirror, tmfSmoothedHMirror, tmfSmoothedVMirror);
   end;
+  PTileMapItem = ^TTileMapItem;
 
   TTileMapItems = array of TTileMapItem;
 
@@ -314,6 +317,8 @@ type
   end;
 
 
+  { TTilingDataset }
+
   TTilingDataset = record
     Dataset: TFloatDynArray;
     TDToTileIdx: TInt64DynArray;
@@ -324,6 +329,8 @@ type
 
   PTilingDataset = ^TTilingDataset;
 
+  { TCountIndex }
+
   TCountIndex = record
     Index, Count: Integer;
     R, G, B, Luma: Byte;
@@ -333,12 +340,16 @@ type
   PCountIndex = ^TCountIndex;
   TCountIndexList = specialize TFPGList<PCountIndex>;
 
+  { TMixingPlan }
+
   TMixingPlan = record
     // static
     LumaPal: array of Integer;
     Y2Palette: array of array[0..3] of Integer;
     Y2MixedColors: Integer;
   end;
+
+  { TKFTilingBest }
 
   TKFTilingBest = record
     bestErr: TFloat;
@@ -415,7 +426,6 @@ type
 
     FCS: TRTLCriticalSection;
     FLock: TSpinlock;
-    FConcurrentKModesBins: Integer;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -2034,8 +2044,6 @@ procedure TTilingEncoder.ReColor;
       end;
   end;
 
-var
-  tidx: Int64;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -3354,7 +3362,7 @@ begin
   begin
     if FTiles[tidx]^.Active then
     begin
-      while FTiles[copyPos]^.Active do
+      while (copyPos < Length(FTiles)) and FTiles[copyPos]^.Active do
         Inc(copyPos);
 
       if copyPos < tidx then
@@ -4095,7 +4103,7 @@ var
   u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
   CpnPixels: TCpnPixels;
-  pDCT, pCpn, pLut: PFloat;
+  pDCT, pLut: PFloat;
 
   procedure ToCpn(col, x, y: Integer); inline;
   var
@@ -4172,7 +4180,7 @@ var
   u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
   CpnPixels: TCpnPixelsDouble;
-  pDCT, pCpn, pLut: PDouble;
+  pDCT, pLut: PDouble;
 
   procedure ToCpn(col, x, y: Integer); inline;
   var
@@ -4387,7 +4395,7 @@ end;
 procedure TTilingEncoder.LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; const ABitmap: TRawImage);
 var
   i, j, col, ti, tx, ty: Integer;
-  pfs, pcol: PInteger;
+  pcol: PInteger;
   TMI: PTileMapItem;
   T: PTile;
 begin
@@ -4953,7 +4961,7 @@ end;
 
 procedure TTilingEncoder.Test;
 var
-  i, j, k, rng: Integer;
+  i, j, rng: Integer;
   rr, gg, bb: Byte;
   l, a, b, y, u, v: TFloat;
   DCT: array [0..cTileDCTSize-1] of Double;
