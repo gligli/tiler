@@ -636,13 +636,13 @@ begin
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
+  FTilingEncoder.GlobalTilingSoftClusteringThreshold := seSoftClustering.Value;
   FTilingEncoder.ReloadTileset := chkReload.Checked;
   FTilingEncoder.ReloadTilesetFileName := edReload.Text;
 
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingBlendingSize := seFTBlend.Value;
   FTilingEncoder.FrameTilingBlendingThreshold := seFTBlendThres.Value;
-  FTilingEncoder.FrameTilingSoftClusteringFactor := seSoftClustering.Value;
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
   FTilingEncoder.SmoothingAdditionalTilesThreshold := seAddlTiles.Value;
