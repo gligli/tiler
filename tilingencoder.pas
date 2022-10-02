@@ -22,7 +22,7 @@ const
 
   cBitsPerComp = 8;
   cFTQWeighting = False;
-  cFTBinSize = 512;
+  cFTBinSize = 64;
   cYakmoMaxIterations = 300;
   cPerFrameTileCountMultiplier = 7;
 
