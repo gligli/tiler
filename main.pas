@@ -53,7 +53,6 @@ type
     Label15: TLabel;
     Label17: TLabel;
     Label18: TLabel;
-    Label19: TLabel;
     Label2: TLabel;
     Label3: TLabel;
     Label4: TLabel;
@@ -62,7 +61,6 @@ type
     Label9: TLabel;
     lblPct: TLabel;
     MenuItem8: TMenuItem;
-    MenuItem9: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
     miSaveSettings: TMenuItem;
@@ -79,7 +77,6 @@ type
     seFTBlendThres: TFloatSpinEdit;
     seQbTiles: TFloatSpinEdit;
     seFTBlend: TSpinEdit;
-    seSoftClustering: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -111,7 +108,6 @@ type
     tbFrame: TTrackBar;
 
     // processes
-    procedure BitrateLoopClick(Sender: TObject);
     procedure btnLoadClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
     procedure btnDoMakeUniqueClick(Sender: TObject);
@@ -235,16 +231,6 @@ procedure TMainForm.btnLoadClick(Sender: TObject);
 begin
   FTilingEncoder.Load;
   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
-  UpdateVideo(nil);
-end;
-
-procedure TMainForm.BitrateLoopClick(Sender: TObject);
-var
-  br: TFloat;
-begin
-  br := StrToFloatDef(InputBox('Choose bitrate', 'Bitrate: (in Kbps)', '1000.0'), 1000.0, InvariantFormatSettings);
-  WriteLn('TargetBitrate: ', br:12:2);
-  FTilingEncoder.BitrateLoop(br);
   UpdateVideo(nil);
 end;
 
@@ -636,7 +622,6 @@ begin
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
-  FTilingEncoder.GlobalTilingSoftClusteringThreshold := seSoftClustering.Value;
   FTilingEncoder.ReloadTileset := chkReload.Checked;
   FTilingEncoder.ReloadTilesetFileName := edReload.Text;
 

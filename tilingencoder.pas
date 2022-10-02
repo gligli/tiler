@@ -36,8 +36,6 @@ const
   cBlueMul = 114;
 {$endif}
   cRGBw = 13; // in 1 / 32th
-  cYUVLumaFactor = 1.5;
-  cYUVChromaFactor = 0.75;
 
   // don't change these
 
@@ -48,7 +46,7 @@ const
   cTileWidthBits = 3;
   cTileWidth = 1 shl cTileWidthBits;
   cColorCpns = 3;
-  cTileDCTSize = cColorCpns * sqr(cTileWidth) + 1;
+  cTileDCTSize = cColorCpns * sqr(cTileWidth);
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
 
@@ -208,7 +206,6 @@ type
 
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
     UseCount: Cardinal;
-    Weight: TFloat;
     TmpIndexUpper, MergeIndexUpper: Integer;
     KFSoleIndex: SmallInt;
     TmpIndexLower, MergeIndexLower: Byte;
@@ -432,8 +429,6 @@ type
     FVecInv: array[0..256 * 4 - 1] of Cardinal;
     FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
     FDCTLutDouble:array[0..sqr(sqr(cTileWidth)) - 1] of Double;
-    FInvDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
-    FInvDCTLutDouble:array[0..sqr(sqr(cTileWidth)) - 1] of Double;
 
     FKeyFrames: TKeyFrameArray;
     FFrames: TFrameArray;
@@ -467,7 +462,6 @@ type
     FDitheringYliluoma2MixedColors: Integer;
     FGlobalTilingTileCount: Integer;
     FGlobalTilingQualityBasedTileCount: TFloat;
-    FGlobalTilingSoftClusteringThreshold: TFloat;
     FReloadTileset: Boolean;
     FReloadTilesetFileName: String;
     FFrameTilingUseGamma: Boolean;
@@ -548,8 +542,6 @@ type
       VMirror: Boolean; GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
       GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
-    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
-    procedure ComputeInvTilePsyVisFeatures(DCT: PFloat; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -622,7 +614,6 @@ type
     procedure Reindex;
     procedure Smooth;
     procedure Save;
-    procedure BitrateLoop(ABitrate: TFloat);
 
     procedure Render(AFast: Boolean);
     procedure GeneratePNGs;
@@ -670,7 +661,6 @@ type
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingBlendingSize: Integer read FFrameTilingBlendingSize write SetFrameTilingBlendingSize;
     property FrameTilingBlendingThreshold: TFloat read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
-    property GlobalTilingSoftClusteringThreshold: TFloat read FGlobalTilingSoftClusteringThreshold write FGlobalTilingSoftClusteringThreshold;
     property SmoothingFactor: TFloat read FSmoothingFactor write SetSmoothingFactor;
     property SmoothingAdditionalTilesThreshold: TFloat read FSmoothingAdditionalTilesThreshold write SetSmoothingAdditionalTilesThreshold;
 
@@ -1217,36 +1207,6 @@ begin
   Result := round(sqrt(tileCount) * log2(1 + tileCount));
 end;
 
-function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat = 0.0; Epsilon: TFloat = 1e-12; Data: Pointer = nil): TFloat;
-var
-  x, y: TFloat;
-begin
-  if SameValue(Mini, Maxi) then
-  begin
-    WriteLn('GoldenRatioSearch failed!');
-    Result := NaN;
-    Exit;
-  end;
-
-  if Mini < Maxi then
-    x := lerp(Mini, Maxi, 1.0 - cInvPhi)
-  else
-    x := lerp(Mini, Maxi, cInvPhi);
-
-  y := Func(x, Data);
-
-  WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
-
-  case CompareValue(y, ObjectiveY, Epsilon) of
-    LessThanValue:
-      Result := GoldenRatioSearch(Func, x, Maxi, ObjectiveY, Epsilon, Data);
-    GreaterThanValue:
-      Result := GoldenRatioSearch(Func, Mini, x, ObjectiveY, Epsilon, Data);
-  else
-      Result := x;
-  end;
-end;
-
 { TTileMapItemHelper }
 
 function TTileMapItemHelper.GetHMirror: Boolean;
@@ -1728,7 +1688,6 @@ begin
   UseCount := ATile.UseCount;
   KFSoleIndex := ATile.KFSoleIndex;
   Additional := ATile.Additional;
-  Weight := ATile.Weight;
 
   if HasPalPixels and ATile.HasPalPixels then
     CopyPalPixels(ATile.GetPalPixelsPtr^);
@@ -1785,10 +1744,8 @@ begin
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
         begin
-          FDCTLutDouble[i] := cos((x + 0.5) * u * PI / cTileWidth) * cos((y + 0.5) * v * PI / cTileWidth) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
+          FDCTLutDouble[i] := cos((x + 0.5) * u * PI / (cTileWidth * 2.0)) * cos((y + 0.5) * v * PI / (cTileWidth * 2.0)) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
           FDCTLut[i] := FDCTLutDouble[i];
-          FInvDCTLutDouble[i] := cos((u + 0.5) * x * PI / cTileWidth) * cos((v + 0.5) * y * PI / cTileWidth) * cDCTUVRatio[Min(y, 7), Min(x, 7)] * 2 / cTileWidth * 2 / cTileWidth;
-          FInvDCTLut[i] := FInvDCTLutDouble[i];
           Inc(i);
         end;
 end;
@@ -2211,38 +2168,6 @@ begin
   end;
 
   ProgressRedraw(1);
-end;
-
-function GROne(x: TFloat; Data: Pointer): TFloat;
-var
-  Self: TTilingEncoder;
-  ms: TMemoryStream;
-begin
-  Self := TTilingEncoder(Data);
-
-  with Self do
-  begin
-
-    FGlobalTilingSoftClusteringThreshold := x;
-
-    FrameTiling;
-    ReColor;
-    Smooth;
-
-    ms := TMemoryStream.Create;
-    try
-      SaveStream(ms);
-
-      Result := ms.Size * (8.0 / 1024.0) * FFramesPerSecond / Length(FFrames);
-    finally
-      ms.Free;
-    end;
-  end;
-end;
-
-procedure TTilingEncoder.BitrateLoop(ABitrate: TFloat);
-begin
-  GoldenRatioSearch(@GROne, 0.0, 2.0, ABitrate, ABitrate * 0.01, Self);
 end;
 
 procedure TTilingEncoder.Smooth;
@@ -3391,10 +3316,10 @@ var
 
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    i, sx, sy, BICOClusterCount, clusterIdx, clusterLineCount, lineIdx: Integer;
+    i, sx, sy, BICOClusterCount, clusterIdx, clusterLineCount, lineIdx, clusterLineIdx: Integer;
     q00, q01, q10, q11: Integer;
     tilePos: Int64;
-    err: Double;
+    err, best, v: Double;
     Frame: TFrame;
     BICO: PBICO;
     ANN: PANNkdtree;
@@ -3402,6 +3327,7 @@ var
     BICOCentroids, BICOWeights: TDoubleDynArray;
     ANNClusters: TIntegerDynArray;
     ANNDataset: array of PANNFloat;
+    ToMerge: TDoubleDynArray2;
     ToMergeIdxs: TInt64DynArray;
     HMirrors, VMirrors: TBooleanDynArray;
   begin
@@ -3466,6 +3392,7 @@ var
 
       // build a list of this centroid tiles
 
+      SetLength(ToMerge, FTileMapSize);
       SetLength(ToMergeIdxs, FTileMapSize);
 
       tilePos := AIndex * ClustersPerFrame;
@@ -3475,29 +3402,40 @@ var
         for lineIdx := 0 to FTileMapSize - 1 do
           if ANNClusters[lineIdx] = clusterIdx then
           begin
+            ToMerge[clusterLineCount] := Dataset[lineIdx];
             ToMergeIdxs[clusterLineCount] := lineIdx;
             Inc(clusterLineCount);
           end;
 
-        // choose a tile for the cluster
+        // choose a tile from the cluster
 
         if clusterLineCount >= 1 then
         begin
-          // reverse the PsyV model to get the final tile
+          // get the closest tile to the centroid
 
-          FTiles[tilePos + clusterIdx]^.CopyFrom(Frame.FrameTiles[ToMergeIdxs[0]]^);
+          best := MaxSingle;
+          clusterLineIdx := -1;
+          for i := 0 to clusterLineCount - 1 do
+          begin
+            v := CompareEuclidean(@ToMerge[i, 0], ANNDataset[clusterIdx], cTileDCTSize);
+            if v < best then
+            begin
+              best := v;
+              clusterLineIdx := i;
+            end;
+          end;
+
+          // copy centroid to tiles and prepare tilemap
+
+          FTiles[tilePos + clusterIdx]^.CopyFrom(Frame.FrameTiles[ToMergeIdxs[clusterLineIdx]]^);
           FTiles[tilePos + clusterIdx]^.UseCount := Round(BICOWeights[clusterIdx]);
-
-          ComputeInvTilePsyVisFeatures(ANNDataset[clusterIdx], False, -1, FTiles[tilePos + clusterIdx]^);
-
-          // update tilemap
 
           for i := 0 to clusterLineCount - 1 do
           begin
             DivMod(ToMergeIdxs[i], FTileMapWidth, sy, sx);
             Frame.TileMap[sy, sx].TileIdx :=  tilePos + clusterIdx;
-            Frame.TileMap[sy, sx].HMirror :=  HMirrors[ToMergeIdxs[i]];
-            Frame.TileMap[sy, sx].VMirror :=  VMirrors[ToMergeIdxs[i]];
+            Frame.TileMap[sy, sx].HMirror :=  HMirrors[ToMergeIdxs[i]] xor HMirrors[ToMergeIdxs[clusterLineIdx]];
+            Frame.TileMap[sy, sx].VMirror :=  VMirrors[ToMergeIdxs[i]] xor VMirrors[ToMergeIdxs[clusterLineIdx]];
           end;
         end;
       end;
@@ -4119,7 +4057,6 @@ var
     else
     begin
       RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
-      yy *= cYUVLumaFactor; uu *= cYUVChromaFactor; vv *= cYUVChromaFactor;
     end;
 
     CpnPixels[0, y, x] := yy;
@@ -4196,7 +4133,6 @@ var
     else
     begin
       RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
-      yy *= cYUVLumaFactor; uu *= cYUVChromaFactor; vv *= cYUVChromaFactor;
     end;
 
     CpnPixels[0, y, x] := yy;
@@ -4249,91 +4185,6 @@ begin
         Inc(pLut, Sqr(cTileWidth));
       end;
   end;
-end;
-
-procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PFloat; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
-var
-  x, y, cpn: Integer;
-  CpnPixels: TCpnPixels;
-  pCpn, pLut: PFloat;
-
-  function FromCpn(x, y: Integer): Integer; inline;
-  var
-    yy, uu, vv: TFloat;
-  begin
-    yy := CpnPixels[0, y, x];
-    uu := CpnPixels[1, y, x];
-    vv := CpnPixels[2, y, x];
-
-    yy *= 1.0 / cYUVLumaFactor; uu *= 1.0 / cYUVChromaFactor; vv *= 1.0 / cYUVChromaFactor;
-
-    if UseLAB then
-      Result := LABToRGB(yy, uu, vv , GammaCor)
-    else
-      Result := YUVToRGB(yy, uu, vv, GammaCor);
-  end;
-
-begin
-  pCpn := @CpnPixels[0, 0, 0];
-  for cpn := 0 to cColorCpns - 1 do
-  begin
-    pLut := @FInvDCTLut[0];
-
-    for y := 0 to (cTileWidth - 1) do
-      for x := 0 to (cTileWidth - 1) do
-      begin
-        pCpn^ := specialize DCTInner<PSingle>(@DCT[cpn * (cTileDCTSize div cColorCpns)], pLut);
-        Inc(pCpn);
-        Inc(pLut, Sqr(cTileWidth));
-      end;
-  end;
-
-  for y := 0 to (cTileWidth - 1) do
-    for x := 0 to (cTileWidth - 1) do
-      ATile.RGBPixels[y, x] := FromCpn(x, y);
-end;
-
-
-procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
-var
-  x, y, cpn: Integer;
-  CpnPixels: TCpnPixelsDouble;
-  pCpn, pLut: PDouble;
-
-  function FromCpn(x, y: Integer): Integer; inline;
-  var
-    yy, uu, vv: TFloat;
-  begin
-    yy := CpnPixels[0, y, x];
-    uu := CpnPixels[1, y, x];
-    vv := CpnPixels[2, y, x];
-
-    yy *= 1.0 / cYUVLumaFactor; uu *= 1.0 / cYUVChromaFactor; vv *= 1.0 / cYUVChromaFactor;
-
-    if UseLAB then
-      Result := LABToRGB(yy, uu, vv , GammaCor)
-    else
-      Result := YUVToRGB(yy, uu, vv, GammaCor);
-  end;
-
-begin
-  pCpn := @CpnPixels[0, 0, 0];
-  for cpn := 0 to cColorCpns - 1 do
-  begin
-    pLut := @FInvDCTLutDouble[0];
-
-    for y := 0 to (cTileWidth - 1) do
-      for x := 0 to (cTileWidth - 1) do
-      begin
-        pCpn^ := specialize DCTInner<PDouble>(@DCT[cpn * (cTileDCTSize div cColorCpns)], pLut);
-        Inc(pCpn);
-        Inc(pLut, Sqr(cTileWidth));
-      end;
-  end;
-
-  for y := 0 to (cTileWidth - 1) do
-    for x := 0 to (cTileWidth - 1) do
-      ATile.RGBPixels[y, x] := FromCpn(x, y);
 end;
 
 procedure TTilingEncoder.VMirrorTile(var ATile: TTile);
@@ -4900,7 +4751,6 @@ begin
 
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', RoundTo(Double(GlobalTilingQualityBasedTileCount), -7));
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
-    ini.WriteFloat('GlobalTiling', 'GlobalTilingSoftClusteringThreshold', GlobalTilingSoftClusteringThreshold);
     ini.WriteBool('GlobalTiling', 'ReloadTileset', ReloadTileset);
     ini.WriteString('GlobalTiling', 'ReloadTilesetFileName', ReloadTilesetFileName);
 
@@ -4941,7 +4791,6 @@ begin
 
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', 2.0);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', 0); // after GlobalTilingQualityBasedTileCount because has priority
-    GlobalTilingSoftClusteringThreshold := ini.ReadFloat('GlobalTiling', 'GlobalTilingSoftClusteringThreshold', 0.0);
     ReloadTileset := ini.ReadBool('GlobalTiling', 'ReloadTileset', False);
     ReloadTilesetFileName := ini.ReadString('GlobalTiling', 'ReloadTilesetFileName', '');
 
@@ -4961,11 +4810,9 @@ end;
 
 procedure TTilingEncoder.Test;
 var
-  i, j, rng: Integer;
+  i, rng: Integer;
   rr, gg, bb: Byte;
   l, a, b, y, u, v: TFloat;
-  DCT: array [0..cTileDCTSize-1] of Double;
-  T, T2: PTile;
 begin
   for i := 0 to 10000 do
   begin
@@ -4978,31 +4825,6 @@ begin
     RGBToYUV(rr, gg, bb, -1, y, u, v);
     assert(rng = YUVToRGB(y, u, v, -1), 'RGBToYUV/YUVToRGB mismatch');
   end;
-
-  T := TTile.New(True, False);
-  T2 := TTile.New(True, False);
-
-  for i := 0 to 7 do
-    for j := 0 to 7 do
-      T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
-
-  ComputeTilePsyVisFeatures(T^, False, False, False, False, False, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], False, -1, T2^);
-
-  //for i := 0 to 7 do
-  //  for j := 0 to 7 do
-  //    write(IntToHex(T^.RGBPixels[i, j], 6), '  ');
-  //WriteLn();
-  //for i := 0 to 7 do
-  //  for j := 0 to 7 do
-  //    write(IntToHex(T2^.RGBPixels[i, j], 6), '  ');
-  //WriteLn();
-
-
-  Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'DCT/InvDCT mismatch');
-
-  TTile.Dispose(T);
-  TTile.Dispose(T2);
 end;
 
 // from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
@@ -5291,7 +5113,6 @@ var
         DS^.TDToAttrs[di] := hvmir;
 
         ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], PFloat(@DS^.Dataset[di * cTileDCTSize]));
-        DS^.Dataset[di * cTileDCTSize + cTileDCTSize - 1] := T^.Weight;
 
         // prune redundancies
         if (di <= 0) or (CompareDWord(DS^.Dataset[(di - 1) * cTileDCTSize], DS^.Dataset[di * cTileDCTSize], cTileDCTSize) <> 0) then
@@ -5459,7 +5280,6 @@ begin
             end;
 
             ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PFloat(@PrevDCT[0]));
-            PrevDCT[cTileDCTSize - 1] := FTiles[prevTMI^.TileIdx]^.Weight;
           end
           else
           begin
@@ -5798,20 +5618,23 @@ type
 
 procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  i, bin, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, bestIdx: Integer;
+  i, bin, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
   cnt, tidx: Int64;
-  best, err: Double;
+  err: Double;
+  v, best: TFloat;
 
-  T: PTile;
   KMBin: PKModesBin;
   BICO: PBICO;
   ANN: PANNkdtree;
+  Yakmo: PYakmo;
 
   TileIndices: TInt64DynArray;
   Dataset: TDoubleDynArray2;
-  ANNClusters: TIntegerDynArray;
+  YakmoCentroids: TDoubleDynArray2;
+  ANNClusters, YakmoClusters: TIntegerDynArray;
   BICOCentroids, BICOWeights: TDoubleDynArray;
   ANNDataset: array of PANNFloat;
+  ToMerge: TDoubleDynArray2;
   ToMergeIdxs: TInt64DynArray;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
@@ -5819,9 +5642,10 @@ begin
   if (DSLen <= KMBin^.ClusterCount) or (KMBin^.ClusterCount <= 1) then
     Exit;
 
-  // use BICO to compute a noise-aware set of centroids
+  // use BICO to prepare a noise-aware set of centroids that will be used as dataset for Yakmo
 
-  BICO := bico_create(cTileDCTSize, DSLen, KMBin^.ClusterCount, 1, KMBin^.ClusterCount, $42381337);
+  BICOCoresetSize := KMBin^.ClusterCount * 2;
+  BICO := bico_create(cTileDCTSize, DSLen, KMBin^.ClusterCount, 1, BICOCoresetSize, $42381337);
   try
     // parse bin dataset
 
@@ -5847,8 +5671,8 @@ begin
 
     // get BICO results
 
-    SetLength(BICOCentroids, KMBin^.ClusterCount * cTileDCTSize);
-    SetLength(BICOWeights, KMBin^.ClusterCount);
+    SetLength(BICOCentroids, BICOCoresetSize * cTileDCTSize);
+    SetLength(BICOWeights, BICOCoresetSize);
 
     BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
 
@@ -5877,40 +5701,71 @@ begin
     ann_kdtree_destroy(ANN);
   end;
 
+  // use Yakmo to extract final centroids
+
+  SetLength(YakmoClusters, BICOClusterCount);
+  SetLength(YakmoCentroids, KMBin^.ClusterCount, cTileDCTSize);
+
+  if BICOClusterCount > KMBin^.ClusterCount then
+  begin
+    Yakmo := yakmo_create(KMBin^.ClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
+    try
+      yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, @ANNDataset[0]);
+      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+      yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
+    finally
+      yakmo_destroy(Yakmo);
+    end;
+  end
+  else
+  begin
+    for i := 0 to BICOClusterCount - 1 do
+      YakmoClusters[i] := i;
+    for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
+      for i := 0 to cTileDCTSize - 1 do
+        YakmoCentroids[clusterIdx, i] := BICOCentroids[clusterIdx * cTileDCTSize + i];
+  end;
+
   // build a list of this centroid tiles
 
+  SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
-  for clusterIdx := 0 to BICOClusterCount - 1 do
+  for clusterIdx := 0 to KMBin^.ClusterCount - 1 do
   begin
-    bestIdx := -1;
-    best := MaxSingle;
     clusterLineCount := 0;
-    for lineIdx := 0 to DSLen - 1 do
-      if ANNClusters[lineIdx] = clusterIdx then
-      begin
-        T := FTiles[TileIndices[lineIdx]];
+    for yakmoDatasetIdx := 0 to High(YakmoClusters) do
+      if YakmoClusters[yakmoDatasetIdx] = clusterIdx then
+        for lineIdx := 0 to DSLen - 1 do
+          if ANNClusters[lineIdx] = yakmoDatasetIdx then
+          begin
+            ToMerge[clusterLineCount] := Dataset[lineIdx];
+            ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
+            Inc(clusterLineCount);
+          end;
 
-        // compute a tile weight of centroid closeness
-        T^.Weight := CompareEuclidean(@Dataset[lineIdx, 0], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
-
-        if T^.Weight < best then
-        begin
-          best := T^.Weight;
-          bestIdx := TileIndices[lineIdx];
-        end;
-
-        if T^.Weight > FGlobalTilingSoftClusteringThreshold then
-        begin
-          ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
-          Inc(clusterLineCount);
-        end;
-      end;
+    // choose a tile from the cluster
 
     if clusterLineCount >= 2 then
     begin
+       // get the closest tile to the centroid
+
+       best := MaxSingle;
+       clusterLineIdx := -1;
+       for i := 0 to clusterLineCount - 1 do
+       begin
+         v := CompareEuclidean(@ToMerge[i, 0], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
+         if v < best then
+         begin
+           best := v;
+           clusterLineIdx := i;
+         end;
+       end;
+
+      // merge centroid
+
       SpinEnter(@FLock);
-      MergeTiles(ToMergeIdxs, clusterLineCount, IfThen(bestIdx >= 0, bestIdx, ToMergeIdxs[0]), nil, nil);
+      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
       SpinLeave(@FLock);
     end;
   end;
@@ -6596,8 +6451,6 @@ begin
   FRenderPage := rpOutput;
   ReframeUI(80, 45);
   FFramesPerSecond := 24.0;
-
-  FGlobalTilingSoftClusteringThreshold := 0.3;
 end;
 
 destructor TTilingEncoder.Destroy;
