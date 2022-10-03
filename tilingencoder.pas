@@ -24,7 +24,8 @@ const
   cFTQWeighting = False;
   cFTBinSize = 64;
   cYakmoMaxIterations = 300;
-  cPerFrameTileCountMultiplier = 7;
+  cLoadPerFrameTileCountMultiplier = 10;
+  cGlobalTilingCoresetMultiplier = 1.5;
 
 {$if false}
   cRedMul = 2126;
@@ -3439,7 +3440,7 @@ begin
   // free memory from a prev run
   TTile.Array1DDispose(FTiles);
 
-  ClustersPerFrame := Max(1 , trunc(FGlobalTilingTileCount / Length(FFrames) * cPerFrameTileCountMultiplier));
+  ClustersPerFrame := Max(1 , trunc(FGlobalTilingTileCount / Length(FFrames) * cLoadPerFrameTileCountMultiplier));
 
   tileCnt := Length(FFrames) * ClustersPerFrame;
 
@@ -5602,7 +5603,7 @@ begin
 
   // use BICO to prepare a noise-aware set of centroids that will be used as dataset for Yakmo
 
-  BICOCoresetSize := KMBin^.ClusterCount * 2;
+  BICOCoresetSize := Ceil(KMBin^.ClusterCount * cGlobalTilingCoresetMultiplier);
   BICO := bico_create(cTileDCTSize, DSLen, KMBin^.ClusterCount, 1, BICOCoresetSize, $42381337);
   try
     // parse bin dataset
@@ -5651,7 +5652,7 @@ begin
   for clusterIdx := 0 to BICOClusterCount - 1 do
     ANNDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
 
-  ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_SUGGEST);
+  ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_STD);
   try
     for i := 0 to DSLen - 1 do
       ANNClusters[i] := ann_kdtree_search(ANN, @Dataset[i, 0], 0.0, @err);
