@@ -5191,21 +5191,10 @@ begin
         begin
           prevTMI := @FFrames[AFrame.Index - 1].TileMap[oy, ox];
 
-          if FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame then
+          if (FFrames[AFrame.Index - 1].PKeyFrame <> AFrame.PKeyFrame) and not LocalPrevPaletteDone[prevTMI^.PalIdx] then
           begin
-            if prevTMI^.PalIdx <> APrevKFPaletteIndex then
-              Continue;
-
-            if not LocalPrevPaletteDone[prevTMI^.PalIdx] then
-            begin
-              WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
-              LocalPrevPaletteDone[prevTMI^.PalIdx] := True;
-            end;
-          end
-          else
-          begin
-            if prevTMI^.PalIdx <> APaletteIndex then
-              Continue;
+            WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
+            LocalPrevPaletteDone[prevTMI^.PalIdx] := True;
           end;
 
           ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PFloat(@PrevDCT[0]));
