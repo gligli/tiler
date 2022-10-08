@@ -275,7 +275,7 @@ type
   { TTileMapItem }
 
   TTileMapItem = packed record
-    TileIdxUpper, SmoothedTileIdxUpper, FTTileDSIdx: Integer;
+    TileIdxUpper, SmoothedTileIdxUpper: Integer;
     PalIdx, SmoothedPalIdx: SmallInt;
     TileIdxLower, SmoothedTileIdxLower: Byte;
     BlendCur, BlendPrev: Byte;
@@ -319,8 +319,6 @@ type
 
   TTilingDataset = record
     Dataset: TFloatDynArray;
-    TDToTileIdx: TInt64DynArray;
-    TDToAttrs: TByteDynArray;
     FLANN: flann_index_t;
     FLANNParams: PFLANNParameters;
   end;
@@ -584,7 +582,7 @@ type
     procedure PrepareKFTiling(AKF: TKeyFrame; APaletteIndex, AFTGamma: Integer);
     procedure FinishKFTiling(AKF: TKeyFrame;  APaletteIndex: Integer);
     procedure DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x, y: Integer;
-     ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
+     APlainDCT: PFloat; ACurIdxs: PInteger; var AKFTilingBest: TKFTilingBest);
     procedure DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlend: Integer; AFTBlendThres: TFloat);
 
     function GetTileUseCount(ATileIndex: Int64): Integer;
@@ -3413,12 +3411,18 @@ var
           FTiles[tilePos + clusterIdx]^.CopyFrom(Frame.FrameTiles[ToMergeIdxs[clusterLineIdx]]^);
           FTiles[tilePos + clusterIdx]^.UseCount := Round(BICOWeights[clusterIdx]);
 
+          if HMirrors[ToMergeIdxs[clusterLineIdx]] then
+            HMirrorTile(FTiles[tilePos + clusterIdx]^);
+
+          if VMirrors[ToMergeIdxs[clusterLineIdx]] then
+            VMirrorTile(FTiles[tilePos + clusterIdx]^);
+
           for i := 0 to clusterLineCount - 1 do
           begin
             DivMod(ToMergeIdxs[i], FTileMapWidth, sy, sx);
             Frame.TileMap[sy, sx].TileIdx :=  tilePos + clusterIdx;
-            Frame.TileMap[sy, sx].HMirror :=  HMirrors[ToMergeIdxs[i]] xor HMirrors[ToMergeIdxs[clusterLineIdx]];
-            Frame.TileMap[sy, sx].VMirror :=  VMirrors[ToMergeIdxs[i]] xor VMirrors[ToMergeIdxs[clusterLineIdx]];
+            Frame.TileMap[sy, sx].HMirror :=  HMirrors[ToMergeIdxs[i]];
+            Frame.TileMap[sy, sx].VMirror :=  VMirrors[ToMergeIdxs[i]];
           end;
         end;
       end;
@@ -4257,8 +4261,6 @@ begin
       TMI^.BlendPrev := 0;
       TMI^.BlendX := 0;
       TMI^.BlendY := 0;
-
-      TMI^.FTTileDSIdx := -1;
     end;
 
   Assert(ABitmap.Description.Width >= FScreenWidth, 'Wrong video width!');
@@ -5079,31 +5081,19 @@ procedure TTilingEncoder.PrepareKFTiling(AKF: TKeyFrame; APaletteIndex, AFTGamma
 var
   DS: PTilingDataset;
 
-  function DoPsyV: Integer;
+  procedure DoPsyV;
   var
-    di, hvmir: Integer;
     T: PTile;
     tidx: Int64;
+    pDCT: PFloat;
   begin
-    di := 0;
+    pDCT := PFloat(@DS^.Dataset[0]);
     for tidx := 0 to High(FTiles) do
     begin
       T := FTiles[tidx];
-
-      for hvmir := 0 to 3 do
-      begin
-        DS^.TDToTileIdx[di] := tidx;
-        DS^.TDToAttrs[di] := hvmir;
-
-        ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, hvmir and 1 <> 0, hvmir and 2 <> 0, AFTGamma, AKF.PaletteRGB[APaletteIndex], PFloat(@DS^.Dataset[di * cTileDCTSize]));
-
-        // prune redundancies
-        if (di <= 0) or (CompareDWord(DS^.Dataset[(di - 1) * cTileDCTSize], DS^.Dataset[di * cTileDCTSize], cTileDCTSize) <> 0) then
-          Inc(di);
-      end;
+      ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, AFTGamma, AKF.PaletteRGB[APaletteIndex], pDCT);
+      Inc(pDCT, cTileDCTSize);
     end;
-
-    Result := di;
   end;
 
 var
@@ -5115,15 +5105,10 @@ begin
   DS := New(PTilingDataset);
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  KNNSize := Length(FTiles) * 4;
-  SetLength(DS^.TDToTileIdx, KNNSize);
-  SetLength(DS^.TDToAttrs, KNNSize);
+  KNNSize := Length(FTiles);
   SetLength(DS^.Dataset, KNNSize * cTileDCTSize);
 
-  KNNSize := DoPsyV;
-  SetLength(DS^.TDToTileIdx, KNNSize);
-  SetLength(DS^.TDToAttrs, KNNSize);
-  SetLength(DS^.Dataset, KNNSize * cTileDCTSize);
+  DoPsyV;
 
   // Build KNN
 
@@ -5146,8 +5131,6 @@ begin
     flann_free_index(AKF.TileDS[APaletteIndex]^.FLANN, AKF.TileDS[APaletteIndex]^.FLANNParams);
   AKF.TileDS[APaletteIndex]^.FLANN := nil;
   SetLength(AKF.TileDS[APaletteIndex]^.Dataset, 0);
-  SetLength(AKF.TileDS[APaletteIndex]^.TDToTileIdx, 0);
-  SetLength(AKF.TileDS[APaletteIndex]^.TDToAttrs, 0);
   Dispose(AKF.TileDS[APaletteIndex]);
 
   AKF.TileDS[APaletteIndex] := nil;
@@ -5164,7 +5147,8 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x, y: Integer; ACurDCT: PFloat; ACurIdxs: PInteger; ACurErrs: PFloat; var AKFTilingBest: TKFTilingBest);
+procedure TTilingEncoder.DoTileBlending(AFrame: TFrame; APaletteIndex, APrevKFPaletteIndex, AFTGamma, AFTBlend, x,
+ y: Integer; APlainDCT: PFloat; ACurIdxs: PInteger; var AKFTilingBest: TKFTilingBest);
 var
   i, blend, ox, oy, idx: Integer;
   err, fc, rfc, speedup: TFloat;
@@ -5217,17 +5201,14 @@ begin
               WaitForSingleObject(FFrames[AFrame.Index - 1].PKeyFrame.FTPaletteDoneEvent[prevTMI^.PalIdx], INFINITE); // wait prev keyframe for palette done
               LocalPrevPaletteDone[prevTMI^.PalIdx] := True;
             end;
-
-            ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PFloat(@PrevDCT[0]));
           end
           else
           begin
             if prevTMI^.PalIdx <> APaletteIndex then
               Continue;
-
-            for i := 0 to cTileDCTSize - 1 do
-              PrevDCT[i] := DS^.Dataset[prevTMI^.FTTileDSIdx * cTileDCTSize + i];
           end;
+
+          ComputeTilePsyVisFeatures(FTiles[prevTMI^.TileIdx]^, True, False, cFTQWeighting, prevTMI^.HMirror, prevTMI^.VMirror, AFTGamma, FFrames[AFrame.Index - 1].PKeyFrame.PaletteRGB[prevTMI^.PalIdx], PFloat(@PrevDCT[0]));
         end
         else
         begin
@@ -5242,7 +5223,7 @@ begin
           fc := blend * (1.0 / cMaxFTBlend);
           rfc := 1.0 / fc;
 
-          ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], ACurDCT, 1.0 - rfc, rfc);
+          ComputeBlending_Asm(@SearchDCT[0], @PrevDCT[0], APlainDCT, 1.0 - rfc, rfc);
 
           idx := -1;
           err := MaxSingle;
@@ -5272,16 +5253,19 @@ procedure TTilingEncoder.DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTG
   AFTBlendThres: TFloat);
 var
   x, y, frmIdx, annQueryCount, annQueryPos, palIdx, prevKFPalIdx: Integer;
-  attrs: Byte;
+  q00, q01, q10, q11: Integer;
   errCml, bestPal, v: Double;
 
+  T: PTile;
   Frame: TFrame;
-  tmiO: PTileMapItem;
+  TMI: PTileMapItem;
 
   DS: PTilingDataset;
   idxs: TIntegerDynArray;
   errs: TFloatDynArray;
   DCTs: TFloatDynArray;
+  PlainDCTs: TFloatDynArray;
+  HMirrors, VMirrors: TBooleanDynArray;
 
   Best: TKFTilingBest;
 begin
@@ -5329,12 +5313,15 @@ begin
     Exit;
 
   SetLength(DCTs, annQueryCount * cTileDCTSize);
+  SetLength(PlainDCTs, annQueryCount * cTileDCTSize);
   SetLength(idxs, annQueryCount * cFTBinSize);
   SetLength(errs, annQueryCount * cFTBinSize);
+  SetLength(HMirrors, annQueryCount);
+  SetLength(VMirrors, annQueryCount);
 
   // prepare KNN queries
 
-  annQueryCount := 0;
+  annQueryPos := 0;
   for frmIdx := AKF.StartFrame to AKF.EndFrame do
   begin
     Frame := FFrames[frmIdx];
@@ -5347,9 +5334,26 @@ begin
           if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
             Continue;
 
-          ComputeTilePsyVisFeatures(Frame.FrameTiles[y * FTileMapWidth + x]^, False, False, cFTQWeighting, False, False, AFTGamma, nil, PFloat(@DCTs[annQueryCount * cTileDCTSize]));
+          T := Frame.FrameTiles[y * FTileMapWidth + x];
 
-          Inc(annQueryCount);
+          // enforce the 'spin' on tiles mirrors (brighter top-left corner)
+
+          q00 := GetTileZoneSum(T^, 0, 0, cTileWidth div 2, cTileWidth div 2);
+          q01 := GetTileZoneSum(T^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
+          q10 := GetTileZoneSum(T^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+          q11 := GetTileZoneSum(T^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+
+          HMirrors[annQueryPos] := q00 + q10 < q01 + q11;
+          VMirrors[annQueryPos] := q00 + q01 < q10 + q11;
+
+          ComputeTilePsyVisFeatures(T^, False, False, cFTQWeighting, HMirrors[annQueryPos], VMirrors[annQueryPos], AFTGamma, nil, @DCTs[annQueryPos * cTileDCTSize]);
+
+          if HMirrors[annQueryPos] or VMirrors[annQueryPos] then
+            ComputeTilePsyVisFeatures(T^, False, False, cFTQWeighting, False, False, AFTGamma, nil, @PlainDCTs[annQueryPos * cTileDCTSize])
+          else
+            Move(DCTs[annQueryPos * cTileDCTSize], PlainDCTs[annQueryPos * cTileDCTSize], cTileDCTSize * SizeOf(TFloat));
+
+          Inc(annQueryPos);
         end;
     finally
       Frame.ReleaseFrameTiles;
@@ -5383,28 +5387,28 @@ begin
         // try to blend a local tile of the previous frame to improve likeliness
 
         if (AFTBlend >= 0) and not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
-          DoTileBlending(Frame, APaletteIndex, prevKFPalIdx, AFTGamma, AFTBlend, x, y, @DCTs[annQueryPos * cTileDCTSize], @idxs[annQueryPos * cFTBinSize], @errs[annQueryPos * cFTBinSize], Best);
+          DoTileBlending(Frame, APaletteIndex, prevKFPalIdx, AFTGamma, AFTBlend, x, y, @PlainDCTs[annQueryPos * cTileDCTSize], @idxs[annQueryPos * cFTBinSize], Best);
 
-        tmiO := @FFrames[Frame.Index].TileMap[y, x];
+        TMI := @Frame.TileMap[y, x];
 
-        attrs := DS^.TDToAttrs[Best.bestIdx];
-        tmiO^.FTTileDSIdx := Best.bestIdx;
-        tmiO^.TileIdx := DS^.TDToTileIdx[Best.bestIdx];
-        tmiO^.HMirror := (attrs and 1) <> 0;
-        tmiO^.VMirror := (attrs and 2) <> 0;
-        tmiO^.BlendCur := Best.bestBlendCur;
-        tmiO^.BlendPrev := Best.bestBlendPrev;
-        tmiO^.BlendX := Best.bestX - x;
-        tmiO^.BlendY := Best.bestY - y;
+        TMI^.TileIdx := Best.bestIdx;
 
-        tmiO^.SmoothedTileIdx := tmiO^.TileIdx;
-        tmiO^.SmoothedPalIdx := tmiO^.PalIdx;
-        tmiO^.SmoothedHMirror := tmiO^.HMirror;
-        tmiO^.SmoothedVMirror := tmiO^.VMirror;
+        TMI^.HMirror := HMirrors[annQueryPos];
+        TMI^.VMirror := VMirrors[annQueryPos];
+
+        TMI^.BlendCur := Best.bestBlendCur;
+        TMI^.BlendPrev := Best.bestBlendPrev;
+        TMI^.BlendX := Best.bestX - x;
+        TMI^.BlendY := Best.bestY - y;
+
+        TMI^.SmoothedTileIdx := TMI^.TileIdx;
+        TMI^.SmoothedPalIdx := TMI^.PalIdx;
+        TMI^.SmoothedHMirror := TMI^.HMirror;
+        TMI^.SmoothedVMirror := TMI^.VMirror;
 
         errCml += Best.bestErr;
 
-        FTiles[tmiO^.TileIdx]^.Active := True;
+        FTiles[TMI^.TileIdx]^.Active := True;
 
         Inc(annQueryPos);
       end;
