@@ -198,11 +198,11 @@ object MainForm: TMainForm
         Top = 298
         Width = 71
         DecimalPlaces = 5
-        Increment = 0.0025
+        Increment = 0.05
         MaxValue = 1
         OnChange = UpdateGUI
         TabOrder = 19
-        Value = 0.02
+        Value = 0.2
       end
       object seStartFrame: TSpinEdit
         Left = 872

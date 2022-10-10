@@ -5411,8 +5411,6 @@ end;
 
 procedure TTilingEncoder.DoTemporalSmoothing(AFrame, APrevFrame: TFrame; Y: Integer; Strength: TFloat;
   AddlTilesThres: TFloat; NonAddlCount: Int64);
-const
-  cSqrtFactor = 1 / cTileDCTSize;
 var
   sx: Integer;
   cmp: TFloat;
@@ -5439,7 +5437,7 @@ begin
         ComputeTilePsyVisFeatures(FTiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], PFloat(@DCT[0]));
 
         cmp := CompareEuclideanDCT(DCT, PrevDCT);
-        cmp := sqrt(cmp * cSqrtFactor);
+        cmp := sqrt(cmp);
 
         // if difference is low enough, mark the tile as smoothed for tilemap compression use
 
@@ -5473,7 +5471,7 @@ begin
       ComputeTilePsyVisFeatures(APrevFrame.FrameTiles[Y * FTileMapWidth + sx]^, False, False, True, False, False, -1, nil, PFloat(@PrevPlainDCT[0]));
 
       cmp := CompareEuclideanDCT(PrevDCT, PrevPlainDCT);
-      cmp := sqrt(cmp * cSqrtFactor);
+      cmp := sqrt(cmp);
 
       if (AddlTilesThres <> 0.0) and (cmp > AddlTilesThres) then
       begin
