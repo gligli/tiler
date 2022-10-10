@@ -2859,8 +2859,12 @@ begin
 end;
 
 procedure TTilingEncoder.PreparePalettes(AKeyFrame: TKeyFrame; ADitheringGamma: Integer);
+const
+  cFeatureCount = cTileDCTSize + cColorCpns;
 var
-  sx, sy, frmIdx, i: Integer;
+  sx, sy, ty, tx, frmIdx, i: Integer;
+  rr, gg, bb: Byte;
+  l, a, b: TFloat;
   GTile: PTile;
 
   YakmoDataset: TDoubleDynArray2;
@@ -2872,14 +2876,26 @@ var
 begin
   GetKeyFrameTileList(AKeyFrame, TileList, TileUseCount);
 
-  SetLength(YakmoDataset, Length(TileList), cTileDCTSize);
+  SetLength(YakmoDataset, Length(TileList), cFeatureCount);
   SetLength(YakmoClusters, Length(YakmoDataset));
-  SetLength(AKeyFrame.PaletteCentroids, FPaletteCount, cTileDCTSize);
+  SetLength(AKeyFrame.PaletteCentroids, FPaletteCount, cFeatureCount);
 
   for i := 0 to High(TileList) do
   begin
     GTile := FTiles[TileList[i]];
-    ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @YakmoDataset[i, 0]);
+    ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, ADitheringGamma, nil, @YakmoDataset[i, cColorCpns]);
+
+    for ty := 0 to cTileWidth - 1 do
+      for tx := 0 to cTileWidth - 1 do
+      begin
+        FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
+
+        RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
+
+        YakmoDataset[i, 0] += l;
+        YakmoDataset[i, 1] += a;
+        YakmoDataset[i, 2] += b;
+      end;
   end;
 
   WriteLn('KF: ', AKeyFrame.StartFrame:8, ' Palettization start');
@@ -2887,7 +2903,7 @@ begin
   if (Length(YakmoDataset) >= FPaletteCount) and (FPaletteCount > 1) then
   begin
     Yakmo := yakmo_create(FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-    yakmo_load_train_data(Yakmo, Length(YakmoDataset), cTileDCTSize, PPDouble(@YakmoDataset[0]));
+    yakmo_load_train_data(Yakmo, Length(YakmoDataset), cFeatureCount, PPDouble(@YakmoDataset[0]));
     SetLength(YakmoDataset, 0); // free up some memmory
     yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
     yakmo_get_centroids(Yakmo, PPDouble(@AKeyFrame.PaletteCentroids[0]));
@@ -5272,7 +5288,7 @@ begin
     bestPal := MaxSingle;
     for palIdx := 0 to FPaletteCount - 1 do
     begin
-      v := CompareEuclidean(@AKF.PaletteCentroids[APaletteIndex, 0], @FFrames[AKF.StartFrame - 1].PKeyFrame.PaletteCentroids[palIdx, 0], cTileDCTSize);
+      v := CompareEuclidean(@AKF.PaletteCentroids[APaletteIndex, 0], @FFrames[AKF.StartFrame - 1].PKeyFrame.PaletteCentroids[palIdx, 0], Length(AKF.PaletteCentroids[APaletteIndex]));
       if not IsNan(v) and (v < bestPal) then
       begin
         bestPal := v;
