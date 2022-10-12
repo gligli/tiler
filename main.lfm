@@ -145,9 +145,9 @@ object MainForm: TMainForm
     Height = 448
     Top = 40
     Width = 964
-    ActivePage = tsSettings
+    ActivePage = tsTilesPal
     Anchors = [akTop, akLeft, akRight, akBottom]
-    TabIndex = 0
+    TabIndex = 3
     TabOrder = 5
     OnChange = UpdateVideo
     object tsSettings: TTabSheet
@@ -639,7 +639,6 @@ object MainForm: TMainForm
         Anchors = [akTop, akLeft, akBottom]
         OnClick = imgPaletteClick
         OnContextPopup = imgContextPopup
-        OnDblClick = imgPaletteDblClick
         PopupMenu = pmProcesses
         Stretch = True
       end

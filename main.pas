@@ -130,7 +130,6 @@ type
     procedure imgClick(Sender: TObject);
     procedure imgContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
     procedure imgPaletteClick(Sender: TObject);
-    procedure imgPaletteDblClick(Sender: TObject);
     procedure btnGeneratePNGsClick(Sender: TObject);
     procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
     procedure miLoadSettingsClick(Sender: TObject);
@@ -518,7 +517,7 @@ begin
   pt.X -= (TImage(Sender).Width - FTilingEncoder.ScreenWidth) div 2;
   pt.Y -= (TImage(Sender).Height - FTilingEncoder.ScreenHeight) div 2;
 
-  Handled := InRange(pt.X, 0, FTilingEncoder.ScreenWidth - 1) and InRange(pt.Y, 0, FTilingEncoder.ScreenHeight - 1);
+  Handled := InRange(pt.X, 0, FTilingEncoder.ScreenWidth - 1) and InRange(pt.Y, 0, FTilingEncoder.ScreenHeight - 1) and (sedPalIdx.Value >= 0);
 
   if Handled then
     sedPalIdx.Value := -1;
@@ -531,11 +530,6 @@ begin
   P := imgPalette.ScreenToClient(Mouse.CursorPos);
   sedPalIdx.Value := iDiv0(P.y * FTilingEncoder.PaletteCount, imgPalette.Height);
   FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;
-end;
-
-procedure TMainForm.imgPaletteDblClick(Sender: TObject);
-begin
-  sedPalIdx.Value := -1;
 end;
 
 procedure TMainForm.seMaxTilesEditingDone(Sender: TObject);
