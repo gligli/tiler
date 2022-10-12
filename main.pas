@@ -126,6 +126,7 @@ type
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure IdleTimerTimer(Sender: TObject);
     procedure imgClick(Sender: TObject);
     procedure imgContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
@@ -425,17 +426,9 @@ var
   i: Integer;
 begin
   k := Key;
-  if k in [VK_F2, VK_F3, VK_F4, VK_F5, VK_F6, VK_F7, VK_F8, VK_F9, VK_F10, VK_F11, VK_F12, VK_PRIOR, VK_NEXT] then
+  if k in [VK_F10, VK_F11, VK_F12, VK_PRIOR, VK_NEXT] then
     Key := 0; // KLUDGE: workaround event called twice
   case k of
-    VK_F2: btnLoadClick(nil);
-    VK_F3: btnDoMakeUniqueClick(nil);
-    VK_F4: btnDitherClick(nil);
-    VK_F5: btnDoGlobalTilingClick(nil);
-    VK_F6: btnDoFrameTilingClick(nil);
-    VK_F7: btnReindexClick(nil);
-    VK_F8: btnSmoothClick(nil);
-    VK_F9: btnSaveClick(nil);
     VK_F10: btnRunAllClick(nil);
     VK_F11: chkPlay.Checked := not chkPlay.Checked;
     VK_F12:
@@ -472,7 +465,15 @@ begin
           tbFrame.Position := FTilingEncoder.KeyFrames[(i + IfThen(k = VK_NEXT, 1, FTilingEncoder.KeyFrameCount - 1)) mod FTilingEncoder.KeyFrameCount].StartFrame;
           Break;
         end;
+    VK_CONTROL:
+      tbFrame.LineSize := round(FTilingEncoder.FramesPerSecond);
   end;
+end;
+
+procedure TMainForm.FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  if Key = VK_CONTROL then
+    tbFrame.LineSize := 1;
 end;
 
 procedure TMainForm.IdleTimerTimer(Sender: TObject);
@@ -582,7 +583,6 @@ begin
     if Assigned(FTilingEncoder.Frames[i]) and Assigned(FTilingEncoder.Frames[i].PKeyFrame) and
         (FTilingEncoder.Frames[i].Index = FTilingEncoder.Frames[i].PKeyFrame.StartFrame) then
       tbFrame.SetTick(i);
-  tbFrame.PageSize := round(FTilingEncoder.FramesPerSecond);
 
   FTilingEncoder.InputFileName := edInput.Text;
   FTilingEncoder.OutputFileName := edOutput.Text;
