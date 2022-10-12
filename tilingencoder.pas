@@ -1905,7 +1905,6 @@ procedure TTilingEncoder.FrameTiling;
   end;
 var
   kf: Integer;
-  tidx: Int64;
   errCml, tileResd: Double;
 begin
   if Length(FKeyFrames) = 0 then
@@ -1913,19 +1912,16 @@ begin
 
   ProgressRedraw(0, esFrameTiling);
 
+  errCml := 0.0;
   for kf := 0 to high(FKeyFrames) do
   begin
     FKeyFrames[kf].FTErrCml := 0.0;
     FKeyFrames[kf].PalettesLeft := FPaletteCount;
     SetLength(FKeyFrames[kf].TileDS, FPaletteCount);
   end;
-  for tidx := 0 to High(FTiles) do
-    FTiles[tidx]^.Active := False;
-
   try
     ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, Pointer(0));
   finally
-    errCml := 0.0;
     for kf := 0 to high(FKeyFrames) do
     begin
       errCml += FKeyFrames[kf].FTErrCml;
@@ -1935,7 +1931,7 @@ begin
 
   tileResd := Sqrt(errCml / (FTileMapSize * Length(FFrames)));
   WriteLn;
-  WriteLn('All:', Length(FFrames):8, #9'ResidualErr: ', (tileResd * FTileMapSize * Length(FFrames)):12:3, ' (global)   ', tileResd:12:6, ' (by tile)');
+  WriteLn('All:', Length(FFrames):8, #9'ResidualErr: ', (tileResd * FTileMapSize):12:3, ' (by frame) ', tileResd:12:6, ' (by tile)');
 
   ProgressRedraw(1);
 end;
@@ -2146,6 +2142,13 @@ begin
         tidx := FFrames[i].TileMap[sy, sx].TileIdx;
         Inc(FTiles[tidx]^.UseCount);
         FTiles[tidx]^.Active := True;
+
+        tidx := FFrames[i].TileMap[sy, sx].AdditionalTileIdx;
+        if tidx >= 0 then
+        begin
+          Inc(FTiles[tidx]^.UseCount);
+          FTiles[tidx]^.Active := True;
+        end;
       end;
 
   ProgressRedraw(1);
@@ -5087,13 +5090,13 @@ begin
   if AKF.PalettesLeft <= 0 then
   begin
     tileResd := Sqrt(AKF.FTErrCml / (FTileMapSize * AKF.FrameCount));
-    WriteLn('KF: ', AKF.StartFrame:8, #9'ResidualErr: ', (tileResd * FTileMapSize * AKF.FrameCount):12:3, ' (by frame) ', tileResd:12:6, ' (by tile)');
+    WriteLn('KF: ', AKF.StartFrame:8, #9'ResidualErr: ', (tileResd * FTileMapSize):12:3, ' (by frame) ', tileResd:12:6, ' (by tile)');
   end;
 end;
 
 procedure TTilingEncoder.DoKFTiling(AKF: TKeyFrame; APaletteIndex: Integer; AFTGamma: Integer; AFTBlendThres: TFloat);
 var
-  i, x, y, frmIdx, annQueryCount, annQueryPos, diffIdx: Integer;
+  x, y, frmIdx, annQueryCount, annQueryPos, diffIdx: Integer;
   q00, q01, q10, q11: Integer;
   errCml: Double;
   diffErr: TFloat;
@@ -5217,30 +5220,31 @@ begin
           // search for it in the KNN
           flann_find_nearest_neighbors_index(DS^.FLANN, @DiffDCT[0], 1, @diffIdx, @diffErr, 1, DS^.FLANNParams);
 
-          // compute error from the final interpolation (lerp 0.5)
-          Best.bestErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[Best.bestIdx * cTileDCTSize], 0.5, 0.5);
-
-          Best.bestAdditionalIdx := diffIdx;
+          if InRange(diffIdx, 0, High(FTiles)) then
+          begin
+            // compute error from the final interpolation (lerp 0.5)
+            Best.bestErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[Best.bestIdx * cTileDCTSize], 0.5, 0.5);
+            Best.bestAdditionalIdx := diffIdx;
+          end;
         end;
 
-        TMI := @Frame.TileMap[y, x];
+        if InRange(Best.bestIdx, 0, High(FTiles)) then
+        begin
+          TMI := @Frame.TileMap[y, x];
 
-        TMI^.TileIdx := Best.bestIdx;
-        TMI^.HMirror := HMirrors[annQueryPos];
-        TMI^.VMirror := VMirrors[annQueryPos];
+          TMI^.TileIdx := Best.bestIdx;
+          TMI^.HMirror := HMirrors[annQueryPos];
+          TMI^.VMirror := VMirrors[annQueryPos];
 
-        TMI^.AdditionalTileIdx := Best.bestAdditionalIdx;
+          TMI^.AdditionalTileIdx := Best.bestAdditionalIdx;
 
-        TMI^.SmoothedTileIdx := TMI^.TileIdx;
-        TMI^.SmoothedPalIdx := TMI^.PalIdx;
-        TMI^.SmoothedHMirror := TMI^.HMirror;
-        TMI^.SmoothedVMirror := TMI^.VMirror;
+          TMI^.SmoothedTileIdx := TMI^.TileIdx;
+          TMI^.SmoothedPalIdx := TMI^.PalIdx;
+          TMI^.SmoothedHMirror := TMI^.HMirror;
+          TMI^.SmoothedVMirror := TMI^.VMirror;
 
-        errCml += Best.bestErr;
-
-        FTiles[TMI^.TileIdx]^.Active := True;
-        if TMI^.AdditionalTileIdx >= 0 then
-          FTiles[TMI^.AdditionalTileIdx]^.Active := True;
+          errCml += Best.bestErr;
+        end;
 
         Inc(annQueryPos);
       end;
