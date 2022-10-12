@@ -531,7 +531,6 @@ type
     procedure TerminatePlan(var Plan: TMixingPlan);
     function DeviseBestMixingPlanYliluoma(var Plan: TMixingPlan; col: Integer; var List: array of Byte): Integer;
     procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: array of Byte);
-    procedure DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
 
     procedure LoadFrame(var AFrame: TFrame; AFrameIndex: Integer; const ABitmap: TRawImage);
     procedure FindKeyFrames;
@@ -1142,24 +1141,128 @@ asm
   pop rax
 end;
 
-const
-  CvtPre =  (1 shl cBitsPerComp) - 1;
-  CvtPost = 256 div CvtPre;
-
-function Posterize(v: Integer): Byte; inline;
+function ComputeBlendingError(PPlain, PCur, PPrev: PFloat; bc, bp: TFloat): TFloat; inline;
+var
+  i: Integer;
 begin
-  Result := min(255, (((v * CvtPre) div 255) * CvtPost));
+  Result := 0.0;
+  for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
+  begin
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+    Result += Sqr(PPlain^ - (PCur^ * bc + Pprev^ * bp)); Inc(PPlain); Inc(PCur); Inc(PPrev);
+  end;
 end;
 
-function Decimate(col: Integer): Integer; inline;
-var
-  r, g, b: Byte;
-begin
-  FromRGB(col, r, g, b);
-  r := r shr (8 - cBitsPerComp);
-  g := g shr (8 - cBitsPerComp);
-  b := b shr (8 - cBitsPerComp);
-  Result := r or (g shl cBitsPerComp) or (b shl (cBitsPerComp * 2));
+
+function ComputeBlendingError_Asm(PPlain_rcx, PCur_rdx, PPrev_r8: PFloat; bc_xmm3, bp_stack: TFloat): TFloat; register; assembler;
+const
+  cDCTSizeOffset = cTileDCTSize * SizeOf(TFloat);
+label loop;
+asm
+  push rcx
+  push rdx
+  push r8
+
+  sub rsp, 16 * 14
+  movdqu oword ptr [rsp],       xmm1
+  movdqu oword ptr [rsp + $10], xmm2
+  movdqu oword ptr [rsp + $20], xmm3
+  movdqu oword ptr [rsp + $30], xmm4
+  movdqu oword ptr [rsp + $40], xmm5
+  movdqu oword ptr [rsp + $50], xmm6
+  movdqu oword ptr [rsp + $60], xmm7
+  movdqu oword ptr [rsp + $70], xmm8
+  movdqu oword ptr [rsp + $80], xmm9
+  movdqu oword ptr [rsp + $90], xmm10
+  movdqu oword ptr [rsp + $a0], xmm11
+  movdqu oword ptr [rsp + $b0], xmm12
+  movdqu oword ptr [rsp + $c0], xmm13
+  movdqu oword ptr [rsp + $d0], xmm14
+
+  pshufd xmm1, xmm3, 0
+  pshufd xmm2, dword ptr [bp_stack], 0
+  xorps xmm0, xmm0
+
+  lea rax, byte ptr [rcx + cDCTSizeOffset]
+  loop:
+    movups xmm3,  oword ptr [rcx]
+    movups xmm6,  oword ptr [rcx + $10]
+    movups xmm9,  oword ptr [rcx + $20]
+    movups xmm12, oword ptr [rcx + $30]
+
+    movups xmm4,  oword ptr [rdx]
+    movups xmm7,  oword ptr [rdx + $10]
+    movups xmm10, oword ptr [rdx + $20]
+    movups xmm13, oword ptr [rdx + $30]
+
+    movups xmm5,  oword ptr [r8]
+    movups xmm8,  oword ptr [r8 + $10]
+    movups xmm11, oword ptr [r8 + $20]
+    movups xmm14, oword ptr [r8 + $30]
+
+    mulps xmm4, xmm1
+    mulps xmm5, xmm2
+    addps xmm4, xmm5
+    subps xmm3, xmm4
+    mulps xmm3, xmm3
+    addps xmm0, xmm3
+
+    mulps xmm7, xmm1
+    mulps xmm8, xmm2
+    addps xmm7, xmm8
+    subps xmm6, xmm7
+    mulps xmm6, xmm6
+    addps xmm0, xmm6
+
+    mulps xmm10, xmm1
+    mulps xmm11, xmm2
+    addps xmm10, xmm11
+    subps xmm9, xmm10
+    mulps xmm9, xmm9
+    addps xmm0, xmm9
+
+    mulps xmm13, xmm1
+    mulps xmm14, xmm2
+    addps xmm13, xmm14
+    subps xmm12, xmm13
+    mulps xmm12, xmm12
+    addps xmm0, xmm12
+
+    lea rcx, [rcx + $40]
+    lea rdx, [rdx + $40]
+    lea r8, [r8 + $40]
+
+    cmp rcx, rax
+    jne loop
+
+  haddps xmm0, xmm0
+  haddps xmm0, xmm0
+
+  movdqu xmm1,  oword ptr [rsp]
+  movdqu xmm2,  oword ptr [rsp + $10]
+  movdqu xmm3,  oword ptr [rsp + $20]
+  movdqu xmm4,  oword ptr [rsp + $30]
+  movdqu xmm5,  oword ptr [rsp + $40]
+  movdqu xmm6,  oword ptr [rsp + $50]
+  movdqu xmm7,  oword ptr [rsp + $60]
+  movdqu xmm8,  oword ptr [rsp + $70]
+  movdqu xmm9,  oword ptr [rsp + $80]
+  movdqu xmm10, oword ptr [rsp + $90]
+  movdqu xmm11, oword ptr [rsp + $a0]
+  movdqu xmm12, oword ptr [rsp + $b0]
+  movdqu xmm13, oword ptr [rsp + $c0]
+  movdqu xmm14, oword ptr [rsp + $d0]
+  add rsp, 16 * 14
+
+  pop r8
+  pop rdx
+  pop rcx
 end;
 
 function EqualQualityTileCount(tileCount: TFloat): Integer;
@@ -2641,60 +2744,6 @@ begin
   end;
 
   QuickSort(List[0], 0, cDitheringLen - 1, SizeOf(Byte), @PlanCompareLuma, @Plan.LumaPal[0]);
-end;
-
-procedure TTilingEncoder.DitherTileFloydSteinberg(ATile: TTile; out RGBPixels: TRGBPixels);
-var
-  x, y, c, yp, xm, xp: Integer;
-  OldPixel, NewPixel, QuantError: Integer;
-  Pixels: array[-1..cTileWidth, -1..cTileWidth, 0..2{RGB}] of Integer;
-begin
-  for y := 0 to (cTileWidth - 1) do
-  begin
-    for x := 0 to (cTileWidth - 1) do
-      FromRGB(ATile.RGBPixels[y, x], Pixels[y, x, 0], Pixels[y, x, 1], Pixels[y, x, 2]);
-
-    Pixels[y, -1, 0] := Pixels[y, 0, 0];
-    Pixels[y, -1, 1] := Pixels[y, 0, 1];
-    Pixels[y, -1, 2] := Pixels[y, 0, 2];
-    Pixels[y, 8, 0] := Pixels[y, 7, 0];
-    Pixels[y, 8, 1] := Pixels[y, 7, 1];
-    Pixels[y, 8, 2] := Pixels[y, 7, 2];
-  end;
-
-  for x := -1 to cTileWidth do
-  begin
-    Pixels[-1, x, 0] := Pixels[0, x, 0];
-    Pixels[-1, x, 1] := Pixels[0, x, 1];
-    Pixels[-1, x, 2] := Pixels[0, x, 2];
-    Pixels[8, x, 0] := Pixels[7, x, 0];
-    Pixels[8, x, 1] := Pixels[7, x, 1];
-    Pixels[8, x, 2] := Pixels[7, x, 2];
-  end;
-
-  for y := 0 to (cTileWidth - 1) do
-    for x := 0 to (cTileWidth - 1) do
-      for c := 0 to 2 do
-      begin
-        OldPixel := Pixels[y, x, c];
-        NewPixel := Posterize(OldPixel);
-        QuantError := OldPixel - NewPixel;
-
-        yp := y + 1;
-        xp := x + 1;
-        xm := x - 1;
-
-        Pixels[y,  x,  c] := NewPixel;
-
-        Pixels[y,  xp, c] += (QuantError * 7) shr 4;
-        Pixels[yp, xm, c] += (QuantError * 3) shr 4;
-        Pixels[yp, x,  c] += (QuantError * 5) shr 4;
-        Pixels[yp, xp, c] += (QuantError * 1) shr 4;
-      end;
-
-  for y := 0 to (cTileWidth - 1) do
-    for x := 0 to (cTileWidth - 1) do
-      RGBPixels[y, x] := ToRGB(min(255, Pixels[y, x, 0]), min(255, Pixels[y, x, 1]), min(255, Pixels[y, x, 2]));
 end;
 
 procedure TTilingEncoder.ReframeUI(AWidth, AHeight: Integer);
@@ -5153,15 +5202,14 @@ begin
 
         if not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
         begin
-          for i := 0 to cTileDCTSize - 1 do
-            DiffDCT[i] := 2.0 * (DCTs[annQueryPos * cTileDCTSize + i] - 0.5 * DS^.Dataset[Best.bestIdx * cTileDCTSize + i]);
+          // compute an additional tile that would be blended with the current tile (lerp 0.5)
+          ComputeBlending_Asm(@DiffDCT[0], @DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[Best.bestIdx * cTileDCTSize], 2.0, -1.0);
 
+          // search for it in the KNN
           flann_find_nearest_neighbors_index(DS^.FLANN, @DiffDCT[0], 1, @diffIdx, @diffErr, 1, DS^.FLANNParams);
 
-          for i := 0 to cTileDCTSize - 1 do
-            DiffDCT[i] := 0.5 * DS^.Dataset[Best.bestIdx * cTileDCTSize + i] + 0.5 * DS^.Dataset[diffIdx * cTileDCTSize + i];
-
-          Best.bestErr := CompareEuclideanDCTPtr(@DiffDCT[0], @DCTs[annQueryPos * cTileDCTSize]);
+          // compute error from the final interpolation (lerp 0.5)
+          Best.bestErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[Best.bestIdx * cTileDCTSize], 0.5, 0.5);
 
           Best.bestAdditionalIdx := diffIdx;
         end;
