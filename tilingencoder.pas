@@ -1906,6 +1906,7 @@ procedure TTilingEncoder.FrameTiling;
 var
   kf: Integer;
   tidx: Int64;
+  errCml, tileResd: Double;
 begin
   if Length(FKeyFrames) = 0 then
     Exit;
@@ -1924,9 +1925,17 @@ begin
   try
     ProcThreadPool.DoParallelLocalProc(@DoKFPal, 0, FPaletteCount * Length(FKeyFrames) - 1, Pointer(0));
   finally
+    errCml := 0.0;
     for kf := 0 to high(FKeyFrames) do
+    begin
+      errCml += FKeyFrames[kf].FTErrCml;
       SetLength(FKeyFrames[kf].TileDS, 0);
+    end;
   end;
+
+  tileResd := Sqrt(errCml / (FTileMapSize * Length(FFrames)));
+  WriteLn;
+  WriteLn('All:', Length(FFrames):8, #9'ResidualErr: ', (tileResd * FTileMapSize * Length(FFrames)):12:3, ' (global)   ', tileResd:12:6, ' (by tile)');
 
   ProgressRedraw(1);
 end;
