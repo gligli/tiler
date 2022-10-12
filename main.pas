@@ -51,7 +51,6 @@ type
     Label13: TLabel;
     Label14: TLabel;
     Label15: TLabel;
-    Label17: TLabel;
     Label18: TLabel;
     Label2: TLabel;
     Label3: TLabel;
@@ -76,7 +75,6 @@ type
     sdGTS: TSaveDialog;
     seFTBlendThres: TFloatSpinEdit;
     seQbTiles: TFloatSpinEdit;
-    seFTBlend: TSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -295,7 +293,6 @@ begin
      edReload.Text := FTilingEncoder.ReloadTilesetFileName;
 
      chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
-     seFTBlend.Value := FTilingEncoder.FrameTilingBlendingSize;
      seFTBlendThres.Value := FTilingEncoder.FrameTilingBlendingThreshold;
 
      seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
@@ -404,7 +401,6 @@ begin
   edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 48, 2), 12);
   cbxScaling.ItemIndex := 4;
-  seFTBlend.Value := 7;
 
   FTilingEncoder.Test;
 
@@ -418,7 +414,6 @@ begin
   edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);
   cbxScaling.ItemIndex := 2;
-  seFTBlend.Value := 3;
 
   FTilingEncoder.Test;
 
@@ -626,7 +621,6 @@ begin
   FTilingEncoder.ReloadTilesetFileName := edReload.Text;
 
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
-  FTilingEncoder.FrameTilingBlendingSize := seFTBlend.Value;
   FTilingEncoder.FrameTilingBlendingThreshold := seFTBlendThres.Value;
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;

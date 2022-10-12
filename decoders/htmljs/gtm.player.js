@@ -16,21 +16,25 @@ const GTMHeader = {
 // Commands Description:
 // =====================
 //
-// SkipBlock:		  data -> none; commandBits -> skip count - 1 (10 bits)
-// ShortTileIdx:	  data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LongTileIdx:		  data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LoadPalette:		  data -> palette index (8 bits); palette format (8 bits) (0: RGBA32); RGBA bytes (32bits); commandBits -> none
-// ShortBlendTileIdx: data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LongLendTileIdx:	  data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// SkipBlock:               data -> none; commandBits -> skip count - 1 (10 bits)
+// ShortTileIdx:            data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LongTileIdx:             data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LoadPalette:             data -> palette index (8 bits); palette format (8 bits) (0: RGBA32); RGBA bytes (32bits); commandBits -> none
+// ShortBlendTileIdx:       data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
+//                            commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LongLendTileIdx:         data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
+//                            commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// ShortAdditionalTileIdx:  data -> tile index (16 bits) * 2; commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LongAdditionalTileIdx:   data -> tile index (32 bits) * 2; commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
 //
 // (insert new commands here...)
 //
-// FrameEnd:		  data -> none; commandBits bit 0 -> keyframe end
-// TileSet:			  data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
-// SetDimensions:	  data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
-// ExtendedCommand:	  data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
+// FrameEnd:                data -> none; commandBits bit 0 -> keyframe end
+// TileSet:                 data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
+// SetDimensions:           data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
+// ExtendedCommand:         data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
 //
-// ReservedArea:	  reserving the MSB for future use (do not use for new commands)
+// ReservedArea:            reserving the MSB for future use (do not use for new commands)
 
 const GTMCommand = {
 	'SkipBlock' : 0,
@@ -39,6 +43,8 @@ const GTMCommand = {
 	'LoadPalette' : 3,
 	'ShortBlendTileIdx' : 4,
 	'LongBlendTileIdx' : 5,
+    'ShortAdditionalTileIdx' : 9,
+    'LongAdditionalTileIdx' : 10,
 	
 	'FrameEnd' : 28,
 	'TileSet' : 29,
@@ -359,6 +365,40 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 	gtmTMPos++;
 }
 
+function drawAdditionalTilemapItem(idx, idx2, attrs) {
+	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
+	let tOff = (attrs & 3) * CTileWidth * CTileWidth;
+	let tile = gtmTiles[idx];
+	let tile2 = gtmTiles[idx2];
+	let palR = gtmPaletteR[palIdx];
+	let palG = gtmPaletteG[palIdx];
+	let palB = gtmPaletteB[palIdx];
+	let palA = gtmPaletteA[palIdx];
+	let x = (gtmTMPos % gtmWidth) * CTileWidth;
+	let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
+	let p = (y * gtmWidth * CTileWidth + x) * 4;
+	var data = gtmTMImageData.data;
+	
+	for (let ty = 0; ty < CTileWidth; ty++) {
+		for (let tx = 0; tx < CTileWidth; tx++) {
+			let v = tile[tOff];
+			let v2 = tile2[tOff];
+
+			data[p++] = (palR[v] + palR[v2]) >> 1;
+			data[p++] = (palG[v] + palG[v2]) >> 1;
+			data[p++] = (palB[v] + palB[v2]) >> 1;
+			data[p++] = (palA[v] + palA[v2]) >> 1;
+
+			++tOff;
+		}
+		p += (gtmWidth - 1) * CTileWidth * 4;
+	}
+	
+	gtmTMIndexes[gtmTMDblBuff][gtmTMPos] = idx;
+	gtmTMAttrs[gtmTMDblBuff][gtmTMPos] = attrs;
+	gtmTMPos++;
+}
+
 function skipBlock(skipCount) {
 	for(let s = 0; s < skipCount; s++)
 	{
@@ -492,17 +532,29 @@ function decodeFrame() {
 				break;
 				
 			case GTMCommand.ShortBlendTileIdx:
-				let idxW = readWord()
-				let blendW = readWord()
+				let idxW = readWord();
+				let blendW = readWord();
 				drawBlendedTilemapItem(idxW, cmd[1], blendW);
 				break;
 				
 			case GTMCommand.LongBlendTileIdx:
-				let idxDW = readDWord()
-				let blendDW = readWord()
+				let idxDW = readDWord();
+				let blendDW = readWord();
 				drawBlendedTilemapItem(idxDW, cmd[1], blendDW);
 				break;
 				
+			case GTMCommand.ShortAdditionalTileIdx:
+				let idx1W = readWord();
+				let idx2W = readWord();
+				drawAdditionalTilemapItem(idx1W, idx2W, cmd[1]);
+				break;
+
+			case GTMCommand.LongAdditionalTileIdx:
+				let idx1DW = readDWord();
+				let idx2DW = readDWord();
+				drawAdditionalTilemapItem(idx1DW, idx2DW, cmd[1]);
+				break;
+
 			default:
 				console.error('Undecoded command @' + gtmDataPos + ': ' + cmd + '\n');
 				break;
