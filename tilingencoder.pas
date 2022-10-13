@@ -3288,15 +3288,16 @@ var
     i, sx, sy, BICOClusterCount, clusterIdx, clusterLineCount, lineIdx, clusterLineIdx: Integer;
     q00, q01, q10, q11: Integer;
     tilePos: Int64;
-    err, best, v: Double;
+    speedup, best, v: Double;
     Frame: TFrame;
     BICO: PBICO;
-    ANN: PANNkdtree;
-    Dataset: TDoubleDynArray2;
+    FLANN: flann_index_t;
+    FLANNParams: TFLANNParameters;
+    Dataset: TDoubleDynArray;
     BICOCentroids, BICOWeights: TDoubleDynArray;
-    ANNClusters: TIntegerDynArray;
-    ANNDataset: array of PANNFloat;
-    ToMerge: TDoubleDynArray2;
+    FLANNClusters: TIntegerDynArray;
+    FLANNErrors: TDoubleDynArray;
+    ToMerge: array of PDouble;
     ToMergeIdxs: TInt64DynArray;
     HMirrors, VMirrors: TBooleanDynArray;
   begin
@@ -3309,7 +3310,7 @@ var
     try
       BICO := bico_create(cTileDCTSize, FTileMapSize, ClustersPerFrame, 1, ClustersPerFrame, $42381337);
       try
-        SetLength(Dataset, FTileMapSize, cTileDCTSize);
+        SetLength(Dataset, FTileMapSize * cTileDCTSize);
         SetLength(HMirrors, FTileMapSize);
         SetLength(VMirrors, FTileMapSize);
 
@@ -3325,10 +3326,10 @@ var
           HMirrors[i] := q00 + q10 < q01 + q11;
           VMirrors[i] := q00 + q01 < q10 + q11;
 
-          ComputeTilePsyVisFeatures(Frame.FrameTiles[i]^, False, False, False, HMirrors[i], VMirrors[i], -1, nil, @Dataset[i, 0]);
+          ComputeTilePsyVisFeatures(Frame.FrameTiles[i]^, False, False, False, HMirrors[i], VMirrors[i], -1, nil, @Dataset[i * cTileDCTSize]);
 
           // insert line into BICO
-          bico_insert_line(BICO, @Dataset[i, 0], 1);
+          bico_insert_line(BICO, @Dataset[i * cTileDCTSize], 1);
         end;
 
         // get BICO results
@@ -3343,20 +3344,22 @@ var
 
       BICOClusterCount := Max(1, BICOClusterCount); // can't have 0 clusters
 
-      // use ANN to compute cluster indexes
+      // use FLANN to compute cluster indexes
 
-      SetLength(ANNDataset, BICOClusterCount);
-      SetLength(ANNClusters, FTileMapSize);
+      SetLength(FLANNClusters, FTileMapSize);
+      SetLength(FLANNErrors, FTileMapSize);
 
-      for i := 0 to BICOClusterCount - 1 do
-        ANNDataset[i] := @BICOCentroids[i * cTileDCTSize];
+      FLANNParams := CDefaultFLANNParameters;
+      FLANNParams.checks := cTileDCTSize;
+      FLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
+      FLANNParams.sorted := 0;
+      FLANNParams.max_neighbors := 1;
 
-      ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_STD);
+      FLANN := flann_build_index_double(@BICOCentroids[0], BICOClusterCount, cTileDCTSize, @speedup, @FLANNParams);
       try
-        for i := 0 to FTileMapSize - 1 do
-          ANNClusters[i] := ann_kdtree_search(ANN, @Dataset[i, 0], 0.0, @err);
+        flann_find_nearest_neighbors_index_double(FLANN, @Dataset[0], FTileMapSize, @FLANNClusters[0], @FLANNErrors[0], 1, @FLANNParams);
       finally
-        ann_kdtree_destroy(ANN);
+        flann_free_index_double(FLANN, @FLANNParams);
       end;
 
       // build a list of this centroid tiles
@@ -3369,9 +3372,9 @@ var
       begin
         clusterLineCount := 0;
         for lineIdx := 0 to FTileMapSize - 1 do
-          if ANNClusters[lineIdx] = clusterIdx then
+          if FLANNClusters[lineIdx] = clusterIdx then
           begin
-            ToMerge[clusterLineCount] := Dataset[lineIdx];
+            ToMerge[clusterLineCount] := @Dataset[lineIdx * cTileDCTSize];
             ToMergeIdxs[clusterLineCount] := lineIdx;
             Inc(clusterLineCount);
           end;
@@ -3386,7 +3389,7 @@ var
           clusterLineIdx := -1;
           for i := 0 to clusterLineCount - 1 do
           begin
-            v := CompareEuclidean(@ToMerge[i, 0], ANNDataset[clusterIdx], cTileDCTSize);
+            v := CompareEuclidean(ToMerge[i], @Dataset[clusterIdx * cTileDCTSize], cTileDCTSize);
             if v < best then
             begin
               best := v;
@@ -3432,7 +3435,7 @@ begin
   // free memory from a prev run
   TTile.Array1DDispose(FTiles);
 
-  ClustersPerFrame := Max(1 , trunc(FGlobalTilingTileCount / Length(FFrames) * cLoadPerFrameTileCountMultiplier));
+  ClustersPerFrame := EnsureRange(trunc(FGlobalTilingTileCount / Length(FFrames) * cLoadPerFrameTileCountMultiplier), 1, FTileMapSize);
 
   tileCnt := Length(FFrames) * ClustersPerFrame;
 
@@ -5417,21 +5420,25 @@ procedure TTilingEncoder.DoGlobalKMeans(AIndex: PtrInt; AData: Pointer; AItem: T
 var
   i, bin, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
   cnt, tidx: Int64;
-  err: Double;
+  speedup: Double;
   v, best: TFloat;
 
   KMBin: PKModesBin;
   BICO: PBICO;
   ANN: PANNkdtree;
   Yakmo: PYakmo;
+  FLANN: flann_index_t;
+  FLANNParams: TFLANNParameters;
 
   TileIndices: TInt64DynArray;
-  Dataset: TDoubleDynArray2;
-  YakmoCentroids: TDoubleDynArray2;
-  ANNClusters, YakmoClusters: TIntegerDynArray;
+  Dataset: TDoubleDynArray;
   BICOCentroids, BICOWeights: TDoubleDynArray;
-  ANNDataset: array of PANNFloat;
-  ToMerge: TDoubleDynArray2;
+  FLANNClusters: TIntegerDynArray;
+  FLANNErrors: TDoubleDynArray;
+  YakmoDataset: array of PDouble;
+  YakmoCentroids: TDoubleDynArray2;
+  YakmoClusters: TIntegerDynArray;
+  ToMerge: array of PDouble;
   ToMergeIdxs: TInt64DynArray;
 begin
   KMBin := @PKModesBinArray(AData)^[AIndex];
@@ -5447,7 +5454,7 @@ begin
     // parse bin dataset
 
     SetLength(TileIndices, DSLen);
-    SetLength(Dataset, DSLen, cTileDCTSize);
+    SetLength(Dataset, DSLen * cTileDCTSize);
     cnt := 0;
     for tidx := 0 to High(FTiles) do
     begin
@@ -5456,10 +5463,10 @@ begin
       if bin <> AIndex then
         Continue;
 
-      ComputeTilePsyVisFeatures(FTiles[tidx]^, False, False, False, False, False, -1, nil, @Dataset[cnt, 0]);
+      ComputeTilePsyVisFeatures(FTiles[tidx]^, False, False, False, False, False, -1, nil, @Dataset[cnt * cTileDCTSize]);
 
       // insert line into BICO
-      bico_insert_line(BICO, @Dataset[cnt, 0], 1.0);
+      bico_insert_line(BICO, @Dataset[cnt * cTileDCTSize], 1.0);
 
       TileIndices[cnt] := tidx;
       Inc(cnt);
@@ -5482,23 +5489,29 @@ begin
   if BICOClusterCount <= 0 then
     Exit;
 
-  // use ANN to compute cluster indexes
+  // use FLANN to compute cluster indexes
 
-  SetLength(ANNDataset, BICOClusterCount);
-  SetLength(ANNClusters, DSLen);
+  SetLength(FLANNClusters, FTileMapSize);
+  SetLength(FLANNErrors, FTileMapSize);
 
-  for clusterIdx := 0 to BICOClusterCount - 1 do
-    ANNDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
+  FLANNParams := CDefaultFLANNParameters;
+  FLANNParams.checks := cTileDCTSize;
+  FLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
+  FLANNParams.sorted := 0;
+  FLANNParams.max_neighbors := 1;
 
-  ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cTileDCTSize, 8, ANN_KD_STD);
+  FLANN := flann_build_index_double(@BICOCentroids[0], BICOClusterCount, cTileDCTSize, @speedup, @FLANNParams);
   try
-    for i := 0 to DSLen - 1 do
-      ANNClusters[i] := ann_kdtree_search(ANN, @Dataset[i, 0], 0.0, @err);
+    flann_find_nearest_neighbors_index_double(FLANN, @Dataset[0], DSLen, @FLANNClusters[0], @FLANNErrors[0], 1, @FLANNParams);
   finally
-    ann_kdtree_destroy(ANN);
+    flann_free_index_double(FLANN, @FLANNParams);
   end;
 
   // use Yakmo to extract final centroids
+
+  SetLength(YakmoDataset, BICOClusterCount);
+  for clusterIdx := 0 to BICOClusterCount - 1 do
+    YakmoDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
 
   SetLength(YakmoClusters, BICOClusterCount);
   SetLength(YakmoCentroids, KMBin^.ClusterCount, cTileDCTSize);
@@ -5507,7 +5520,7 @@ begin
   begin
     Yakmo := yakmo_create(KMBin^.ClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
     try
-      yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, @ANNDataset[0]);
+      yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, @YakmoDataset[0]);
       yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
       yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
     finally
@@ -5534,9 +5547,9 @@ begin
     for yakmoDatasetIdx := 0 to High(YakmoClusters) do
       if YakmoClusters[yakmoDatasetIdx] = clusterIdx then
         for lineIdx := 0 to DSLen - 1 do
-          if ANNClusters[lineIdx] = yakmoDatasetIdx then
+          if FLANNClusters[lineIdx] = yakmoDatasetIdx then
           begin
-            ToMerge[clusterLineCount] := Dataset[lineIdx];
+            ToMerge[clusterLineCount] := @Dataset[lineIdx * cTileDCTSize];
             ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
             Inc(clusterLineCount);
           end;
@@ -5551,7 +5564,7 @@ begin
        clusterLineIdx := -1;
        for i := 0 to clusterLineCount - 1 do
        begin
-         v := CompareEuclidean(@ToMerge[i, 0], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
+         v := CompareEuclidean(ToMerge[i], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
          if v < best then
          begin
            best := v;

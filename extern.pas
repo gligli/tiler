@@ -157,7 +157,10 @@ procedure ann_kdtree_pri_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PAN
 procedure DEFAULT_FLANN_PARAMETERS; cdecl; external 'flann.dll';
 function flann_build_index(dataset: PSingle; rows, cols: Integer; speedup: PSingle; flann_params: PFLANNParameters): flann_index_t; cdecl; external 'flann.dll';
 function flann_free_index(index_id: flann_index_t; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
-function flann_find_nearest_neighbors_index(index_id: flann_index_t; testset: PFloat; trows: Integer; indices: PInteger; dists: PFloat; nn: Integer; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
+function flann_find_nearest_neighbors_index(index_id: flann_index_t; testset: PSingle; trows: Integer; indices: PInteger; dists: PSingle; nn: Integer; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
+function flann_build_index_double(dataset: PDouble; rows, cols: Integer; speedup: PDouble; flann_params: PFLANNParameters): flann_index_t; cdecl; external 'flann.dll';
+function flann_free_index_double(index_id: flann_index_t; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
+function flann_find_nearest_neighbors_index_double(index_id: flann_index_t; testset: PDouble; trows: Integer; indices: PInteger; dists: PDouble; nn: Integer; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
 
 
 function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
