@@ -23,7 +23,6 @@ const
   cBitsPerComp = 8;
   cFTQWeighting = False;
   cYakmoMaxIterations = 300;
-  cLoadPerFrameTileCountMultiplier = 10;
   cGlobalTilingCoresetMultiplier = 1.5;
 
 {$if false}
@@ -437,6 +436,7 @@ type
     FFrameCountSetting: Integer;
     FScaling: TFloat;
     FEncoderGammaValue: TFloat;
+    FLoadPerFrameTileCountMultiplier: TFloat;
     FPaletteSize: Integer;
     FPaletteCount: Integer;
     FQuantizerUseYakmo: Boolean;
@@ -484,6 +484,7 @@ type
     procedure SetFramesPerSecond(AValue: Double);
     procedure SetFrameTilingBlendingThreshold(AValue: TFloat);
     procedure SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
+    procedure SetLoadPerFrameTileCountMultiplier(AValue: TFloat);
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
     procedure SetQuantizerDennisLeeBitsPerComponent(AValue: Integer);
@@ -627,6 +628,7 @@ type
     property FrameCountSetting: Integer read FFrameCountSetting write SetFrameCountSetting;
     property Scaling: TFloat read FScaling write SetScaling;
     property EncoderGammaValue: TFloat read FEncoderGammaValue write SetEncoderGammaValue;
+    property LoadPerFrameTileCountMultiplier: TFloat read FLoadPerFrameTileCountMultiplier write SetLoadPerFrameTileCountMultiplier;
     property PaletteSize: Integer read FPaletteSize write SetPaletteSize;
     property PaletteCount: Integer read FPaletteCount write SetPaletteCount;
     property QuantizerUseYakmo: Boolean read FQuantizerUseYakmo write FQuantizerUseYakmo;
@@ -3463,7 +3465,7 @@ begin
   // free memory from a prev run
   TTile.Array1DDispose(FTiles);
 
-  ClustersPerFrame := EnsureRange(trunc(FGlobalTilingTileCount / Length(FFrames) * cLoadPerFrameTileCountMultiplier), 1, FTileMapSize);
+  ClustersPerFrame := EnsureRange(trunc(FGlobalTilingTileCount / Length(FFrames) * FLoadPerFrameTileCountMultiplier), 1, FTileMapSize);
 
   tileCnt := Length(FFrames) * ClustersPerFrame;
 
@@ -3670,6 +3672,12 @@ begin
 
   RawTileCount := Length(FFrames) * FTileMapSize;
   FGlobalTilingTileCount := min(round(AValue * EqualQualityTileCount(RawTileCount)), RawTileCount);
+end;
+
+procedure TTilingEncoder.SetLoadPerFrameTileCountMultiplier(AValue: TFloat);
+begin
+ if FLoadPerFrameTileCountMultiplier = AValue then Exit;
+ FLoadPerFrameTileCountMultiplier := Max(1.0, AValue);
 end;
 
 procedure TTilingEncoder.SetPaletteCount(AValue: Integer);
@@ -4749,6 +4757,7 @@ begin
     ini.WriteInteger('Load', 'StartFrame', StartFrame);
     ini.WriteInteger('Load', 'FrameCount', FrameCountSetting);
     ini.WriteFloat('Load', 'Scaling', RoundTo(Double(Scaling), -7));
+    ini.WriteFloat('Load', 'LoadPerFrameTileCountMultiplier', RoundTo(Double(LoadPerFrameTileCountMultiplier), -7));
 
     ini.WriteInteger('Dither', 'PaletteSize', PaletteSize);
     ini.WriteInteger('Dither', 'PaletteCount', PaletteCount);
@@ -4788,6 +4797,7 @@ begin
     StartFrame := ini.ReadInteger('Load', 'StartFrame', 0);
     FrameCountSetting := ini.ReadInteger('Load', 'FrameCount', 0);
     Scaling := ini.ReadFloat('Load', 'Scaling', 1.0);
+    LoadPerFrameTileCountMultiplier := ini.ReadFloat('Load', 'LoadPerFrameTileCountMultiplier', 10.0);
 
     PaletteSize := ini.ReadInteger('Dither', 'PaletteSize', 128);
     PaletteCount := ini.ReadInteger('Dither', 'PaletteCount', 16);
@@ -6370,6 +6380,7 @@ begin
   FRenderPage := rpOutput;
   ReframeUI(80, 45);
   FFramesPerSecond := 24.0;
+  FLoadPerFrameTileCountMultiplier := 10.0;
 end;
 
 destructor TTilingEncoder.Destroy;

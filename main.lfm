@@ -168,13 +168,13 @@ object MainForm: TMainForm
       object seMaxTiles: TSpinEdit
         Left = 328
         Height = 23
-        Top = 120
+        Top = 152
         Width = 71
         Increment = 1000
         MaxValue = 1000000000
         OnChange = seMaxTilesEditingDone
         OnEditingDone = seMaxTilesEditingDone
-        TabOrder = 12
+        TabOrder = 13
       end
       object edReload: TEdit
         Left = 88
@@ -196,13 +196,13 @@ object MainForm: TMainForm
       object seTempoSmoo: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 274
+        Top = 306
         Width = 71
         DecimalPlaces = 5
         Increment = 0.05
         MaxValue = 1
         OnChange = UpdateGUI
-        TabOrder = 18
+        TabOrder = 19
         Value = 0.2
       end
       object seStartFrame: TSpinEdit
@@ -217,18 +217,18 @@ object MainForm: TMainForm
       object seAddlTiles: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 250
+        Top = 282
         Width = 71
         DecimalPlaces = 5
         Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 17
+        TabOrder = 18
       end
       object cbxYilMix: TComboBox
         Left = 328
         Height = 23
-        Top = 214
+        Top = 246
         Width = 71
         ItemHeight = 15
         ItemIndex = 2
@@ -240,7 +240,7 @@ object MainForm: TMainForm
           '16'
         )
         OnChange = UpdateGUI
-        TabOrder = 16
+        TabOrder = 17
         Text = '4'
       end
       object seFrameCount: TSpinEdit
@@ -264,13 +264,13 @@ object MainForm: TMainForm
       object chkUseTK: TCheckBox
         Left = 8
         Height = 19
-        Top = 368
+        Top = 400
         Width = 254
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
         Checked = True
         OnChange = UpdateGUI
         State = cbChecked
-        TabOrder = 22
+        TabOrder = 23
       end
       object Label13: TLabel
         Left = 656
@@ -283,7 +283,7 @@ object MainForm: TMainForm
       object Label11: TLabel
         Left = 8
         Height = 15
-        Top = 218
+        Top = 250
         Width = 160
         Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
@@ -291,7 +291,7 @@ object MainForm: TMainForm
       object Label9: TLabel
         Left = 8
         Height = 15
-        Top = 277
+        Top = 309
         Width = 229
         Caption = 'Temporal smoothing strength (PsyV based)'
         ParentColor = False
@@ -307,7 +307,7 @@ object MainForm: TMainForm
       object Label7: TLabel
         Left = 8
         Height = 15
-        Top = 253
+        Top = 285
         Width = 308
         Caption = 'Smoothing additional tiles threshold (0: none, PSyV based)'
         ParentColor = False
@@ -339,7 +339,7 @@ object MainForm: TMainForm
       object Label2: TLabel
         Left = 8
         Height = 15
-        Top = 122
+        Top = 154
         Width = 145
         Caption = 'Tile limit (all; quality based)'
         ParentColor = False
@@ -347,25 +347,25 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 350
+        Top = 382
         Width = 170
         Caption = 'Dithering gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 23
+        TabOrder = 24
       end
       object chkFTGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 368
+        Top = 400
         Width = 184
         Caption = 'Frame tiling gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 24
+        TabOrder = 25
       end
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 313
+        Top = 345
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -373,38 +373,38 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 310
-        Width = 71
-        Increment = 0.1
-        MaxValue = 10
-        MinValue = 0.1
-        OnChange = UpdateGUI
-        TabOrder = 19
-        Value = 2
-      end
-      object seVisGamma: TFloatSpinEdit
-        Left = 400
-        Height = 23
-        Top = 310
+        Top = 342
         Width = 71
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
         TabOrder = 20
+        Value = 2
+      end
+      object seVisGamma: TFloatSpinEdit
+        Left = 400
+        Height = 23
+        Top = 342
+        Width = 71
+        Increment = 0.1
+        MaxValue = 10
+        MinValue = 0.1
+        OnChange = UpdateGUI
+        TabOrder = 21
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
         Left = 400
         Height = 23
-        Top = 120
+        Top = 152
         Width = 71
         Increment = 0.1
         MaxValue = 100
         MinValue = 0.1
         OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
-        TabOrder = 13
+        TabOrder = 14
         Value = 2
       end
       object btnGTM: TButton
@@ -428,7 +428,7 @@ object MainForm: TMainForm
       object Label12: TLabel
         Left = 8
         Height = 15
-        Top = 100
+        Top = 132
         Width = 222
         Caption = 'Palettes layout (palette count; palette size)'
         ParentColor = False
@@ -436,7 +436,7 @@ object MainForm: TMainForm
       object cbxPalSize: TComboBox
         Left = 400
         Height = 23
-        Top = 96
+        Top = 128
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -450,13 +450,13 @@ object MainForm: TMainForm
           '64'
         )
         OnChange = UpdateGUI
-        TabOrder = 11
+        TabOrder = 12
         Text = '16'
       end
       object cbxPalCount: TComboBox
         Left = 328
         Height = 23
-        Top = 96
+        Top = 128
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -473,13 +473,13 @@ object MainForm: TMainForm
           '256'
         )
         OnChange = UpdateGUI
-        TabOrder = 10
+        TabOrder = 11
         Text = '128'
       end
       object Label14: TLabel
         Left = 8
         Height = 15
-        Top = 194
+        Top = 226
         Width = 218
         Caption = 'Dennis Lee v3 output bits per component'
         ParentColor = False
@@ -487,7 +487,7 @@ object MainForm: TMainForm
       object cbxDLBPC: TComboBox
         Left = 328
         Height = 23
-        Top = 190
+        Top = 222
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -503,7 +503,7 @@ object MainForm: TMainForm
         )
         OnChange = UpdateGUI
         Style = csDropDownList
-        TabOrder = 15
+        TabOrder = 16
         Text = '7'
       end
       object cbxScaling: TComboBox
@@ -541,18 +541,18 @@ object MainForm: TMainForm
       object chkUseKMQuant: TCheckBox
         Left = 8
         Height = 19
-        Top = 350
+        Top = 382
         Width = 294
         Caption = 'Use Yakmo KMeans as quantizer (not Dennis Lee v3)'
         Checked = True
         OnChange = UpdateGUI
         State = cbChecked
-        TabOrder = 21
+        TabOrder = 22
       end
       object Label18: TLabel
         Left = 8
         Height = 15
-        Top = 159
+        Top = 191
         Width = 237
         Caption = 'Frame tiling blending threshold (PSyV based)'
         ParentColor = False
@@ -560,14 +560,34 @@ object MainForm: TMainForm
       object seFTBlendThres: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 156
+        Top = 188
         Width = 71
         DecimalPlaces = 5
         Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 14
+        TabOrder = 15
         Value = 1
+      end
+      object Label16: TLabel
+        Left = 8
+        Height = 15
+        Top = 95
+        Width = 268
+        Caption = 'Load time tile count multiplier (higher: more RAM)'
+        ParentColor = False
+      end
+      object seLoadTCMul: TFloatSpinEdit
+        Left = 328
+        Height = 23
+        Top = 92
+        Width = 71
+        MaxValue = 100
+        MinValue = 1
+        OnChange = seQbTilesEditingDone
+        OnEditingDone = seQbTilesEditingDone
+        TabOrder = 10
+        Value = 10
       end
     end
     object tsInput: TTabSheet

@@ -51,6 +51,7 @@ type
     Label13: TLabel;
     Label14: TLabel;
     Label15: TLabel;
+    Label16: TLabel;
     Label18: TLabel;
     Label2: TLabel;
     Label3: TLabel;
@@ -75,6 +76,7 @@ type
     sdGTS: TSaveDialog;
     seFTBlendThres: TFloatSpinEdit;
     seQbTiles: TFloatSpinEdit;
+    seLoadTCMul: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -279,6 +281,7 @@ begin
      seFrameCount.Value := FTilingEncoder.FrameCountSetting;
      cbxScaling.Text := FloatToStr(FTilingEncoder.Scaling);
 
+     seLoadTCMul.Value := FTilingEncoder.LoadPerFrameTileCountMultiplier;
      cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
      cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
      chkUseKMQuant.Checked := FTilingEncoder.QuantizerUseYakmo;
@@ -591,6 +594,7 @@ begin
   FTilingEncoder.PaletteCount := StrToIntDef(cbxPalCount.Text, 1);
   FTilingEncoder.PaletteSize := StrToIntDef(cbxPalSize.Text, 2);
   FTilingEncoder.Scaling := StrToFloatDef(cbxScaling.Text, 1.0, InvariantFormatSettings);
+  FTilingEncoder.LoadPerFrameTileCountMultiplier := seLoadTCMul.Value;
 
   FTilingEncoder.EncoderGammaValue := seEncGamma.Value;
   FTilingEncoder.RenderPlaying := chkPlay.Checked;
