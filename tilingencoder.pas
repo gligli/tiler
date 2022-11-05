@@ -2970,7 +2970,7 @@ var
               begin
                 for tx := 0 to cTileWidth - 1 do
                 begin
-                  FromRGB(FFrames[i].FrameTiles[k]^.RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
+                  FromRGB(GTile^.RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
                   Inc(j, 3);
                 end;
                 Inc(j, (tileFx - 1) * cTileWidth * 3);
