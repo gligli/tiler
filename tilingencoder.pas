@@ -794,6 +794,15 @@ begin
   Result := x + (r - x) / alpha;
 end;
 
+function Posterize(v, bpc: Integer): Byte; inline;
+var
+  cvt: Integer;
+begin
+  cvt := (1 shl bpc) - 1;
+
+  Result := min(255, Round(Round((v * cvt) / 255.0) * 255.0 / cvt));
+end;
+
 function CompareEuclideanDCTPtr(pa, pb: PFloat): TFloat; overload;
 var
   i: Integer;
@@ -2912,7 +2921,7 @@ var
   var
     dlCnt: Integer;
     dlInput: PByte;
-    i, j, sy, sx, dx, dy, ty, tx, k, tileCnt, tileFx, tileFy, best: Integer;
+    i, j, sy, sx, dx, dy, ty, tx, k, tileCnt, tileFx, tileFy, best, prevCol, col, uniqueColCount, dl3ColCount, bestUniqueColCount, bestDl3ColCount: Integer;
     dlPal: TDLUserPal;
     GTile: PTile;
     CMItem: PCountIndex;
@@ -2988,24 +2997,115 @@ var
           end;
       end;
 
+
+      bestUniqueColCount := -1;
+      bestDl3ColCount := -1;
+      dl3ColCount := FPaletteSize;
+      for i := 0 to dl3ColCount - 1 do
+      begin
+        New(CMItem);
+        CMItem^.Count := 0;
+        CMPal.Add(CMItem);
+      end;
+
+      repeat
+        // call Dennis Lee v3 method
+
+        dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, dl3ColCount, max(6, DLv3BPC), @dlPal);
+
+        // retrieve palette data
+
+        for i := 0 to dl3ColCount - 1 do
+        begin
+          CMItem := CMPal[i];
+          CMItem^.R := Posterize(dlPal[0][i], DLv3BPC);
+          CMItem^.G := Posterize(dlPal[1][i], DLv3BPC);
+          CMItem^.B := Posterize(dlPal[2][i], DLv3BPC);
+          CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
+          col := ToRGB(CMItem^.R, CMItem^.G, CMItem^.B);
+          RGBToHSV(col, CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
+        end;
+
+        // count unique colors
+
+        CMPal.Sort(@CompareCMULHS);
+        uniqueColCount := dl3ColCount;
+        prevCol := -1;
+        for i := 0 to dl3ColCount - 1 do
+        begin
+          CMItem := CMPal[i];
+          col := ToRGB(CMItem^.R, CMItem^.G, CMItem^.B);
+          if col = prevCol then
+            Dec(uniqueColCount);
+          prevCol := col;
+        end;
+
+        Inc(dl3ColCount);
+        New(CMItem);
+        CMItem^.Count := 0;
+        CMPal.Add(CMItem);
+
+        if (uniqueColCount > bestUniqueColCount) and (uniqueColCount <= FPaletteSize) then
+        begin
+          bestUniqueColCount := uniqueColCount;
+          bestDl3ColCount := dl3ColCount;
+        end;
+
+      until (bestUniqueColCount = FPaletteSize) or (dl3ColCount >= high(Byte));
+
       // call Dennis Lee v3 method
 
-      dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, FPaletteSize, DLv3BPC, @dlPal);
+      dl3quant(dlInput, tileFx * cTileWidth, tileFy * cTileWidth, bestDl3ColCount, max(6, DLv3BPC), @dlPal);
+
+      // retrieve palette data
+
+      for i := 0 to bestDl3ColCount - 1 do
+      begin
+        CMItem := CMPal[i];
+        CMItem^.R := Posterize(dlPal[0][i], DLv3BPC);
+        CMItem^.G := Posterize(dlPal[1][i], DLv3BPC);
+        CMItem^.B := Posterize(dlPal[2][i], DLv3BPC);
+        CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
+        col := ToRGB(CMItem^.R, CMItem^.G, CMItem^.B);
+        RGBToHSV(col, CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
+      end;
+
+      // remove excess palette items
+
+      for i := bestDl3ColCount to CMPal.Count - 1 do
+      begin
+        CMItem := CMPal[i];
+        Dispose(CMItem);
+        CMPal[i] := nil
+      end;
+      CMPal.Pack;
+
+      // prune duplicate colors
+
+      CMPal.Sort(@CompareCMULHS);
+      prevCol := -1;
+      for i := 0 to bestDl3ColCount - 1 do
+      begin
+        CMItem := CMPal[i];
+        col := ToRGB(CMItem^.R, CMItem^.G, CMItem^.B);
+        if col = prevCol then
+        begin
+          Dispose(CMPal[i]);
+          CMPal[i] := nil;
+        end;
+        prevCol := col;
+      end;
+      CMPal.Pack;
+
+      for i := CMPal.Count to FPaletteSize - 1 do
+      begin
+        New(CMItem);
+        FillChar(CMItem^, SizeOf(TCountIndex), 0);
+        CMPal.Add(CMItem);
+      end;
+
     finally
       Freemem(dlInput);
-    end;
-
-    // retrieve palette data
-
-    CMPal.Count := FPaletteSize;
-    for i := 0 to FPaletteSize - 1 do
-    begin
-      New(CMItem);
-      CMItem^.Count := 0;
-      CMItem^.R := dlPal[0][i]; CMItem^.G := dlPal[1][i]; CMItem^.B := dlPal[2][i];
-      CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
-      RGBToHSV(ToRGB(CMItem^.R, CMItem^.G, CMItem^.B), CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
-      CMPal[i] := CMItem;
     end;
   end;
 
@@ -5088,10 +5188,10 @@ begin
           HMirrors[annQueryPos] := q00 + q10 < q01 + q11;
           VMirrors[annQueryPos] := q00 + q01 < q10 + q11;
 
-          ComputeTilePsyVisFeatures(T^, False, False, cFTQWeighting, HMirrors[annQueryPos], VMirrors[annQueryPos], False, AFTGamma, nil, @DCTs[annQueryPos * cTileDCTSize]);
+          ComputeTilePsyVisFeatures(T^, False, False, cFTQWeighting, HMirrors[annQueryPos], VMirrors[annQueryPos], False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
 
           if HMirrors[annQueryPos] or VMirrors[annQueryPos] then
-            ComputeTilePsyVisFeatures(T^, False, False, cFTQWeighting, False, False, False, AFTGamma, nil, @PlainDCTs[annQueryPos * cTileDCTSize])
+            ComputeTilePsyVisFeatures(T^, False, False, cFTQWeighting, False, False, False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @PlainDCTs[annQueryPos * cTileDCTSize])
           else
             Move(DCTs[annQueryPos * cTileDCTSize], PlainDCTs[annQueryPos * cTileDCTSize], cTileDCTSize * SizeOf(TFloat));
 
