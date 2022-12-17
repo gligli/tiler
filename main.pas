@@ -18,6 +18,9 @@ type
     btnGTM: TButton;
     btnRunAll: TButton;
     btnPM: TButton;
+    cbxGTBCS: TComboBox;
+    chkPosterize: TCheckBox;
+    cbxPosterizeBPC: TComboBox;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
@@ -35,6 +38,7 @@ type
     chkBlended: TCheckBox;
     chkPlay: TCheckBox;
     chkReload: TCheckBox;
+    chkFTFromPal: TCheckBox;
     chkUseTK: TCheckBox;
     edInput: TEdit;
     edOutput: TEdit;
@@ -52,6 +56,7 @@ type
     Label14: TLabel;
     Label15: TLabel;
     Label16: TLabel;
+    Label17: TLabel;
     Label18: TLabel;
     Label2: TLabel;
     Label3: TLabel;
@@ -286,15 +291,19 @@ begin
      cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
      chkUseKMQuant.Checked := FTilingEncoder.QuantizerUseYakmo;
      cbxDLBPC.Text := IntToStr(FTilingEncoder.QuantizerDennisLeeBitsPerComponent);
+     chkPosterize.Checked := FTilingEncoder.QuantizerPosterize;
+     cbxPosterizeBPC.Text := IntToStr(FTilingEncoder.QuantizerPosterizeBitsPerComponent);
      chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
      chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
      cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
      seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
      seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
+     cbxGTBCS.ItemIndex := 6 - FTilingEncoder.GlobalTilingBinCountShift;
      chkReload.Checked := FTilingEncoder.ReloadTileset;
      edReload.Text := FTilingEncoder.ReloadTilesetFileName;
 
+     chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
      chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
      seFTBlendThres.Value := FTilingEncoder.FrameTilingBlendingThreshold;
 
@@ -610,14 +619,18 @@ begin
 
   FTilingEncoder.QuantizerUseYakmo := chkUseKMQuant.Checked;
   FTilingEncoder.QuantizerDennisLeeBitsPerComponent := StrToInt(cbxDLBPC.Text);
+  FTilingEncoder.QuantizerPosterize := chkPosterize.Checked;
+  FTilingEncoder.QuantizerPosterizeBitsPerComponent := StrToInt(cbxPosterizeBPC.Text);
   FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
+  FTilingEncoder.GlobalTilingBinCountShift := 6 - cbxGTBCS.ItemIndex;
   FTilingEncoder.ReloadTileset := chkReload.Checked;
   FTilingEncoder.ReloadTilesetFileName := edReload.Text;
 
+  FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingBlendingThreshold := seFTBlendThres.Value;
 
