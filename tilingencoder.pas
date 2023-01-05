@@ -3333,12 +3333,11 @@ begin
             T^.TmpIndex := Int64(i) * FTileMapSize + TMPos;
           end;
 
-          // put dithered tile back into FrameTiles
-          FFrames[i].FrameTiles[TMPos]^.CopyPalPixelsFrom(T^);
-          if TMI^.HMirror then
-            HMirrorTile(FFrames[i].FrameTiles[TMPos]^, True);
-          if TMI^.VMirror then
-            VMirrorTile(FFrames[i].FrameTiles[TMPos]^, True);
+          if FrameTilingFromPalette then
+          begin
+            // also dither FrameTiles
+            DitherTile(FFrames[i].FrameTiles[TMPos]^, AKeyFrame.MixingPlans[PalIdx]);
+          end;
         end;
 
     finally

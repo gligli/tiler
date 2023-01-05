@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 320
+  Left = 720
   Height = 600
-  Top = 428
+  Top = 418
   Width = 960
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 1
@@ -265,7 +265,7 @@ object MainForm: TMainForm
         Left = 8
         Height = 19
         Top = 442
-        Width = 254
+        Width = 253
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
         Checked = True
         OnChange = UpdateGUI
@@ -284,7 +284,7 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 300
-        Width = 160
+        Width = 161
         Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
       end
@@ -292,7 +292,7 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 359
-        Width = 229
+        Width = 227
         Caption = 'Temporal smoothing strength (PsyV based)'
         ParentColor = False
       end
@@ -340,7 +340,7 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 154
-        Width = 145
+        Width = 144
         Caption = 'Tile limit (all; quality based)'
         ParentColor = False
       end
@@ -800,7 +800,7 @@ object MainForm: TMainForm
     Left = 264
     Height = 15
     Top = 12
-    Width = 14
+    Width = 12
     Caption = 'To'
     ParentColor = False
   end
