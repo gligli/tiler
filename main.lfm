@@ -174,15 +174,7 @@ object MainForm: TMainForm
         MaxValue = 1000000000
         OnChange = seMaxTilesEditingDone
         OnEditingDone = seMaxTilesEditingDone
-        TabOrder = 13
-      end
-      object edReload: TEdit
-        Left = 88
-        Height = 23
-        Top = 56
-        Width = 504
-        OnChange = UpdateGUI
-        TabOrder = 5
+        TabOrder = 9
       end
       object btnInput: TButton
         Left = 592
@@ -202,7 +194,7 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 1
         OnChange = UpdateGUI
-        TabOrder = 22
+        TabOrder = 17
         Value = 0.2
       end
       object seStartFrame: TSpinEdit
@@ -212,7 +204,7 @@ object MainForm: TMainForm
         Width = 71
         MaxValue = 2000000000
         OnChange = UpdateGUI
-        TabOrder = 7
+        TabOrder = 4
       end
       object seAddlTiles: TFloatSpinEdit
         Left = 328
@@ -223,7 +215,7 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 21
+        TabOrder = 16
       end
       object cbxYilMix: TComboBox
         Left = 328
@@ -240,7 +232,7 @@ object MainForm: TMainForm
           '16'
         )
         OnChange = UpdateGUI
-        TabOrder = 20
+        TabOrder = 15
         Text = '4'
       end
       object seFrameCount: TSpinEdit
@@ -250,16 +242,7 @@ object MainForm: TMainForm
         Width = 71
         MaxValue = 2000000000
         OnChange = UpdateGUI
-        TabOrder = 8
-      end
-      object chkReload: TCheckBox
-        Left = 8
-        Height = 19
-        Top = 58
-        Width = 80
-        Caption = 'Reload tiles'
-        OnChange = UpdateGUI
-        TabOrder = 4
+        TabOrder = 5
       end
       object chkUseTK: TCheckBox
         Left = 8
@@ -270,7 +253,7 @@ object MainForm: TMainForm
         Checked = True
         OnChange = UpdateGUI
         State = cbChecked
-        TabOrder = 26
+        TabOrder = 21
       end
       object Label13: TLabel
         Left = 656
@@ -351,7 +334,7 @@ object MainForm: TMainForm
         Width = 170
         Caption = 'Dithering gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 27
+        TabOrder = 22
       end
       object chkFTGamma: TCheckBox
         Left = 328
@@ -360,7 +343,7 @@ object MainForm: TMainForm
         Width = 184
         Caption = 'Frame tiling gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 28
+        TabOrder = 23
       end
       object Label10: TLabel
         Left = 8
@@ -379,7 +362,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 23
+        TabOrder = 18
         Value = 2
       end
       object seVisGamma: TFloatSpinEdit
@@ -391,7 +374,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 24
+        TabOrder = 19
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
@@ -404,7 +387,7 @@ object MainForm: TMainForm
         MinValue = 0.1
         OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
-        TabOrder = 14
+        TabOrder = 10
         Value = 2
       end
       object btnGTM: TButton
@@ -415,15 +398,6 @@ object MainForm: TMainForm
         Caption = '...'
         OnClick = btnGTMClick
         TabOrder = 3
-      end
-      object btnGTS: TButton
-        Left = 592
-        Height = 25
-        Top = 55
-        Width = 26
-        Caption = '...'
-        OnClick = btnGTSClick
-        TabOrder = 6
       end
       object Label12: TLabel
         Left = 8
@@ -450,7 +424,7 @@ object MainForm: TMainForm
           '64'
         )
         OnChange = UpdateGUI
-        TabOrder = 12
+        TabOrder = 8
         Text = '16'
       end
       object cbxPalCount: TComboBox
@@ -473,7 +447,7 @@ object MainForm: TMainForm
           '256'
         )
         OnChange = UpdateGUI
-        TabOrder = 11
+        TabOrder = 7
         Text = '128'
       end
       object Label14: TLabel
@@ -503,7 +477,7 @@ object MainForm: TMainForm
         )
         OnChange = UpdateGUI
         Style = csDropDownList
-        TabOrder = 17
+        TabOrder = 12
         Text = '7'
       end
       object cbxScaling: TComboBox
@@ -527,7 +501,7 @@ object MainForm: TMainForm
         )
         OnChange = UpdateGUI
         Style = csDropDownList
-        TabOrder = 9
+        TabOrder = 6
         Text = '1'
       end
       object Label15: TLabel
@@ -547,7 +521,7 @@ object MainForm: TMainForm
         Checked = True
         OnChange = UpdateGUI
         State = cbChecked
-        TabOrder = 25
+        TabOrder = 20
       end
       object Label18: TLabel
         Left = 8
@@ -566,28 +540,8 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 16
+        TabOrder = 11
         Value = 1
-      end
-      object Label16: TLabel
-        Left = 8
-        Height = 15
-        Top = 95
-        Width = 268
-        Caption = 'Load time tile count multiplier (higher: more RAM)'
-        ParentColor = False
-      end
-      object seLoadTCMul: TFloatSpinEdit
-        Left = 328
-        Height = 23
-        Top = 92
-        Width = 71
-        MaxValue = 100
-        MinValue = 1
-        OnChange = seQbTilesEditingDone
-        OnEditingDone = seQbTilesEditingDone
-        TabOrder = 10
-        Value = 10
       end
       object chkPosterize: TCheckBox
         Left = 8
@@ -595,7 +549,7 @@ object MainForm: TMainForm
         Top = 275
         Width = 278
         Caption = 'Posterize palettes to selected bits per component'
-        TabOrder = 18
+        TabOrder = 13
       end
       object cbxPosterizeBPC: TComboBox
         Left = 328
@@ -617,7 +571,7 @@ object MainForm: TMainForm
         )
         OnChange = UpdateGUI
         Style = csDropDownList
-        TabOrder = 19
+        TabOrder = 14
         Text = '3'
       end
       object chkFTFromPal: TCheckBox
@@ -627,37 +581,7 @@ object MainForm: TMainForm
         Width = 206
         Caption = 'Do frame tiling from palettized tiles'
         OnChange = UpdateGUI
-        TabOrder = 29
-      end
-      object Label17: TLabel
-        Left = 8
-        Height = 15
-        Top = 192
-        Width = 274
-        Caption = 'Global tiling bin count (higher: faster, worse quality)'
-        ParentColor = False
-      end
-      object cbxGTBCS: TComboBox
-        Left = 328
-        Height = 23
-        Top = 188
-        Width = 71
-        DropDownCount = 20
-        ItemHeight = 15
-        ItemIndex = 6
-        Items.Strings = (
-          '1'
-          '2'
-          '4'
-          '8'
-          '16'
-          '32'
-          '64'
-        )
-        OnChange = UpdateGUI
-        Style = csDropDownList
-        TabOrder = 15
-        Text = '64'
+        TabOrder = 24
       end
     end
     object tsInput: TTabSheet
@@ -868,29 +792,29 @@ object MainForm: TMainForm
     Left = 824
     Top = 416
     object miLoad: TMenuItem
-      Caption = 'Load'
+      Caption = 'Load (global)'
       ShortCut = 113
-      OnClick = btnLoadClick
+      OnClick = btnGlobalLoadClick
     end
     object MenuItem7: TMenuItem
-      Caption = 'Tile (make unique)'
+      Caption = 'Tile (load)'
       ShortCut = 114
-      OnClick = btnDoMakeUniqueClick
+      OnClick = btnLoadTilesClick
     end
     object MenuItem1: TMenuItem
-      Caption = 'Dither'
+      Caption = 'Tile (dither)'
       ShortCut = 115
       OnClick = btnDitherClick
     end
     object MenuItem2: TMenuItem
-      Caption = 'Tile (global)'
+      Caption = 'Tile (cluster)'
       ShortCut = 116
-      OnClick = btnDoGlobalTilingClick
+      OnClick = btnClusterClick
     end
     object MenuItem3: TMenuItem
-      Caption = 'Tile (frame)'
+      Caption = 'Tile (reconstruct)'
       ShortCut = 117
-      OnClick = btnDoFrameTilingClick
+      OnClick = btnReconstructClick
     end
     object MenuItem8: TMenuItem
       Caption = 'ReColor'
@@ -934,12 +858,6 @@ object MainForm: TMainForm
     DefaultExt = '.gtm'
     Filter = 'GliGli''s TileMotion|*.gtm'
     Left = 824
-    Top = 368
-  end
-  object sdGTS: TSaveDialog
-    DefaultExt = '.gts'
-    Filter = 'GliGli''s TileSet|*.gts'
-    Left = 888
     Top = 368
   end
   object odSettings: TOpenDialog

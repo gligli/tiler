@@ -13,12 +13,10 @@ type
   { TMainForm }
 
   TMainForm = class(TForm)
-    btnGTS: TButton;
     btnInput: TButton;
     btnGTM: TButton;
     btnRunAll: TButton;
     btnPM: TButton;
-    cbxGTBCS: TComboBox;
     chkPosterize: TCheckBox;
     cbxPosterizeBPC: TComboBox;
     cbxScaling: TComboBox;
@@ -37,12 +35,10 @@ type
     chkMirrored: TCheckBox;
     chkBlended: TCheckBox;
     chkPlay: TCheckBox;
-    chkReload: TCheckBox;
     chkFTFromPal: TCheckBox;
     chkUseTK: TCheckBox;
     edInput: TEdit;
     edOutput: TEdit;
-    edReload: TEdit;
     From: TLabel;
     imgDest: TImage;
     imgPalette: TImage;
@@ -55,8 +51,6 @@ type
     Label13: TLabel;
     Label14: TLabel;
     Label15: TLabel;
-    Label16: TLabel;
-    Label17: TLabel;
     Label18: TLabel;
     Label2: TLabel;
     Label3: TLabel;
@@ -78,10 +72,8 @@ type
     sbTiles: TScrollBox;
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
-    sdGTS: TSaveDialog;
     seFTBlendThres: TFloatSpinEdit;
     seQbTiles: TFloatSpinEdit;
-    seLoadTCMul: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -113,11 +105,11 @@ type
     tbFrame: TTrackBar;
 
     // processes
-    procedure btnLoadClick(Sender: TObject);
+    procedure btnGlobalLoadClick(Sender: TObject);
+    procedure btnLoadTilesClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
-    procedure btnDoMakeUniqueClick(Sender: TObject);
-    procedure btnDoGlobalTilingClick(Sender: TObject);
-    procedure btnDoFrameTilingClick(Sender: TObject);
+    procedure btnClusterClick(Sender: TObject);
+    procedure btnReconstructClick(Sender: TObject);
     procedure btnPMClick(Sender: TObject);
     procedure btnReColorClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
@@ -125,7 +117,6 @@ type
     procedure btnSaveClick(Sender: TObject);
 
     procedure btnGTMClick(Sender: TObject);
-    procedure btnGTSClick(Sender: TObject);
     procedure btnInputClick(Sender: TObject);
     procedure btnRunAllClick(Sender: TObject);
     procedure btnDebugClick(Sender: TObject);
@@ -153,6 +144,7 @@ type
     FLockChanges: Boolean;
 
     procedure TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);
+    function GetKeyFrame: TKeyFrame;
   end;
 
 var
@@ -192,56 +184,52 @@ end;
 
 { TMainForm }
 
-procedure TMainForm.btnDoGlobalTilingClick(Sender: TObject);
+procedure TMainForm.btnClusterClick(Sender: TObject);
 begin
-  FTilingEncoder.GlobalTiling;
+  if Assigned(GetKeyFrame) then
+    FTilingEncoder.Cluster(GetKeyFrame);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnDitherClick(Sender: TObject);
 begin
-  FTilingEncoder.Dither;
+  if Assigned(GetKeyFrame) then
+    FTilingEncoder.Dither(GetKeyFrame);
   UpdateVideo(nil);
 end;
 
-procedure TMainForm.btnDoMakeUniqueClick(Sender: TObject);
+procedure TMainForm.btnReconstructClick(Sender: TObject);
 begin
-  FTilingEncoder.MakeUnique;
+  if Assigned(GetKeyFrame) then
+    FTilingEncoder.Reconstruct(GetKeyFrame);
   UpdateVideo(nil);
-end;
-
-procedure TMainForm.btnDoFrameTilingClick(Sender: TObject);
-begin
-  FTilingEncoder.FrameTiling;
-  UpdateVideo(nil);
-end;
-
-procedure TMainForm.btnPMClick(Sender: TObject);
-var
-  pt: TPoint;
-begin
-  pt.X := btnPM.Left;
-  pt.Y := btnPM.Top + btnPM.Height;
-  pt := ClientToScreen(pt);
-  pmProcesses.PopUp(pt.X, pt.Y);
 end;
 
 procedure TMainForm.btnReColorClick(Sender: TObject);
 begin
-  FTilingEncoder.ReColor;
+  if Assigned(GetKeyFrame) then
+    FTilingEncoder.ReColor(GetKeyFrame);
   UpdateVideo(nil);
 end;
 
-procedure TMainForm.btnLoadClick(Sender: TObject);
+procedure TMainForm.btnGlobalLoadClick(Sender: TObject);
 begin
-  FTilingEncoder.Load;
+  FTilingEncoder.GlobalLoad;
   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
+  UpdateVideo(nil);
+end;
+
+procedure TMainForm.btnLoadTilesClick(Sender: TObject);
+begin
+  if Assigned(GetKeyFrame) then
+    FTilingEncoder.LoadTiles(GetKeyFrame);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReindexClick(Sender: TObject);
 begin
-  FTilingEncoder.Reindex;
+  if Assigned(GetKeyFrame) then
+    FTilingEncoder.Reindex(GetKeyFrame);
   UpdateVideo(nil);
 end;
 
@@ -253,7 +241,8 @@ end;
 
 procedure TMainForm.btnSmoothClick(Sender: TObject);
 begin
-  FTilingEncoder.Smooth;
+  if Assigned(GetKeyFrame) then
+    FTilingEncoder.Smooth(GetKeyFrame);
   UpdateVideo(nil);
 end;
 
@@ -261,6 +250,16 @@ procedure TMainForm.btnGeneratePNGsClick(Sender: TObject);
 begin
   FTilingEncoder.GeneratePNGs;
   UpdateVideo(nil);
+end;
+
+procedure TMainForm.btnPMClick(Sender: TObject);
+var
+  pt: TPoint;
+begin
+  pt.X := btnPM.Left;
+  pt.Y := btnPM.Top + btnPM.Height;
+  pt := ClientToScreen(pt);
+  pmProcesses.PopUp(pt.X, pt.Y);
 end;
 
 procedure TMainForm.imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
@@ -286,7 +285,6 @@ begin
      seFrameCount.Value := FTilingEncoder.FrameCountSetting;
      cbxScaling.Text := FloatToStr(FTilingEncoder.Scaling);
 
-     seLoadTCMul.Value := FTilingEncoder.LoadPerFrameTileCountMultiplier;
      cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
      cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
      chkUseKMQuant.Checked := FTilingEncoder.QuantizerUseYakmo;
@@ -299,9 +297,6 @@ begin
 
      seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
      seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
-     cbxGTBCS.ItemIndex := 6 - FTilingEncoder.GlobalTilingBinCountShift;
-     chkReload.Checked := FTilingEncoder.ReloadTileset;
-     edReload.Text := FTilingEncoder.ReloadTilesetFileName;
 
      chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
      chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
@@ -350,20 +345,20 @@ begin
   firstStep := TEncoderStep(cbxStartStep.ItemIndex);
   lastStep := TEncoderStep(cbxEndStep.ItemIndex);
 
-  if OkStep(esLoad) then
-    btnLoadClick(nil);
+  if OkStep(esGlobalLoad) then
+    btnGlobalLoadClick(nil);
 
-  if OkStep(esMakeUnique) then
-    btnDoMakeUniqueClick(nil);
+  if OkStep(esLoadTiles) then
+    btnLoadTilesClick(nil);
 
   if OkStep(esDither) then
     btnDitherClick(nil);
 
-  if OkStep(esGlobalTiling) then
-    btnDoGlobalTilingClick(nil);
+  if OkStep(esCluster) then
+    btnClusterClick(nil);
 
-  if OkStep(esFrameTiling) then
-    btnDoFrameTilingClick(nil);
+  if OkStep(esReconstruct) then
+    btnReconstructClick(nil);
 
   if OkStep(esReindex) then
     btnReindexClick(nil);
@@ -385,11 +380,6 @@ begin
       edOutput.Text := ChangeFileExt(odFFInput.FileName, '.gtm');
       sdGTM.FileName := edOutput.Text;
     end;
-    if (edReload.Text = '') or (edReload.Text = ChangeFileExt(edInput.Text, '.gts')) then
-    begin
-      edReload.Text := ChangeFileExt(odFFInput.FileName, '.gts');
-      sdGTS.FileName := edReload.Text;
-    end;
     edInput.Text := odFFInput.FileName;
   end;
 end;
@@ -400,17 +390,10 @@ begin
     edOutput.Text := sdGTM.FileName;
 end;
 
-procedure TMainForm.btnGTSClick(Sender: TObject);
-begin
-  if sdGTS.Execute then
-    edReload.Text := sdGTS.FileName;
-end;
-
 procedure TMainForm.btnDebugClick(Sender: TObject);
 begin
   edInput.Text := 'C:\tiler_misc\Star.Wars.Despecialized.Edition.v2.5.avi';
   edOutput.Text := 'C:\tiler\debug.gtm';
-  edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 48, 2), 12);
   cbxScaling.ItemIndex := 4;
 
@@ -423,7 +406,6 @@ procedure TMainForm.btnDebug2Click(Sender: TObject);
 begin
   edInput.Text := 'C:\tiler_misc\sunflower_1080p25.y4m';
   edOutput.Text := 'C:\tiler\debug.gtm';
-  edReload.Text := '';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);
   cbxScaling.ItemIndex := 2;
 
@@ -603,7 +585,6 @@ begin
   FTilingEncoder.PaletteCount := StrToIntDef(cbxPalCount.Text, 1);
   FTilingEncoder.PaletteSize := StrToIntDef(cbxPalSize.Text, 2);
   FTilingEncoder.Scaling := StrToFloatDef(cbxScaling.Text, 1.0, InvariantFormatSettings);
-  FTilingEncoder.LoadPerFrameTileCountMultiplier := seLoadTCMul.Value;
 
   FTilingEncoder.EncoderGammaValue := seEncGamma.Value;
   FTilingEncoder.RenderPlaying := chkPlay.Checked;
@@ -626,9 +607,6 @@ begin
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
-  FTilingEncoder.GlobalTilingBinCountShift := 6 - cbxGTBCS.ItemIndex;
-  FTilingEncoder.ReloadTileset := chkReload.Checked;
-  FTilingEncoder.ReloadTilesetFileName := edReload.Text;
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
@@ -663,6 +641,13 @@ begin
     Screen.Cursor := crDefault;
 
   Application.ProcessMessages;
+end;
+
+function TMainForm.GetKeyFrame: TKeyFrame;
+begin
+  Result := nil;
+  if InRange(FTilingEncoder.RenderFrameIndex, 0, FTilingEncoder.FrameCount - 1) then
+    Result := FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame;
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
