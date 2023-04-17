@@ -144,7 +144,6 @@ type
     FLockChanges: Boolean;
 
     procedure TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);
-    function GetKeyFrame: TKeyFrame;
   end;
 
 var
@@ -186,50 +185,44 @@ end;
 
 procedure TMainForm.btnClusterClick(Sender: TObject);
 begin
-  if Assigned(GetKeyFrame) then
-    FTilingEncoder.Cluster(GetKeyFrame);
+  FTilingEncoder.Run(kfpCluster);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnDitherClick(Sender: TObject);
 begin
-  if Assigned(GetKeyFrame) then
-    FTilingEncoder.Dither(GetKeyFrame);
+  FTilingEncoder.Run(kfpDither);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReconstructClick(Sender: TObject);
 begin
-  if Assigned(GetKeyFrame) then
-    FTilingEncoder.Reconstruct(GetKeyFrame);
+  FTilingEncoder.Run(kfpReconstruct);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReColorClick(Sender: TObject);
 begin
-  if Assigned(GetKeyFrame) then
-    FTilingEncoder.ReColor(GetKeyFrame);
+  FTilingEncoder.Run(kfpReColor);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnGlobalLoadClick(Sender: TObject);
 begin
-  FTilingEncoder.GlobalLoad;
+  FTilingEncoder.Load;
   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnLoadTilesClick(Sender: TObject);
 begin
-  if Assigned(GetKeyFrame) then
-    FTilingEncoder.LoadTiles(GetKeyFrame);
+  FTilingEncoder.Run(kfpLoadTiles);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReindexClick(Sender: TObject);
 begin
-  if Assigned(GetKeyFrame) then
-    FTilingEncoder.Reindex(GetKeyFrame);
+  FTilingEncoder.Run(kfpReindex);
   UpdateVideo(nil);
 end;
 
@@ -241,8 +234,7 @@ end;
 
 procedure TMainForm.btnSmoothClick(Sender: TObject);
 begin
-  if Assigned(GetKeyFrame) then
-    FTilingEncoder.Smooth(GetKeyFrame);
+  FTilingEncoder.Run(kfpSmooth);
   UpdateVideo(nil);
 end;
 
@@ -345,26 +337,14 @@ begin
   firstStep := TEncoderStep(cbxStartStep.ItemIndex);
   lastStep := TEncoderStep(cbxEndStep.ItemIndex);
 
-  if OkStep(esGlobalLoad) then
+  if OkStep(esLoad) then
     btnGlobalLoadClick(nil);
 
-  if OkStep(esLoadTiles) then
-    btnLoadTilesClick(nil);
-
-  if OkStep(esDither) then
-    btnDitherClick(nil);
-
-  if OkStep(esCluster) then
-    btnClusterClick(nil);
-
-  if OkStep(esReconstruct) then
-    btnReconstructClick(nil);
-
-  if OkStep(esReindex) then
-    btnReindexClick(nil);
-
-  if OkStep(esSmooth) then
-    btnSmoothClick(nil);
+  if OkStep(esRun) then
+  begin
+    FTilingEncoder.Run;
+    UpdateVideo(nil);
+  end;
 
   if OkStep(esSave) then
     btnSaveClick(nil);
@@ -641,13 +621,6 @@ begin
     Screen.Cursor := crDefault;
 
   Application.ProcessMessages;
-end;
-
-function TMainForm.GetKeyFrame: TKeyFrame;
-begin
-  Result := nil;
-  if InRange(FTilingEncoder.RenderFrameIndex, 0, FTilingEncoder.FrameCount - 1) then
-    Result := FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame;
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);

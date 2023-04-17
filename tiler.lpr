@@ -65,15 +65,9 @@ begin
     try
       Encoder.LoadSettings(ParamStr(1));
 
-      //Encoder.Load;
-      //Encoder.MakeUnique;
-      //Encoder.Dither;
-      //Encoder.GlobalTiling;
-      //Encoder.Reconstruct;
-      //Encoder.Reindex;
-      //Encoder.Smooth;
-      //Encoder.Save;
-      {$message warn CLI TODO}
+      Encoder.Load;
+      Encoder.Run;
+      Encoder.Save;
 
     finally
       Encoder.Free;
