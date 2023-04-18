@@ -1900,7 +1900,9 @@ begin
 
   // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
+  InitMergeTiles;
   Parent.DoKeyFrameKMeans(Self, ClusterCount);
+  FinishMergeTiles;
 end;
 
 procedure TKeyFrame.Reconstruct;
