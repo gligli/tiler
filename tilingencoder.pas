@@ -2329,7 +2329,8 @@ end;
 
 procedure TKeyFrame.DoKeyFrameKMeans(AClusterCount: Integer);
 var
-  i, w, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx, BICOWeightsSum: Integer;
+  i, w, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen,
+    BICOClusterCount, BICOCoresetSize, clusterLineIdx, BICOWeightsSum, YakmoClusterCount: Integer;
   cnt, tidx: Int64;
   speedup: Double;
   v, best: TFloat;
@@ -2414,7 +2415,7 @@ begin
 
   BICOWeightsSum := 0;
   for clusterIdx := 0 to BICOClusterCount - 1 do
-    BICOWeightsSum += Max(1, round(BICOWeights[clusterIdx]));
+    BICOWeightsSum += Max(1, 1+0*round(BICOWeights[clusterIdx]));
 
   SetLength(YakmoDataset, BICOWeightsSum);
   for clusterIdx := 0 to BICOClusterCount - 1 do
@@ -2422,7 +2423,7 @@ begin
 
   clusterIdx := BICOClusterCount;
   for i := 0 to BICOClusterCount - 1 do
-    for w := 2 to Max(1, round(BICOWeights[i])) do
+    for w := 2 to Max(1, 1+0*round(BICOWeights[i])) do
     begin
       YakmoDataset[clusterIdx] := @BICOCentroids[i * cTileDCTSize];
       Inc(clusterIdx);
@@ -2431,16 +2432,29 @@ begin
 
   // use Yakmo to extract final centroids
 
+  YakmoClusterCount := AClusterCount;
   SetLength(YakmoClusters, BICOWeightsSum);
-  SetLength(YakmoCentroids, AClusterCount, cTileDCTSize);
+  SetLength(YakmoCentroids, YakmoClusterCount, cTileDCTSize);
 
-  Yakmo := yakmo_create(AClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-  try
-    yakmo_load_train_data(Yakmo, BICOWeightsSum, cTileDCTSize, @YakmoDataset[0]);
-    yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-    yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
-  finally
-    yakmo_destroy(Yakmo);
+  if BICOClusterCount > YakmoClusterCount then
+  begin
+    Yakmo := yakmo_create(YakmoClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
+    try
+      yakmo_load_train_data(Yakmo, BICOWeightsSum, cTileDCTSize, @YakmoDataset[0]);
+      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+      yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
+    finally
+      yakmo_destroy(Yakmo);
+    end;
+  end
+  else
+  begin
+    YakmoClusterCount := BICOClusterCount;
+    for clusterIdx := 0 to YakmoClusterCount - 1 do
+    begin
+      YakmoClusters[clusterIdx] := clusterIdx;
+      Move(BICOCentroids[clusterIdx * cTileDCTSize], YakmoCentroids[clusterIdx, 0], cTileDCTSize * sizeof(Double));
+    end;
   end;
 
   // build a list of this centroid tiles
@@ -2448,7 +2462,7 @@ begin
   SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
-  for clusterIdx := 0 to AClusterCount - 1 do
+  for clusterIdx := 0 to YakmoClusterCount - 1 do
   begin
     clusterLineCount := 0;
     for yakmoDatasetIdx := 0 to High(YakmoClusters) do
