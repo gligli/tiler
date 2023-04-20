@@ -21,7 +21,6 @@ type
 const
   // tweakable constants
 
-  cBitsPerComp = 8;
   cFTQWeighting = False;
   cYakmoMaxIterations = 300;
   cGlobalTilingCoresetMultiplier = 1.5;
@@ -39,6 +38,7 @@ const
 
   // don't change these
 
+  cBitsPerComp = 8;
   cMaxFTBlend = 16;
   cLumaDiv = cRedMul + cGreenMul + cBlueMul;
   cVecInvWidth = 16;
