@@ -2415,7 +2415,7 @@ begin
 
   BICOWeightsSum := 0;
   for clusterIdx := 0 to BICOClusterCount - 1 do
-    BICOWeightsSum += Max(1, 1+0*round(BICOWeights[clusterIdx]));
+    BICOWeightsSum += Max(1, round(BICOWeights[clusterIdx]));
 
   SetLength(YakmoDataset, BICOWeightsSum);
   for clusterIdx := 0 to BICOClusterCount - 1 do
@@ -2423,7 +2423,7 @@ begin
 
   clusterIdx := BICOClusterCount;
   for i := 0 to BICOClusterCount - 1 do
-    for w := 2 to Max(1, 1+0*round(BICOWeights[i])) do
+    for w := 2 to Max(1, round(BICOWeights[i])) do
     begin
       YakmoDataset[clusterIdx] := @BICOCentroids[i * cTileDCTSize];
       Inc(clusterIdx);
