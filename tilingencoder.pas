@@ -15,6 +15,7 @@ uses
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esRun, esSave);
+  TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation, kfrEuclideanDist);
   TKeyFrameProcess = (kfpAll = -1, kfpLoadTiles = 0, kfpDither, kfpCluster, kfpReconstruct, kfpReColor, kfpReindex, kfpSmooth);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
 
@@ -370,6 +371,7 @@ type
     Encoder: TTilingEncoder;
     Index, StartFrame, EndFrame, FrameCount: Integer;
     FramesLeft: Integer;
+    Reason: TKeyFrameReason;
 
     FLock: TSpinlock;
 
@@ -4792,10 +4794,9 @@ const
   CShotTransEuclideanHiThres = 1.0; // frame equivalent accumulated distance
   CShotTransCorrelLoThres = 0.75;   // interframe pearson correlation low limit
 var
-  i, j, LastKFIdx: Integer;
+  frmIdx, kfIdx, lastKFIdx: Integer;
   correl, euclidean: TFloat;
-  kfIdx: Integer;
-  isKf: Boolean;
+  kfReason: TKeyFrameReason;
   sfr, efr: Integer;
 begin
   // compute interframe correlations
@@ -4813,56 +4814,66 @@ begin
   SetLength(FKeyFrames, Length(FFrames));
   kfIdx := 0;
   euclidean := 0.0;
-  LastKFIdx := Low(Integer);
-  for i := 0 to High(FFrames) do
+  lastKFIdx := Low(Integer);
+  for frmIdx := 0 to High(FFrames) do
   begin
-    correl := Correlations[i];
-    euclidean += EuclideanDist[i];
+    correl := Correlations[frmIdx];
+    euclidean += EuclideanDist[frmIdx];
 
+    kfReason := kfrNone;
     if AManualMode then
     begin
-      isKf := FileExists(Format(ChangeFileExt(FInputPath, '.kf'), [i + StartFrame])) or (i = 0);
+      if FileExists(Format(ChangeFileExt(FInputPath, '.kf'), [frmIdx + StartFrame])) or (frmIdx = 0) then
+        kfReason := kfrManual;
     end
     else
     begin
-      isKf := (correl < CShotTransCorrelLoThres) or (euclidean > CShotTransEuclideanHiThres) or
-        ((i - LastKFIdx) > (CShotTransMaxSecondsPerKF * FFramesPerSecond));
+      if (kfReason = kfrNone) and (correl < CShotTransCorrelLoThres) then
+        kfReason := kfrDecorrelation;
 
-      isKf := isKf and ((i - LastKFIdx) > (CShotTransMinSecondsPerKF * FFramesPerSecond));
+      if (kfReason = kfrNone) and (euclidean > CShotTransEuclideanHiThres) then
+        kfReason := kfrEuclideanDist;
+
+      if (kfReason = kfrNone) and ((frmIdx - lastKFIdx) > (CShotTransMaxSecondsPerKF * FFramesPerSecond)) then
+        kfReason := kfrLength;
+
+      if (frmIdx - lastKFIdx) < (CShotTransMinSecondsPerKF * FFramesPerSecond) then
+        kfReason := kfrNone;
     end;
 
-    if isKf then
+    if kfReason <> kfrNone then
     begin
       FKeyFrames[kfIdx] := TKeyFrame.Create(Self, kfIdx, FPaletteCount, 0, 0);
-
-      WriteLn('KF: ', i:8, ' (', kfIdx:3, ') Correlation: ', correl:12:9, ' Euclidean: ', euclidean:12:9);
+      FKeyFrames[kfIdx].Reason := kfReason;
 
       Inc(kfIdx);
 
       euclidean := 0.0;
-      LastKFIdx := i;
+      lastKFIdx := frmIdx;
     end;
 
-    FFrames[i].PKeyFrame := FKeyFrames[kfIdx - 1];
+    FFrames[frmIdx].PKeyFrame := FKeyFrames[kfIdx - 1];
   end;
 
   SetLength(FKeyFrames, kfIdx);
 
-  for j := 0 to High(FKeyFrames) do
+  for kfIdx := 0 to High(FKeyFrames) do
   begin
     sfr := High(Integer);
     efr := Low(Integer);
 
-    for i := 0 to High(FFrames) do
-      if FFrames[i].PKeyFrame = FKeyFrames[j] then
+    for frmIdx := 0 to High(FFrames) do
+      if FFrames[frmIdx].PKeyFrame = FKeyFrames[kfIdx] then
       begin
-        sfr := Min(sfr, i);
-        efr := Max(efr, i);
+        sfr := Min(sfr, frmIdx);
+        efr := Max(efr, frmIdx);
       end;
 
-    FKeyFrames[j].StartFrame := sfr;
-    FKeyFrames[j].EndFrame := efr;
-    FKeyFrames[j].FrameCount := efr - sfr + 1;
+    FKeyFrames[kfIdx].StartFrame := sfr;
+    FKeyFrames[kfIdx].EndFrame := efr;
+    FKeyFrames[kfIdx].FrameCount := efr - sfr + 1;
+
+    WriteLn('KF: ', FKeyFrames[kfIdx].StartFrame:8, ' (', kfIdx:3, ') FCnt: ', FKeyFrames[kfIdx].FrameCount:3, ' Reason: ', Copy(GetEnumName(TypeInfo(TKeyFrameReason), Ord(FKeyFrames[kfIdx].Reason)), 4));
   end;
 end;
 
