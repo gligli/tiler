@@ -302,6 +302,7 @@ type
 
   TTilingDataset = record
     Dataset: TFloatDynArray;
+    DSToTileIdx: TIntegerDynArray;
     FLANN: flann_index_t;
     FLANNParams: PFLANNParameters;
   end;
@@ -394,6 +395,8 @@ type
     destructor Destroy; override;
 
     // algorithms
+
+    function GetTileCount(AActiveOnly: Boolean): Integer;
 
     procedure MergeTiles(const TileIndexes: array of Int64; TileCount: Integer; BestIdx: Int64; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
     procedure InitMergeTiles;
@@ -1781,6 +1784,23 @@ begin
   inherited Destroy;
 end;
 
+function TKeyFrame.GetTileCount(AActiveOnly: Boolean): Integer;
+var
+  tidx: Int64;
+begin
+  if AActiveOnly then
+  begin
+   Result := 0;
+    for tidx := 0 to High(Tiles) do
+      if Tiles[tidx]^.Active then
+        Inc(Result);
+  end
+  else
+  begin
+    Result := Length(Tiles);
+  end;
+end;
+
 procedure TKeyFrame.MakeTilesUnique;
 var
   tidx: Int64;
@@ -2513,13 +2533,21 @@ var
     T: PTile;
     tidx: Int64;
     pDCT: PFloat;
+    pDS: PInteger;
   begin
     pDCT := PFloat(@DS^.Dataset[0]);
+    pDS := PInteger(@DS^.DSToTileIdx[0]);
     for tidx := 0 to High(Tiles) do
     begin
       T := Tiles[tidx];
-      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, False, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
-      Inc(pDCT, cTileDCTSize);
+
+      if T^.Active then
+      begin
+        Encoder.ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, False, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
+        Inc(pDCT, cTileDCTSize);
+        pDS^ := tidx;
+        Inc(pDS);
+      end;
     end;
   end;
 
@@ -2527,13 +2555,14 @@ var
   KNNSize: Integer;
   speedup: Single;
 begin
-  // Compute psycho visual model for all tiles (in all palettes / mirrors)
+  // Compute psycho visual model for all tiles (in curent palette)
 
   DS := New(PTilingDataset);
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  KNNSize := Length(Tiles);
+  KNNSize := GetTileCount(True);
   SetLength(DS^.Dataset, KNNSize * cTileDCTSize);
+  SetLength(DS^.DSToTileIdx, KNNSize);
 
   DoPsyV;
 
@@ -2558,6 +2587,7 @@ begin
     flann_free_index(TileDS[APaletteIndex]^.FLANN, TileDS[APaletteIndex]^.FLANNParams);
   TileDS[APaletteIndex]^.FLANN := nil;
   SetLength(TileDS[APaletteIndex]^.Dataset, 0);
+  SetLength(TileDS[APaletteIndex]^.DSToTileIdx, 0);
   Dispose(TileDS[APaletteIndex]);
 
   TileDS[APaletteIndex] := nil;
@@ -2572,7 +2602,7 @@ end;
 
 procedure TKeyFrame.DoKFTiling(APaletteIndex: Integer; AFTGamma: Integer; AFTBlendThres: TFloat; AFromPal: Boolean);
 var
-  x, y, frmIdx, annQueryCount, annQueryPos, diffIdx: Integer;
+  x, y, frmIdx, annQueryCount, annQueryPos, dsIdx, diffIdx: Integer;
   q00, q01, q10, q11: Integer;
   errCml: Double;
   diffErr: TFloat;
@@ -2592,7 +2622,7 @@ var
   Best: TKFTilingBest;
 begin
   DS := TileDS[APaletteIndex];
-  if Length(DS^.Dataset) < cTileDCTSize then
+  if Length(DS^.DSToTileIdx) < 1 then
     Exit;
 
   errCml := 0.0;
@@ -2682,30 +2712,32 @@ begin
         if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
           Continue;
 
-        Best.bestIdx := idxs[annQueryPos];
-        Best.bestErr := errs[annQueryPos];
-        Best.bestAdditionalIdx := -1;
+        dsIdx := idxs[annQueryPos];
 
-        // try to blend another tile to improve likeliness
-
-        if not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
+        if InRange(dsIdx, 0, High(DS^.DSToTileIdx)) then
         begin
-          // compute an additional tile that would be blended with the current tile (lerp 0.5)
-          ComputeBlending_Asm(@DiffDCT[0], @DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[Best.bestIdx * cTileDCTSize], 2.0, -1.0);
+          Best.bestIdx := DS^.DSToTileIdx[dsIdx];
+          Best.bestErr := errs[annQueryPos];
+          Best.bestAdditionalIdx := -1;
 
-          // search for it in the KNN
-          flann_find_nearest_neighbors_index(DS^.FLANN, @DiffDCT[0], 1, @diffIdx, @diffErr, 1, DS^.FLANNParams);
+          // try to blend another tile to improve likeliness
 
-          if InRange(diffIdx, 0, High(Tiles)) then
+          if not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
           begin
-            // compute error from the final interpolation (lerp 0.5)
-            Best.bestErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[Best.bestIdx * cTileDCTSize], 0.5, 0.5);
-            Best.bestAdditionalIdx := diffIdx;
-          end;
-        end;
+            // compute an additional tile that would be blended with the current tile (lerp 0.5)
+            ComputeBlending_Asm(@DiffDCT[0], @DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[dsIdx * cTileDCTSize], 2.0, -1.0);
 
-        if InRange(Best.bestIdx, 0, High(Tiles)) then
-        begin
+            // search for it in the KNN
+            flann_find_nearest_neighbors_index(DS^.FLANN, @DiffDCT[0], 1, @diffIdx, @diffErr, 1, DS^.FLANNParams);
+
+            if InRange(diffIdx, 0, High(DS^.DSToTileIdx)) then
+            begin
+              // compute error from the final interpolation (lerp 0.5)
+              Best.bestErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[dsIdx * cTileDCTSize], 0.5, 0.5);
+              Best.bestAdditionalIdx := DS^.DSToTileIdx[diffIdx];
+            end;
+          end;
+
           TMI := @Frame.TileMap[y, x];
 
           TMI^.TileIdx := Best.bestIdx;
