@@ -1868,7 +1868,7 @@ var
   sx, sy, ty, tx, frmIdx: Integer;
   rr, gg, bb: Byte;
   l, a, b: TFloat;
-  GTile: PTile;
+  Tile: PTile;
 
   YakmoDataset: TDoubleDynArray2;
   YakmoClusters: TIntegerDynArray;
@@ -1881,13 +1881,13 @@ begin
 
   for tidx := 0 to High(Tiles) do
   begin
-    GTile := Tiles[tidx];
-    Encoder.ComputeTilePsyVisFeatures(GTile^, False, True, True, False, False, True, ADitheringGamma, nil, @YakmoDataset[tidx, cColorCpns]);
+    Tile := Tiles[tidx];
+    Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, True, False, False, True, ADitheringGamma, nil, @YakmoDataset[tidx, cColorCpns]);
 
     for ty := 0 to cTileWidth - 1 do
       for tx := 0 to cTileWidth - 1 do
       begin
-        FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
+        FromRGB(Tile^.RGBPixels[ty, tx], rr, gg, bb);
 
         Encoder.RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
 
@@ -1933,7 +1933,7 @@ var
     dlInput: PByte;
     i, j, sy, sx, dx, dy, ty, tx, k, tileCnt, tileFx, tileFy, best: Integer;
     dlPal: TDLUserPal;
-    GTile: PTile;
+    Tile: PTile;
     CMItem: PCountIndex;
   begin
     dlCnt := FrameCount * Encoder.FScreenWidth * Encoder.FScreenHeight;
@@ -1949,8 +1949,8 @@ var
         for sy := 0 to Encoder.FTileMapHeight - 1 do
           for sx := 0 to Encoder.FTileMapWidth - 1 do
           begin
-            GTile := Tiles[Encoder.FFrames[i].TileMap[sy, sx].TileIdx];
-            if GTile^.Active and (Encoder.FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
+            Tile := Tiles[Encoder.FFrames[i].TileMap[sy, sx].TileIdx];
+            if Tile^.Active and (Encoder.FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
               Inc(tileCnt);
           end;
 
@@ -1979,9 +1979,9 @@ var
         for sy := 0 to Encoder.FTileMapHeight - 1 do
           for sx := 0 to Encoder.FTileMapWidth - 1 do
           begin
-            GTile := Tiles[Encoder.FFrames[i].TileMap[sy, sx].TileIdx];
+            Tile := Tiles[Encoder.FFrames[i].TileMap[sy, sx].TileIdx];
 
-            if GTile^.Active and (Encoder.FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
+            if Tile^.Active and (Encoder.FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
             begin
               j := ((dy * cTileWidth) * tileFx * cTileWidth + (dx * cTileWidth)) * 3;
               k := sy * Encoder.FTileMapWidth + sx;
@@ -1989,7 +1989,7 @@ var
               begin
                 for tx := 0 to cTileWidth - 1 do
                 begin
-                  FromRGB(GTile^.RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
+                  FromRGB(Tile^.RGBPixels[ty, tx], dlInput[j + 0], dlInput[j + 1], dlInput[j + 2]);
                   Inc(j, 3);
                 end;
                 Inc(j, (tileFx - 1) * cTileWidth * 3);
@@ -2035,7 +2035,7 @@ var
     tidx: Int64;
     i, di, ty, tx, sy, sx, frmIdx, cnt: Integer;
     rr, gg, bb: Byte;
-    GTile: PTile;
+    Tile: PTile;
     Dataset, Centroids: TDoubleDynArray2;
     Clusters: TIntegerDynArray;
     Yakmo: PYakmo;
@@ -2067,17 +2067,17 @@ var
     for tidx := 0 to High(Tiles) do
       if TilesInd[tidx] then
       begin
-        GTile := Tiles[tidx];
+        Tile := Tiles[tidx];
         for ty := 0 to cTileWidth - 1 do
           for tx := 0 to cTileWidth - 1 do
           begin
-            FromRGB(GTile^.RGBPixels[ty, tx], rr, gg, bb);
+            FromRGB(Tile^.RGBPixels[ty, tx], rr, gg, bb);
             Dataset[di, 0] := rr;
             Dataset[di, 1] := gg;
             Dataset[di, 2] := bb;
             Inc(di);
           end;
-        Inc(PaletteUseCount[APalIdx].UseCount, GTile^.UseCount);
+        Inc(PaletteUseCount[APalIdx].UseCount, Tile^.UseCount);
       end;
     Assert(di = Length(Dataset));
 
@@ -2105,9 +2105,9 @@ var
 
       if Length(Clusters) >= AColorCount then
       begin
-        CMItem^.R := 255;
-        CMItem^.G := 255;
-        CMItem^.B := 255;
+        CMItem^.R := 0;
+        CMItem^.G := 0;
+        CMItem^.B := 0;
         if not IsNan(Centroids[i, 0]) and not IsNan(Centroids[i, 1]) and  not IsNan(Centroids[i, 2]) then
         begin
           CMItem^.R := Posterize(EnsureRange(Round(Centroids[i, 0]), 0, 255), APosterizeBpc);
@@ -2362,6 +2362,7 @@ var
   Yakmo: PYakmo;
   FLANN: flann_index_t;
   FLANNParams: TFLANNParameters;
+  Tile: PTile;
 
   TileIndices: TInt64DynArray;
   Dataset: TDoubleDynArray;
@@ -2374,7 +2375,7 @@ var
   ToMerge: array of PDouble;
   ToMergeIdxs: TInt64DynArray;
 begin
-  DSLen :=length(Tiles);
+  DSLen := GetTileCount(True);
   if (DSLen <= AClusterCount) or (AClusterCount <= 1) then
     Exit;
 
@@ -2390,13 +2391,19 @@ begin
     cnt := 0;
     for tidx := 0 to High(Tiles) do
     begin
-      Encoder.ComputeTilePsyVisFeatures(Tiles[tidx]^, False, False, False, False, False, False, -1, nil, @Dataset[cnt * cTileDCTSize]);
+      Tile := Tiles[tidx];
 
-      // insert line into BICO
-      bico_insert_line(BICO, @Dataset[cnt * cTileDCTSize], Tiles[tidx]^.UseCount);
+      if Tile^.Active then
+      begin
+        Encoder.ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @Dataset[cnt * cTileDCTSize]);
 
-      TileIndices[cnt] := tidx;
-      Inc(cnt);
+        // insert line into BICO
+        for w := 1 to Tile^.UseCount do
+          bico_insert_line(BICO, @Dataset[cnt * cTileDCTSize], 1);
+
+        TileIndices[cnt] := tidx;
+        Inc(cnt);
+      end;
     end;
     Assert(cnt = DSLen);
 
