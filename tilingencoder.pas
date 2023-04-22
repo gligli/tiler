@@ -3361,6 +3361,8 @@ begin
 end;
 
 procedure TTilingEncoder.Load;
+var
+  loadedFrameCount: Integer;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -3378,7 +3380,8 @@ procedure TTilingEncoder.Load;
 
       FFrames[AIndex].Index := AIndex;
 
-      Write('.');
+      InterLockedIncrement(loadedFrameCount);
+      Write(loadedFrameCount:8, ' / ', Length(FFrames):8, #13);
     finally
       bmp.Free;
     end;
@@ -3447,6 +3450,7 @@ begin
 
   ProgressRedraw(1);
 
+  loadedFrameCount := 0;
   SetLength(FFrames, frc);
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(startFrmIdx));
   WriteLn;
