@@ -391,7 +391,7 @@ type
     end;
 
     PalettesLeft: Integer;
-    FTErrCml: Double;
+    ReconstructErrCml: Double;
 
     constructor Create(AParent: TTilingEncoder; AIndex, APaletteCount, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
@@ -446,6 +446,7 @@ type
 
     FCS: TRTLCriticalSection;
     FGlobalTilingBinCountShift: Integer;
+    FKeyFramesLeft: Integer;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -2597,7 +2598,7 @@ begin
 
   if PalettesLeft <= 0 then
   begin
-    tileResd := Sqrt(FTErrCml / (Encoder.FTileMapSize * FrameCount));
+    tileResd := Sqrt(ReconstructErrCml / (Encoder.FTileMapSize * FrameCount));
     WriteLn('KF: ', StartFrame:8, ' ResidualErr: ', (tileResd * Encoder.FTileMapSize):12:3, ' (by frame) ', tileResd:12:6, ' (by tile)');
   end;
 end;
@@ -2762,7 +2763,7 @@ begin
   Assert(annQueryPos = annQueryCount);
 
   SpinEnter(@FLock);
-  FTErrCml += errCml;
+  ReconstructErrCml += errCml;
   SpinLeave(@FLock);
 end;
 
@@ -3108,12 +3109,13 @@ end;
 
 procedure TKeyFrame.Reconstruct;
 var
-  palIdx: Integer;
+  palIdx, kfIdx: Integer;
+  tileResd, errCml: Double;
 begin
   if FrameCount = 0 then
     Exit;
 
-  FTErrCml := 0.0;
+  ReconstructErrCml := 0.0;
   PalettesLeft := Encoder.FPaletteCount;
   SetLength(TileDS, Encoder.FPaletteCount);
   try
@@ -3125,6 +3127,17 @@ begin
     end;
   finally
     SetLength(TileDS, 0);
+  end;
+
+  InterLockedDecrement(Encoder.FKeyFramesLeft);
+  if Encoder.FKeyFramesLeft <= 0 then
+  begin
+    errCml := 0.0;
+    for kfIdx := 0 to High(Encoder.FKeyFrames) do
+      errCml += Encoder.FKeyFrames[kfIdx].ReconstructErrCml;
+
+    tileResd := Sqrt(errCml / (Encoder.FTileMapSize * Length(Encoder.FFrames)));
+    WriteLn('All:', Length(Encoder.FFrames):8, ' ResidualErr: ', (tileResd * Encoder.FTileMapSize):12:3, ' (by frame) ', tileResd:12:6, ' (by tile)');
   end;
 end;
 
@@ -3441,6 +3454,7 @@ begin
   ProgressRedraw(2);
 
   FindKeyFrames(manualKeyFrames);
+  FKeyFramesLeft := Length(FKeyFrames);
 
   ProgressRedraw(3);
 
