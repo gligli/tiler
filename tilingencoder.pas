@@ -5734,17 +5734,23 @@ var
   end;
 
   procedure WriteDimensions;
+  var
+    maxTileCount, kfIdx: Integer;
   begin
+    maxTileCount := 0;
+    for kfIdx := 0 to High(FKeyFrames) do
+      maxTileCount := Max(maxTileCount, Length(FKeyFrames[kfIdx].Tiles));
+
     DoCmd(gtSetDimensions, 0);
     DoWord(FTileMapWidth); // frame tilemap width
     DoWord(FTileMapHeight); // frame tilemap height
     DoDWord(round(1000*1000*1000 / FFramesPerSecond)); // frame length in nanoseconds
-    DoDWord(GetGlobalTileCount(True)); // tile count
+    DoDWord(maxTileCount); // tile count
   end;
 
 var
   StartPos, StreamSize, LastKF, KFCount, KFSize, BlkSkipCount: Integer;
-  kf, fri, yx, yxs, cs, sx, sy: Integer;
+  kfIdx, fri, yx, yxs, cs, sx, sy: Integer;
   IsKF: Boolean;
   frm: TFrame;
   Header: TGTMHeader;
@@ -5765,15 +5771,15 @@ begin
   AStream.WriteBuffer(Header, SizeOf(Header));
 
   SetLength(KFInfo, Length(FKeyFrames));
-  for kf := 0 to High(FKeyFrames) do
+  for kfIdx := 0 to High(FKeyFrames) do
   begin
-    FillChar(KFInfo[kf], SizeOf(KFInfo[0]), 0);
-    KFInfo[kf].FourCC := 'GTMk';
-    KFInfo[kf].RIFFSize := SizeOf(KFInfo[0]) - SizeOf(KFInfo[0].FourCC) - SizeOf(KFInfo[0].RIFFSize);
-    KFInfo[kf].KFIndex := kf;
-    KFInfo[kf].FrameIndex := FKeyFrames[kf].StartFrame;
-    KFInfo[kf].TimeCodeMillisecond := Round(1000.0 * FKeyFrames[kf].StartFrame / FFramesPerSecond);
-    AStream.WriteBuffer(KFInfo[kf], SizeOf(KFInfo[0]));
+    FillChar(KFInfo[kfIdx], SizeOf(KFInfo[0]), 0);
+    KFInfo[kfIdx].FourCC := 'GTMk';
+    KFInfo[kfIdx].RIFFSize := SizeOf(KFInfo[0]) - SizeOf(KFInfo[0].FourCC) - SizeOf(KFInfo[0].RIFFSize);
+    KFInfo[kfIdx].KFIndex := kfIdx;
+    KFInfo[kfIdx].FrameIndex := FKeyFrames[kfIdx].StartFrame;
+    KFInfo[kfIdx].TimeCodeMillisecond := Round(1000.0 * FKeyFrames[kfIdx].StartFrame / FFramesPerSecond);
+    AStream.WriteBuffer(KFInfo[kfIdx], SizeOf(KFInfo[0]));
   end;
 
   Header.WholeHeaderSize := AStream.Size - StartPos;
@@ -5785,12 +5791,12 @@ begin
     WriteDimensions;
 
     LastKF := 0;
-    for kf := 0 to High(FKeyFrames) do
+    for kfIdx := 0 to High(FKeyFrames) do
     begin
-      WriteKFIntraTiles(FKeyFrames[kf]); // has to be called before writing palettes
-      WriteKFAttributes(FKeyFrames[kf]);
+      WriteKFIntraTiles(FKeyFrames[kfIdx]); // has to be called before writing palettes
+      WriteKFAttributes(FKeyFrames[kfIdx]);
 
-      for fri := FKeyFrames[kf].StartFrame to FKeyFrames[kf].EndFrame do
+      for fri := FKeyFrames[kfIdx].StartFrame to FKeyFrames[kfIdx].EndFrame do
       begin
         frm := FFrames[fri];
 
@@ -5843,14 +5849,14 @@ begin
         Assert(cs = FTileMapSize, 'incomplete TM');
         Assert(BlkSkipCount = 0, 'pending skips');
 
-        IsKF := (fri = FKeyFrames[kf].EndFrame);
+        IsKF := (fri = FKeyFrames[kfIdx].EndFrame);
 
         DoCmd(gtFrameEnd, Ord(IsKF));
 
         if IsKF then
         begin
-          KFCount := FKeyFrames[kf].EndFrame - LastKF + 1;
-          LastKF := FKeyFrames[kf].EndFrame + 1;
+          KFCount := FKeyFrames[kfIdx].EndFrame - LastKF + 1;
+          LastKF := FKeyFrames[kfIdx].EndFrame + 1;
 
           AStream.Position := AStream.Size;
           KFSize := AStream.Position;
@@ -5859,13 +5865,13 @@ begin
 
           KFSize := AStream.Size - KFSize;
 
-          KFInfo[kf].RawSize := ZStream.Size;
-          KFInfo[kf].CompressedSize := KFSize;
-          if (kf > 0) or (Length(FKeyFrames) = 1) then
+          KFInfo[kfIdx].RawSize := ZStream.Size;
+          KFInfo[kfIdx].CompressedSize := KFSize;
+          if (kfIdx > 0) or (Length(FKeyFrames) = 1) then
             Header.KFMaxBytesPerSec := max(Header.KFMaxBytesPerSec, round(KFSize * FFramesPerSecond / KFCount));
           Header.AverageBytesPerSec += KFSize;
 
-          WriteLn('KF: ', FKeyFrames[kf].StartFrame:8, ' FCnt: ', KFCount:4, ' Written: ', KFSize:8, ' Bitrate: ', (KFSize / 1024.0 * 8.0 / KFCount):8:2, ' kbpf   (', (KFSize / 1024.0 * 8.0 / KFCount * FFramesPerSecond):8:2, ' kbps)');
+          WriteLn('KF: ', FKeyFrames[kfIdx].StartFrame:8, ' FCnt: ', KFCount:4, ' Written: ', KFSize:8, ' Bitrate: ', (KFSize / 1024.0 * 8.0 / KFCount):8:2, ' kbpf   (', (KFSize / 1024.0 * 8.0 / KFCount * FFramesPerSecond):8:2, ' kbps)');
         end;
       end;
     end;
@@ -5876,8 +5882,8 @@ begin
   Header.AverageBytesPerSec := round(Header.AverageBytesPerSec * FFramesPerSecond / Length(FFrames));
   AStream.Position := 0;
   AStream.WriteBuffer(Header, SizeOf(Header));
-  for kf := 0 to High(FKeyFrames) do
-    AStream.WriteBuffer(KFInfo[kf], SizeOf(KFInfo[0]));
+  for kfIdx := 0 to High(FKeyFrames) do
+    AStream.WriteBuffer(KFInfo[kfIdx], SizeOf(KFInfo[0]));
   AStream.Position := AStream.Size;
 
   StreamSize := AStream.Size - StartPos;
