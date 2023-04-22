@@ -24,7 +24,7 @@ const
 
   cFTQWeighting = False;
   cYakmoMaxIterations = 300;
-  cGlobalTilingCoresetMultiplier = 1.5;
+  cGlobalTilingCoresetMultiplier = 2.0;
 
 {$if false}
   cRedMul = 2126;
