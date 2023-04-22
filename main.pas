@@ -59,6 +59,7 @@ type
     Label7: TLabel;
     Label9: TLabel;
     lblPct: TLabel;
+    llPalTileDesc: TPanel;
     MenuItem8: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
@@ -131,6 +132,8 @@ type
     procedure imgPaletteClick(Sender: TObject);
     procedure btnGeneratePNGsClick(Sender: TObject);
     procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
+    procedure imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    procedure imgTilesMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure miLoadSettingsClick(Sender: TObject);
     procedure miSaveSettingsClick(Sender: TObject);
     procedure PsyVTimerTimer(Sender: TObject);
@@ -259,6 +262,38 @@ begin
   ACanvas.Brush.Color := clBlack;
   ACanvas.Brush.Style := bsSolid;
   ACanvas.Clear;
+end;
+
+procedure TMainForm.imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+var
+  P: TPoint;
+  palIdx: Integer;
+begin
+  P := imgPalette.ScreenToClient(Mouse.CursorPos);
+  palIdx := iDiv0(P.Y * FTilingEncoder.PaletteCount, imgPalette.Height);
+  llPalTileDesc.Caption := Format('Palette #: %3d', [palIdx]);
+end;
+
+procedure TMainForm.imgTilesMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+var
+  P: TPoint;
+  tileIdx: Integer;
+begin
+  P := imgTiles.ScreenToClient(Mouse.CursorPos);
+  P.X := P.X * imgTiles.Picture.Width div imgTiles.Width;
+  P.Y := P.Y * imgTiles.Picture.Height div imgTiles.Height;
+
+  tileIdx := (sePage.Value * (imgTiles.Picture.Height shr cTileWidthBits) + (P.Y shr cTileWidthBits)) * (imgTiles.Picture.Width shr cTileWidthBits) + (P.X shr cTileWidthBits);
+
+  if InRange(FTilingEncoder.RenderFrameIndex, 0, High(FTilingEncoder.Frames)) and
+      Assigned(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame) and
+      InRange(tileIdx, 0, High(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Tiles)) then
+    llPalTileDesc.Caption := Format('Tile #: %6d, Active: %s, UseCount: %6d', [
+        tileIdx,
+        BoolToStr(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Tiles[tileIdx]^.Active, True),
+        FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Tiles[tileIdx]^.UseCount])
+  else
+    llPalTileDesc.Caption := 'Invalid tile!';
 end;
 
 procedure TMainForm.miLoadSettingsClick(Sender: TObject);
@@ -503,7 +538,7 @@ var
   P: TPoint;
 begin
   P := imgPalette.ScreenToClient(Mouse.CursorPos);
-  sedPalIdx.Value := iDiv0(P.y * FTilingEncoder.PaletteCount, imgPalette.Height);
+  sedPalIdx.Value := iDiv0(P.Y * FTilingEncoder.PaletteCount, imgPalette.Height);
   FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;
 end;
 

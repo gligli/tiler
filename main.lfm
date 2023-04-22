@@ -630,7 +630,7 @@ object MainForm: TMainForm
       object sePage: TSpinEdit
         Left = 43
         Height = 23
-        Top = 8
+        Top = 32
         Width = 56
         MaxValue = 10000
         OnChange = UpdateVideo
@@ -639,7 +639,7 @@ object MainForm: TMainForm
       object Label6: TLabel
         Left = 8
         Height = 15
-        Top = 10
+        Top = 34
         Width = 26
         Caption = 'Page'
         ParentColor = False
@@ -647,13 +647,14 @@ object MainForm: TMainForm
       object imgPalette: TImage
         Cursor = crHandPoint
         Left = 8
-        Height = 446
-        Top = 32
+        Height = 423
+        Top = 55
         Width = 256
         AntialiasingMode = amOff
         Anchors = [akTop, akLeft, akBottom]
         OnClick = imgPaletteClick
         OnContextPopup = imgContextPopup
+        OnMouseMove = imgPaletteMouseMove
         PopupMenu = pmProcesses
         Stretch = True
       end
@@ -678,9 +679,19 @@ object MainForm: TMainForm
           Top = 0
           Width = 676
           Align = alClient
+          OnMouseMove = imgTilesMouseMove
           PopupMenu = pmProcesses
           Stretch = True
         end
+      end
+      object llPalTileDesc: TPanel
+        Left = 8
+        Height = 18
+        Top = 8
+        Width = 256
+        BevelOuter = bvLowered
+        ParentColor = False
+        TabOrder = 2
       end
     end
   end
