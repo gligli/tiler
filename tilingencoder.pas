@@ -398,6 +398,7 @@ type
 
     // algorithms
 
+    function GetFreeThreadCount: Integer;
     function GetTileCount(AActiveOnly: Boolean): Integer;
 
     procedure MergeTiles(const TileIndexes: array of Int64; TileCount: Integer; BestIdx: Int64; NewTile: PPalPixels; NewTileRGB: PRGBPixels);
@@ -447,6 +448,7 @@ type
     FCS: TRTLCriticalSection;
     FGlobalTilingBinCountShift: Integer;
     FKeyFramesLeft: Integer;
+    FKeyFramesThreadCount: Integer;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -1787,6 +1789,12 @@ begin
   inherited Destroy;
 end;
 
+function TKeyFrame.GetFreeThreadCount: Integer;
+begin
+  Result := Max(1, ProcThreadPool.MaxThreadCount - Encoder.FKeyFramesThreadCount);
+  //WriteLn('FreeThreadCount ', Result:2);
+end;
+
 function TKeyFrame.GetTileCount(AActiveOnly: Boolean): Integer;
 var
   tidx: Int64;
@@ -2298,27 +2306,26 @@ begin
 end;
 
 procedure TKeyFrame.DitherTiles;
-var
-  i, PalIdx, TMPos: Integer;
-  sx, sy: Integer;
-  T: PTile;
-  TMI: PTileMapItem;
-begin
-  // build ditherer
-  for i := 0 to Encoder.FPaletteCount - 1 do
-    Encoder.PreparePlan(MixingPlans[i], Encoder.FDitheringYliluoma2MixedColors, PaletteRGB[i]);
 
-  // dither tile in chosen palette
-  for i := StartFrame to EndFrame do
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    PalIdx, TMPos: Integer;
+    sx, sy: Integer;
+    T: PTile;
+    TMI: PTileMapItem;
   begin
+    if not InRange(AIndex, StartFrame, EndFrame) then
+      Exit;
+
+    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
     try
-      Encoder.FFrames[i].AcquireFrameTiles;
+      Encoder.FFrames[AIndex].AcquireFrameTiles;
 
       for sy := 0 to Encoder.FTileMapHeight - 1 do
         for sx := 0 to Encoder.FTileMapWidth - 1 do
         begin
           TMPos := sy * Encoder.FTileMapWidth + sx;
-          TMI := @Encoder.FFrames[i].TileMap[sy, sx];
+          TMI := @Encoder.FFrames[AIndex].TileMap[sy, sx];
           T := Tiles[TMI^.TileIdx];
           PalIdx := TMI^.PalIdx;
 
@@ -2327,20 +2334,37 @@ begin
             Assert(InRange(PalIdx, 0, Encoder.FPaletteCount - 1));
             Encoder.DitherTile(T^, MixingPlans[PalIdx]);
 
-            T^.TmpIndex := Int64(i) * Encoder.FTileMapSize + TMPos;
+            T^.TmpIndex := Int64(AIndex) * Encoder.FTileMapSize + TMPos;
           end;
 
           if Encoder.FrameTilingFromPalette then
           begin
             // also dither FrameTiles
-            Encoder.DitherTile(Encoder.FFrames[i].FrameTiles[TMPos]^, MixingPlans[PalIdx]);
+            Encoder.DitherTile(Encoder.FFrames[AIndex].FrameTiles[TMPos]^, MixingPlans[PalIdx]);
           end;
         end;
 
     finally
-      Encoder.FFrames[i].CompressFrameTiles;
-      Encoder.FFrames[i].ReleaseFrameTiles;
+      Encoder.FFrames[AIndex].CompressFrameTiles;
+      Encoder.FFrames[AIndex].ReleaseFrameTiles;
+      InterLockedDecrement(Encoder.FKeyFramesThreadCount);
     end;
+  end;
+
+var
+  i: Integer;
+begin
+  // build ditherer
+  for i := 0 to Encoder.FPaletteCount - 1 do
+    Encoder.PreparePlan(MixingPlans[i], Encoder.FDitheringYliluoma2MixedColors, PaletteRGB[i]);
+
+  // dither tile in chosen palette
+
+  InterLockedDecrement(Encoder.FKeyFramesThreadCount);
+  try
+    ProcThreadPool.DoParallelLocalProc(@DoFrame, StartFrame, EndFrame, nil, GetFreeThreadCount);
+  finally
+    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
   end;
 
   // cleanup ditherer
@@ -2495,7 +2519,7 @@ begin
   for clusterIdx := 0 to YakmoClusterCount - 1 do
   begin
     clusterLineCount := 0;
-    for yakmoDatasetIdx := 0 to High(YakmoClusters) do
+    for yakmoDatasetIdx := 0 to BICOClusterCount - 1 do
       if YakmoClusters[yakmoDatasetIdx] = clusterIdx then
         for lineIdx := 0 to DSLen - 1 do
           if FLANNClusters[lineIdx] = yakmoDatasetIdx then
@@ -3000,7 +3024,7 @@ end;
 
 procedure TKeyFrame.LoadTiles;
 
-  procedure DoFrame(AIndex: Integer);
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     i, sx, sy: Integer;
     q00, q01, q10, q11: Integer;
@@ -3008,43 +3032,51 @@ procedure TKeyFrame.LoadTiles;
     tilePos: Int64;
     Frame: TFrame;
   begin
-    Frame := Encoder.FFrames[AIndex];
+    if not InRange(AIndex, StartFrame, EndFrame) then
+      Exit;
 
-    tilePos := (Frame.Index - StartFrame) * Encoder.FTileMapSize;
-
-    Frame.AcquireFrameTiles;
+    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
     try
-      for i := 0 to Encoder.FTileMapSize - 1 do
-      begin
-        // enforce a 'spin' on tiles mirrors (brighter top-left corner)
+      Frame := Encoder.FFrames[AIndex];
 
-        q00 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
-        q01 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
-        q10 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-        q11 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+      tilePos := (Frame.Index - StartFrame) * Encoder.FTileMapSize;
 
-        HMirror := q00 + q10 < q01 + q11;
-        VMirror := q00 + q01 < q10 + q11;
+      Frame.AcquireFrameTiles;
+      try
+        for i := 0 to Encoder.FTileMapSize - 1 do
+        begin
+          // enforce a 'spin' on tiles mirrors (brighter top-left corner)
 
-        Tiles[tilePos + i]^.CopyFrom(Frame.FrameTiles[i]^);
-        Tiles[tilePos + i]^.UseCount := 1;
+          q00 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
+          q01 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
+          q10 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+          q11 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
 
-        if HMirror then
-          Encoder.HMirrorTile(Tiles[tilePos + i]^);
+          HMirror := q00 + q10 < q01 + q11;
+          VMirror := q00 + q01 < q10 + q11;
 
-        if VMirror then
-          Encoder.VMirrorTile(Tiles[tilePos + i]^);
+          Tiles[tilePos + i]^.CopyFrom(Frame.FrameTiles[i]^);
+          Tiles[tilePos + i]^.UseCount := 1;
 
-        // update tilemap
+          if HMirror then
+            Encoder.HMirrorTile(Tiles[tilePos + i]^);
 
-        DivMod(i, Encoder.FTileMapWidth, sy, sx);
-        Frame.TileMap[sy, sx].TileIdx :=  tilePos + i;
-        Frame.TileMap[sy, sx].HMirror :=  HMirror;
-        Frame.TileMap[sy, sx].VMirror :=  VMirror;
+          if VMirror then
+            Encoder.VMirrorTile(Tiles[tilePos + i]^);
+
+          // update tilemap
+
+          DivMod(i, Encoder.FTileMapWidth, sy, sx);
+          Frame.TileMap[sy, sx].TileIdx :=  tilePos + i;
+          Frame.TileMap[sy, sx].HMirror :=  HMirror;
+          Frame.TileMap[sy, sx].VMirror :=  VMirror;
+        end;
+
+      finally
+        Frame.ReleaseFrameTiles;
       end;
-
     finally
-      Frame.ReleaseFrameTiles;
+      InterLockedDecrement(Encoder.FKeyFramesThreadCount);
     end;
   end;
 
@@ -3061,8 +3093,12 @@ begin
   // allocate tiles
   Tiles := TTile.Array1DNew(FrameCount * Encoder.FTileMapSize, True, True);
 
-  for frm := StartFrame to EndFrame do
-    DoFrame(frm);
+  InterLockedDecrement(Encoder.FKeyFramesThreadCount);
+  try
+    ProcThreadPool.DoParallelLocalProc(@DoFrame, StartFrame, EndFrame, nil, GetFreeThreadCount);
+  finally
+    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
+  end;
 
   InitMergeTiles;
   MakeTilesUnique;
@@ -3070,6 +3106,20 @@ begin
 end;
 
 procedure TKeyFrame.Dither;
+
+  procedure DoQuantize(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    if not InRange(AIndex, 0, Encoder.FPaletteCount - 1) then
+      Exit;
+
+    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
+    try
+      QuantizePalette(AIndex, Encoder.FQuantizerUseYakmo, Encoder.FQuantizerDennisLeeBitsPerComponent, IfThen(Encoder.FDitheringUseGamma, 0, -1));
+    finally
+      InterLockedDecrement(Encoder.FKeyFramesThreadCount);
+    end;
+  end;
+
 var
   palIdx: Integer;
   tidx: Int64;
@@ -3085,8 +3135,12 @@ begin
   SetLength(PaletteUseCount, Encoder.FPaletteCount);
   PalettesLeft := Encoder.FPaletteCount;
 
-  for palIdx := 0 to Encoder.FPaletteCount - 1 do
-    QuantizePalette(palIdx, Encoder.FQuantizerUseYakmo, Encoder.FQuantizerDennisLeeBitsPerComponent, IfThen(Encoder.FDitheringUseGamma, 0, -1));
+  InterLockedDecrement(Encoder.FKeyFramesThreadCount);
+  try
+    ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Encoder.FPaletteCount - 1, nil, GetFreeThreadCount);
+  finally
+    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
+  end;
 
   FinishQuantizePalettes;
   PalettesLeft := -1;
@@ -3115,6 +3169,22 @@ begin
 end;
 
 procedure TKeyFrame.Reconstruct;
+
+  procedure DoTiling(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    if not InRange(AIndex, 0, Encoder.FPaletteCount - 1) then
+      Exit;
+
+    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
+    try
+      PrepareKFTiling(AIndex, IfThen(Encoder.FFrameTilingUseGamma, 0, -1));
+      DoKFTiling(AIndex, IfThen(Encoder.FFrameTilingUseGamma, 0, -1), Encoder.FFrameTilingBlendingThreshold, Encoder.FFrameTilingFromPalette);
+      FinishKFTiling(AIndex);
+    finally
+      InterLockedDecrement(Encoder.FKeyFramesThreadCount);
+    end;
+  end;
+
 var
   palIdx, kfIdx: Integer;
   tileResd, errCml: Double;
@@ -3125,14 +3195,11 @@ begin
   ReconstructErrCml := 0.0;
   PalettesLeft := Encoder.FPaletteCount;
   SetLength(TileDS, Encoder.FPaletteCount);
+  InterLockedDecrement(Encoder.FKeyFramesThreadCount);
   try
-    for palIdx := 0 to Encoder.FPaletteCount - 1 do
-    begin
-      PrepareKFTiling(palIdx, IfThen(Encoder.FFrameTilingUseGamma, 0, -1));
-      DoKFTiling(palIdx, IfThen(Encoder.FFrameTilingUseGamma, 0, -1), Encoder.FFrameTilingBlendingThreshold, Encoder.FFrameTilingFromPalette);
-      FinishKFTiling(palIdx);
-    end;
+    ProcThreadPool.DoParallelLocalProc(@DoTiling, 0, Encoder.FPaletteCount - 1, nil, GetFreeThreadCount);
   finally
+    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
     SetLength(TileDS, 0);
   end;
 
@@ -3483,19 +3550,27 @@ procedure TTilingEncoder.Run(AKeyFrameProcess: TKeyFrameProcess);
   var
     keyFrame: TKeyFrame;
   begin
-    keyFrame := FKeyFrames[AIndex];
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
+      Exit;
 
-    case AKeyFrameProcess of
-      kfpAll: keyFrame.RunAll;
-      kfpLoadTiles: keyFrame.LoadTiles;
-      kfpDither: keyFrame.Dither;
-      kfpCluster: keyFrame.Cluster;
-      kfpReconstruct: keyFrame.Reconstruct;
-      kfpReColor: keyFrame.ReColor;
-      kfpReindex: keyFrame.Reindex;
-      kfpSmooth: keyFrame.Smooth;
-    else
-      Assert(False);
+    InterLockedIncrement(FKeyFramesThreadCount);
+    try
+      keyFrame := FKeyFrames[AIndex];
+
+      case AKeyFrameProcess of
+        kfpAll: keyFrame.RunAll;
+        kfpLoadTiles: keyFrame.LoadTiles;
+        kfpDither: keyFrame.Dither;
+        kfpCluster: keyFrame.Cluster;
+        kfpReconstruct: keyFrame.Reconstruct;
+        kfpReColor: keyFrame.ReColor;
+        kfpReindex: keyFrame.Reindex;
+        kfpSmooth: keyFrame.Smooth;
+      else
+        Assert(False);
+      end;
+    finally
+      InterLockedDecrement(FKeyFramesThreadCount);
     end;
   end;
 
@@ -4810,6 +4885,9 @@ var
 
   procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
+    if not InRange(AIndex, 1, High(FFrames)) then
+      Exit;
+
     Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex], EuclideanDist[AIndex]);
   end;
 
