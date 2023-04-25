@@ -14,7 +14,7 @@ uses
   Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, kmodes;
 
 type
-  TEncoderStep = (esNone = -1, esLoad = 0, esRun, esSave);
+  TEncoderStep = (esNone = -1, esLoad = 0, esDither, esTile, esSave);
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation, kfrEuclideanDist);
   TKeyFrameProcess = (kfpAll = -1, kfpLoadTiles = 0, kfpDither, kfpCluster, kfpReconstruct, kfpReColor, kfpReindex, kfpSmooth);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
@@ -63,7 +63,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 1, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -346,6 +346,7 @@ type
   TFrame = class
     PKeyFrame: TKeyFrame;
     Index: Integer;
+    DitherPsyV: Double;
 
     TileMap: array of array of TTileMapItem;
 
@@ -432,7 +433,8 @@ type
     procedure Reindex;
     procedure Smooth;
 
-    procedure RunAll;
+    procedure RunAll_Dither;
+    procedure RunAll_Tile;
   end;
 
   TKeyFrameArray =  array of TKeyFrame;
@@ -606,7 +608,8 @@ type
     // processes / functions
 
     procedure Load;
-    procedure Run(AKeyFrameProcess: TKeyFrameProcess = kfpAll);
+    procedure Dither(AKeyFrameProcess: TKeyFrameProcess = kfpAll);
+    procedure Tile(AKeyFrameProcess: TKeyFrameProcess = kfpAll);
     procedure Save;
 
     procedure Render(AFast: Boolean);
@@ -3137,15 +3140,27 @@ begin
 end;
 
 procedure TKeyFrame.Cluster;
+const
+  CAllocEpsilon = 0.0001;
 var
-  ClusterCount: Integer;
+  frmIdx, ClusterCount: Integer;
+  AllPsyV, KFPsyV: Double;
 begin
   if FrameCount = 0 then
     Exit;
 
-  // share GlobalTilingTileCount among keyframes, proportional to amount of frames
+  // share GlobalTilingTileCount among keyframes, proportional to the amount of dithering psychovisual error
+  // the rationale being: high dithering error means complex frame
 
-  ClusterCount := max(1, trunc(Encoder.FGlobalTilingTileCount / Length(Encoder.FFrames) * FrameCount));
+  AllPsyV := 0.0;
+  for frmIdx := 0 to High(Encoder.FFrames) do
+    AllPsyV += CAllocEpsilon + Encoder.FFrames[frmIdx].DitherPsyV;
+
+  KFPsyV := 0.0;
+  for frmIdx := StartFrame to EndFrame do
+    KFPsyV += CAllocEpsilon + Encoder.FFrames[frmIdx].DitherPsyV;
+
+  ClusterCount := max(1, trunc(Div0(Encoder.FGlobalTilingTileCount * KFPsyV, AllPsyV)));
 
   // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
 
@@ -3359,10 +3374,14 @@ begin
   end;
 end;
 
-procedure TKeyFrame.RunAll;
+procedure TKeyFrame.RunAll_Dither;
 begin
   LoadTiles;
   Dither;
+end;
+
+procedure TKeyFrame.RunAll_Tile;
+begin
   Cluster;
   Reconstruct;
   Reindex;
@@ -3530,7 +3549,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.Run(AKeyFrameProcess: TKeyFrameProcess);
+procedure TTilingEncoder.Dither(AKeyFrameProcess: TKeyFrameProcess);
 
   procedure DoRun(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -3544,9 +3563,76 @@ procedure TTilingEncoder.Run(AKeyFrameProcess: TKeyFrameProcess);
       keyFrame := FKeyFrames[AIndex];
 
       case AKeyFrameProcess of
-        kfpAll: keyFrame.RunAll;
+        kfpAll: keyFrame.RunAll_Dither;
         kfpLoadTiles: keyFrame.LoadTiles;
         kfpDither: keyFrame.Dither;
+      else
+        Assert(False);
+      end;
+    finally
+      InterLockedDecrement(FKeyFramesThreadCount);
+    end;
+  end;
+
+begin
+  if Length(FFrames) = 0 then
+    Exit;
+
+  ProgressRedraw(0, esDither);
+
+  ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
+
+  ProgressRedraw(1);
+end;
+
+procedure TTilingEncoder.Tile(AKeyFrameProcess: TKeyFrameProcess);
+
+  procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    i, sx, sy: Integer;
+    q: Double;
+    Frame: TFrame;
+    PlainDCT, DitherDCT: array[0 .. cTileDCTSize - 1] of Double;
+  begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
+    Frame := FFrames[AIndex];
+
+    Frame.AcquireFrameTiles;
+    try
+      q := 0.0;
+      i := 0;
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          ComputeTilePsyVisFeatures(Frame.FrameTiles[sy * FTileMapWidth + sx]^, False, False, False, False, False, False, -1, nil, PFloat(@PlainDCT[0]));
+          ComputeTilePsyVisFeatures(Frame.PKeyFrame.Tiles[Frame.TileMap[sy, sx].TileIdx]^, True, False, False, False, False, False, -1, Frame.PKeyFrame.PaletteRGB[Frame.TileMap[sy, sx].PalIdx], PFloat(@DitherDCT[0]));
+          q += CompareEuclideanDCTPtr_asm(PFloat(@PlainDCT[0]), PFloat(@DitherDCT[0]));
+          Inc(i);
+        end;
+      if i <> 0 then
+        q /= i;
+
+      Frame.DitherPsyV := Sqrt(q);
+    finally
+      Frame.ReleaseFrameTiles;
+    end;
+  end;
+
+  procedure DoRun(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    keyFrame: TKeyFrame;
+  begin
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
+      Exit;
+
+    InterLockedIncrement(FKeyFramesThreadCount);
+    try
+      keyFrame := FKeyFrames[AIndex];
+
+      case AKeyFrameProcess of
+        kfpAll: keyFrame.RunAll_Tile;
         kfpCluster: keyFrame.Cluster;
         kfpReconstruct: keyFrame.Reconstruct;
         kfpReColor: keyFrame.ReColor;
@@ -3564,11 +3650,15 @@ begin
   if Length(FFrames) = 0 then
     Exit;
 
-  ProgressRedraw(0, esRun);
+  ProgressRedraw(0, esTile);
+
+  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, High(FFrames));
+
+  ProgressRedraw(1);
 
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 
-  ProgressRedraw(1);
+  ProgressRedraw(2);
 end;
 
 procedure TTilingEncoder.Save;
