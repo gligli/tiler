@@ -2376,8 +2376,8 @@ end;
 
 procedure TKeyFrame.DoKeyFrameKMeans(AClusterCount: Integer);
 var
-  i, w, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen,
-    BICOClusterCount, BICOCoresetSize, clusterLineIdx, BICOWeightsSum, YakmoClusterCount: Integer;
+  i, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen,
+    BICOClusterCount, BICOCoresetSize, clusterLineIdx, YakmoClusterCount: Integer;
   cnt, tidx: Int64;
   speedup: Double;
   v, best: TFloat;
@@ -2422,8 +2422,7 @@ begin
         Encoder.ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @Dataset[cnt * cTileDCTSize]);
 
         // insert line into BICO
-        for w := 1 to Tile^.UseCount do
-          bico_insert_line(BICO, @Dataset[cnt * cTileDCTSize], 1);
+        bico_insert_line(BICO, @Dataset[cnt * cTileDCTSize], Tile^.UseCount);
 
         TileIndices[cnt] := tidx;
         Inc(cnt);
@@ -2467,34 +2466,21 @@ begin
 
   // Yakmo weighting from BICO weights
 
-  BICOWeightsSum := 0;
-  for clusterIdx := 0 to BICOClusterCount - 1 do
-    BICOWeightsSum += Max(1, round(BICOWeights[clusterIdx]));
-
-  SetLength(YakmoDataset, BICOWeightsSum);
-  for clusterIdx := 0 to BICOClusterCount - 1 do
-    YakmoDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
-
-  clusterIdx := BICOClusterCount;
-  for i := 0 to BICOClusterCount - 1 do
-    for w := 2 to Max(1, round(BICOWeights[i])) do
-    begin
-      YakmoDataset[clusterIdx] := @BICOCentroids[i * cTileDCTSize];
-      Inc(clusterIdx);
-    end;
-  Assert(clusterIdx = BICOWeightsSum);
-
   // use Yakmo to extract final centroids
 
   YakmoClusterCount := AClusterCount;
-  SetLength(YakmoClusters, BICOWeightsSum);
+  SetLength(YakmoDataset, BICOClusterCount);
+  SetLength(YakmoClusters, BICOClusterCount);
   SetLength(YakmoCentroids, YakmoClusterCount, cTileDCTSize);
+
+  for clusterIdx := 0 to BICOClusterCount - 1 do
+    YakmoDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
 
   if BICOClusterCount > YakmoClusterCount then
   begin
     Yakmo := yakmo_create(YakmoClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
     try
-      yakmo_load_train_data(Yakmo, BICOWeightsSum, cTileDCTSize, @YakmoDataset[0]);
+      yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, @YakmoDataset[0]);
       yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
       yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
     finally
