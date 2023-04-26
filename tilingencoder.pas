@@ -550,6 +550,7 @@ type
     function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
 
+    function GetSettings: String;
     procedure ClearAll;
     procedure ProgressRedraw(ASubStepIdx: Integer = -1; AProgressStep: TEncoderStep = esNone);
     procedure InitLuts(ATilePaletteSize, APaletteCount: Integer);
@@ -3479,6 +3480,10 @@ begin
 
   ClearAll;
 
+  // print settings
+
+  WriteLn(GetSettings);
+
   ProgressRedraw(0, esLoad);
 
   // init Gamma LUTs
@@ -3860,6 +3865,19 @@ begin
   finally
     a.ReleaseFrameTiles;
     b.ReleaseFrameTiles;
+  end;
+end;
+
+function TTilingEncoder.GetSettings: String;
+var
+  tmpFN: String;
+begin
+  tmpFN := GetTempFileName;
+  try
+    SaveSettings(tmpFN);
+    Result := ReadFileToString(tmpFN);
+  finally
+    DeleteFile(tmpFN);
   end;
 end;
 
