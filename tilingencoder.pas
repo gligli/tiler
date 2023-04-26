@@ -523,6 +523,7 @@ type
 
     function GetFrameCount: Integer;
     function GetKeyFrameCount: Integer;
+    function GetMaxThreadCount: Integer;
     procedure SetDitheringYliluoma2MixedColors(AValue: Integer);
     procedure SetEncoderGammaValue(AValue: TFloat);
     procedure SetFrameCountSetting(AValue: Integer);
@@ -531,6 +532,7 @@ type
     procedure SetGlobalTilingBinCountShift(AValue: Integer);
     procedure SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
     procedure SetLoadPerFrameTileCountMultiplier(AValue: TFloat);
+    procedure SetMaxThreadCount(AValue: Integer);
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
     procedure SetQuantizerDennisLeeBitsPerComponent(AValue: Integer);
@@ -660,6 +662,7 @@ type
     property FrameTilingBlendingThreshold: TFloat read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
     property SmoothingFactor: TFloat read FSmoothingFactor write SetSmoothingFactor;
     property SmoothingAdditionalTilesThreshold: TFloat read FSmoothingAdditionalTilesThreshold write SetSmoothingAdditionalTilesThreshold;
+    property MaxThreadCount: Integer read GetMaxThreadCount write SetMaxThreadCount;
 
     // GUI state variables
 
@@ -3763,6 +3766,11 @@ begin
   Result := Length(FKeyFrames);
 end;
 
+function TTilingEncoder.GetMaxThreadCount: Integer;
+begin
+ Result := ProcThreadPool.MaxThreadCount;
+end;
+
 function TTilingEncoder.GetFrameCount: Integer;
 begin
   Result := Length(FFrames);
@@ -4477,6 +4485,12 @@ procedure TTilingEncoder.SetLoadPerFrameTileCountMultiplier(AValue: TFloat);
 begin
  if FLoadPerFrameTileCountMultiplier = AValue then Exit;
  FLoadPerFrameTileCountMultiplier := Max(1.0, AValue);
+end;
+
+procedure TTilingEncoder.SetMaxThreadCount(AValue: Integer);
+begin
+ if ProcThreadPool.MaxThreadCount = AValue then Exit;
+ ProcThreadPool.MaxThreadCount := EnsureRange(AValue, 1, NumberOfProcessors);
 end;
 
 procedure TTilingEncoder.SetPaletteCount(AValue: Integer);
@@ -5409,6 +5423,7 @@ begin
     ini.WriteFloat('Smoothing', 'SmoothingAdditionalTilesThreshold', RoundTo(Double(SmoothingAdditionalTilesThreshold), -7));
 
     ini.WriteFloat('Misc', 'EncoderGammaValue', RoundTo(Double(EncoderGammaValue), -7));
+    ini.WriteFloat('Misc', 'MaxThreadCount', MaxThreadCount);
 
   finally
     ini.Free;
@@ -5449,6 +5464,7 @@ begin
     SmoothingAdditionalTilesThreshold := ini.ReadFloat('Smoothing', 'SmoothingAdditionalTilesThreshold', 0.0);
 
     EncoderGammaValue := ini.ReadFloat('Misc', 'EncoderGammaValue', 2.0);
+    MaxThreadCount := ini.ReadInteger('Misc', 'MaxThreadCount', MaxThreadCount);
 
   finally
     ini.Free;

@@ -51,6 +51,7 @@ type
     Label13: TLabel;
     Label14: TLabel;
     Label15: TLabel;
+    Label16: TLabel;
     Label18: TLabel;
     Label2: TLabel;
     Label3: TLabel;
@@ -74,6 +75,7 @@ type
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
     seFTBlendThres: TFloatSpinEdit;
+    seMaxCores: TSpinEdit;
     seQbTiles: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
@@ -645,6 +647,8 @@ begin
   else
     FTilingEncoder.RenderPage := rpNone;
 
+  FTilingEncoder.MaxThreadCount := seMaxCores.Value;
+
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
@@ -683,6 +687,9 @@ begin
   end;
   cbxStartStep.ItemIndex := Ord(Succ(Low(TEncoderStep)));
   cbxEndStep.ItemIndex := Ord(High(TEncoderStep));
+
+  seMaxCores.MaxValue := ProcThreadPool.MaxThreadCount;
+  seMaxCores.Value := seMaxCores.MaxValue;
 
   UpdateVideo(nil);
 end;
