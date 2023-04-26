@@ -5007,6 +5007,9 @@ begin
     end
     else
     begin
+      if (kfReason = kfrNone) and (frmIdx = 0) then
+        kfReason := kfrManual;
+
       if (kfReason = kfrNone) and (correl < CShotTransCorrelLoThres) then
         kfReason := kfrDecorrelation;
 
