@@ -63,7 +63,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 1, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, -2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -521,6 +521,9 @@ type
     FProgressStep: TEncoderStep;
     FProgressStartTime, FProgressPrevTime: Int64;
 
+    FProgressSyncPos, FProgressSyncMax: Integer;
+    FProgressSyncHG: Boolean;
+
     function GetFrameCount: Integer;
     function GetKeyFrameCount: Integer;
     function GetMaxThreadCount: Integer;
@@ -554,7 +557,8 @@ type
 
     function GetSettings: String;
     procedure ClearAll;
-    procedure ProgressRedraw(ASubStepIdx: Integer = -1; AProgressStep: TEncoderStep = esNone);
+    procedure ProgressRedraw(ASubStepIdx: Integer = -1; AProgressStep: TEncoderStep = esNone; AThread: TThread = nil);
+    procedure SyncProgress;
     procedure InitLuts(ATilePaletteSize, APaletteCount: Integer);
     function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
     function GammaUncorrect(lut: Integer; x: TFloat): Byte; inline;
@@ -1582,6 +1586,7 @@ var
   i, size: Integer;
   data: PByte;
 begin
+  Result := nil;
   size := SizeOf(TTile) + IfThen(APalPixels, SizeOf(TPalPixels)) + IfThen(ARGBPixels, SizeOf(TRGBPixels));
   data := AllocMem(size * x);
 
@@ -3071,9 +3076,6 @@ procedure TKeyFrame.LoadTiles;
     end;
   end;
 
-
-var
-  frm: Integer;
 begin
   if FrameCount = 0 then
     Exit;
@@ -3112,7 +3114,6 @@ procedure TKeyFrame.Dither;
   end;
 
 var
-  palIdx: Integer;
   tidx: Int64;
 begin
   if FrameCount = 0 then
@@ -3189,7 +3190,7 @@ procedure TKeyFrame.Reconstruct;
   end;
 
 var
-  palIdx, kfIdx: Integer;
+  kfIdx: Integer;
   tileResd, errCml: Double;
 begin
   if FrameCount = 0 then
@@ -3537,7 +3538,7 @@ begin
 
   loadedFrameCount := 0;
   SetLength(FFrames, frc);
-  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(startFrmIdx));
+  ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(PtrInt(startFrmIdx)));
   WriteLn;
 
   ProgressRedraw(2);
@@ -3556,6 +3557,8 @@ begin
 end;
 
 procedure TTilingEncoder.Dither(AKeyFrameProcess: TKeyFrameProcess);
+var
+  StepProgress: Integer;
 
   procedure DoRun(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -3578,20 +3581,24 @@ procedure TTilingEncoder.Dither(AKeyFrameProcess: TKeyFrameProcess);
     finally
       InterLockedDecrement(FKeyFramesThreadCount);
     end;
+
+    Inc(StepProgress, keyFrame.FrameCount);
+    ProgressRedraw(StepProgress, esNone, AItem.Thread);
   end;
 
 begin
   if Length(FFrames) = 0 then
     Exit;
 
+  StepProgress := 0;
   ProgressRedraw(0, esDither);
 
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
-
-  ProgressRedraw(1);
 end;
 
 procedure TTilingEncoder.Tile(AKeyFrameProcess: TKeyFrameProcess);
+var
+  StepProgress: Integer;
 
   procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -3650,21 +3657,24 @@ procedure TTilingEncoder.Tile(AKeyFrameProcess: TKeyFrameProcess);
     finally
       InterLockedDecrement(FKeyFramesThreadCount);
     end;
+
+    Inc(StepProgress, keyFrame.FrameCount);
+    ProgressRedraw(StepProgress, esNone, AItem.Thread);
   end;
 
 begin
   if Length(FFrames) = 0 then
     Exit;
 
+  StepProgress := 0;
   ProgressRedraw(0, esTile);
 
   ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, High(FFrames));
 
-  ProgressRedraw(1);
+  Inc(StepProgress, FrameCount);
+  ProgressRedraw(StepProgress);
 
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
-
-  ProgressRedraw(2);
 end;
 
 procedure TTilingEncoder.Save;
@@ -5601,7 +5611,16 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.ProgressRedraw(ASubStepIdx: Integer; AProgressStep: TEncoderStep);
+procedure TTilingEncoder.ProgressRedraw(ASubStepIdx: Integer; AProgressStep: TEncoderStep; AThread: TThread);
+
+  function GetStepLen: Integer;
+  begin
+    Result := cEncoderStepLen[FProgressStep];
+
+    if Result < 0 then
+      Result *= -Length(FFrames);
+  end;
+
 const
   cProgressMul = 100;
 var
@@ -5633,9 +5652,9 @@ begin
 
   ProgressStepPosition := 0;
   if ASubStepIdx >= 0 then
-    ProgressStepPosition := iDiv0(ASubStepIdx * cProgressMul, cEncoderStepLen[FProgressStep]);
+    ProgressStepPosition := iDiv0(ASubStepIdx * cProgressMul, GetStepLen);
 
-  ProgressHourGlass := (AProgressStep <> esNone) and (ASubStepIdx < cEncoderStepLen[FProgressStep]);
+  ProgressHourGlass := (AProgressStep <> esNone) and (ASubStepIdx < GetStepLen);
 
   if ASubStepIdx >= 0 then
   begin
@@ -5644,8 +5663,25 @@ begin
   end;
   FProgressPrevTime := curTime;
 
+  EnterCriticalSection(FCS);
+  try
+    FProgressSyncPos := ProgressPosition + ProgressStepPosition;
+    FProgressSyncMax := ProgressMax;
+    FProgressSyncHG := ProgressHourGlass;
+
+    if Assigned(AThread) then
+      TThread.Queue(AThread, @SyncProgress)
+    else
+      SyncProgress;
+  finally
+    LeaveCriticalSection(FCS);
+  end;
+end;
+
+procedure TTilingEncoder.SyncProgress;
+begin
   if Assigned(FOnProgress) then
-    FOnProgress(Self, ProgressPosition + ProgressStepPosition, ProgressMax, ProgressHourGlass);
+    FOnProgress(Self, FProgressSyncPos, FProgressSyncMax, FProgressSyncHG);
 end;
 
 function TTilingEncoder.GetGlobalTileCount(AActiveOnly: Boolean): Integer;
