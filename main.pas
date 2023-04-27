@@ -688,8 +688,8 @@ begin
   cbxStartStep.ItemIndex := Ord(Succ(Low(TEncoderStep)));
   cbxEndStep.ItemIndex := Ord(High(TEncoderStep));
 
-  seMaxCores.MaxValue := ProcThreadPool.MaxThreadCount;
-  seMaxCores.Value := seMaxCores.MaxValue;
+  seMaxCores.MaxValue := NumberOfProcessors;
+  seMaxCores.Value := ProcThreadPool.MaxThreadCount;
 
   UpdateVideo(nil);
 end;
