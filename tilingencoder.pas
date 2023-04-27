@@ -2336,12 +2336,10 @@ procedure TKeyFrame.DitherTiles;
           T := Tiles[TMI^.TileIdx];
           PalIdx := TMI^.PalIdx;
 
-          if T^.Active and (T^.TmpIndex = -1) then
+          if T^.Active and (InterlockedCompareExchange(T^.TmpIndex, Int64(AIndex) * Encoder.FTileMapSize + TMPos, -1) = -1) then
           begin
             Assert(InRange(PalIdx, 0, Encoder.FPaletteCount - 1));
             Encoder.DitherTile(T^, MixingPlans[PalIdx]);
-
-            T^.TmpIndex := Int64(AIndex) * Encoder.FTileMapSize + TMPos;
           end;
 
           if Encoder.FrameTilingFromPalette then
