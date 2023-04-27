@@ -665,7 +665,8 @@ begin
   else
     Screen.Cursor := crDefault;
 
-  Application.ProcessMessages;
+  Invalidate;
+  Repaint;
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
