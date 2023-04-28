@@ -51,7 +51,7 @@ type
     centroids: TByteDynArray2;
     cl_attr_freq: TIntegerDynArray3;
     MaxIter, NumClusters, NumThreads, NumAttrs, NumPoints: Integer;
-    Log: Boolean;
+    Log: Integer;
     LogLabel: String;
     Concurrency: PInteger;
     FGMMD: TGMMD;
@@ -67,7 +67,7 @@ type
     function InitFarthestFirst(InitPoint: Integer): TByteDynArray2;  // negative init_point means randomly chosen
     procedure MovePointCat(const point: TByteDynArray; ipoint, to_clust, from_clust: Integer);
   public
-    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = -1; aLog: Boolean = False; aLogLabel: String = ''; aConcurrency: PInteger = nil);
+    constructor Create(aNumThreads: Integer = 0; aMaxIter: Integer = -1; aLog: Integer = 1; aLogLabel: String = ''; aConcurrency: PInteger = nil);
     destructor Destroy; override;
     function ComputeKModes(const ADataset: TByteDynArray2; ANumClusters, ANumInit, ANumModalities: Integer; out FinalLabels: TIntegerDynArray; out FinalCentroids: TByteDynArray2): Integer;
     // negative n_init means use -n_init as starting point
@@ -801,8 +801,8 @@ begin
   end;
 end;
 
-constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Boolean; aLogLabel: String;
-  aConcurrency: PInteger);
+constructor TKModes.Create(aNumThreads: Integer; aMaxIter: Integer; aLog: Integer; aLogLabel: String;
+ aConcurrency: PInteger);
 begin
   inherited Create;
 
@@ -1025,7 +1025,8 @@ begin
       end;
     end;
 
-    WriteLn(LogLabel, 'Init done');
+    if Log > 0 then
+      WriteLn(LogLabel, 'Init done');
 
     itr := 0;
     converged := False;
@@ -1064,11 +1065,12 @@ begin
 
       totalmoves += moves;
 
-      if Log then
+      if Log > 1 then
         WriteLn(LogLabel, 'Itr: ', itr:3, ' Moves: ', moves: 6, ' Cost: ', cost:16);
     end;
 
-    WriteLn(LogLabel, 'Itr: ', itr:3, ' Finished!'#9'BestItr: ', bestitr:3, ' BestCost: ', bestcost:16);
+    if Log > 0 then
+      WriteLn(LogLabel, 'Itr: ', itr:3, ' Finished!'#9'BestItr: ', bestitr:3, ' BestCost: ', bestcost:16);
 
     all[init_no].Labels := bestmembship;
     all[init_no].Centroids := bestcentroids;
