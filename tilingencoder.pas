@@ -2416,7 +2416,7 @@ begin
   // use BICO to prepare a noise-aware set of centroids that will be used as dataset for Yakmo
 
   BICOCoresetSize := Ceil(AClusterCount * cGlobalTilingCoresetMultiplier);
-  BICO := bico_create(cTileDCTSize, DSLen, AClusterCount, 1, BICOCoresetSize, $42381337);
+  BICO := bico_create(cTileDCTSize, DSLen, AClusterCount, 7, BICOCoresetSize, $42381337);
   try
     // parse bin dataset
 
@@ -2451,7 +2451,7 @@ begin
     bico_destroy(BICO);
   end;
 
-  WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', cnt:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', AClusterCount:6);
+  WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', AClusterCount:6);
 
   if BICOClusterCount <= 0 then
     Exit;
@@ -2529,19 +2529,19 @@ begin
 
     if clusterLineCount >= 2 then
     begin
-       // get the closest tile to the centroid
+      // get the closest tile to the centroid
 
-       best := MaxSingle;
-       clusterLineIdx := -1;
-       for i := 0 to clusterLineCount - 1 do
-       begin
-         v := CompareEuclidean(ToMerge[i], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
-         if v < best then
-         begin
-           best := v;
-           clusterLineIdx := i;
-         end;
-       end;
+      best := MaxSingle;
+      clusterLineIdx := -1;
+      for i := 0 to clusterLineCount - 1 do
+      begin
+        v := CompareEuclidean(ToMerge[i], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
+        if v < best then
+        begin
+          best := v;
+          clusterLineIdx := i;
+        end;
+      end;
 
       // merge centroid
 
