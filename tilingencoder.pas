@@ -24,7 +24,7 @@ const
 
   cFTQWeighting = False;
   cYakmoMaxIterations = 300;
-  cGlobalTilingCoresetMultiplier = 2.0;
+  cGlobalTilingCoresetMultiplier = 1.0;
 
 {$if false}
   cRedMul = 2126;
@@ -2402,14 +2402,12 @@ end;
 
 procedure TKeyFrame.DoKeyFrameKMeans(AClusterCount: Integer);
 var
-  i, lineIdx, yakmoDatasetIdx, clusterIdx, clusterLineCount, DSLen,
-    BICOClusterCount, BICOCoresetSize, clusterLineIdx, YakmoClusterCount: Integer;
+  i, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
   cnt, tidx: Int64;
   speedup: Double;
   v, best: TFloat;
 
   BICO: PBICO;
-  Yakmo: PYakmo;
   FLANN: flann_index_t;
   FLANNParams: TFLANNParameters;
   Tile: PTile;
@@ -2419,9 +2417,6 @@ var
   BICOCentroids, BICOWeights: TDoubleDynArray;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TDoubleDynArray;
-  YakmoDataset: array of PDouble;
-  YakmoCentroids: TDoubleDynArray2;
-  YakmoClusters: TIntegerDynArray;
   ToMerge: array of PDouble;
   ToMergeIdxs: TInt64DynArray;
 begin
@@ -2429,7 +2424,7 @@ begin
   if (DSLen <= AClusterCount) or (AClusterCount <= 1) then
     Exit;
 
-  // use BICO to prepare a noise-aware set of centroids that will be used as dataset for Yakmo
+  // use BICO to prepare a noise-aware set of centroids
 
   BICOCoresetSize := Ceil(AClusterCount * cGlobalTilingCoresetMultiplier);
   BICO := bico_create(cTileDCTSize, DSLen, AClusterCount, 7, BICOCoresetSize, $42381337);
@@ -2490,56 +2485,21 @@ begin
     flann_free_index_double(FLANN, @FLANNParams);
   end;
 
-  // Yakmo weighting from BICO weights
-
-  // use Yakmo to extract final centroids
-
-  YakmoClusterCount := AClusterCount;
-  SetLength(YakmoDataset, BICOClusterCount);
-  SetLength(YakmoClusters, BICOClusterCount);
-  SetLength(YakmoCentroids, YakmoClusterCount, cTileDCTSize);
-
-  for clusterIdx := 0 to BICOClusterCount - 1 do
-    YakmoDataset[clusterIdx] := @BICOCentroids[clusterIdx * cTileDCTSize];
-
-  if BICOClusterCount > YakmoClusterCount then
-  begin
-    Yakmo := yakmo_create(YakmoClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-    try
-      yakmo_load_train_data(Yakmo, BICOClusterCount, cTileDCTSize, @YakmoDataset[0]);
-      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-      yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
-    finally
-      yakmo_destroy(Yakmo);
-    end;
-  end
-  else
-  begin
-    YakmoClusterCount := BICOClusterCount;
-    for clusterIdx := 0 to YakmoClusterCount - 1 do
-    begin
-      YakmoClusters[clusterIdx] := clusterIdx;
-      Move(BICOCentroids[clusterIdx * cTileDCTSize], YakmoCentroids[clusterIdx, 0], cTileDCTSize * sizeof(Double));
-    end;
-  end;
-
   // build a list of this centroid tiles
 
   SetLength(ToMerge, DSLen);
   SetLength(ToMergeIdxs, DSLen);
 
-  for clusterIdx := 0 to YakmoClusterCount - 1 do
+  for clusterIdx := 0 to BICOClusterCount - 1 do
   begin
     clusterLineCount := 0;
-    for yakmoDatasetIdx := 0 to BICOClusterCount - 1 do
-      if YakmoClusters[yakmoDatasetIdx] = clusterIdx then
-        for lineIdx := 0 to DSLen - 1 do
-          if FLANNClusters[lineIdx] = yakmoDatasetIdx then
-          begin
-            ToMerge[clusterLineCount] := @Dataset[lineIdx * cTileDCTSize];
-            ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
-            Inc(clusterLineCount);
-          end;
+    for lineIdx := 0 to DSLen - 1 do
+      if FLANNClusters[lineIdx] = clusterIdx then
+      begin
+        ToMerge[clusterLineCount] := @Dataset[lineIdx * cTileDCTSize];
+        ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
+        Inc(clusterLineCount);
+      end;
 
     // choose a tile from the cluster
 
@@ -2551,7 +2511,7 @@ begin
       clusterLineIdx := -1;
       for i := 0 to clusterLineCount - 1 do
       begin
-        v := CompareEuclidean(ToMerge[i], @YakmoCentroids[clusterIdx, 0], cTileDCTSize);
+        v := CompareEuclidean(ToMerge[i], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
         if v < best then
         begin
           best := v;
