@@ -2651,7 +2651,7 @@ var
   x, y, frmIdx, annQueryCount, annQueryPos, dsIdx, diffIdx: Integer;
   q00, q01, q10, q11: Integer;
   errCml: Double;
-  diffErr: TFloat;
+  diffErr, blendErr: TFloat;
 
   T: PTile;
   Frame: TFrame;
@@ -2779,8 +2779,13 @@ begin
             if InRange(diffIdx, 0, High(DS^.DSToTileIdx)) then
             begin
               // compute error from the final interpolation (lerp 0.5)
-              Best.bestErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[dsIdx * cTileDCTSize], 0.5, 0.5);
-              Best.bestAdditionalIdx := DS^.DSToTileIdx[diffIdx];
+              blendErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[dsIdx * cTileDCTSize], 0.5, 0.5);
+
+              if blendErr < Best.bestErr then
+              begin
+                Best.bestErr := blendErr;
+                Best.bestAdditionalIdx := DS^.DSToTileIdx[diffIdx];
+              end;
             end;
           end;
 
