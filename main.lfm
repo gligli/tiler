@@ -192,10 +192,10 @@ object MainForm: TMainForm
         Width = 71
         DecimalPlaces = 4
         Increment = 0.05
-        MaxValue = 1
+        MaxValue = 10
         OnChange = UpdateGUI
         TabOrder = 18
-        Value = 0.2
+        Value = 0.5
       end
       object seStartFrame: TSpinEdit
         Left = 872
@@ -414,7 +414,7 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 3
+        ItemIndex = 4
         Items.Strings = (
           '2'
           '4'
@@ -425,7 +425,7 @@ object MainForm: TMainForm
         )
         OnChange = UpdateGUI
         TabOrder = 9
-        Text = '16'
+        Text = '32'
       end
       object cbxPalCount: TComboBox
         Left = 328
@@ -434,7 +434,7 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 7
+        ItemIndex = 6
         Items.Strings = (
           '1'
           '2'
@@ -448,7 +448,7 @@ object MainForm: TMainForm
         )
         OnChange = UpdateGUI
         TabOrder = 8
-        Text = '128'
+        Text = '64'
       end
       object Label14: TLabel
         Left = 8
