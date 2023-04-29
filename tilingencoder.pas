@@ -2867,7 +2867,7 @@ var
   sx, sy: Integer;
   cmp: TFloat;
   TMI, PrevTMI: PTileMapItem;
-  DCT, PrevDCT, PrevPlainDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  DCT, CurDCT, PrevDCT, BlendDCT, PrevPlainDCT: array[0 .. cTileDCTSize - 1] of TFloat;
   ATList: TList;
   addlTile: PTile;
   plan: TMixingPlan;
@@ -2879,6 +2879,12 @@ begin
       begin
         PrevTMI := @APrevFrame.TileMap[sy, sx];
         Encoder.ComputeTilePsyVisFeatures(APrevFrame.PKeyFrame.Tiles[PrevTMI^.SmoothedTileIdx]^, True, False, True, PrevTMI^.SmoothedHMirror, PrevTMI^.SmoothedVMirror, False, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx], PFloat(@PrevDCT[0]));
+        if PrevTMI^.AdditionalTileIdx >= 0 then
+        begin
+          Move(PrevDCT[0], DCT[0], SizeOf(DCT));
+          Encoder.ComputeTilePsyVisFeatures(APrevFrame.PKeyFrame.Tiles[PrevTMI^.AdditionalTileIdx]^, True, False, True, PrevTMI^.SmoothedHMirror, PrevTMI^.SmoothedVMirror, False, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.SmoothedPalIdx], PFloat(@BlendDCT[0]));
+          ComputeBlending(PFloat(@PrevDCT[0]), PFloat(@DCT[0]), PFloat(@BlendDCT[0]), 0.5, 0.5);
+        end;
 
         // prevent smoothing from crossing keyframes (to ensure proper seek)
 
@@ -2887,9 +2893,15 @@ begin
           // compare DCT of current tile with tile from prev frame tilemap
 
           TMI := @AFrame.TileMap[sy, sx];
-          Encoder.ComputeTilePsyVisFeatures(AFrame.PKeyFrame.Tiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, False, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], PFloat(@DCT[0]));
+          Encoder.ComputeTilePsyVisFeatures(AFrame.PKeyFrame.Tiles[TMI^.SmoothedTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, False, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], PFloat(@CurDCT[0]));
+          if TMI^.AdditionalTileIdx >= 0 then
+          begin
+            Move(CurDCT[0], DCT[0], SizeOf(DCT));
+            Encoder.ComputeTilePsyVisFeatures(AFrame.PKeyFrame.Tiles[TMI^.AdditionalTileIdx]^, True, False, True, TMI^.SmoothedHMirror, TMI^.SmoothedVMirror, False, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.SmoothedPalIdx], PFloat(@BlendDCT[0]));
+            ComputeBlending(PFloat(@CurDCT[0]), PFloat(@DCT[0]), PFloat(@BlendDCT[0]), 0.5, 0.5);
+          end;
 
-          cmp := CompareEuclideanDCT(DCT, PrevDCT);
+          cmp := CompareEuclideanDCT(CurDCT, PrevDCT);
           cmp := sqrt(cmp);
 
           // if difference is low enough, mark the tile as smoothed for tilemap compression use
