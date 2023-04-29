@@ -63,7 +63,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, -2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, -1, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -600,10 +600,11 @@ type
 
     function GetTileIndexTMItem(const ATile: TTile; out AFrame: TFrame): PTileMapItem;
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
+    class function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
+    class function GetTilePalPixelsSum(const ATile: TTile): Integer;
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
-    procedure HMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
-    procedure VMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
+    class procedure HMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
+    class procedure VMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
     function GetTileUseCount(ATileIndex: Int64): Integer;
 
     procedure SaveStream(AStream: TStream; ASpecificKF: Integer = -1);
@@ -1045,7 +1046,7 @@ begin
   if Result = 0 then
     Result := CompareValue(t2^.UseCount, t1^.UseCount);
   if Result = 0 then
-    Result := CompareValue(t1^.TmpIndex, t2^.TmpIndex);
+    Result := CompareValue(TTilingEncoder.GetTilePalPixelsSum(t1^), TTilingEncoder.GetTilePalPixelsSum(t2^));
 end;
 
 procedure ComputeBlending(PRes, Px, Py: PFloat; bx, by: TFloat); inline;
@@ -3679,9 +3680,6 @@ begin
 
   ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, High(FFrames));
 
-  Inc(StepProgress, FrameCount);
-  ProgressRedraw(StepProgress);
-
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
 
@@ -4877,7 +4875,7 @@ begin
       ATile.RGBPixels[y, x] := FromCpn(x, y);
 end;
 
-procedure TTilingEncoder.VMirrorTile(var ATile: TTile; APalOnly: Boolean);
+class procedure TTilingEncoder.VMirrorTile(var ATile: TTile; APalOnly: Boolean);
 var
   j, i: Integer;
   v, sv: Integer;
@@ -4905,7 +4903,7 @@ begin
     end;
 end;
 
-procedure TTilingEncoder.HMirrorTile(var ATile: TTile; APalOnly: Boolean);
+class procedure TTilingEncoder.HMirrorTile(var ATile: TTile; APalOnly: Boolean);
 var
   i, j: Integer;
   v, sv: Integer;
@@ -5768,7 +5766,7 @@ begin
         Inc(Result, Ord(FFrames[i].TileMap[sy, sx].TileIdx = ATileIndex));
 end;
 
-function TTilingEncoder.GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
+class function TTilingEncoder.GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
 var
   i, j: Integer;
   r, g, b: Byte;
@@ -5780,6 +5778,16 @@ begin
       FromRGB(ATile.RGBPixels[j, i], r, g, b);
       Result += ToLuma(r, g, b);
     end;
+end;
+
+class function TTilingEncoder.GetTilePalPixelsSum(const ATile: TTile): Integer;
+var
+  i, j: Integer;
+begin
+  Result := 0;
+  for j := 0 to cTileWidth - 1 do
+    for i := 0 to cTileWidth - 1 do
+      Result += ATile.PalPixels[j, i];
 end;
 
 function TTilingEncoder.GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
