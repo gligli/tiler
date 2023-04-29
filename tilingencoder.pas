@@ -270,7 +270,7 @@ type
   TTileMapItem = packed record
     TileIdx, SmoothedTileIdx, AdditionalTileIdx: Integer;
     PalIdx, SmoothedPalIdx: SmallInt;
-    Flags: set of (tmfSmoothed, tmfHMirror, tmfVMirror, tmfSmoothedHMirror, tmfSmoothedVMirror);
+    Flags: set of (tmfSmoothed, tmfHMirror, tmfVMirror, tmfSmoothedHMirror, tmfSmoothedVMirror, tmfSmoothedAdditional);
   end;
   PTileMapItem = ^TTileMapItem;
 
@@ -282,11 +282,13 @@ type
   private
     function GetHMirror: Boolean;
     function GetSmoothed: Boolean;
+    function GetSmoothedAdditional: Boolean;
     function GetSmoothedHMirror: Boolean;
     function GetSmoothedVMirror: Boolean;
     function GetVMirror: Boolean;
     procedure SetHMirror(AValue: Boolean);
     procedure SetSmoothed(AValue: Boolean);
+    procedure SetSmoothedAdditional(AValue: Boolean);
     procedure SetSmoothedHMirror(AValue: Boolean);
     procedure SetSmoothedVMirror(AValue: Boolean);
     procedure SetVMirror(AValue: Boolean);
@@ -296,6 +298,7 @@ type
     property VMirror: Boolean read GetVMirror write SetVMirror;
     property SmoothedHMirror: Boolean read GetSmoothedHMirror write SetSmoothedHMirror;
     property SmoothedVMirror: Boolean read GetSmoothedVMirror write SetSmoothedVMirror;
+    property SmoothedAdditional: Boolean read GetSmoothedAdditional write SetSmoothedAdditional;
   end;
 
 
@@ -1356,6 +1359,11 @@ begin
   Result := tmfSmoothed in Flags;
 end;
 
+function TTileMapItemHelper.GetSmoothedAdditional: Boolean;
+begin
+  Result := tmfSmoothedAdditional in Flags;
+end;
+
 function TTileMapItemHelper.GetSmoothedHMirror: Boolean;
 begin
   Result := tmfSmoothedHMirror in Flags;
@@ -1385,6 +1393,14 @@ begin
     Flags += [tmfSmoothed]
   else
     Flags -= [tmfSmoothed];
+end;
+
+procedure TTileMapItemHelper.SetSmoothedAdditional(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfSmoothedAdditional]
+  else
+    Flags -= [tmfSmoothedAdditional];
 end;
 
 procedure TTileMapItemHelper.SetSmoothedHMirror(AValue: Boolean);
@@ -2890,7 +2906,7 @@ begin
 
         // prevent smoothing from crossing keyframes (to ensure proper seek)
 
-        if AFrame.PKeyFrame = APrevFrame.PKeyFrame then
+        if Assigned(AFrame) and (AFrame.PKeyFrame = APrevFrame.PKeyFrame) then
         begin
           // compare DCT of current tile with tile from prev frame tilemap
 
@@ -2950,6 +2966,8 @@ begin
             Encoder.DitherTile(addlTile^, plan);
             Encoder.TerminatePlan(plan);
 
+            PrevTMI^.Smoothed := True;
+            PrevTMI^.SmoothedAdditional := True;
             PrevTMI^.SmoothedTileIdx := NonAddlCount + ATList.Count - 1;
             PrevTMI^.SmoothedHMirror := False;
             PrevTMI^.SmoothedVMirror := False;
@@ -3334,6 +3352,7 @@ begin
         TMI := @Encoder.FFrames[frm].TileMap[j, i];
 
         TMI^.Smoothed := False;
+        TMI^.SmoothedAdditional  := False;
         TMI^.SmoothedTileIdx := TMI^.TileIdx;
         TMI^.SmoothedPalIdx := TMI^.PalIdx;
         TMI^.SmoothedHMirror := TMI^.HMirror;
@@ -3352,6 +3371,7 @@ begin
 
     for frm := StartFrame + 1 to EndFrame do
       DoTemporalSmoothing(Encoder.FFrames[frm], Encoder.FFrames[frm - 1], Encoder.FSmoothingFactor, Encoder.FSmoothingAdditionalTilesThreshold, NonAddlCount);
+    DoTemporalSmoothing(nil, Encoder.FFrames[EndFrame], Encoder.FSmoothingFactor, Encoder.FSmoothingAdditionalTilesThreshold, NonAddlCount);
 
     // reintegrate AdditionalTiles into global tiles
 
@@ -4949,6 +4969,7 @@ begin
       TMI^.AdditionalTileIdx := -1;
 
       TMI^.Smoothed := False;
+      TMI^.SmoothedAdditional := False;
       TMI^.SmoothedTileIdx := -1;
       TMI^.SmoothedPalIdx := -1;
       TMI^.SmoothedHMirror := False;
@@ -5269,15 +5290,26 @@ begin
             TMItem := FFrames[frmIdx].TileMap[sy, sx];
             if FRenderSmoothed then
             begin
-              while TMItem.Smoothed do
+              if TMItem.SmoothedAdditional then
               begin
-                Dec(frmIdx);
-                TMItem := FFrames[frmIdx].TileMap[sy, sx];
+                TMItem.TileIdx := TMItem.SmoothedTileIdx;
+                TMItem.PalIdx := TMItem.SmoothedPalIdx;
+                TMItem.HMirror := TMItem.SmoothedHMirror;
+                TMItem.VMirror := TMItem.SmoothedVMirror;
+                TMItem.AdditionalTileIdx := -1;
+              end
+              else
+              begin
+                while TMItem.Smoothed and not TMItem.SmoothedAdditional do
+                begin
+                  Dec(frmIdx);
+                  TMItem := FFrames[frmIdx].TileMap[sy, sx];
+                end;
               end;
             end
             else
             begin
-              if TMItem.Smoothed then
+              if TMItem.Smoothed and not TMItem.SmoothedAdditional then
                 Continue;
             end;
 
@@ -5837,7 +5869,7 @@ var
   function ExtractTMIAttributes(const TMI: TTileMapItem; out attrs: Word; out isAdditional: Boolean; out additionalIdx: Integer): Integer;
   begin
     attrs := (TMI.SmoothedPalIdx shl 2) or (Ord(TMI.SmoothedVMirror) shl 1) or Ord(TMI.SmoothedHMirror);
-    isAdditional := TMI.AdditionalTileIdx >= 0;
+    isAdditional := (TMI.AdditionalTileIdx >= 0) and not TMI.SmoothedAdditional;
     additionalIdx := TMI.AdditionalTileIdx;
     Result := TMI.SmoothedTileIdx;
   end;
@@ -6043,7 +6075,7 @@ begin
             for yxs := yx to FTileMapSize - 1 do
             begin
               DivMod(yxs, FTileMapWidth, sy, sx);
-              if not frm.TileMap[sy, sx].Smoothed then
+              if not frm.TileMap[sy, sx].Smoothed or frm.TileMap[sy, sx].SmoothedAdditional then
                 Break;
               Inc(BlkSkipCount);
             end;
