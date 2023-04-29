@@ -2647,8 +2647,10 @@ begin
 end;
 
 procedure TKeyFrame.DoKFTiling(APaletteIndex: Integer; AFTGamma: Integer; AFTBlendThres: TFloat; AFromPal: Boolean);
+const
+  CBinSize = 256;
 var
-  x, y, frmIdx, annQueryCount, annQueryPos, dsIdx, diffIdx: Integer;
+  x, y, frmIdx, annQueryCount, annQueryPos, dsIdx, blendDsIdx, diffIdx, binIdx: Integer;
   q00, q01, q10, q11: Integer;
   errCml: Double;
   diffErr, blendErr: TFloat;
@@ -2695,8 +2697,8 @@ begin
 
   SetLength(DCTs, annQueryCount * cTileDCTSize);
   SetLength(PlainDCTs, annQueryCount * cTileDCTSize);
-  SetLength(idxs, annQueryCount);
-  SetLength(errs, annQueryCount);
+  SetLength(idxs, annQueryCount * CBinSize);
+  SetLength(errs, annQueryCount * CBinSize);
   SetLength(HMirrors, annQueryCount);
   SetLength(VMirrors, annQueryCount);
 
@@ -2743,7 +2745,7 @@ begin
 
   // query KNN
 
-  flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[0], annQueryCount, @idxs[0], @errs[0], 1, DS^.FLANNParams);
+  flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[0], annQueryCount, @idxs[0], @errs[0], CBinSize, DS^.FLANNParams);
 
   // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
 
@@ -2758,33 +2760,42 @@ begin
         if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
           Continue;
 
-        dsIdx := idxs[annQueryPos];
+        dsIdx := idxs[annQueryPos * CBinSize];
 
         if InRange(dsIdx, 0, High(DS^.DSToTileIdx)) then
         begin
           Best.bestIdx := DS^.DSToTileIdx[dsIdx];
-          Best.bestErr := errs[annQueryPos];
+          Best.bestErr := errs[annQueryPos * CBinSize];
           Best.bestAdditionalIdx := -1;
 
           // try to blend another tile to improve likeliness
 
           if not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
           begin
-            // compute an additional tile that would be blended with the current tile (lerp 0.5)
-            ComputeBlending_Asm(@DiffDCT[0], @DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[dsIdx * cTileDCTSize], 2.0, -1.0);
-
-            // search for it in the KNN
-            flann_find_nearest_neighbors_index(DS^.FLANN, @DiffDCT[0], 1, @diffIdx, @diffErr, 1, DS^.FLANNParams);
-
-            if InRange(diffIdx, 0, High(DS^.DSToTileIdx)) then
+            for binIdx := 0 to CBinSize - 1 do
             begin
-              // compute error from the final interpolation (lerp 0.5)
-              blendErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[dsIdx * cTileDCTSize], 0.5, 0.5);
+              blendDsIdx := idxs[annQueryPos * CBinSize + binIdx];
 
-              if blendErr < Best.bestErr then
+              if InRange(blendDsIdx, 0, High(DS^.DSToTileIdx)) then
               begin
-                Best.bestErr := blendErr;
-                Best.bestAdditionalIdx := DS^.DSToTileIdx[diffIdx];
+                // compute an additional tile that would be blended with the current tile (lerp 0.5)
+                ComputeBlending_Asm(@DiffDCT[0], @DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[blendDsIdx * cTileDCTSize], 2.0, -1.0);
+
+                // search for it in the KNN
+                flann_find_nearest_neighbors_index(DS^.FLANN, @DiffDCT[0], 1, @diffIdx, @diffErr, 1, DS^.FLANNParams);
+
+                if InRange(diffIdx, 0, High(DS^.DSToTileIdx)) then
+                begin
+                  // compute error from the final interpolation (lerp 0.5)
+                  blendErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[blendDsIdx * cTileDCTSize], 0.5, 0.5);
+
+                  if blendErr < Best.bestErr then
+                  begin
+                    Best.bestIdx := DS^.DSToTileIdx[blendDsIdx];
+                    Best.bestErr := blendErr;
+                    Best.bestAdditionalIdx := DS^.DSToTileIdx[diffIdx];
+                  end;
+                end;
               end;
             end;
           end;
