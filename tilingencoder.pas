@@ -15,7 +15,7 @@ uses
 
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esDither, esTile, esSave);
-  TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation, kfrEuclideanDist);
+  TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
   TKeyFrameProcess = (kfpAll = -1, kfpLoadTiles = 0, kfpDither, kfpCluster, kfpReconstruct, kfpReColor, kfpReindex, kfpSmooth);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
 
@@ -555,7 +555,7 @@ type
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
     function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-    function ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
+    function ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
 
     function GetSettings: String;
     procedure ClearAll;
@@ -3822,7 +3822,7 @@ begin
   Result := CompareEuclidean(ya, yb) / (Length(a) * cLumaDiv * 256.0);
 end;
 
-function TTilingEncoder.ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
+function TTilingEncoder.ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
 var
   sz, i, tx, ty, sx, sy: Integer;
   rr, gg, bb: Integer;
@@ -3862,18 +3862,6 @@ begin
         end;
 
     Result := PearsonCorrelation(ya, yb);
-
-    par := @ya[0];
-    pbr := @yb[0];
-    EuclideanDist := 0;
-    for i := 0 to Length(ya) div cTileDCTSize - 1 do
-    begin
-      EuclideanDist += CompareEuclideanDCTPtr_asm(par, pbr);
-      Inc(par, cTileDCTSize);
-      Inc(pbr, cTileDCTSize);
-    end;
-
-    EuclideanDist := Sqrt(EuclideanDist) / sz;
   finally
     a.ReleaseFrameTiles;
     b.ReleaseFrameTiles;
@@ -4992,33 +4980,29 @@ end;
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
 var
   Correlations: TFloatDynArray;
-  EuclideanDist: TFloatDynArray;
 
   procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
     if not InRange(AIndex, 1, High(FFrames)) then
       Exit;
 
-    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex], EuclideanDist[AIndex]);
+    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex]);
   end;
 
 const
   CShotTransMaxSecondsPerKF = 2.0;  // maximum seconds between keyframes
   CShotTransMinSecondsPerKF = 0.25; // minimum seconds between keyframes
-  CShotTransEuclideanHiThres = 1.0; // frame equivalent accumulated distance
   CShotTransCorrelLoThres = 0.75;   // interframe pearson correlation low limit
 var
   frmIdx, kfIdx, lastKFIdx: Integer;
-  correl, euclidean: TFloat;
+  correl: TFloat;
   kfReason: TKeyFrameReason;
   sfr, efr: Integer;
 begin
   // compute interframe correlations
 
   SetLength(Correlations, Length(FFrames));
-  SetLength(EuclideanDist, Length(FFrames));
   Correlations[0] := 0.0;
-  EuclideanDist[0] := Infinity;
 
   if not AManualMode then
     ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
@@ -5027,12 +5011,10 @@ begin
 
   SetLength(FKeyFrames, Length(FFrames));
   kfIdx := 0;
-  euclidean := 0.0;
   lastKFIdx := Low(Integer);
   for frmIdx := 0 to High(FFrames) do
   begin
     correl := Correlations[frmIdx];
-    euclidean += EuclideanDist[frmIdx];
 
     kfReason := kfrNone;
     if AManualMode then
@@ -5048,10 +5030,7 @@ begin
       if (kfReason = kfrNone) and (correl < CShotTransCorrelLoThres) then
         kfReason := kfrDecorrelation;
 
-      if (kfReason = kfrNone) and (euclidean > CShotTransEuclideanHiThres) then
-        kfReason := kfrEuclideanDist;
-
-      if (kfReason = kfrNone) and ((frmIdx - lastKFIdx) > (CShotTransMaxSecondsPerKF * FFramesPerSecond)) then
+      if (kfReason = kfrNone) and ((frmIdx - lastKFIdx) >= (CShotTransMaxSecondsPerKF * FFramesPerSecond)) then
         kfReason := kfrLength;
 
       if (frmIdx - lastKFIdx) < (CShotTransMinSecondsPerKF * FFramesPerSecond) then
@@ -5065,7 +5044,6 @@ begin
 
       Inc(kfIdx);
 
-      euclidean := 0.0;
       lastKFIdx := frmIdx;
     end;
 
