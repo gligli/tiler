@@ -269,11 +269,18 @@ end;
 procedure TMainForm.imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
 var
   P: TPoint;
-  palIdx: Integer;
+  i, palIdx, useCount: Integer;
 begin
   P := imgPalette.ScreenToClient(Mouse.CursorPos);
   palIdx := iDiv0(P.Y * FTilingEncoder.PaletteCount, imgPalette.Height);
-  llPalTileDesc.Caption := Format('Palette #: %3d', [palIdx]);
+
+  useCount := -1;
+  if InRange(FTilingEncoder.RenderFrameIndex, 0, High(FTilingEncoder.Frames)) and
+      Assigned(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame) and
+      InRange(palIdx, 0, High(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.PaletteUseCount)) then
+    useCount := FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.PaletteUseCount[palIdx].UseCount;
+
+  llPalTileDesc.Caption := Format('Palette #: %3d, UseCount: %6d', [palIdx, useCount]);
 end;
 
 procedure TMainForm.imgTilesMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);

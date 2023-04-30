@@ -3147,8 +3147,6 @@ begin
   PalettesLeft := -1;
 
   DitherTiles;
-
-  SetLength(PaletteUseCount, 0);
 end;
 
 procedure TKeyFrame.Cluster;
@@ -5210,7 +5208,7 @@ procedure TTilingEncoder.Render(AFast: Boolean);
   end;
 
 var
-  i, j, sx, sy, frmIdx, globalTileCount: Integer;
+  i, j, sx, sy, frmIdx, globalTileCount, kfTileCount: Integer;
   tidx: Int64;
   p: PInteger;
   tilePtr: PTile;
@@ -5238,8 +5236,9 @@ begin
     // Global
 
     globalTileCount := GetGlobalTileCount(not (FRenderPlaying or AFast));
+    kfTileCount := Frame.PKeyFrame.GetTileCount(not (FRenderPlaying or AFast));
 
-    FRenderTitleText := 'Global: ' + IntToStr(globalTileCount) + ' / Frame #' + IntToStr(FRenderFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = FRenderFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
+    FRenderTitleText := 'Global: ' + IntToStr(globalTileCount) + ' / KeyFrame: ' + IntToStr(kfTileCount) + ' / Frame #' + IntToStr(FRenderFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = FRenderFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
 
     // "Input" tab
 
