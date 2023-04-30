@@ -452,7 +452,6 @@ type
     // encoder state variables
 
     FCS: TRTLCriticalSection;
-    FGlobalTilingBinCountShift: Integer;
     FKeyFramesLeft: Integer;
     FKeyFramesThreadCount: Integer;
 
@@ -536,7 +535,6 @@ type
     procedure SetFrameCountSetting(AValue: Integer);
     procedure SetFramesPerSecond(AValue: Double);
     procedure SetFrameTilingBlendingThreshold(AValue: TFloat);
-    procedure SetGlobalTilingBinCountShift(AValue: Integer);
     procedure SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
     procedure SetLoadPerFrameTileCountMultiplier(AValue: TFloat);
     procedure SetMaxThreadCount(AValue: Integer);
@@ -3483,13 +3481,16 @@ var
   end;
 
 var
-  i, frc, startFrmIdx: Integer;
+  frmIdx, frmCnt, eqtc, kfIdx, startFrmIdx: Integer;
   fn: String;
   bmp: TPicture;
   wasAutoQ, manualKeyFrames: Boolean;
   qbTC: TFloat;
 begin
-  wasAutoQ := (Length(FFrames) > 0) and (FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * EqualQualityTileCount(Length(FFrames) * FTileMapSize)));
+  eqtc := 0;
+  for kfIdx := 0 to High(FKeyFrames) do
+    eqtc += EqualQualityTileCount(FKeyFrames[kfIdx].FrameCount * FTileMapSize);
+  wasAutoQ := (Length(FFrames) > 0) and (FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * eqtc));
 
   ProgressRedraw(-1, esNone);
 
@@ -3507,12 +3508,12 @@ begin
 
   // load video
 
-  frc := FFrameCountSetting;
+  frmCnt := FFrameCountSetting;
   manualKeyFrames := False;
 
   if FileExists(FInputFileName) then
   begin
-    DoExternalFFMpeg(FInputFileName, FInputPath, FStartFrame, frc, FScaling, FFramesPerSecond);
+    DoExternalFFMpeg(FInputFileName, FInputPath, FStartFrame, frmCnt, FScaling, FFramesPerSecond);
     startFrmIdx := 1;
   end
   else
@@ -3525,15 +3526,15 @@ begin
 
   // automaticaly count frames if needed
 
-  if frc <= 0 then
+  if frmCnt <= 0 then
   begin
-    i := 0;
+    frmIdx := 0;
     repeat
-      fn := Format(FInputPath, [i + startFrmIdx]);
-      Inc(i);
+      fn := Format(FInputPath, [frmIdx + startFrmIdx]);
+      Inc(frmIdx);
     until not FileExists(fn);
 
-    frc := i - 1;
+    frmCnt := frmIdx - 1;
   end;
 
   // load frames bitmap data
@@ -3550,7 +3551,7 @@ begin
   ProgressRedraw(1);
 
   loadedFrameCount := 0;
-  SetLength(FFrames, frc);
+  SetLength(FFrames, frmCnt);
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(PtrInt(startFrmIdx)));
   WriteLn;
 
@@ -4491,21 +4492,19 @@ begin
   FFrameTilingBlendingThreshold := Max(0.0, AValue);
 end;
 
-procedure TTilingEncoder.SetGlobalTilingBinCountShift(AValue: Integer);
-begin
- if FGlobalTilingBinCountShift = AValue then Exit;
- FGlobalTilingBinCountShift := EnsureRange(AValue, 0, 6);
-end;
-
 procedure TTilingEncoder.SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
 var
-  RawTileCount: Integer;
+  eqtc, kfIdx, RawTileCount: Integer;
 begin
   if FGlobalTilingQualityBasedTileCount = AValue then Exit;
   FGlobalTilingQualityBasedTileCount := AValue;
 
+  eqtc := 0;
+  for kfIdx := 0 to High(FKeyFrames) do
+    eqtc += EqualQualityTileCount(FKeyFrames[kfIdx].FrameCount * FTileMapSize);
+
   RawTileCount := Length(FFrames) * FTileMapSize;
-  FGlobalTilingTileCount := min(round(AValue * EqualQualityTileCount(RawTileCount)), RawTileCount);
+  FGlobalTilingTileCount := min(round(AValue * eqtc), RawTileCount);
 end;
 
 procedure TTilingEncoder.SetLoadPerFrameTileCountMultiplier(AValue: TFloat);
