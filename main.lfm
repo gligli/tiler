@@ -25,7 +25,7 @@ object MainForm: TMainForm
   ParentDoubleBuffered = False
   PopupMenu = pmProcesses
   Position = poScreenCenter
-  LCLVersion = '2.2.4.0'
+  LCLVersion = '2.2.6.0'
   object tbFrame: TTrackBar
     Left = 0
     Height = 27
@@ -315,8 +315,8 @@ object MainForm: TMainForm
         Left = 656
         Height = 15
         Top = 35
-        Width = 144
-        Caption = 'Frame count (0: automatic)'
+        Width = 102
+        Caption = 'Frame count (0: all)'
         ParentColor = False
       end
       object Label2: TLabel
@@ -527,8 +527,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 163
-        Width = 237
-        Caption = 'Frame tiling blending threshold (PSyV based)'
+        Width = 279
+        Caption = 'Frame tiling blending threshold (0: auto, PSyV based)'
         ParentColor = False
       end
       object seFTBlendThres: TFloatSpinEdit

@@ -269,6 +269,7 @@ type
 
   TTileMapItem = packed record
     TileIdx, SmoothedTileIdx, AdditionalTileIdx: Integer;
+    DitherPsyV: TFloat;
     PalIdx, SmoothedPalIdx: SmallInt;
     Flags: set of (tmfSmoothed, tmfHMirror, tmfVMirror, tmfSmoothedHMirror, tmfSmoothedVMirror, tmfSmoothedAdditional);
   end;
@@ -349,7 +350,7 @@ type
   TFrame = class
     PKeyFrame: TKeyFrame;
     Index: Integer;
-    DitherPsyV: Double;
+    DitherPsyV: TFloat;
 
     TileMap: array of array of TTileMapItem;
 
@@ -1492,6 +1493,7 @@ constructor TFrame.Create;
 begin
   CompressedFrameTiles := TMemoryStream.Create;
   FrameTilesEvent := CreateEvent(nil, True, False, nil);
+  DitherPsyV := NaN;
 end;
 
 destructor TFrame.Destroy;
@@ -2609,12 +2611,12 @@ end;
 
 procedure TKeyFrame.DoKFTiling(APaletteIndex: Integer; AFTGamma: Integer; AFTBlendThres: TFloat; AFromPal: Boolean);
 const
-  CBinSize = 256;
+  CBinSize = 64;
 var
-  x, y, frmIdx, annQueryCount, annQueryPos, dsIdx, blendDsIdx, diffIdx, binIdx: Integer;
+  sx, sy, frmIdx, annQueryCount, annQueryPos, dsIdx, blendDsIdx, diffIdx, binIdx: Integer;
   q00, q01, q10, q11: Integer;
   errCml: Double;
-  diffErr, blendErr: TFloat;
+  blendThres, diffErr, blendErr: TFloat;
 
   T: PTile;
   Frame: TFrame;
@@ -2624,9 +2626,10 @@ var
   idxs: TIntegerDynArray;
   errs: TFloatDynArray;
   DCTs: TFloatDynArray;
-  PlainDCTs: TFloatDynArray;
   HMirrors, VMirrors: TBooleanDynArray;
   DiffDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  blendIdxs: array[0 .. CBinSize - 1] of Integer;
+  blendErrs: array[0 .. CBinSize - 1] of TFloat;
 
   Best: TKFTilingBest;
 begin
@@ -2643,10 +2646,10 @@ begin
   begin
     Frame := Encoder.FFrames[frmIdx];
 
-    for y := 0 to Encoder.FTileMapHeight - 1 do
-      for x := 0 to Encoder.FTileMapWidth - 1 do
+    for sy := 0 to Encoder.FTileMapHeight - 1 do
+      for sx := 0 to Encoder.FTileMapWidth - 1 do
       begin
-        if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
+        if Frame.TileMap[sy, sx].PalIdx <> APaletteIndex then
           Continue;
 
         Inc(annQueryCount);
@@ -2657,9 +2660,8 @@ begin
     Exit;
 
   SetLength(DCTs, annQueryCount * cTileDCTSize);
-  SetLength(PlainDCTs, annQueryCount * cTileDCTSize);
-  SetLength(idxs, annQueryCount * CBinSize);
-  SetLength(errs, annQueryCount * CBinSize);
+  SetLength(idxs, annQueryCount);
+  SetLength(errs, annQueryCount);
   SetLength(HMirrors, annQueryCount);
   SetLength(VMirrors, annQueryCount);
 
@@ -2672,13 +2674,13 @@ begin
 
     Frame.AcquireFrameTiles;
     try
-      for y := 0 to Encoder.FTileMapHeight - 1 do
-        for x := 0 to Encoder.FTileMapWidth - 1 do
+      for sy := 0 to Encoder.FTileMapHeight - 1 do
+        for sx := 0 to Encoder.FTileMapWidth - 1 do
         begin
-          if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
+          if Frame.TileMap[sy, sx].PalIdx <> APaletteIndex then
             Continue;
 
-          T := Frame.FrameTiles[y * Encoder.FTileMapWidth + x];
+          T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
           // enforce the 'spin' on tiles mirrors (brighter top-left corner)
 
@@ -2692,11 +2694,6 @@ begin
 
           Encoder.ComputeTilePsyVisFeatures(T^, AFromPal, False, cFTQWeighting, HMirrors[annQueryPos], VMirrors[annQueryPos], False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
 
-          if HMirrors[annQueryPos] or VMirrors[annQueryPos] then
-            Encoder.ComputeTilePsyVisFeatures(T^, AFromPal, False, cFTQWeighting, False, False, False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @PlainDCTs[annQueryPos * cTileDCTSize])
-          else
-            Move(DCTs[annQueryPos * cTileDCTSize], PlainDCTs[annQueryPos * cTileDCTSize], cTileDCTSize * SizeOf(TFloat));
-
           Inc(annQueryPos);
         end;
     finally
@@ -2706,7 +2703,7 @@ begin
 
   // query KNN
 
-  flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[0], annQueryCount, @idxs[0], @errs[0], CBinSize, DS^.FLANNParams);
+  flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[0], annQueryCount, @idxs[0], @errs[0], 1, DS^.FLANNParams);
 
   // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
 
@@ -2715,27 +2712,34 @@ begin
   begin
     Frame := Encoder.FFrames[frmIdx];
 
-    for y := 0 to Encoder.FTileMapHeight - 1 do
-      for x := 0 to Encoder.FTileMapWidth - 1 do
+    for sy := 0 to Encoder.FTileMapHeight - 1 do
+      for sx := 0 to Encoder.FTileMapWidth - 1 do
       begin
-        if Frame.TileMap[y, x].PalIdx <> APaletteIndex then
+        if Frame.TileMap[sy, sx].PalIdx <> APaletteIndex then
           Continue;
 
-        dsIdx := idxs[annQueryPos * CBinSize];
+        dsIdx := idxs[annQueryPos];
 
         if InRange(dsIdx, 0, High(DS^.DSToTileIdx)) then
         begin
           Best.bestIdx := DS^.DSToTileIdx[dsIdx];
-          Best.bestErr := errs[annQueryPos * CBinSize];
+          Best.bestErr := errs[annQueryPos];
           Best.bestAdditionalIdx := -1;
 
           // try to blend another tile to improve likeliness
 
-          if not IsZero(sqrt(Best.bestErr), AFTBlendThres) then
+          blendThres := AFTBlendThres;
+          if IsZero(blendThres) then
+            blendThres := Frame.TileMap[sy, sx].DitherPsyV;
+
+          if not IsZero(sqrt(Best.bestErr), blendThres) then
           begin
+            // search CBinSize likely tiles in the KNN
+            flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[annQueryPos * cTileDCTSize], 1, @blendIdxs[0], @blendErrs[0], CBinSize, DS^.FLANNParams);
+
             for binIdx := 0 to CBinSize - 1 do
             begin
-              blendDsIdx := idxs[annQueryPos * CBinSize + binIdx];
+              blendDsIdx := blendIdxs[binIdx];
 
               if InRange(blendDsIdx, 0, High(DS^.DSToTileIdx)) then
               begin
@@ -2761,7 +2765,7 @@ begin
             end;
           end;
 
-          TMI := @Frame.TileMap[y, x];
+          TMI := @Frame.TileMap[sy, sx];
 
           TMI^.TileIdx := Best.bestIdx;
           TMI^.HMirror := HMirrors[annQueryPos];
@@ -3611,32 +3615,41 @@ var
 
   procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    i, sx, sy: Integer;
-    q: Double;
+    sx, sy: Integer;
+    psyV: TFloat;
+    acc: Double;
     Frame: TFrame;
-    PlainDCT, DitherDCT: array[0 .. cTileDCTSize - 1] of Double;
+    PlainDCT, DitherDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+    TMI: PTileMapItem;
   begin
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
     Frame := FFrames[AIndex];
 
+    // already run?
+    if not IsNan(Frame.DitherPsyV) then
+      Exit;
+
     Frame.AcquireFrameTiles;
     try
-      q := 0.0;
-      i := 0;
+      acc := 0.0;
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
-          ComputeTilePsyVisFeatures(Frame.FrameTiles[sy * FTileMapWidth + sx]^, False, False, False, False, False, False, -1, nil, PFloat(@PlainDCT[0]));
-          ComputeTilePsyVisFeatures(Frame.PKeyFrame.Tiles[Frame.TileMap[sy, sx].TileIdx]^, True, False, False, False, False, False, -1, Frame.PKeyFrame.PaletteRGB[Frame.TileMap[sy, sx].PalIdx], PFloat(@DitherDCT[0]));
-          q += CompareEuclideanDCTPtr_asm(PFloat(@PlainDCT[0]), PFloat(@DitherDCT[0]));
-          Inc(i);
-        end;
-      if i <> 0 then
-        q /= i;
+          TMI := @Frame.TileMap[sy, sx];
 
-      Frame.DitherPsyV := Sqrt(q);
+          ComputeTilePsyVisFeatures(Frame.FrameTiles[sy * FTileMapWidth + sx]^, False, False, False, False, False, False, -1, nil, PFloat(@PlainDCT[0]));
+          ComputeTilePsyVisFeatures(Frame.PKeyFrame.Tiles[TMI^.TileIdx]^, True, False, False, TMI^.HMirror, TMI^.VMirror, False, -1, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], PFloat(@DitherDCT[0]));
+          psyV := CompareEuclideanDCTPtr_asm(PFloat(@PlainDCT[0]), PFloat(@DitherDCT[0]));
+
+          TMI^.DitherPsyV := Sqrt(psyV);
+
+          acc += psyV;
+        end;
+      acc /= FTileMapSize;
+
+      Frame.DitherPsyV := Sqrt(acc);
     finally
       Frame.ReleaseFrameTiles;
     end;
@@ -3663,12 +3676,12 @@ var
       else
         Assert(False);
       end;
+
+      Inc(StepProgress, keyFrame.FrameCount);
+      ProgressRedraw(StepProgress, esNone, AItem.Thread);
     finally
       InterLockedDecrement(FKeyFramesThreadCount);
     end;
-
-    Inc(StepProgress, keyFrame.FrameCount);
-    ProgressRedraw(StepProgress, esNone, AItem.Thread);
   end;
 
 begin
