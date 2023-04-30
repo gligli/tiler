@@ -602,6 +602,7 @@ type
     class function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
     class function GetTilePalPixelsSum(const ATile: TTile): Integer;
     function GetTilePalZoneThres(const ATile: TTile; ZoneCount: Integer; Zones: PByte): Integer;
+    class procedure GetTileHVMirrorHeuristics(const ATile: TTile; out AHMirror, AVMirror: Boolean);
     class procedure HMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
     class procedure VMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
     function GetTileUseCount(ATileIndex: Int64): Integer;
@@ -2612,7 +2613,6 @@ const
   CBinSize = 64;
 var
   sx, sy, frmIdx, annQueryCount, annQueryPos, dsIdx, blendDsIdx, diffIdx, binIdx: Integer;
-  q00, q01, q10, q11: Integer;
   errCml: Double;
   blendThres, diffErr, blendErr: TFloat;
 
@@ -2624,7 +2624,6 @@ var
   idxs: TIntegerDynArray;
   errs: TFloatDynArray;
   DCTs: TFloatDynArray;
-  HMirrors, VMirrors: TBooleanDynArray;
   DiffDCT: array[0 .. cTileDCTSize - 1] of TFloat;
   blendIdxs: array[0 .. CBinSize - 1] of Integer;
   blendErrs: array[0 .. CBinSize - 1] of TFloat;
@@ -2660,8 +2659,6 @@ begin
   SetLength(DCTs, annQueryCount * cTileDCTSize);
   SetLength(idxs, annQueryCount);
   SetLength(errs, annQueryCount);
-  SetLength(HMirrors, annQueryCount);
-  SetLength(VMirrors, annQueryCount);
 
   // prepare KNN queries
 
@@ -2675,22 +2672,14 @@ begin
       for sy := 0 to Encoder.FTileMapHeight - 1 do
         for sx := 0 to Encoder.FTileMapWidth - 1 do
         begin
-          if Frame.TileMap[sy, sx].PalIdx <> APaletteIndex then
+          TMI := @Frame.TileMap[sy, sx];
+
+          if TMI^.PalIdx <> APaletteIndex then
             Continue;
 
           T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
-          // enforce the 'spin' on tiles mirrors (brighter top-left corner)
-
-          q00 := Encoder.GetTileZoneSum(T^, 0, 0, cTileWidth div 2, cTileWidth div 2);
-          q01 := Encoder.GetTileZoneSum(T^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
-          q10 := Encoder.GetTileZoneSum(T^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-          q11 := Encoder.GetTileZoneSum(T^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-
-          HMirrors[annQueryPos] := q00 + q10 < q01 + q11;
-          VMirrors[annQueryPos] := q00 + q01 < q10 + q11;
-
-          Encoder.ComputeTilePsyVisFeatures(T^, AFromPal, False, cFTQWeighting, HMirrors[annQueryPos], VMirrors[annQueryPos], False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
+          Encoder.ComputeTilePsyVisFeatures(T^, AFromPal, False, cFTQWeighting, TMI^.HMirror, TMI^.VMirror, False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
 
           Inc(annQueryPos);
         end;
@@ -2766,15 +2755,9 @@ begin
           TMI := @Frame.TileMap[sy, sx];
 
           TMI^.TileIdx := Best.bestIdx;
-          TMI^.HMirror := HMirrors[annQueryPos];
-          TMI^.VMirror := VMirrors[annQueryPos];
-
           TMI^.AdditionalTileIdx := Best.bestAdditionalIdx;
-
           TMI^.SmoothedTileIdx := TMI^.TileIdx;
           TMI^.SmoothedPalIdx := TMI^.PalIdx;
-          TMI^.SmoothedHMirror := TMI^.HMirror;
-          TMI^.SmoothedVMirror := TMI^.VMirror;
 
           errCml += Best.bestErr;
         end;
@@ -3032,10 +3015,10 @@ procedure TKeyFrame.LoadTiles;
   procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     i, sx, sy: Integer;
-    q00, q01, q10, q11: Integer;
     HMirror, VMirror: Boolean;
     tilePos: Int64;
     Frame: TFrame;
+    TMI: PTileMapItem;
   begin
     if not InRange(AIndex, StartFrame, EndFrame) then
       Exit;
@@ -3050,15 +3033,7 @@ procedure TKeyFrame.LoadTiles;
       try
         for i := 0 to Encoder.FTileMapSize - 1 do
         begin
-          // enforce a 'spin' on tiles mirrors (brighter top-left corner)
-
-          q00 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, 0, 0, cTileWidth div 2, cTileWidth div 2);
-          q01 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
-          q10 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-          q11 := Encoder.GetTileZoneSum(Frame.FrameTiles[i]^, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
-
-          HMirror := q00 + q10 < q01 + q11;
-          VMirror := q00 + q01 < q10 + q11;
+          Encoder.GetTileHVMirrorHeuristics(Frame.FrameTiles[i]^, HMirror, VMirror);
 
           Tiles[tilePos + i]^.CopyFrom(Frame.FrameTiles[i]^);
           Tiles[tilePos + i]^.UseCount := 1;
@@ -3072,9 +3047,12 @@ procedure TKeyFrame.LoadTiles;
           // update tilemap
 
           DivMod(i, Encoder.FTileMapWidth, sy, sx);
-          Frame.TileMap[sy, sx].TileIdx :=  tilePos + i;
-          Frame.TileMap[sy, sx].HMirror :=  HMirror;
-          Frame.TileMap[sy, sx].VMirror :=  VMirror;
+
+          TMI := @Frame.TileMap[sy, sx];
+
+          TMI^.TileIdx := tilePos + i;
+          TMI^.HMirror := HMirror;
+          TMI^.VMirror := VMirror;
         end;
 
       finally
@@ -5144,16 +5122,16 @@ procedure TTilingEncoder.Render(AFast: Boolean);
       Inc(psl, sx * cTileWidth);
 
       tym := ty;
-      if vmir and FRenderMirrored then tym := cTileWidth - 1 - tym;
+      if vmir then tym := cTileWidth - 1 - tym;
       ptym := ty;
-      if prevVmir and FRenderMirrored then ptym := cTileWidth - 1 - ptym;
+      if prevVmir then ptym := cTileWidth - 1 - ptym;
 
       for tx := 0 to cTileWidth - 1 do
       begin
         txm := tx;
-        if hmir and FRenderMirrored then txm := cTileWidth - 1 - txm;
+        if hmir then txm := cTileWidth - 1 - txm;
         ptxm := tx;
-        if prevHmir and FRenderMirrored then ptxm := cTileWidth - 1 - ptxm;
+        if prevHmir then ptxm := cTileWidth - 1 - ptxm;
 
         r := 255; g := 0; b := 255;
         if tilePtr^.Active then
@@ -5328,6 +5306,12 @@ begin
                 end;
 
               tilePtr := Frame.PKeyFrame.Tiles[TMItem.TileIdx];
+
+              if not FRenderMirrored then
+              begin
+                TMItem.HMirror := False;
+                TMItem.VMirror := False;
+              end;
 
               if FRenderBlended and InRange(TMItem.AdditionalTileIdx, 0, High(Frame.PKeyFrame.Tiles)) then
               begin
@@ -5827,6 +5811,21 @@ begin
       Inc(Zones);
     end;
   end;
+end;
+
+class procedure TTilingEncoder.GetTileHVMirrorHeuristics(const ATile: TTile; out AHMirror, AVMirror: Boolean);
+var
+  q00, q01, q10, q11: Integer;
+begin
+  // enforce an heuristical 'spin' on tiles mirrors (brighter top-left corner)
+
+  q00 := GetTileZoneSum(ATile, 0, 0, cTileWidth div 2, cTileWidth div 2);
+  q01 := GetTileZoneSum(ATile, cTileWidth div 2, 0, cTileWidth div 2, cTileWidth div 2);
+  q10 := GetTileZoneSum(ATile, 0, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+  q11 := GetTileZoneSum(ATile, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2, cTileWidth div 2);
+
+  AHMirror := q00 + q10 < q01 + q11;
+  AVMirror := q00 + q01 < q10 + q11;
 end;
 
 procedure TTilingEncoder.SaveStream(AStream: TStream; ASpecificKF: Integer);
