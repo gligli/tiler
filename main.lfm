@@ -850,15 +850,15 @@ object MainForm: TMainForm
       Caption = 'ReColor'
       OnClick = btnReColorClick
     end
-    object MenuItem4: TMenuItem
-      Caption = 'Reindex'
-      ShortCut = 118
-      OnClick = btnReindexClick
-    end
     object MenuItem5: TMenuItem
       Caption = 'Smooth'
-      ShortCut = 119
+      ShortCut = 118
       OnClick = btnSmoothClick
+    end
+    object MenuItem4: TMenuItem
+      Caption = 'Reindex'
+      ShortCut = 119
+      OnClick = btnReindexClick
     end
     object MenuItem6: TMenuItem
       Caption = 'Save'
