@@ -1815,7 +1815,9 @@ begin
   TmpIndex := ATile.TmpIndex;
   MergeIndex := ATile.MergeIndex;
   FrameSoleIndex := ATile.FrameSoleIndex;
-  Flags := ATile.Flags;
+  Active := ATile.Active;
+  IntraFrame := ATile.IntraFrame;
+  Additional := ATile.Additional;
 
   if HasPalPixels and ATile.HasPalPixels then
     CopyPalPixels(ATile.GetPalPixelsPtr^);
