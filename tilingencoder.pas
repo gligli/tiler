@@ -2394,7 +2394,17 @@ procedure TKeyFrame.DitherTiles;
           if T^.Active and (InterlockedCompareExchange(T^.TmpIndex, Int64(AIndex) * Encoder.FTileMapSize + TMPos, -1) = -1) then
           begin
             Assert(InRange(PalIdx, 0, Encoder.FPaletteCount - 1));
-            Encoder.DitherTile(T^, MixingPlans[PalIdx]);
+
+            // put tile back in its natural mirrors for ordered dithering to work properly
+            if TMI^.HMirror then Encoder.HMirrorTile(T^);
+            if TMI^.VMirror then Encoder.VMirrorTile(T^);
+            try
+              // dither tile
+              Encoder.DitherTile(T^, MixingPlans[PalIdx]);
+            finally
+              if TMI^.HMirror then Encoder.HMirrorTile(T^);
+              if TMI^.VMirror then Encoder.VMirrorTile(T^);
+            end;
           end;
 
           if Encoder.FrameTilingFromPalette then
@@ -5076,7 +5086,7 @@ var
   end;
 
 const
-  CShotTransMaxSecondsPerKF = 2.0;  // maximum seconds between keyframes
+  CShotTransMaxSecondsPerKF = 8.0;  // maximum seconds between keyframes
   CShotTransMinSecondsPerKF = 0.25; // minimum seconds between keyframes
   CShotTransCorrelLoThres = 0.75;   // interframe pearson correlation low limit
 var
