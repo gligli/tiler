@@ -5086,7 +5086,7 @@ var
   end;
 
 const
-  CShotTransMaxSecondsPerKF = 8.0;  // maximum seconds between keyframes
+  CShotTransMaxSecondsPerKF = 2.0;  // maximum seconds between keyframes
   CShotTransMinSecondsPerKF = 0.25; // minimum seconds between keyframes
   CShotTransCorrelLoThres = 0.75;   // interframe pearson correlation low limit
 var
