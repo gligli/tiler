@@ -188,14 +188,14 @@ object MainForm: TMainForm
       object seTempoSmoo: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 337
+        Top = 338
         Width = 71
         DecimalPlaces = 4
         Increment = 0.05
         MaxValue = 10
         OnChange = UpdateGUI
         TabOrder = 20
-        Value = 0.5
+        Value = 0.2
       end
       object seStartFrame: TSpinEdit
         Left = 872
@@ -274,7 +274,7 @@ object MainForm: TMainForm
       object Label9: TLabel
         Left = 8
         Height = 15
-        Top = 341
+        Top = 342
         Width = 227
         Caption = 'Temporal smoothing strength (PsyV based)'
         ParentColor = False
@@ -348,7 +348,7 @@ object MainForm: TMainForm
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 372
+        Top = 373
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -356,7 +356,7 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 369
+        Top = 370
         Width = 71
         Increment = 0.1
         MaxValue = 10
@@ -368,7 +368,7 @@ object MainForm: TMainForm
       object seVisGamma: TFloatSpinEdit
         Left = 400
         Height = 23
-        Top = 369
+        Top = 370
         Width = 71
         Increment = 0.1
         MaxValue = 10
@@ -606,8 +606,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 286
-        Width = 138
-        Caption = 'Reconstruct blending tries'
+        Width = 225
+        Caption = 'Reconstruct blending tries (0: no blending)'
         ParentColor = False
       end
       object cbxFTBlendBinSize: TComboBox
@@ -617,8 +617,9 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 3
+        ItemIndex = 4
         Items.Strings = (
+          '0'
           '1'
           '2'
           '4'
