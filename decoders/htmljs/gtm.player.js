@@ -24,6 +24,8 @@ const GTMHeader = {
 //                            commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
 // LongLendTileIdx:         data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
 //                            commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// ShortAddlBlendTileIdx:   data -> tile index (16 bits) * 2; blending ratio (8 bits); padding (8 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// LongAddlBlendTileIdx:    data -> tile index (32 bits) * 2; blending ratio (8 bits); padding (8 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
 // ShortAdditionalTileIdx:  data -> tile index (16 bits) * 2; commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
 // LongAdditionalTileIdx:   data -> tile index (32 bits) * 2; commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
 //
@@ -34,7 +36,7 @@ const GTMHeader = {
 // SetDimensions:           data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
 // ExtendedCommand:         data -> custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
 //
-// ReservedArea:            reserving the MSB for future use (do not use for new commands)
+// ReservedArea:            reserving the MSB for future use (do not use for new commands)    
 
 const GTMCommand = {
 	'SkipBlock' : 0,
@@ -43,6 +45,8 @@ const GTMCommand = {
 	'LoadPalette' : 3,
 	'ShortBlendTileIdx' : 4,
 	'LongBlendTileIdx' : 5,
+	'ShortAddlBlendTileIdx' : 6,
+    'LongAddlBlendTileIdx' : 7,
     'ShortAdditionalTileIdx' : 9,
     'LongAdditionalTileIdx' : 10,
 	
@@ -365,7 +369,7 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 	gtmTMPos++;
 }
 
-function drawAdditionalTilemapItem(idx, idx2, attrs) {
+function drawAdditionalTilemapItem(idx, idx2, attrs, blend) {
 	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
 	let tOff = (attrs & 3) * CTileWidth * CTileWidth;
 	let tile = gtmTiles[idx];
@@ -379,19 +383,41 @@ function drawAdditionalTilemapItem(idx, idx2, attrs) {
 	let p = (y * gtmWidth * CTileWidth + x) * 4;
 	var data = gtmTMImageData.data;
 	
-	for (let ty = 0; ty < CTileWidth; ty++) {
-		for (let tx = 0; tx < CTileWidth; tx++) {
-			let v = tile[tOff];
-			let v2 = tile2[tOff];
+	if (blend == 128)
+	{
+		for (let ty = 0; ty < CTileWidth; ty++) {
+			for (let tx = 0; tx < CTileWidth; tx++) {
+				let v = tile[tOff];
+				let v2 = tile2[tOff];
 
-			data[p++] = (palR[v] + palR[v2]) >> 1;
-			data[p++] = (palG[v] + palG[v2]) >> 1;
-			data[p++] = (palB[v] + palB[v2]) >> 1;
-			data[p++] = (palA[v] + palA[v2]) >> 1;
+				data[p++] = (palR[v] + palR[v2]) >> 1;
+				data[p++] = (palG[v] + palG[v2]) >> 1;
+				data[p++] = (palB[v] + palB[v2]) >> 1;
+				data[p++] = (palA[v] + palA[v2]) >> 1;
 
-			++tOff;
+				++tOff;
+			}
+			p += (gtmWidth - 1) * CTileWidth * 4;
 		}
-		p += (gtmWidth - 1) * CTileWidth * 4;
+	}
+	else
+	{
+		let rblend = 256 - blend;
+		
+		for (let ty = 0; ty < CTileWidth; ty++) {
+			for (let tx = 0; tx < CTileWidth; tx++) {
+				let v = tile[tOff];
+				let v2 = tile2[tOff];
+
+				data[p++] = (palR[v] * rblend + palR[v2] * blend) >> 8;
+				data[p++] = (palG[v] * rblend + palG[v2] * blend) >> 8;
+				data[p++] = (palB[v] * rblend + palB[v2] * blend) >> 8;
+				data[p++] = (palA[v] * rblend + palA[v2] * blend) >> 8;
+
+				++tOff;
+			}
+			p += (gtmWidth - 1) * CTileWidth * 4;
+		}
 	}
 	
 	gtmTMIndexes[gtmTMDblBuff][gtmTMPos] = idx;
@@ -543,16 +569,32 @@ function decodeFrame() {
 				drawBlendedTilemapItem(idxDW, cmd[1], blendDW);
 				break;
 				
+			case GTMCommand.ShortAddlBlendTileIdx:
+				let idx1bW = readWord();
+				let idx2bW = readWord();
+				let blendbW = readByte();
+				readByte(); // padding
+				drawAdditionalTilemapItem(idx1bW, idx2bW, cmd[1], blendbW);
+				break;
+				
+			case GTMCommand.LongAddlBlendTileIdx:
+				let idx1bDW = readDWord();
+				let idx2bDW = readDWord();
+				let blendbDW = readByte();
+				readByte(); // padding
+				drawAdditionalTilemapItem(idx1bDW, idx2bDW, cmd[1], blendbDW);
+				break;
+				
 			case GTMCommand.ShortAdditionalTileIdx:
 				let idx1W = readWord();
 				let idx2W = readWord();
-				drawAdditionalTilemapItem(idx1W, idx2W, cmd[1]);
+				drawAdditionalTilemapItem(idx1W, idx2W, cmd[1], 128);
 				break;
 
 			case GTMCommand.LongAdditionalTileIdx:
 				let idx1DW = readDWord();
 				let idx2DW = readDWord();
-				drawAdditionalTilemapItem(idx1DW, idx2DW, cmd[1]);
+				drawAdditionalTilemapItem(idx1DW, idx2DW, cmd[1], 128);
 				break;
 
 			default:

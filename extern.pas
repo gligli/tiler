@@ -196,6 +196,8 @@ function internalRuncommand(p:TProcess;var outputstring:string;
                             var stderrstring:string; var exitstatus:integer; PrintOut: Boolean):integer;
 
 const
+  CRandomSeed = $42381337;
+
   CDefaultFLANNParameters: TFLANNParameters = (
       algorithm: FLANN_INDEX_KDTREE;
       checks: 32; eps: 0.0;
@@ -204,7 +206,7 @@ const
       branching: 32; iterations: 11; centers_init: FLANN_CENTERS_RANDOM; cb_index: 0.2;
       target_precision: 0.9; build_weight: 0.01; memory_weight: 0; sample_fraction: 0.1;
       table_number_: 0; key_size_: 0; multi_probe_level_: 0;
-      log_level: FLANN_LOG_NONE; random_seed: 0
+      log_level: FLANN_LOG_NONE; random_seed: CRandomSeed
   );
 
   //struct FLANNParameters DEFAULT_FLANN_PARAMETERS = {
