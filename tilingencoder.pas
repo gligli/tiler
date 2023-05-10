@@ -6061,11 +6061,20 @@ var
     begin
       if isBlended then
       begin
-        DoCmd(gtShortAddlBlendTileIdx, attrs);
-        DoWord(tileIdx);
-        DoWord(blendedIdx);
-        DoByte(blend);
-        DoByte(0);
+        if blend = 128 then
+        begin
+          DoCmd(gtShortAdditionalTileIdx, attrs);
+          DoWord(tileIdx);
+          DoWord(blendedIdx);
+        end
+        else
+        begin
+          DoCmd(gtShortAddlBlendTileIdx, attrs);
+          DoWord(tileIdx);
+          DoWord(blendedIdx);
+          DoByte(blend);
+          DoByte(0);
+        end;
       end
       else
       begin
@@ -6077,11 +6086,20 @@ var
     begin
       if isBlended then
       begin
-        DoCmd(gtLongAddlBlendTileIdx, attrs);
-        DoDWord(tileIdx);
-        DoDWord(blendedIdx);
-        DoByte(blend);
-        DoByte(0);
+        if blend = 128 then
+        begin
+          DoCmd(gtLongAdditionalTileIdx, attrs);
+          DoDWord(tileIdx);
+          DoDWord(blendedIdx);
+        end
+        else
+        begin
+          DoCmd(gtLongAddlBlendTileIdx, attrs);
+          DoDWord(tileIdx);
+          DoDWord(blendedIdx);
+          DoByte(blend);
+          DoByte(0);
+        end;
       end
       else
       begin
