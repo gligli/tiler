@@ -361,7 +361,7 @@ type
   TFrame = class
     PKeyFrame: TKeyFrame;
     Index: Integer;
-    DitherPsyV: TFloat;
+    EuclideanDist: TFloat;
 
     TileMap: array of array of TTileMapItem;
 
@@ -464,6 +464,7 @@ type
     FCS: TRTLCriticalSection;
     FKeyFramesLeft: Integer;
     FKeyFramesThreadCount: Integer;
+    FDitherPsyVDone: Boolean;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -569,7 +570,7 @@ type
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
     function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-    function ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
+    function ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
 
     function GetSettings: String;
     procedure ClearAll;
@@ -1524,7 +1525,6 @@ constructor TFrame.Create;
 begin
   CompressedFrameTiles := TMemoryStream.Create;
   FrameTilesEvent := CreateEvent(nil, True, False, nil);
-  DitherPsyV := NaN;
 end;
 
 destructor TFrame.Destroy;
@@ -3279,16 +3279,15 @@ begin
   if FrameCount = 0 then
     Exit;
 
-  // share GlobalTilingTileCount among keyframes, proportional to the amount of dithering psychovisual error
-  // the rationale being: high dithering error means complex frame
+  // share GlobalTilingTileCount among keyframes, proportional to the amount of euclidean distance between frames
 
   AllPsyV := 0.0;
   for frmIdx := 0 to High(Encoder.FFrames) do
-    AllPsyV += CAllocEpsilon + Encoder.FFrames[frmIdx].DitherPsyV;
+    AllPsyV += CAllocEpsilon + Encoder.FFrames[frmIdx].EuclideanDist;
 
   KFPsyV := 0.0;
   for frmIdx := StartFrame to EndFrame do
-    KFPsyV += CAllocEpsilon + Encoder.FFrames[frmIdx].DitherPsyV;
+    KFPsyV += CAllocEpsilon + Encoder.FFrames[frmIdx].EuclideanDist;
 
   ClusterCount := max(1, trunc(Div0(Encoder.FGlobalTilingTileCount * KFPsyV, AllPsyV)));
 
@@ -3724,11 +3723,10 @@ procedure TTilingEncoder.Tile(AKeyFrameProcess: TKeyFrameProcess);
 var
   StepProgress: Integer;
 
-  procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoDitherPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     sx, sy: Integer;
     psyV: TFloat;
-    acc: Double;
     Frame: TFrame;
     PlainDCT, DitherDCT: array[0 .. cTileDCTSize - 1] of TFloat;
     TMI: PTileMapItem;
@@ -3738,13 +3736,8 @@ var
 
     Frame := FFrames[AIndex];
 
-    // already run?
-    if not IsNan(Frame.DitherPsyV) then
-      Exit;
-
     Frame.AcquireFrameTiles;
     try
-      acc := 0.0;
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
@@ -3755,12 +3748,7 @@ var
           psyV := CompareEuclideanDCTPtr_asm(PFloat(@PlainDCT[0]), PFloat(@DitherDCT[0]));
 
           TMI^.DitherPsyV := Sqrt(psyV);
-
-          acc += psyV;
         end;
-      acc /= FTileMapSize;
-
-      Frame.DitherPsyV := Sqrt(acc);
     finally
       Frame.ReleaseFrameTiles;
     end;
@@ -3802,7 +3790,11 @@ begin
   StepProgress := 0;
   ProgressRedraw(0, esTile);
 
-  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, High(FFrames));
+  if not FDitherPsyVDone then
+  begin
+    ProcThreadPool.DoParallelLocalProc(@DoDitherPsyV, 0, High(FFrames));
+    FDitherPsyVDone := True;
+  end;
 
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
@@ -3956,20 +3948,22 @@ begin
   Result := CompareEuclidean(ya, yb) / (Length(a) * cLumaDiv * 256.0);
 end;
 
-function TTilingEncoder.ComputeInterFrameCorrelation(a, b: TFrame): TFloat;
+function TTilingEncoder.ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
 var
   sz, i, tx, ty, sx, sy: Integer;
   rr, gg, bb: Integer;
   ya, yb: TFloatDynArray;
   par, pag, pab, pbr, pbg, pbb: PFloat;
   pat, pbt: PInteger;
+  zeroPixels: TRGBPixels;
 begin
   sz := FTileMapSize * Sqr(cTileWidth);
   SetLength(ya, sz * 3);
   SetLength(yb, sz * 3);
+  FillChar(zeroPixels, SizeOf(zeroPixels), 0);
 
-  a.AcquireFrameTiles;
-  b.AcquireFrameTiles;
+  if Assigned(a) then a.AcquireFrameTiles;
+  if Assigned(b) then b.AcquireFrameTiles;
   try
     par := @ya[sz * 0]; pag := @ya[sz * 1]; pab := @ya[sz * 2];
     pbr := @yb[sz * 0]; pbg := @yb[sz * 1]; pbb := @yb[sz * 2];
@@ -3979,8 +3973,16 @@ begin
         for sx := 0 to FTileMapWidth - 1 do
         begin
           i := sy * FTileMapWidth + sx;
-          pat := PInteger(@a.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0]);
-          pbt := PInteger(@b.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0]);
+
+          if Assigned(a) then
+            pat := PInteger(@a.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
+          else
+            pat := PInteger(@zeroPixels[0, 0]);
+          if Assigned(b) then
+            pbt := PInteger(@b.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
+          else
+            pbt := PInteger(@zeroPixels[0, 0]);
+
           for tx := 0 to cTileWidth - 1 do
           begin
             FromRGB(pat^, rr, gg, bb);
@@ -3996,9 +3998,21 @@ begin
         end;
 
     Result := PearsonCorrelation(ya, yb);
+
+    par := @ya[0];
+    pbr := @yb[0];
+    EuclideanDist := 0;
+    for i := 0 to Length(ya) div cTileDCTSize - 1 do
+    begin
+      EuclideanDist += CompareEuclideanDCTPtr_asm(par, pbr);
+      Inc(par, cTileDCTSize);
+      Inc(pbr, cTileDCTSize);
+    end;
+
+    EuclideanDist := Sqrt(EuclideanDist / sz);
   finally
-    a.ReleaseFrameTiles;
-    b.ReleaseFrameTiles;
+    if Assigned(a) then a.ReleaseFrameTiles;
+    if Assigned(b) then b.ReleaseFrameTiles;
   end;
 end;
 
@@ -5164,11 +5178,17 @@ var
   Correlations: TFloatDynArray;
 
   procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    prevFrame: TFrame;
   begin
-    if not InRange(AIndex, 1, High(FFrames)) then
+    if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex]);
+    prevFrame := nil;
+    if AIndex > 0 then
+      prevFrame := FFrames[AIndex - 1];
+
+    Correlations[AIndex] := ComputeInterFrameCorrelation(prevFrame, FFrames[AIndex], FFrames[AIndex].EuclideanDist);
   end;
 
 const
@@ -5184,10 +5204,8 @@ begin
   // compute interframe correlations
 
   SetLength(Correlations, Length(FFrames));
-  Correlations[0] := 0.0;
-
   if not AManualMode then
-    ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoCorrel, 0, High(FFrames));
 
   // find keyframes
 
@@ -5267,6 +5285,8 @@ begin
     if Assigned(FKeyFrames[i]) then
       FreeAndNil(FKeyFrames[i]);
   SetLength(FKeyFrames, 0);
+
+  FDitherPsyVDone := False;
 end;
 
 procedure TTilingEncoder.Render(AFast: Boolean);
