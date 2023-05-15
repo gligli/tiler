@@ -2388,7 +2388,7 @@ end;
 
 procedure TKeyFrame.DoKeyFrameKMeans(AClusterCount: Integer);
 var
-  i, j, bestI, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
+  i, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
   cnt, tidx: Int64;
   speedup: Double;
   v, best: TFloat;
@@ -2405,7 +2405,6 @@ var
   FLANNErrors: TDoubleDynArray;
   ToMerge: array of PDouble;
   ToMergeIdxs: TInt64DynArray;
-  PalIdxStats: array[0 .. 255] of Integer;
 begin
   DSLen := GetTileCount(True);
   if (DSLen <= AClusterCount) or (AClusterCount <= 1) then
@@ -2502,27 +2501,10 @@ begin
       end;
     end;
 
-    // dither centroid tile in the most probable palette
+    // dither tile in its initial palette
 
     Tile := Tiles[ToMergeIdxs[clusterLineIdx]];
-    FillChar(PalIdxStats[0], SizeOf(PalIdxStats), 0);
-    for i := 0 to clusterLineCount - 1 do
-    begin
-      j := Tiles[ToMergeIdxs[i]]^.InitialPalIdx;
-      Assert(InRange(j, 0, Encoder.FPaletteCount - 1));
-      Inc(PalIdxStats[j], Tiles[ToMergeIdxs[i]]^.UseCount);
-    end;
-
-    bestI := -1;
-    j := -1;
-    for i := 0 to Encoder.FPaletteCount - 1 do
-      if PalIdxStats[i] > bestI then
-      begin
-        bestI := PalIdxStats[i];
-        j := i;
-      end;
-
-    Encoder.DitherTile(Tile^, MixingPlans[j]);
+    Encoder.DitherTile(Tile^, MixingPlans[Tile^.InitialPalIdx]);
 
     // merge centroid
 
