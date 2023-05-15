@@ -527,8 +527,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 237
-        Width = 279
-        Caption = 'Reconstruct blending threshold (0: auto, PSyV based)'
+        Width = 237
+        Caption = 'Reconstruct blending threshold (PSyV based)'
         ParentColor = False
       end
       object seFTBlendThres: TFloatSpinEdit
@@ -617,7 +617,7 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 4
+        ItemIndex = 7
         Items.Strings = (
           '0'
           '1'
@@ -633,7 +633,7 @@ object MainForm: TMainForm
         OnChange = UpdateGUI
         Style = csDropDownList
         TabOrder = 18
-        Text = '8'
+        Text = '64'
       end
       object Label19: TLabel
         Left = 8
@@ -650,7 +650,7 @@ object MainForm: TMainForm
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
-        ItemIndex = 2
+        ItemIndex = 0
         Items.Strings = (
           '2'
           '4'
@@ -664,7 +664,7 @@ object MainForm: TMainForm
         OnChange = UpdateGUI
         Style = csDropDownList
         TabOrder = 17
-        Text = '8'
+        Text = '2'
       end
     end
     object tsInput: TTabSheet

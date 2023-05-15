@@ -192,25 +192,25 @@ end;
 
 procedure TMainForm.btnClusterClick(Sender: TObject);
 begin
-  FTilingEncoder.Tile(kfpCluster);
+  FTilingEncoder.Run(kfpCluster);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnDitherClick(Sender: TObject);
 begin
-  FTilingEncoder.Dither(kfpDither);
+  FTilingEncoder.Run(kfpDither);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReconstructClick(Sender: TObject);
 begin
-  FTilingEncoder.Tile(kfpReconstruct);
+  FTilingEncoder.Run(kfpReconstruct);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReColorClick(Sender: TObject);
 begin
-  FTilingEncoder.Tile(kfpReColor);
+  FTilingEncoder.Run(kfpReColor);
   UpdateVideo(nil);
 end;
 
@@ -223,13 +223,13 @@ end;
 
 procedure TMainForm.btnLoadTilesClick(Sender: TObject);
 begin
-  FTilingEncoder.Dither(kfpLoadTiles);
+  FTilingEncoder.Run(kfpLoadTiles);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReindexClick(Sender: TObject);
 begin
-  FTilingEncoder.Tile(kfpReindex);
+  FTilingEncoder.Run(kfpReindex);
   UpdateVideo(nil);
 end;
 
@@ -241,7 +241,7 @@ end;
 
 procedure TMainForm.btnSmoothClick(Sender: TObject);
 begin
-  FTilingEncoder.Tile(kfpSmooth);
+  FTilingEncoder.Run(kfpSmooth);
   UpdateVideo(nil);
 end;
 
@@ -389,15 +389,9 @@ begin
   if OkStep(esLoad) then
     btnGlobalLoadClick(nil);
 
-  if OkStep(esDither) then
+  if OkStep(esRun) then
   begin
-    FTilingEncoder.Dither;
-    UpdateVideo(nil);
-  end;
-
-  if OkStep(esTile) then
-  begin
-    FTilingEncoder.Tile;
+    FTilingEncoder.Run;
     UpdateVideo(nil);
   end;
 

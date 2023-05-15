@@ -66,8 +66,7 @@ begin
       Encoder.LoadSettings(ParamStr(1));
 
       Encoder.Load;
-      Encoder.Dither;
-      Encoder.Tile;
+      Encoder.Run;
       Encoder.Save;
 
     finally

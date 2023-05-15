@@ -14,7 +14,7 @@ uses
   Graphics, IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, kmodes;
 
 type
-  TEncoderStep = (esNone = -1, esLoad = 0, esDither, esTile, esSave);
+  TEncoderStep = (esNone = -1, esLoad = 0, esRun, esSave);
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
   TKeyFrameProcess = (kfpAll = -1, kfpLoadTiles = 0, kfpDither, kfpCluster, kfpReconstruct, kfpReColor, kfpReindex, kfpSmooth);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
@@ -62,7 +62,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, -1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -215,7 +215,7 @@ type
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
     UseCount: Cardinal;
     TmpIndex, MergeIndex: Integer;
-    FrameSoleIndex: SmallInt;
+    FrameSoleIndex, InitialPalIdx: SmallInt;
     Flags: set of (tfActive, tfIntraFrame, tfAdditional, tfHasRGBPixels, tfHasPalPixels);
   end;
 
@@ -276,7 +276,6 @@ type
 
   TTileMapItem = packed record
     TileIdx, BlendedTileIdx, TileIdx_Smoothed, BlendedTileIdx_Smoothed: Integer;
-    DitherPsyV: TFloat;
     PalIdx, PalIdx_Smoothed: SmallInt;
     Blend, Blend_Smoothed: Byte;
     Flags: set of (tmfSmoothed, tmfHMirror, tmfVMirror, tmfHMirror_Smoothed, tmfVMirror_Smoothed, tmfAdditional);
@@ -425,7 +424,6 @@ type
     procedure PreparePalettes(ADitheringGamma: Integer);
     procedure QuantizePalette(APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
     procedure FinishQuantizePalettes;
-    procedure DitherTiles;
 
     procedure DoKeyFrameKMeans(AClusterCount: Integer);
 
@@ -447,8 +445,7 @@ type
     procedure Smooth;
     procedure Reindex;
 
-    procedure RunAll_Dither;
-    procedure RunAll_Tile;
+    procedure RunAll;
   end;
 
   TKeyFrameArray =  array of TKeyFrame;
@@ -464,7 +461,6 @@ type
     FCS: TRTLCriticalSection;
     FKeyFramesLeft: Integer;
     FKeyFramesThreadCount: Integer;
-    FDitherPsyVDone: Boolean;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -535,7 +531,7 @@ type
     FTilesBitmap: TBitmap;
     FOnProgress: TTilingEncoderProgressEvent;
     FProgressStep: TEncoderStep;
-    FProgressStartTime, FProgressPrevTime: Int64;
+    FProgressAllStartTime, FProgressProcessStartTime, FProgressPrevTime: Int64;
 
     FProgressSyncPos, FProgressSyncMax: Integer;
     FProgressSyncHG: Boolean;
@@ -612,7 +608,6 @@ type
     function GetGlobalTileCount(AActiveOnly: Boolean): Integer;
     function GetFrameTileCount(AFrame: TFrame): Integer;
 
-    function GetTileIndexTMItem(const ATile: TTile; out AFrame: TFrame): PTileMapItem;
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
     class function GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
     class function GetTilePalPixelsSum(const ATile: TTile): Integer;
@@ -636,8 +631,7 @@ type
     // processes / functions
 
     procedure Load;
-    procedure Dither(AKeyFrameProcess: TKeyFrameProcess = kfpAll);
-    procedure Tile(AKeyFrameProcess: TKeyFrameProcess = kfpAll);
+    procedure Run(AKeyFrameProcess: TKeyFrameProcess = kfpAll);
     procedure Save;
 
     procedure Render(AFast: Boolean);
@@ -1830,6 +1824,7 @@ begin
   TmpIndex := ATile.TmpIndex;
   MergeIndex := ATile.MergeIndex;
   FrameSoleIndex := ATile.FrameSoleIndex;
+  InitialPalIdx := ATile.InitialPalIdx;
   Active := ATile.Active;
   IntraFrame := ATile.IntraFrame;
   Additional := ATile.Additional;
@@ -1999,11 +1994,15 @@ begin
   end;
 
   for tidx := 0 to High(Tiles) do
+  begin
     for frmIdx := StartFrame to EndFrame do
       for sy := 0 to Encoder.FTileMapHeight - 1 do
         for sx := 0 to Encoder.FTileMapWidth - 1 do
           if Encoder.FFrames[frmIdx].TileMap[sy, sx].TileIdx = tidx then
             Encoder.FFrames[frmIdx].TileMap[sy, sx].PalIdx := YakmoClusters[tidx];
+
+    Tiles[tidx]^.InitialPalIdx := YakmoClusters[tidx];
+  end;
 
   WriteLn('KF: ', StartFrame:8, ' Palettization end');
 end;
@@ -2354,6 +2353,7 @@ end;
 
 procedure TKeyFrame.FinishQuantizePalettes;
 var
+  tidx: Int64;
   i, sy, sx, PalIdx: Integer;
   PalIdxLUT: TIntegerDynArray;
   TmpCentroids: TDoubleDynArray2;
@@ -2377,91 +2377,18 @@ begin
     for sy := 0 to Encoder.FTileMapHeight - 1 do
       for sx := 0 to Encoder.FTileMapWidth - 1 do
         Encoder.FFrames[i].TileMap[sy, sx].PalIdx := PalIdxLUT[Encoder.FFrames[i].TileMap[sy, sx].PalIdx];
+
+  for tidx := 0 to High(Tiles) do
+    Tiles[tidx]^.InitialPalIdx := PalIdxLUT[Tiles[tidx]^.InitialPalIdx];
+
   TmpCentroids := Copy(PaletteCentroids);
   for PalIdx := 0 to Encoder.FPaletteCount - 1 do
     PaletteCentroids[PalIdxLUT[PalIdx]] := TmpCentroids[PalIdx];
 end;
 
-procedure TKeyFrame.DitherTiles;
-
-  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    PalIdx, TMPos: Integer;
-    sx, sy: Integer;
-    T: PTile;
-    TMI: PTileMapItem;
-  begin
-    if not InRange(AIndex, StartFrame, EndFrame) then
-      Exit;
-
-    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
-    try
-      Encoder.FFrames[AIndex].AcquireFrameTiles;
-
-      for sy := 0 to Encoder.FTileMapHeight - 1 do
-        for sx := 0 to Encoder.FTileMapWidth - 1 do
-        begin
-          TMPos := sy * Encoder.FTileMapWidth + sx;
-          TMI := @Encoder.FFrames[AIndex].TileMap[sy, sx];
-          T := Tiles[TMI^.TileIdx];
-          PalIdx := TMI^.PalIdx;
-
-          if T^.Active and (InterlockedCompareExchange(T^.TmpIndex, Int64(AIndex) * Encoder.FTileMapSize + TMPos, -1) = -1) then
-          begin
-            Assert(InRange(PalIdx, 0, Encoder.FPaletteCount - 1));
-
-            // put tile back in its natural mirrors for ordered dithering to work properly
-            if TMI^.HMirror then Encoder.HMirrorTile(T^);
-            if TMI^.VMirror then Encoder.VMirrorTile(T^);
-            try
-              // dither tile
-              Encoder.DitherTile(T^, MixingPlans[PalIdx]);
-            finally
-              if TMI^.HMirror then Encoder.HMirrorTile(T^);
-              if TMI^.VMirror then Encoder.VMirrorTile(T^);
-            end;
-          end;
-
-          if Encoder.FrameTilingFromPalette then
-          begin
-            // also dither FrameTiles
-            Encoder.DitherTile(Encoder.FFrames[AIndex].FrameTiles[TMPos]^, MixingPlans[PalIdx]);
-          end;
-        end;
-
-    finally
-      Encoder.FFrames[AIndex].CompressFrameTiles;
-      Encoder.FFrames[AIndex].ReleaseFrameTiles;
-      InterLockedDecrement(Encoder.FKeyFramesThreadCount);
-    end;
-  end;
-
-var
-  i: Integer;
-begin
-  // build ditherer
-  for i := 0 to Encoder.FPaletteCount - 1 do
-    Encoder.PreparePlan(MixingPlans[i], Encoder.FDitheringYliluoma2MixedColors, PaletteRGB[i]);
-
-  // dither tile in chosen palette
-
-  InterLockedDecrement(Encoder.FKeyFramesThreadCount);
-  try
-    ProcThreadPool.DoParallelLocalProc(@DoFrame, StartFrame, EndFrame, nil, GetFreeThreadCount);
-  finally
-    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
-  end;
-
-  // cleanup ditherer
-  for i := 0 to Encoder.FPaletteCount - 1 do
-    Encoder.TerminatePlan(MixingPlans[i]);
-
-  WriteLn('KF: ', StartFrame:8, ' Dithering end');
-end;
-
 procedure TKeyFrame.DoKeyFrameKMeans(AClusterCount: Integer);
 var
-  i, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
+  i, j, bestI, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
   cnt, tidx: Int64;
   speedup: Double;
   v, best: TFloat;
@@ -2478,6 +2405,7 @@ var
   FLANNErrors: TDoubleDynArray;
   ToMerge: array of PDouble;
   ToMergeIdxs: TInt64DynArray;
+  PalIdxStats: array[0 .. 255] of Integer;
 begin
   DSLen := GetTileCount(True);
   if (DSLen <= AClusterCount) or (AClusterCount <= 1) then
@@ -2560,30 +2488,45 @@ begin
         Inc(clusterLineCount);
       end;
 
-    // choose a tile from the cluster
+    // get the closest tile to the centroid
 
-    if clusterLineCount >= 2 then
+    best := MaxSingle;
+    clusterLineIdx := -1;
+    for i := 0 to clusterLineCount - 1 do
     begin
-      // get the closest tile to the centroid
-
-      best := MaxSingle;
-      clusterLineIdx := -1;
-      for i := 0 to clusterLineCount - 1 do
+      v := CompareEuclidean(ToMerge[i], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
+      if v < best then
       begin
-        v := CompareEuclidean(ToMerge[i], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
-        if v < best then
-        begin
-          best := v;
-          clusterLineIdx := i;
-        end;
+        best := v;
+        clusterLineIdx := i;
+      end;
+    end;
+
+    // dither centroid tile in the most probable palette
+
+    Tile := Tiles[ToMergeIdxs[clusterLineIdx]];
+    FillChar(PalIdxStats[0], SizeOf(PalIdxStats), 0);
+    for i := 0 to clusterLineCount - 1 do
+    begin
+      j := Tiles[ToMergeIdxs[i]]^.InitialPalIdx;
+      Assert(InRange(j, 0, Encoder.FPaletteCount - 1));
+      Inc(PalIdxStats[j], Tiles[ToMergeIdxs[i]]^.UseCount);
+    end;
+
+    bestI := -1;
+    j := -1;
+    for i := 0 to Encoder.FPaletteCount - 1 do
+      if PalIdxStats[i] > bestI then
+      begin
+        bestI := PalIdxStats[i];
+        j := i;
       end;
 
-      // merge centroid
+    Encoder.DitherTile(Tile^, MixingPlans[j]);
 
-      SpinEnter(@FLock);
-      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
-      SpinLeave(@FLock);
-    end;
+    // merge centroid
+
+    MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
   end;
 
   WriteLn('KF: ', StartFrame:8, ' Clustering end');
@@ -2669,7 +2612,7 @@ procedure TKeyFrame.DoKFTiling(APaletteIndex: Integer; AFTGamma: Integer);
 var
   sx, sy, frmIdx, annQueryCount, annQueryPos, dsIdx, blendDsIdx, diffIdx, binIdx, blendIdx: Integer;
   errCml: Double;
-  blendThres, diffErr, blendErr, blend: TFloat;
+  diffErr, blendErr, blend: TFloat;
 
   T, BlendT: PTile;
   Frame: TFrame;
@@ -2771,13 +2714,9 @@ begin
           Best.ResidualErr := errs[annQueryPos];
           Best.BlendedTileIdx := -1;
 
-          // try to blendIdx another tile to improve likeliness
+          // try to blend another tile to improve likeliness
 
-          blendThres := Encoder.FFrameTilingBlendingThreshold;
-          if IsZero(blendThres) then
-            blendThres := Frame.TileMap[sy, sx].DitherPsyV;
-
-          if not IsZero(sqrt(Best.ResidualErr), blendThres) and (Encoder.FFrameTilingBlendingBinSize > 0) then
+          if not IsZero(sqrt(Best.ResidualErr), Encoder.FFrameTilingBlendingThreshold) and (Encoder.FFrameTilingBlendingBinSize > 0) then
           begin
             if Encoder.FFrameTilingBlendingBinSize > 1 then
             begin
@@ -3242,14 +3181,9 @@ procedure TKeyFrame.Dither;
     end;
   end;
 
-var
-  tidx: Int64;
 begin
   if FrameCount = 0 then
     Exit;
-
-  for tidx := 0 to High(Tiles) do
-    Tiles[tidx]^.TmpIndex := -1;
 
   PreparePalettes(IfThen(Encoder.FDitheringUseGamma, 0, -1));
 
@@ -3265,15 +3199,13 @@ begin
 
   FinishQuantizePalettes;
   PalettesLeft := -1;
-
-  DitherTiles;
 end;
 
 procedure TKeyFrame.Cluster;
 const
   CAllocEpsilon = 0.0001;
 var
-  frmIdx, ClusterCount: Integer;
+  palIdx, frmIdx, ClusterCount: Integer;
   AllPsyV, KFPsyV: Double;
 begin
   if FrameCount = 0 then
@@ -3291,11 +3223,19 @@ begin
 
   ClusterCount := max(1, trunc(Div0(Encoder.FGlobalTilingTileCount * KFPsyV, AllPsyV)));
 
-  // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
-
+  // build ditherer
+  for palIdx := 0 to Encoder.FPaletteCount - 1 do
+    Encoder.PreparePlan(MixingPlans[palIdx], Encoder.FDitheringYliluoma2MixedColors, PaletteRGB[palIdx]);
   InitMergeTiles;
-  DoKeyFrameKMeans(ClusterCount);
-  FinishMergeTiles;
+  try
+    // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
+    DoKeyFrameKMeans(ClusterCount);
+  finally
+    // cleanup ditherer
+    for palIdx := 0 to Encoder.FPaletteCount - 1 do
+      Encoder.TerminatePlan(MixingPlans[palIdx]);
+    FinishMergeTiles;
+  end;
 end;
 
 procedure TKeyFrame.Reconstruct;
@@ -3497,14 +3437,10 @@ begin
   end;
 end;
 
-procedure TKeyFrame.RunAll_Dither;
+procedure TKeyFrame.RunAll;
 begin
   LoadTiles;
   Dither;
-end;
-
-procedure TKeyFrame.RunAll_Tile;
-begin
   Cluster;
   Reconstruct;
   Smooth;
@@ -3679,7 +3615,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.Dither(AKeyFrameProcess: TKeyFrameProcess);
+procedure TTilingEncoder.Run(AKeyFrameProcess: TKeyFrameProcess);
 var
   StepProgress: Integer;
 
@@ -3695,78 +3631,9 @@ var
       keyFrame := FKeyFrames[AIndex];
 
       case AKeyFrameProcess of
-        kfpAll: keyFrame.RunAll_Dither;
+        kfpAll: keyFrame.RunAll;
         kfpLoadTiles: keyFrame.LoadTiles;
         kfpDither: keyFrame.Dither;
-      else
-        Assert(False);
-      end;
-    finally
-      InterLockedDecrement(FKeyFramesThreadCount);
-    end;
-
-    Inc(StepProgress, keyFrame.FrameCount);
-    ProgressRedraw(StepProgress, esNone, AItem.Thread);
-  end;
-
-begin
-  if Length(FFrames) = 0 then
-    Exit;
-
-  StepProgress := 0;
-  ProgressRedraw(0, esDither);
-
-  ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
-end;
-
-procedure TTilingEncoder.Tile(AKeyFrameProcess: TKeyFrameProcess);
-var
-  StepProgress: Integer;
-
-  procedure DoDitherPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    sx, sy: Integer;
-    psyV: TFloat;
-    Frame: TFrame;
-    PlainDCT, DitherDCT: array[0 .. cTileDCTSize - 1] of TFloat;
-    TMI: PTileMapItem;
-  begin
-    if not InRange(AIndex, 0, High(FFrames)) then
-      Exit;
-
-    Frame := FFrames[AIndex];
-
-    Frame.AcquireFrameTiles;
-    try
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          TMI := @Frame.TileMap[sy, sx];
-
-          ComputeTilePsyVisFeatures(Frame.FrameTiles[sy * FTileMapWidth + sx]^, False, False, False, False, False, False, -1, nil, PFloat(@PlainDCT[0]));
-          ComputeTilePsyVisFeatures(Frame.PKeyFrame.Tiles[TMI^.TileIdx]^, True, False, False, TMI^.HMirror, TMI^.VMirror, False, -1, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], PFloat(@DitherDCT[0]));
-          psyV := CompareEuclideanDCTPtr_asm(PFloat(@PlainDCT[0]), PFloat(@DitherDCT[0]));
-
-          TMI^.DitherPsyV := Sqrt(psyV);
-        end;
-    finally
-      Frame.ReleaseFrameTiles;
-    end;
-  end;
-
-  procedure DoRun(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    keyFrame: TKeyFrame;
-  begin
-    if not InRange(AIndex, 0, High(FKeyFrames)) then
-      Exit;
-
-    InterLockedIncrement(FKeyFramesThreadCount);
-    try
-      keyFrame := FKeyFrames[AIndex];
-
-      case AKeyFrameProcess of
-        kfpAll: keyFrame.RunAll_Tile;
         kfpCluster: keyFrame.Cluster;
         kfpReconstruct: keyFrame.Reconstruct;
         kfpReColor: keyFrame.ReColor;
@@ -3788,13 +3655,7 @@ begin
     Exit;
 
   StepProgress := 0;
-  ProgressRedraw(0, esTile);
-
-  if not FDitherPsyVDone then
-  begin
-    ProcThreadPool.DoParallelLocalProc(@DoDitherPsyV, 0, High(FFrames));
-    FDitherPsyVDone := True;
-  end;
+  ProgressRedraw(0, esRun);
 
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
@@ -5149,6 +5010,7 @@ begin
     T^.TmpIndex := -1;
     T^.MergeIndex := -1;
     T^.FrameSoleIndex := -1;
+    T^.InitialPalIdx := -1;
   end;
 
   pcol := PInteger(ABitmap.Data);
@@ -5285,8 +5147,6 @@ begin
     if Assigned(FKeyFrames[i]) then
       FreeAndNil(FKeyFrames[i]);
   SetLength(FKeyFrames, 0);
-
-  FDitherPsyVDone := False;
 end;
 
 procedure TTilingEncoder.Render(AFast: Boolean);
@@ -5662,8 +5522,8 @@ begin
     FrameTilingFromPalette := ini.ReadBool('FrameTiling', 'FrameTilingFromPalette', False);
     FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', False);
     FrameTilingBlendingThreshold := ini.ReadFloat('FrameTiling', 'FrameTilingBlendingThreshold', 1.0);
-    FrameTilingBlendingExtents := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingExtents', 8);
-    FrameTilingBlendingBinSize := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingBinSize', 8);
+    FrameTilingBlendingExtents := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingExtents', 2);
+    FrameTilingBlendingBinSize := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingBinSize', 64);
 
     SmoothingFactor := ini.ReadFloat('Smoothing', 'SmoothingFactor', 0.02);
     SmoothingAdditionalTilesThreshold := ini.ReadFloat('Smoothing', 'SmoothingAdditionalTilesThreshold', 0.0);
@@ -5834,15 +5694,17 @@ begin
   begin
     FProgressStep := esNone;
     FProgressPrevTime := GetTickCount64;
-    FProgressStartTime := FProgressPrevTime;
+    FProgressAllStartTime := FProgressPrevTime;
+    FProgressProcessStartTime := FProgressPrevTime;
   end
   else if AProgressStep <> esNone then // new step?
   begin
     if ASubStepIdx = 0 then
-      FProgressStartTime += curTime - FProgressPrevTime;
+      FProgressAllStartTime += curTime - FProgressPrevTime;
 
     FProgressStep := AProgressStep;
     FProgressPrevTime := GetTickCount64;
+    FProgressProcessStartTime := FProgressPrevTime;
   end;
 
   ProgressMax := (Ord(High(TEncoderStep)) + 1) * cProgressMul;
@@ -5857,7 +5719,7 @@ begin
   if ASubStepIdx >= 0 then
   begin
     WriteLn('Step: ', Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), 3), ' / ', ProgressStepPosition,
-      #9'Time: ', FormatFloat('0.000', (curTime - FProgressPrevTime) / 1000), #9'All: ', FormatFloat('0.000', (curTime - FProgressStartTime) / 1000));
+      #9'Time: ', FormatFloat('0.000', (curTime - FProgressProcessStartTime) / 1000), #9'All: ', FormatFloat('0.000', (curTime - FProgressAllStartTime) / 1000));
   end;
   FProgressPrevTime := curTime;
 
@@ -5920,19 +5782,6 @@ begin
 
   for sx := 0 to High(Used) do
     Inc(Result, Used[sx]);
-end;
-
-function TTilingEncoder.GetTileIndexTMItem(const ATile: TTile; out AFrame: TFrame): PTileMapItem;
-var
-  frmIdx, int, sy, sx: Integer;
-begin
-  Assert(ATile.TmpIndex >= 0);
-
-  DivMod(ATile.TmpIndex , FTileMapSize, frmIdx, int);
-  DivMod(int, FTileMapWidth, sy, sx);
-
-  Result := @FFrames[frmIdx].TileMap[sy, sx];
-  AFrame := FFrames[frmIdx];
 end;
 
 function TTilingEncoder.GetTileUseCount(ATileIndex: Int64): Integer;
