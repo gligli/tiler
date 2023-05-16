@@ -572,7 +572,8 @@ type
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
     function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-    function ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
+    function ComputeInterFrameCorrelation(AFrameA, AFrameB: TFrame; AEuclideanDistOnly: Boolean; out AEuclideanDist: TFloat
+     ): TFloat;
 
     function GetSettings: String;
     procedure ClearAll;
@@ -3839,22 +3840,24 @@ begin
   Result := CompareEuclidean(ya, yb) / (Length(a) * cLumaDiv * 256.0);
 end;
 
-function TTilingEncoder.ComputeInterFrameCorrelation(a, b: TFrame; out EuclideanDist: TFloat): TFloat;
+function TTilingEncoder.ComputeInterFrameCorrelation(AFrameA, AFrameB: TFrame; AEuclideanDistOnly: Boolean; out AEuclideanDist: TFloat): TFloat;
 var
   sz, i, tx, ty, sx, sy: Integer;
   rr, gg, bb: Integer;
   ya, yb: TFloatDynArray;
   par, pag, pab, pbr, pbg, pbb: PFloat;
+  acc: Double;
   pat, pbt: PInteger;
   zeroPixels: TRGBPixels;
 begin
+  Result := NaN;
   sz := FTileMapSize * Sqr(cTileWidth);
   SetLength(ya, sz * 3);
   SetLength(yb, sz * 3);
   FillChar(zeroPixels, SizeOf(zeroPixels), 0);
 
-  if Assigned(a) then a.AcquireFrameTiles;
-  if Assigned(b) then b.AcquireFrameTiles;
+  if Assigned(AFrameA) then AFrameA.AcquireFrameTiles;
+  if Assigned(AFrameB) then AFrameB.AcquireFrameTiles;
   try
     par := @ya[sz * 0]; pag := @ya[sz * 1]; pab := @ya[sz * 2];
     pbr := @yb[sz * 0]; pbg := @yb[sz * 1]; pbb := @yb[sz * 2];
@@ -3865,12 +3868,12 @@ begin
         begin
           i := sy * FTileMapWidth + sx;
 
-          if Assigned(a) then
-            pat := PInteger(@a.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
+          if Assigned(AFrameA) then
+            pat := PInteger(@AFrameA.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
           else
             pat := PInteger(@zeroPixels[0, 0]);
-          if Assigned(b) then
-            pbt := PInteger(@b.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
+          if Assigned(AFrameB) then
+            pbt := PInteger(@AFrameB.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
           else
             pbt := PInteger(@zeroPixels[0, 0]);
 
@@ -3888,22 +3891,23 @@ begin
           end;
         end;
 
-    Result := PearsonCorrelation(ya, yb);
+    if not AEuclideanDistOnly then
+      Result := PearsonCorrelation(ya, yb);
 
     par := @ya[0];
     pbr := @yb[0];
-    EuclideanDist := 0;
+    acc := 0;
     for i := 0 to Length(ya) div cTileDCTSize - 1 do
     begin
-      EuclideanDist += CompareEuclideanDCTPtr_asm(par, pbr);
+      acc += CompareEuclideanDCTPtr_asm(par, pbr);
       Inc(par, cTileDCTSize);
       Inc(pbr, cTileDCTSize);
     end;
 
-    EuclideanDist := Sqrt(EuclideanDist / sz);
+    AEuclideanDist := Sqrt(acc / sz);
   finally
-    if Assigned(a) then a.ReleaseFrameTiles;
-    if Assigned(b) then b.ReleaseFrameTiles;
+    if Assigned(AFrameA) then AFrameA.ReleaseFrameTiles;
+    if Assigned(AFrameB) then AFrameB.ReleaseFrameTiles;
   end;
 end;
 
@@ -5080,7 +5084,7 @@ var
     if AIndex > 0 then
       prevFrame := FFrames[AIndex - 1];
 
-    Correlations[AIndex] := ComputeInterFrameCorrelation(prevFrame, FFrames[AIndex], FFrames[AIndex].EuclideanDist);
+    Correlations[AIndex] := ComputeInterFrameCorrelation(prevFrame, FFrames[AIndex], False, FFrames[AIndex].EuclideanDist);
   end;
 
 const
@@ -5159,6 +5163,9 @@ begin
     FKeyFrames[kfIdx].StartFrame := sfr;
     FKeyFrames[kfIdx].EndFrame := efr;
     FKeyFrames[kfIdx].FrameCount := efr - sfr + 1;
+
+    // consider the first frame of a keyframe from black screen (because EuclideanDist used for tile count sharing)
+    ComputeInterFrameCorrelation(nil, FFrames[sfr], True, FFrames[sfr].EuclideanDist);
 
     WriteLn('KF: ', FKeyFrames[kfIdx].StartFrame:8, ' (', kfIdx:3, ') FCnt: ', FKeyFrames[kfIdx].FrameCount:3, ' Reason: ', Copy(GetEnumName(TypeInfo(TKeyFrameReason), Ord(FKeyFrames[kfIdx].Reason)), 4));
   end;
