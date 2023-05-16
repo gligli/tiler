@@ -215,8 +215,8 @@ type
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
     UseCount: Cardinal;
     TmpIndex, MergeIndex: Integer;
-    FrameSoleIndex, InitialPalIdx: SmallInt;
-    Flags: set of (tfActive, tfIntraFrame, tfAdditional, tfHasRGBPixels, tfHasPalPixels);
+    FrameSoleIndex, PalIdx_Initial: SmallInt;
+    Flags: set of (tfActive, tfIntraFrame, tfAdditional, tfHasRGBPixels, tfHasPalPixels, tfHMirror_Initial, tfVMirror_Initial);
   end;
 
   PTileArray = array of PTile;
@@ -229,12 +229,16 @@ type
     function GetAdditional: Boolean;
     function GetHasPalPixels: Boolean;
     function GetHasRGBPixels: Boolean;
+    function GetHMirror_Initial: Boolean;
     function GetIntraFrame: Boolean;
+    function GetVMirror_Initial: Boolean;
     procedure SetActive(AValue: Boolean);
     procedure SetAdditional(AValue: Boolean);
     procedure SetHasPalPixels(AValue: Boolean);
     procedure SetHasRGBPixels(AValue: Boolean);
+    procedure SetHMirror_Initial(AValue: Boolean);
     procedure SetIntraFrame(AValue: Boolean);
+    procedure SetVMirror_Initial(AValue: Boolean);
   public
     function GetRGBPixelsPtr: PRGBPixels;
     function GetPalPixelsPtr: PPalPixels;
@@ -270,6 +274,8 @@ type
     property Additional: Boolean read GetAdditional write SetAdditional;
     property HasRGBPixels: Boolean read GetHasRGBPixels write SetHasRGBPixels;
     property HasPalPixels: Boolean read GetHasPalPixels write SetHasPalPixels;
+    property HMirror_Initial: Boolean read GetHMirror_Initial write SetHMirror_Initial;
+    property VMirror_Initial: Boolean read GetVMirror_Initial write SetVMirror_Initial;
   end;
 
   { TTileMapItem }
@@ -1561,9 +1567,19 @@ begin
   Result := tfHasRGBPixels in Flags;
 end;
 
+function TTileHelper.GetHMirror_Initial: Boolean;
+begin
+  Result := tfHMirror_Initial in Flags;
+end;
+
 function TTileHelper.GetIntraFrame: Boolean;
 begin
   Result := tfIntraFrame in Flags;
+end;
+
+function TTileHelper.GetVMirror_Initial: Boolean;
+begin
+  Result := tfVMirror_Initial in Flags;
 end;
 
 procedure TTileHelper.SetActive(AValue: Boolean);
@@ -1598,12 +1614,28 @@ begin
     Flags -= [tfHasRGBPixels];
 end;
 
+procedure TTileHelper.SetHMirror_Initial(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tfHMirror_Initial]
+  else
+    Flags -= [tfHMirror_Initial];
+end;
+
 procedure TTileHelper.SetIntraFrame(AValue: Boolean);
 begin
   if AValue then
     Flags += [tfIntraFrame]
   else
     Flags -= [tfIntraFrame];
+end;
+
+procedure TTileHelper.SetVMirror_Initial(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tfVMirror_Initial]
+  else
+    Flags -= [tfVMirror_Initial];
 end;
 
 function TTileHelper.GetRGBPixelsPtr: PRGBPixels;
@@ -1824,10 +1856,12 @@ begin
   TmpIndex := ATile.TmpIndex;
   MergeIndex := ATile.MergeIndex;
   FrameSoleIndex := ATile.FrameSoleIndex;
-  InitialPalIdx := ATile.InitialPalIdx;
+  PalIdx_Initial := ATile.PalIdx_Initial;
   Active := ATile.Active;
   IntraFrame := ATile.IntraFrame;
   Additional := ATile.Additional;
+  HMirror_Initial := ATile.HMirror_Initial;
+  VMirror_Initial := ATile.VMirror_Initial;
 
   if HasPalPixels and ATile.HasPalPixels then
     CopyPalPixels(ATile.GetPalPixelsPtr^);
@@ -2001,7 +2035,7 @@ begin
           if Encoder.FFrames[frmIdx].TileMap[sy, sx].TileIdx = tidx then
             Encoder.FFrames[frmIdx].TileMap[sy, sx].PalIdx := YakmoClusters[tidx];
 
-    Tiles[tidx]^.InitialPalIdx := YakmoClusters[tidx];
+    Tiles[tidx]^.PalIdx_Initial := YakmoClusters[tidx];
   end;
 
   WriteLn('KF: ', StartFrame:8, ' Palettization end');
@@ -2379,7 +2413,7 @@ begin
         Encoder.FFrames[i].TileMap[sy, sx].PalIdx := PalIdxLUT[Encoder.FFrames[i].TileMap[sy, sx].PalIdx];
 
   for tidx := 0 to High(Tiles) do
-    Tiles[tidx]^.InitialPalIdx := PalIdxLUT[Tiles[tidx]^.InitialPalIdx];
+    Tiles[tidx]^.PalIdx_Initial := PalIdxLUT[Tiles[tidx]^.PalIdx_Initial];
 
   TmpCentroids := Copy(PaletteCentroids);
   for PalIdx := 0 to Encoder.FPaletteCount - 1 do
@@ -2504,7 +2538,16 @@ begin
     // dither tile in its initial palette
 
     Tile := Tiles[ToMergeIdxs[clusterLineIdx]];
-    Encoder.DitherTile(Tile^, MixingPlans[Tile^.InitialPalIdx]);
+
+    // put tile back in its natural mirrors for ordered dithering to work properly
+    if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
+    if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
+    try
+      Encoder.DitherTile(Tile^, MixingPlans[Tile^.PalIdx_Initial]);
+    finally
+      if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
+      if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
+    end;
 
     // merge centroid
 
@@ -3080,6 +3123,7 @@ procedure TKeyFrame.LoadTiles;
     tilePos: Int64;
     Frame: TFrame;
     TMI: PTileMapItem;
+    Tile: PTile;
   begin
     if not InRange(AIndex, StartFrame, EndFrame) then
       Exit;
@@ -3096,14 +3140,18 @@ procedure TKeyFrame.LoadTiles;
         begin
           Encoder.GetTileHVMirrorHeuristics(Frame.FrameTiles[i]^, HMirror, VMirror);
 
-          Tiles[tilePos + i]^.CopyFrom(Frame.FrameTiles[i]^);
-          Tiles[tilePos + i]^.UseCount := 1;
+          Tile := Tiles[tilePos + i];
+
+          Tile^.CopyFrom(Frame.FrameTiles[i]^);
+          Tile^.UseCount := 1;
+          Tile^.HMirror_Initial := HMirror;
+          Tile^.VMirror_Initial := VMirror;
 
           if HMirror then
-            Encoder.HMirrorTile(Tiles[tilePos + i]^);
+            Encoder.HMirrorTile(Tile^);
 
           if VMirror then
-            Encoder.VMirrorTile(Tiles[tilePos + i]^);
+            Encoder.VMirrorTile(Tile^);
 
           // update tilemap
 
@@ -4992,7 +5040,7 @@ begin
     T^.TmpIndex := -1;
     T^.MergeIndex := -1;
     T^.FrameSoleIndex := -1;
-    T^.InitialPalIdx := -1;
+    T^.PalIdx_Initial := -1;
   end;
 
   pcol := PInteger(ABitmap.Data);
