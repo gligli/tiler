@@ -5967,8 +5967,9 @@ var
     begin
       if isBlended then
       begin
-        if blend = 128 then
+        if FFrameTilingBlendingExtents <= 2 then
         begin
+          Assert(blend = 128);
           DoCmd(gtShortAdditionalTileIdx, attrs);
           DoWord(tileIdx);
           DoWord(blendedIdx);
@@ -5992,8 +5993,9 @@ var
     begin
       if isBlended then
       begin
-        if blend = 128 then
+        if FFrameTilingBlendingExtents <= 2 then
         begin
+          Assert(blend = 128);
           DoCmd(gtLongAdditionalTileIdx, attrs);
           DoDWord(tileIdx);
           DoDWord(blendedIdx);
