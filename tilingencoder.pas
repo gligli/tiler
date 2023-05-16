@@ -2615,7 +2615,7 @@ end;
 
 procedure TKeyFrame.FinishKFTiling(APaletteIndex: Integer);
 var
-  tileResd: TFloat;
+  tileResd: Double;
 begin
   if Length(TileDS[APaletteIndex]^.Dataset) > 0 then
     flann_free_index(TileDS[APaletteIndex]^.FLANN, TileDS[APaletteIndex]^.FLANNParams);
@@ -2957,7 +2957,7 @@ begin
           Move(PrevDCT[0], DCT[0], SizeOf(DCT));
           Encoder.ComputeTilePsyVisFeatures(APrevFrame.PKeyFrame.Tiles[PrevTMI^.BlendedTileIdx_Smoothed]^, True, False, True, PrevTMI^.HMirror_Smoothed, PrevTMI^.VMirror_Smoothed, False, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.PalIdx_Smoothed], PFloat(@BlendDCT[0]));
           blend := PrevTMI^.Blend / Encoder.FFrameTilingBlendingExtents;
-          ComputeBlending(PFloat(@PrevDCT[0]), PFloat(@DCT[0]), PFloat(@BlendDCT[0]), 1.0 - blend, blend);
+          ComputeBlending_Asm(PFloat(@PrevDCT[0]), PFloat(@DCT[0]), PFloat(@BlendDCT[0]), 1.0 - blend, blend);
         end;
 
         // prevent smoothing from crossing keyframes (to ensure proper seek)
@@ -2973,7 +2973,7 @@ begin
             Move(CurDCT[0], DCT[0], SizeOf(DCT));
             Encoder.ComputeTilePsyVisFeatures(AFrame.PKeyFrame.Tiles[TMI^.BlendedTileIdx_Smoothed]^, True, False, True, TMI^.HMirror_Smoothed, TMI^.VMirror_Smoothed, False, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.PalIdx_Smoothed], PFloat(@BlendDCT[0]));
             blend := TMI^.Blend / Encoder.FFrameTilingBlendingExtents;
-            ComputeBlending(PFloat(@CurDCT[0]), PFloat(@DCT[0]), PFloat(@BlendDCT[0]), 1.0 - blend, blend);
+            ComputeBlending_Asm(PFloat(@CurDCT[0]), PFloat(@DCT[0]), PFloat(@BlendDCT[0]), 1.0 - blend, blend);
           end;
 
           cmp := CompareEuclideanDCT(CurDCT, PrevDCT);
