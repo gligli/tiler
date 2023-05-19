@@ -151,6 +151,7 @@ type
     FLockChanges: Boolean;
 
     procedure TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);
+    procedure LoadGUISettings;
   end;
 
 var
@@ -314,43 +315,8 @@ begin
     odSettings.FileName := ChangeFileExt(edInput.Text, '.gtm_settings');
   if odSettings.Execute then
   begin
-    FLockChanges := True;
-    try
-     FTilingEncoder.LoadSettings(odSettings.FileName);
-
-     edInput.Text := FTilingEncoder.InputFileName;
-     edOutput.Text := FTilingEncoder.OutputFileName;
-     seStartFrame.Value := FTilingEncoder.StartFrame;
-     seFrameCount.Value := FTilingEncoder.FrameCountSetting;
-     cbxScaling.Text := FloatToStr(FTilingEncoder.Scaling);
-
-     cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
-     cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
-     chkUseKMQuant.Checked := FTilingEncoder.QuantizerUseYakmo;
-     cbxDLBPC.Text := IntToStr(FTilingEncoder.QuantizerDennisLeeBitsPerComponent);
-     chkPosterize.Checked := FTilingEncoder.QuantizerPosterize;
-     cbxPosterizeBPC.Text := IntToStr(FTilingEncoder.QuantizerPosterizeBitsPerComponent);
-     chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
-     chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
-     cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
-
-     seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
-     seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
-
-     chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
-     chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
-     seFTBlendThres.Value := FTilingEncoder.FrameTilingBlendingThreshold;
-     cbxFTBlendBinSize.Text := IntToStr(FTilingEncoder.FrameTilingBlendingBinSize);
-     cbxFTBlendExtents.Text := IntToStr(FTilingEncoder.FrameTilingBlendingExtents);
-
-     seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
-     seAddlTiles.Value := FTilingEncoder.SmoothingAdditionalTilesThreshold;
-
-     seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
-    finally
-      FLockChanges := False;
-    end;
-
+    FTilingEncoder.LoadSettings(odSettings.FileName);
+    LoadGUISettings;
     UpdateGUI(nil);
   end;
 end;
@@ -677,6 +643,45 @@ begin
   Repaint;
 end;
 
+procedure TMainForm.LoadGUISettings;
+begin
+  FLockChanges := True;
+  try
+   edInput.Text := FTilingEncoder.InputFileName;
+   edOutput.Text := FTilingEncoder.OutputFileName;
+   seStartFrame.Value := FTilingEncoder.StartFrame;
+   seFrameCount.Value := FTilingEncoder.FrameCountSetting;
+   cbxScaling.Text := FloatToStr(FTilingEncoder.Scaling);
+
+   cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
+   cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
+   chkUseKMQuant.Checked := FTilingEncoder.QuantizerUseYakmo;
+   cbxDLBPC.Text := IntToStr(FTilingEncoder.QuantizerDennisLeeBitsPerComponent);
+   chkPosterize.Checked := FTilingEncoder.QuantizerPosterize;
+   cbxPosterizeBPC.Text := IntToStr(FTilingEncoder.QuantizerPosterizeBitsPerComponent);
+   chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
+   chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
+   cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
+
+   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
+   seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
+
+   chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
+   chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
+   seFTBlendThres.Value := FTilingEncoder.FrameTilingBlendingThreshold;
+   cbxFTBlendBinSize.Text := IntToStr(FTilingEncoder.FrameTilingBlendingBinSize);
+   cbxFTBlendExtents.Text := IntToStr(FTilingEncoder.FrameTilingBlendingExtents);
+
+   seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
+   seAddlTiles.Value := FTilingEncoder.SmoothingAdditionalTilesThreshold;
+
+   seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
+   seMaxCores.Value := FTilingEncoder.MaxThreadCount;
+  finally
+    FLockChanges := False;
+  end;
+end;
+
 procedure TMainForm.FormCreate(Sender: TObject);
 var
   es: TEncoderStep;
@@ -689,16 +694,23 @@ begin
   Constraints.MinWidth := Width;
   pcPages.ActivePage := tsSettings;
 
-  for es := Succ(Low(TEncoderStep)) to High(TEncoderStep) do
-  begin
-    cbxStartStep.AddItem(Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), 3), TObject(PtrInt(Ord(es))));
-    cbxEndStep.AddItem(Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), 3), TObject(PtrInt(Ord(es))));
-  end;
-  cbxStartStep.ItemIndex := Ord(Succ(Low(TEncoderStep)));
-  cbxEndStep.ItemIndex := Ord(High(TEncoderStep));
+  FLockChanges := True;
+  try
+    for es := Succ(Low(TEncoderStep)) to High(TEncoderStep) do
+    begin
+      cbxStartStep.AddItem(Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), 3), TObject(PtrInt(Ord(es))));
+      cbxEndStep.AddItem(Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(es)), 3), TObject(PtrInt(Ord(es))));
+    end;
+    cbxStartStep.ItemIndex := Ord(Succ(Low(TEncoderStep)));
+    cbxEndStep.ItemIndex := Ord(High(TEncoderStep));
 
-  seMaxCores.MaxValue := NumberOfProcessors;
-  seMaxCores.Value := ProcThreadPool.MaxThreadCount;
+    seMaxCores.MaxValue := NumberOfProcessors;
+    seMaxCores.Value := ProcThreadPool.MaxThreadCount;
+  finally
+    FLockChanges := False;
+  end;
+
+  LoadGUISettings;
 
   UpdateVideo(nil);
 end;

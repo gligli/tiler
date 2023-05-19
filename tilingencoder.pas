@@ -496,7 +496,6 @@ type
     FFrameCountSetting: Integer;
     FScaling: TFloat;
     FEncoderGammaValue: TFloat;
-    FLoadPerFrameTileCountMultiplier: TFloat;
     FPaletteSize: Integer;
     FPaletteCount: Integer;
     FQuantizerUseYakmo: Boolean;
@@ -553,7 +552,6 @@ type
     procedure SetFrameTilingBlendExtents(AValue: Integer);
     procedure SetFrameTilingBlendingThreshold(AValue: TFloat);
     procedure SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
-    procedure SetLoadPerFrameTileCountMultiplier(AValue: TFloat);
     procedure SetMaxThreadCount(AValue: Integer);
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
@@ -645,6 +643,7 @@ type
     procedure GeneratePNGs;
     procedure SaveSettings(ASettingsFileName: String);
     procedure LoadSettings(ASettingsFileName: String);
+    procedure LoadDefaultSettings;
 
     procedure Test;
 
@@ -4526,12 +4525,6 @@ begin
   FGlobalTilingTileCount := min(round(AValue * eqtc), RawTileCount);
 end;
 
-procedure TTilingEncoder.SetLoadPerFrameTileCountMultiplier(AValue: TFloat);
-begin
- if FLoadPerFrameTileCountMultiplier = AValue then Exit;
- FLoadPerFrameTileCountMultiplier := Max(1.0, AValue);
-end;
-
 procedure TTilingEncoder.SetMaxThreadCount(AValue: Integer);
 begin
  if ProcThreadPool.MaxThreadCount = AValue then Exit;
@@ -5536,41 +5529,75 @@ var
 begin
   ini := TMemIniFile.Create(ASettingsFileName, []);
   try
+    LoadDefaultSettings;
 
-    InputFileName := ini.ReadString('Load', 'InputFileName', '');
-    OutputFileName := ini.ReadString('Load', 'OutputFileName', '');
-    StartFrame := ini.ReadInteger('Load', 'StartFrame', 0);
-    FrameCountSetting := ini.ReadInteger('Load', 'FrameCount', 0);
-    Scaling := ini.ReadFloat('Load', 'Scaling', 1.0);
+    InputFileName := ini.ReadString('Load', 'InputFileName', InputFileName);
+    OutputFileName := ini.ReadString('Load', 'OutputFileName', OutputFileName);
+    StartFrame := ini.ReadInteger('Load', 'StartFrame', StartFrame);
+    FrameCountSetting := ini.ReadInteger('Load', 'FrameCount', FrameCountSetting);
+    Scaling := ini.ReadFloat('Load', 'Scaling', Scaling);
 
-    PaletteSize := ini.ReadInteger('Dither', 'PaletteSize', 128);
-    PaletteCount := ini.ReadInteger('Dither', 'PaletteCount', 16);
-    QuantizerUseYakmo := ini.ReadBool('Dither', 'QuantizerUseYakmo', True);
-    QuantizerDennisLeeBitsPerComponent := ini.ReadInteger('Dither', 'QuantizerDennisLeeBitsPerComponent', 7);
-    QuantizerPosterize := ini.ReadBool('Dither', 'QuantizerPosterize', False);
-    QuantizerPosterizeBitsPerComponent := ini.ReadInteger('Dither', 'QuantizerPosterizeBitsPerComponent', 3);
-    DitheringUseGamma := ini.ReadBool('Dither', 'DitheringUseGamma', False);
-    DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', True);
-    DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', 4);
+    PaletteSize := ini.ReadInteger('Dither', 'PaletteSize', PaletteSize);
+    PaletteCount := ini.ReadInteger('Dither', 'PaletteCount', PaletteCount);
+    QuantizerUseYakmo := ini.ReadBool('Dither', 'QuantizerUseYakmo', QuantizerUseYakmo);
+    QuantizerDennisLeeBitsPerComponent := ini.ReadInteger('Dither', 'QuantizerDennisLeeBitsPerComponent', QuantizerDennisLeeBitsPerComponent);
+    QuantizerPosterize := ini.ReadBool('Dither', 'QuantizerPosterize', QuantizerPosterize);
+    QuantizerPosterizeBitsPerComponent := ini.ReadInteger('Dither', 'QuantizerPosterizeBitsPerComponent', QuantizerPosterizeBitsPerComponent);
+    DitheringUseGamma := ini.ReadBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
+    DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
+    DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
-    GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', 2.0);
-    GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', 0); // after GlobalTilingQualityBasedTileCount because has priority
+    GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
+    GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
 
-    FrameTilingFromPalette := ini.ReadBool('FrameTiling', 'FrameTilingFromPalette', False);
-    FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', False);
-    FrameTilingBlendingThreshold := ini.ReadFloat('FrameTiling', 'FrameTilingBlendingThreshold', 1.0);
-    FrameTilingBlendingExtents := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingExtents', 2);
-    FrameTilingBlendingBinSize := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingBinSize', 64);
+    FrameTilingFromPalette := ini.ReadBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
+    FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
+    FrameTilingBlendingThreshold := ini.ReadFloat('FrameTiling', 'FrameTilingBlendingThreshold', FrameTilingBlendingThreshold);
+    FrameTilingBlendingExtents := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingExtents', FrameTilingBlendingExtents);
+    FrameTilingBlendingBinSize := ini.ReadInteger('FrameTiling', 'FrameTilingBlendingBinSize', FrameTilingBlendingBinSize);
 
-    SmoothingFactor := ini.ReadFloat('Smoothing', 'SmoothingFactor', 0.02);
-    SmoothingAdditionalTilesThreshold := ini.ReadFloat('Smoothing', 'SmoothingAdditionalTilesThreshold', 0.0);
+    SmoothingFactor := ini.ReadFloat('Smoothing', 'SmoothingFactor', SmoothingFactor);
+    SmoothingAdditionalTilesThreshold := ini.ReadFloat('Smoothing', 'SmoothingAdditionalTilesThreshold', SmoothingAdditionalTilesThreshold);
 
-    EncoderGammaValue := ini.ReadFloat('Misc', 'EncoderGammaValue', 2.0);
+    EncoderGammaValue := ini.ReadFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
     MaxThreadCount := ini.ReadInteger('Misc', 'MaxThreadCount', MaxThreadCount);
 
   finally
     ini.Free;
   end;
+end;
+
+procedure TTilingEncoder.LoadDefaultSettings;
+begin
+  InputFileName := '';
+  OutputFileName := '';
+  StartFrame := 0;
+  FrameCountSetting := 0;
+  Scaling := 1.0;
+
+  PaletteSize := 32;
+  PaletteCount := 64;
+  QuantizerUseYakmo := True;
+  QuantizerDennisLeeBitsPerComponent := 7;
+  QuantizerPosterize := False;
+  QuantizerPosterizeBitsPerComponent := 3;
+  DitheringUseGamma := False;
+  DitheringUseThomasKnoll := True;
+  DitheringYliluoma2MixedColors := 4;
+
+  GlobalTilingQualityBasedTileCount := 2.0;
+  GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
+
+  FrameTilingFromPalette := False;
+  FrameTilingUseGamma := False;
+  FrameTilingBlendingThreshold := 1.0;
+  FrameTilingBlendingExtents := 2;
+  FrameTilingBlendingBinSize := 64;
+
+  SmoothingFactor := 0.02;
+  SmoothingAdditionalTilesThreshold := 0.0;
+
+  EncoderGammaValue := 2.0;
 end;
 
 procedure TTilingEncoder.Test;
@@ -6360,7 +6387,8 @@ begin
   FRenderPage := rpOutput;
   ReframeUI(80, 45);
   FFramesPerSecond := 24.0;
-  FLoadPerFrameTileCountMultiplier := 10.0;
+
+  LoadDefaultSettings;
 end;
 
 destructor TTilingEncoder.Destroy;
