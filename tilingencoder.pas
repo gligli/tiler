@@ -2521,37 +2521,40 @@ begin
         Inc(clusterLineCount);
       end;
 
-    // get the closest tile to the centroid
-
-    best := MaxSingle;
-    clusterLineIdx := -1;
-    for i := 0 to clusterLineCount - 1 do
+    if clusterLineCount > 0 then
     begin
-      v := CompareEuclidean(ToMerge[i], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
-      if v < best then
+      // get the closest tile to the centroid
+
+      best := MaxSingle;
+      clusterLineIdx := -1;
+      for i := 0 to clusterLineCount - 1 do
       begin
-        best := v;
-        clusterLineIdx := i;
+        v := CompareEuclidean(ToMerge[i], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
+        if v < best then
+        begin
+          best := v;
+          clusterLineIdx := i;
+        end;
       end;
-    end;
 
-    // dither tile in its initial palette
+      // dither tile in its initial palette
 
-    Tile := Tiles[ToMergeIdxs[clusterLineIdx]];
+      Tile := Tiles[ToMergeIdxs[clusterLineIdx]];
 
-    // put tile back in its natural mirrors for ordered dithering to work properly
-    if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
-    if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
-    try
-      Encoder.DitherTile(Tile^, MixingPlans[Tile^.PalIdx_Initial]);
-    finally
+      // put tile back in its natural mirrors for ordered dithering to work properly
       if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
       if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
+      try
+        Encoder.DitherTile(Tile^, MixingPlans[Tile^.PalIdx_Initial]);
+      finally
+        if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
+        if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
+      end;
+
+      // merge centroid
+
+      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
     end;
-
-    // merge centroid
-
-    MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
   end;
 
   WriteLn('KF: ', StartFrame:8, ' Clustering end');
@@ -2738,6 +2741,7 @@ begin
           Best.TileIdx := DS^.DSToTileIdx[dsIdx];
           Best.ResidualErr := errs[annQueryPos];
           Best.BlendedTileIdx := -1;
+          Best.Blend := 0;
 
           // try to blend another tile to improve likeliness
 
@@ -5014,6 +5018,7 @@ begin
       TMI^.PalIdx := -1;
       TMI^.HMirror := False;
       TMI^.VMirror := False;
+      TMI^.Blend := 0;
 
       TMI^.Smoothed := False;
       TMI^.Additional := False;
