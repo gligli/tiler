@@ -3618,7 +3618,7 @@ begin
   try
     bmp.Bitmap.PixelFormat:=pf32bit;
     bmp.LoadFromFile(Format(FInputPath, [startFrmIdx]));
-    ReframeUI(bmp.Width div cTileWidth, bmp.Height div cTileWidth);
+    ReframeUI((bmp.Width - 1) div cTileWidth + 1, (bmp.Height - 1) div cTileWidth + 1);
   finally
     bmp.Free;
   end;
@@ -5021,8 +5021,8 @@ begin
       TMI^.CopyToSmoothed;
     end;
 
-  Assert(ABitmap.Description.Width >= FScreenWidth, 'Wrong video width!');
-  Assert(ABitmap.Description.Height >= FScreenHeight, 'Wrong video height!');
+  Assert(ABitmap.Description.Width <= FScreenWidth, 'Wrong video width!');
+  Assert(ABitmap.Description.Height <= FScreenHeight, 'Wrong video height!');
 
   // create frame tiles from image data
 
@@ -5041,9 +5041,9 @@ begin
   end;
 
   pcol := PInteger(ABitmap.Data);
-  for j := 0 to FScreenHeight - 1 do
+  for j := 0 to ABitmap.Description.Height - 1 do
   begin
-    for i := 0 to FScreenWidth - 1 do
+    for i := 0 to ABitmap.Description.Width - 1 do
       begin
         col := pcol^;
         Inc(pcol);
