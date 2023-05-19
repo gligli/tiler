@@ -297,14 +297,9 @@ function renderEnd() {
 	canvas.putImageData(gtmTMImageData, 0, 0);
 }
 
-function makeMirrorsOffset(idx, tx, ty, attrs) {
-	if (attrs & 1) tx = CTileWidth - 1 - tx;
-	if (attrs & 2) ty = CTileWidth - 1 - ty;
-	return idx * CTileSize + ty * CTileWidth + tx;
-}
-
 function drawTilemapItem(idx, attrs) {
 	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
+	let tOff = ((attrs & 3) * gtmTileCount + idx) * CTileSize;
 	let palR = gtmPaletteR[palIdx];
 	let palG = gtmPaletteG[palIdx];
 	let palB = gtmPaletteB[palIdx];
@@ -316,7 +311,7 @@ function drawTilemapItem(idx, attrs) {
 	
 	for (let ty = 0; ty < CTileWidth; ty++) {
 		for (let tx = 0; tx < CTileWidth; tx++) {
-			let v = gtmTiles[makeMirrorsOffset(idx, tx, ty, attrs)];
+			let v = gtmTiles[tOff++];
 			data[p++] = palR[v]; 
 			data[p++] = palG[v]; 
 			data[p++] = palB[v]; 
@@ -336,6 +331,7 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 	let blendCur = blend & 15;
 	
 	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
+	let tOff = ((attrs & 3) * gtmTileCount + idx) * CTileSize;
 	let palR = gtmPaletteR[palIdx];
 	let palG = gtmPaletteG[palIdx];
 	let palB = gtmPaletteB[palIdx];
@@ -345,6 +341,7 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 	let prevIdx = gtmTMIndexes[1 - gtmTMDblBuff][gtmTMPos + blendOff];
 	
 	let prevPalIdx = (prevAttrs >> 2)  + 256 * gtmKFPrevDblBuff;
+	let prevTOff = ((prevAttrs & 3) * gtmTileCount + prevIdx) * CTileSize;
 	let prevPalR = gtmPaletteR[prevPalIdx];
 	let prevPalG = gtmPaletteG[prevPalIdx];
 	let prevPalB = gtmPaletteB[prevPalIdx];
@@ -357,8 +354,8 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 	
 	for (let ty = 0; ty < CTileWidth; ty++) {
 		for (let tx = 0; tx < CTileWidth; tx++) {
-			let cv = gtmTiles[makeMirrorsOffset(idx, tx, ty, attrs)];
-			let pv = gtmTiles[makeMirrorsOffset(prevIdx, tx, ty, prevAttrs)];
+			let pv = gtmTiles[prevTOff++];
+			let cv = gtmTiles[tOff++];
 			data[p++] = Math.min(255, ((palR[cv] * blendCur + prevPalR[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
 			data[p++] = Math.min(255, ((palG[cv] * blendCur + prevPalG[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
 			data[p++] = Math.min(255, ((palB[cv] * blendCur + prevPalB[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
@@ -374,6 +371,8 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 
 function drawAdditionalTilemapItem(idx, idx2, attrs, blend) {
 	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
+	let tOff = ((attrs & 3) * gtmTileCount + idx) * CTileSize;
+	let tOff2 = ((attrs & 3) * gtmTileCount + idx2) * CTileSize;
 	let palR = gtmPaletteR[palIdx];
 	let palG = gtmPaletteG[palIdx];
 	let palB = gtmPaletteB[palIdx];
@@ -387,8 +386,8 @@ function drawAdditionalTilemapItem(idx, idx2, attrs, blend) {
 	{
 		for (let ty = 0; ty < CTileWidth; ty++) {
 			for (let tx = 0; tx < CTileWidth; tx++) {
-				let v = gtmTiles[makeMirrorsOffset(idx, tx, ty, attrs)];
-				let v2 = gtmTiles[makeMirrorsOffset(idx2, tx, ty, attrs)];
+				let v = gtmTiles[tOff++];
+				let v2 = gtmTiles[tOff2++];
 
 				data[p++] = (palR[v] + palR[v2]) >> 1;
 				data[p++] = (palG[v] + palG[v2]) >> 1;
@@ -404,8 +403,8 @@ function drawAdditionalTilemapItem(idx, idx2, attrs, blend) {
 		
 		for (let ty = 0; ty < CTileWidth; ty++) {
 			for (let tx = 0; tx < CTileWidth; tx++) {
-				let v = gtmTiles[makeMirrorsOffset(idx, tx, ty, attrs)];
-				let v2 = gtmTiles[makeMirrorsOffset(idx2, tx, ty, attrs)];
+				let v = gtmTiles[tOff++];
+				let v2 = gtmTiles[tOff2++];
 
 				data[p++] = (palR[v] * rblend + palR[v2] * blend) >> 8;
 				data[p++] = (palG[v] * rblend + palG[v2] * blend) >> 8;
@@ -471,7 +470,7 @@ function decodeFrame() {
 				
 				if (gtmLoopCount <= 0) {
 					gtmFrameInterval = setInterval(decodeFrame, gtmFrameLength);
-					gtmTiles = new Uint8Array(gtmTileCount * CTileSize);
+					gtmTiles = new Uint8Array(gtmTileCount * CTileSize * 4);
 					redimFrame();
 				}
 				break;
@@ -481,10 +480,26 @@ function decodeFrame() {
 				let tend = readDWord();
 				gtmPalSize = cmd[1];
 				
-				let off = CTileSize * tstart;
-				let end = CTileSize * (tend + 1);
-				for (let p = off; p < end; p++) {
-					gtmTiles[p] = readByte();
+				let off = tstart * CTileSize + gtmTileCount * CTileSize * 0;
+				let offh = tstart * CTileSize + gtmTileCount * CTileSize * 1;
+				let offv = tstart * CTileSize + gtmTileCount * CTileSize * 2;
+				let offhv = tstart * CTileSize + gtmTileCount * CTileSize * 3;
+
+				for (let p = tstart; p <= tend; p++) {
+					for (let ty = 0; ty < CTileWidth; ty++) {
+						for (let tx = 0; tx < CTileWidth; tx++) {
+							let b = readByte();
+							gtmTiles[off + ty * CTileWidth + tx] = b;
+							gtmTiles[offh + ty * CTileWidth + (CTileWidth - 1 - tx)] = b;
+							gtmTiles[offv + (CTileWidth - 1 - ty) * CTileWidth + tx] = b;
+							gtmTiles[offhv + (CTileWidth - 1 - ty) * CTileWidth + (CTileWidth - 1 - tx)] = b;
+						}
+					}
+					
+					off += CTileSize;
+					offh += CTileSize;
+					offv += CTileSize;
+					offhv += CTileSize;
 				}
 				break;
 				
