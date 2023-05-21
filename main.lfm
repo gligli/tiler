@@ -878,6 +878,10 @@ object MainForm: TMainForm
       ShortCut = 115
       OnClick = btnDitherClick
     end
+    object MenuItem8: TMenuItem
+      Caption = 'Optimize palettes'
+      OnClick = btnReColorClick
+    end
     object MenuItem2: TMenuItem
       Caption = 'Tile (cluster)'
       ShortCut = 116
@@ -887,10 +891,6 @@ object MainForm: TMainForm
       Caption = 'Tile (reconstruct)'
       ShortCut = 117
       OnClick = btnReconstructClick
-    end
-    object MenuItem8: TMenuItem
-      Caption = 'ReColor'
-      OnClick = btnReColorClick
     end
     object MenuItem5: TMenuItem
       Caption = 'Smooth'

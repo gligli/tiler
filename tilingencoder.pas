@@ -16,7 +16,7 @@ uses
 type
   TEncoderStep = (esNone = -1, esLoad = 0, esRun, esSave);
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
-  TKeyFrameProcess = (kfpAll = -1, kfpLoadTiles = 0, kfpDither, kfpCluster, kfpReconstruct, kfpReColor, kfpReindex, kfpSmooth);
+  TKeyFrameProcess = (kfpAll = -1, kfpLoadTiles = 0, kfpDither, kfpOptimizePalettes, kfpCluster, kfpReconstruct, kfpReindex, kfpSmooth);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
 
 const
@@ -446,6 +446,7 @@ type
     procedure LoadTiles;
     procedure Dither;
     procedure Cluster;
+    procedure OptimizePalettes;
     procedure Reconstruct;
     procedure ReColor;
     procedure Smooth;
@@ -3422,6 +3423,100 @@ begin
   ReindexTiles(False);
 end;
 
+procedure TKeyFrame.OptimizePalettes;
+var
+  h, i, j, k, l, iteration, bestH, bestI, bestJ, tmp, uc: Integer;
+  r, g, b: byte;
+  prevBest, best, v: Double;
+  InnerPerm: TByteDynArray;
+  PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: TDoubleDynArray;
+begin
+  SetLength(PalR, Encoder.FPaletteSize);
+  SetLength(PalG, Encoder.FPaletteSize);
+  SetLength(PalB, Encoder.FPaletteSize);
+  SetLength(InnerPalR, Encoder.FPaletteSize);
+  SetLength(InnerPalG, Encoder.FPaletteSize);
+  SetLength(InnerPalB, Encoder.FPaletteSize);
+  SetLength(InnerPerm, Encoder.FPaletteSize);
+
+  best := 0;
+  iteration := 0;
+  repeat
+    prevBest := best;
+    best := 0;
+
+    bestH := -1;
+    bestI := -1;
+    bestJ := -1;
+    for h := 0 to Encoder.FPaletteCount - 1 do
+    begin
+      FillQWord(PalR[0], Length(PalR), 0);
+      FillQWord(PalG[0], Length(PalG), 0);
+      FillQWord(PalB[0], Length(PalB), 0);
+      for k := 0 to Encoder.FPaletteCount - 1 do
+      begin
+        uc := PaletteUseCount[k].UseCount;
+        for l := 0 to Encoder.FPaletteSize - 1 do
+          if k <> h then
+          begin
+            FromRGB(PaletteRGB[k, l], r, g, b);
+            PalR[l] += r * uc;
+            PalG[l] += g * uc;
+            PalB[l] += b * uc;
+          end;
+      end;
+
+      for i := 0 to High(InnerPerm) do
+        for j := i + 1 to High(InnerPerm) do
+        begin
+          for l := 0 to Encoder.FPaletteSize - 1 do
+            InnerPerm[l] := l;
+
+          tmp := InnerPerm[i];
+          InnerPerm[i] := InnerPerm[j];
+          InnerPerm[j] := tmp;
+
+          Move(PalR[0], InnerPalR[0], Length(PalR) * SizeOf(Double));
+          Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
+          Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
+
+          uc := PaletteUseCount[h].UseCount;
+          for l := 0 to Encoder.FPaletteSize - 1 do
+          begin
+            FromRGB(PaletteRGB[h, InnerPerm[l]], r, g, b);
+            InnerPalR[l] += r * uc;
+            InnerPalG[l] += g * uc;
+            InnerPalB[l] += b * uc;
+          end;
+
+          v := StdDev(InnerPalR) + StdDev(InnerPalG) + StdDev(InnerPalB);
+
+          if v > best then
+          begin
+            best := v;
+            bestH := h;
+            bestI := i;
+            bestJ := j;
+          end;
+        end;
+    end;
+
+    if (bestH >= 0) and (bestI >= 0) and (bestJ >= 0) then
+    begin
+      tmp := PaletteRGB[bestH, bestI];
+      PaletteRGB[bestH, bestI] := PaletteRGB[bestH, bestJ];
+      PaletteRGB[bestH, bestJ] := tmp;
+    end;
+
+    Inc(iteration);
+
+    //WriteLn(iteration:3, besth:3, bestI:3, bestJ:3, best:12:0);
+
+  until best <= prevBest;
+
+  WriteLn('KF: ', StartFrame:8, ' OptimizePalettes: ', iteration, ' iterations');
+end;
+
 procedure TKeyFrame.Smooth;
 var
   NonAddlCount: Int64;
@@ -3475,6 +3570,7 @@ procedure TKeyFrame.RunAll;
 begin
   LoadTiles;
   Dither;
+  OptimizePalettes;
   Cluster;
   Reconstruct;
   Smooth;
@@ -3668,9 +3764,9 @@ var
         kfpAll: keyFrame.RunAll;
         kfpLoadTiles: keyFrame.LoadTiles;
         kfpDither: keyFrame.Dither;
+        kfpOptimizePalettes: keyFrame.OptimizePalettes;
         kfpCluster: keyFrame.Cluster;
         kfpReconstruct: keyFrame.Reconstruct;
-        kfpReColor: keyFrame.ReColor;
         kfpReindex: keyFrame.Reindex;
         kfpSmooth: keyFrame.Smooth;
       else

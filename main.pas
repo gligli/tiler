@@ -211,7 +211,7 @@ end;
 
 procedure TMainForm.btnReColorClick(Sender: TObject);
 begin
-  FTilingEncoder.Run(kfpReColor);
+  FTilingEncoder.Run(kfpOptimizePalettes);
   UpdateVideo(nil);
 end;
 
