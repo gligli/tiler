@@ -332,7 +332,7 @@ type
   { TCountIndex }
 
   TCountIndex = record
-    Index, Count, Luma: Integer;
+    Index, Count: Integer;
     R, G, B: Byte;
     Hue, Sat, Val: Byte;
   end;
@@ -448,7 +448,6 @@ type
     procedure Cluster;
     procedure OptimizePalettes;
     procedure Reconstruct;
-    procedure ReColor;
     procedure Smooth;
     procedure Reindex;
 
@@ -1043,9 +1042,7 @@ end;
 
 function CompareCMULHS(const Item1,Item2:PCountIndex):Integer;
 begin
-  Result := CompareValue(Item1^.Luma, Item2^.Luma);
-  if Result = 0 then
-    Result := CompareValue(Item1^.Val, Item2^.Val);
+  Result := CompareValue(Item1^.Val, Item2^.Val);
   if Result = 0 then
     Result := CompareValue(Item1^.Sat, Item2^.Sat);
   if Result = 0 then
@@ -2140,7 +2137,6 @@ var
       New(CMItem);
       CMItem^.Count := 0;
       CMItem^.R := Posterize(dlPal[0][i], APosterizeBpc); CMItem^.G := Posterize(dlPal[1][i], APosterizeBpc); CMItem^.B := Posterize(dlPal[2][i], APosterizeBpc);
-      CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
       Encoder.RGBToHSV(ToRGB(CMItem^.R, CMItem^.G, CMItem^.B), CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
       CMPal.Add(CMItem);
     end;
@@ -2236,7 +2232,6 @@ var
       end;
 
       CMItem^.Count := 0;
-      CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
       Encoder.RGBToHSV(ToRGB(CMItem^.R, CMItem^.G, CMItem^.B), CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
       CMPal.Add(CMItem);
     end;
@@ -2339,7 +2334,6 @@ var
         Inc(j);
 
       FromRGB(cAddlColors[j], CMItem^.R, CMItem^.G, CMItem^.B);
-      CMItem^.Luma := ToLuma(CMItem^.R, CMItem^.G, CMItem^.B);
       col := ToRGB(CMItem^.R, CMItem^.G, CMItem^.B);
       Encoder.RGBToHSV(col, CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
 
@@ -3320,69 +3314,6 @@ begin
   end;
 end;
 
-procedure TKeyFrame.ReColor;
-var
-  sx, sy, tx, ty, mtx, mty, frmIdx, palIdx, colIdx, cnt: Integer;
-  r, g, b: Byte;
-  Frame: TFrame;
-  TMI: PTileMapItem;
-  FTTile, TMTile: PTile;
-  Accumulators: array of array of array[0 .. cColorCpns - 1 + 1] of Int64;
-begin
-  if FrameCount = 0 then
-    Exit;
-
-  SetLength(Accumulators, Encoder.FPaletteCount, Encoder.FPaletteSize);
-
-  for frmIdx := StartFrame to EndFrame do
-  begin
-    Frame := Encoder.FFrames[frmIdx];
-
-    Frame.AcquireFrameTiles;
-    try
-      for sy := 0 to Encoder.FTileMapHeight - 1 do
-        for sx := 0 to Encoder.FTileMapWidth - 1 do
-        begin
-          TMI := @Frame.TileMap[sy, sx];
-          FTTile := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
-          TMTile := Tiles[TMI^.TileIdx];
-
-          for ty := 0 to cTileWidth - 1 do
-            for tx := 0 to cTileWidth - 1 do
-            begin
-              // tilemap tile is potentially mirrored
-              mtx := tx;
-              mty := ty;
-              if TMI^.HMirror then mtx := cTileWidth - 1 - mtx;
-              if TMI^.VMirror then mty := cTileWidth - 1 - mty;
-
-              colIdx := TMTile^.PalPixels[mty, mtx];
-
-              FromRGB(FTTile^.RGBPixels[ty, tx], r, g, b);
-
-              Accumulators[TMI^.PalIdx, colIdx, 0] += r;
-              Accumulators[TMI^.PalIdx, colIdx, 1] += g;
-              Accumulators[TMI^.PalIdx, colIdx, 2] += b;
-              Accumulators[TMI^.PalIdx, colIdx, 3] += 1;
-            end;
-        end;
-    finally
-      Frame.ReleaseFrameTiles;
-    end;
-  end;
-
-  for palIdx := 0 to Encoder.FPaletteCount - 1 do
-    for colIdx := 0 to Encoder.FPaletteSize - 1 do
-    begin
-      cnt := Accumulators[palIdx, colIdx, 3];
-      r := iDiv0(Accumulators[palIdx, colIdx, 0] + cnt div 2, cnt);
-      g := iDiv0(Accumulators[palIdx, colIdx, 1] + cnt div 2, cnt);
-      b := iDiv0(Accumulators[palIdx, colIdx, 2] + cnt div 2, cnt);
-
-      PaletteRGB[palIdx, colIdx] := ToRGB(r, g, b);
-    end;
-end;
-
 procedure TKeyFrame.Reindex;
 
   procedure HandleTileIndex(ATileIndex: Integer);
@@ -3489,7 +3420,7 @@ begin
             InnerPalB[l] += b * uc;
           end;
 
-          v := StdDev(InnerPalR) + StdDev(InnerPalG) + StdDev(InnerPalB);
+          v := cRedMul * StdDev(InnerPalR) + cGreenMul * StdDev(InnerPalG) + cBlueMul * StdDev(InnerPalB);
 
           if v > best then
           begin
