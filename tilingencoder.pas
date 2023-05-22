@@ -3356,7 +3356,7 @@ end;
 
 procedure TKeyFrame.OptimizePalettes;
 var
-  h, i, j, k, l, iteration, bestH, bestI, bestJ, tmp, uc: Integer;
+  i, j, palIdx, colIdx1, colIdx2, iteration, bestPalIdx, bestColIdx1, bestColIdx2, tmp, uc: Integer;
   r, g, b: byte;
   prevBest, best, v: Double;
   InnerPerm: TByteDynArray;
@@ -3370,78 +3370,87 @@ begin
   SetLength(InnerPalB, Encoder.FPaletteSize);
   SetLength(InnerPerm, Encoder.FPaletteSize);
 
+  // stepwise algoritam on palette colors permutations
+
   best := 0;
   iteration := 0;
   repeat
     prevBest := best;
     best := 0;
 
-    bestH := -1;
-    bestI := -1;
-    bestJ := -1;
-    for h := 0 to Encoder.FPaletteCount - 1 do
+    bestPalIdx := -1;
+    bestColIdx1 := -1;
+    bestColIdx2 := -1;
+    for palIdx := 0 to Encoder.FPaletteCount - 1 do
     begin
+      // accumulate the whole palette except the one that will be permutated
+
       FillQWord(PalR[0], Length(PalR), 0);
       FillQWord(PalG[0], Length(PalG), 0);
       FillQWord(PalB[0], Length(PalB), 0);
-      for k := 0 to Encoder.FPaletteCount - 1 do
+      for i := 0 to Encoder.FPaletteCount - 1 do
       begin
-        uc := PaletteUseCount[k].UseCount;
-        for l := 0 to Encoder.FPaletteSize - 1 do
-          if k <> h then
+        uc := PaletteUseCount[i].UseCount;
+        for j := 0 to Encoder.FPaletteSize - 1 do
+          if i <> palIdx then
           begin
-            FromRGB(PaletteRGB[k, l], r, g, b);
-            PalR[l] += r * uc;
-            PalG[l] += g * uc;
-            PalB[l] += b * uc;
+            FromRGB(PaletteRGB[i, j], r, g, b);
+            PalR[j] += r * uc;
+            PalG[j] += g * uc;
+            PalB[j] += b * uc;
           end;
       end;
 
-      for i := 0 to High(InnerPerm) do
-        for j := i + 1 to High(InnerPerm) do
-        begin
-          for l := 0 to Encoder.FPaletteSize - 1 do
-            InnerPerm[l] := l;
+      // try all permutations in the current palette
 
-          tmp := InnerPerm[i];
-          InnerPerm[i] := InnerPerm[j];
-          InnerPerm[j] := tmp;
+      for colIdx1 := 0 to High(InnerPerm) do
+        for colIdx2 := colIdx1 + 1 to High(InnerPerm) do
+        begin
+          for i := 0 to Encoder.FPaletteSize - 1 do
+            InnerPerm[i] := i;
+
+          tmp := InnerPerm[colIdx1];
+          InnerPerm[colIdx1] := InnerPerm[colIdx2];
+          InnerPerm[colIdx2] := tmp;
 
           Move(PalR[0], InnerPalR[0], Length(PalR) * SizeOf(Double));
           Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
           Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
 
-          uc := PaletteUseCount[h].UseCount;
-          for l := 0 to Encoder.FPaletteSize - 1 do
+          uc := PaletteUseCount[palIdx].UseCount;
+          for i := 0 to Encoder.FPaletteSize - 1 do
           begin
-            FromRGB(PaletteRGB[h, InnerPerm[l]], r, g, b);
-            InnerPalR[l] += r * uc;
-            InnerPalG[l] += g * uc;
-            InnerPalB[l] += b * uc;
+            FromRGB(PaletteRGB[palIdx, InnerPerm[i]], r, g, b);
+            InnerPalR[i] += r * uc;
+            InnerPalG[i] += g * uc;
+            InnerPalB[i] += b * uc;
           end;
+
+          // try to maximize accumulated palette standard deviation
+          // rationale: the less samey it is, the better the colors pair with each other across palettes
 
           v := cRedMul * StdDev(InnerPalR) + cGreenMul * StdDev(InnerPalG) + cBlueMul * StdDev(InnerPalB);
 
           if v > best then
           begin
             best := v;
-            bestH := h;
-            bestI := i;
-            bestJ := j;
+            bestPalIdx := palIdx;
+            bestColIdx1 := colIdx1;
+            bestColIdx2 := colIdx2;
           end;
         end;
     end;
 
-    if (bestH >= 0) and (bestI >= 0) and (bestJ >= 0) then
+    if (bestPalIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
     begin
-      tmp := PaletteRGB[bestH, bestI];
-      PaletteRGB[bestH, bestI] := PaletteRGB[bestH, bestJ];
-      PaletteRGB[bestH, bestJ] := tmp;
+      tmp := PaletteRGB[bestPalIdx, bestColIdx1];
+      PaletteRGB[bestPalIdx, bestColIdx1] := PaletteRGB[bestPalIdx, bestColIdx2];
+      PaletteRGB[bestPalIdx, bestColIdx2] := tmp;
     end;
 
     Inc(iteration);
 
-    //WriteLn(iteration:3, besth:3, bestI:3, bestJ:3, best:12:0);
+    //WriteLn(iteration:3, bestPalIdx:3, bestColIdx1:3, bestColIdx2:3, best:12:0);
 
   until best <= prevBest;
 
