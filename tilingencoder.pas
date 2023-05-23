@@ -5126,17 +5126,23 @@ var
   Correlations: TFloatDynArray;
 
   procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    prevFrame: TFrame;
   begin
-    if not InRange(AIndex, 0, High(FFrames)) then
+    if not InRange(AIndex, 1, High(FFrames)) then
       Exit;
 
-    prevFrame := nil;
-    if AIndex > 0 then
-      prevFrame := FFrames[AIndex - 1];
+    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex], AManualMode, FFrames[AIndex].EuclideanDist);
+  end;
 
-    Correlations[AIndex] := ComputeInterFrameCorrelation(prevFrame, FFrames[AIndex], False, FFrames[AIndex].EuclideanDist);
+  procedure DoKFEuclidean(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    Frame: TFrame;
+  begin
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
+      Exit;
+
+    Frame := FFrames[FKeyFrames[AIndex].StartFrame];
+
+    ComputeInterFrameCorrelation(nil, Frame, True, Frame.EuclideanDist);
   end;
 
 const
@@ -5152,8 +5158,7 @@ begin
   // compute interframe correlations
 
   SetLength(Correlations, Length(FFrames));
-  if not AManualMode then
-    ProcThreadPool.DoParallelLocalProc(@DoCorrel, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
 
   // find keyframes
 
@@ -5216,11 +5221,11 @@ begin
     FKeyFrames[kfIdx].EndFrame := efr;
     FKeyFrames[kfIdx].FrameCount := efr - sfr + 1;
 
-    // consider the first frame of a keyframe from black screen (because EuclideanDist used for tile count sharing)
-    ComputeInterFrameCorrelation(nil, FFrames[sfr], True, FFrames[sfr].EuclideanDist);
-
     WriteLn('KF: ', FKeyFrames[kfIdx].StartFrame:8, ' (', kfIdx:3, ') FCnt: ', FKeyFrames[kfIdx].FrameCount:3, ' Reason: ', Copy(GetEnumName(TypeInfo(TKeyFrameReason), Ord(FKeyFrames[kfIdx].Reason)), 4));
   end;
+
+  // consider the first frame of a keyframe from black screen (because EuclideanDist used for tile count sharing)
+  ProcThreadPool.DoParallelLocalProc(@DoKFEuclidean, 0, High(FKeyFrames));
 end;
 
 procedure TTilingEncoder.ClearAll;
