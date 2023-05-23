@@ -2416,6 +2416,20 @@ begin
 end;
 
 procedure TKeyFrame.DoKeyFrameKMeans(AClusterCount: Integer);
+
+  procedure DitherTile(Tile: PTile);
+  begin
+    // put tile back in its natural mirrors for ordered dithering to work properly
+    if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
+    if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
+    try
+      Encoder.DitherTile(Tile^, MixingPlans[Tile^.PalIdx_Initial]);
+    finally
+      if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
+      if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
+    end;
+  end;
+
 var
   i, lineIdx, clusterIdx, clusterLineCount, DSLen, BICOClusterCount, BICOCoresetSize, clusterLineIdx: Integer;
   cnt, tidx: Int64;
@@ -2435,124 +2449,128 @@ var
   ToMerge: array of PDouble;
   ToMergeIdxs: TInt64DynArray;
 begin
-  DSLen := GetTileCount(True);
-  if (DSLen <= AClusterCount) or (AClusterCount <= 1) then
-    Exit;
-
-  // use BICO to prepare a noise-aware set of centroids
-
-  BICOCoresetSize := Ceil(AClusterCount * cGlobalTilingCoresetMultiplier);
-  BICO := bico_create(cTileDCTSize, DSLen, AClusterCount, 7, BICOCoresetSize, CRandomSeed);
   try
-    // parse bin dataset
-
-    SetLength(TileIndices, DSLen);
-    SetLength(Dataset, DSLen * cTileDCTSize);
-    cnt := 0;
-    for tidx := 0 to High(Tiles) do
+    DSLen := GetTileCount(True);
+    if (DSLen <= AClusterCount) or (AClusterCount <= 1) then
     begin
-      Tile := Tiles[tidx];
-
-      if Tile^.Active then
+      // still dither tiles in case no need for clustering
+      for tidx := 0 to High(Tiles) do
       begin
-        Encoder.ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @Dataset[cnt * cTileDCTSize]);
-
-        // insert line into BICO
-        bico_insert_line(BICO, @Dataset[cnt * cTileDCTSize], Tile^.UseCount);
-
-        TileIndices[cnt] := tidx;
-        Inc(cnt);
+        Tile := Tiles[tidx];
+        if Tile^.Active then
+          DitherTile(Tile);
       end;
+
+      Exit;
     end;
-    Assert(cnt = DSLen);
 
-    // get BICO results
+    // use BICO to prepare a noise-aware set of centroids
 
-    SetLength(BICOCentroids, BICOCoresetSize * cTileDCTSize);
-    SetLength(BICOWeights, BICOCoresetSize);
+    BICOCoresetSize := Ceil(AClusterCount * cGlobalTilingCoresetMultiplier);
+    BICO := bico_create(cTileDCTSize, DSLen, AClusterCount, 7, BICOCoresetSize, CRandomSeed);
+    try
+      // parse bin dataset
 
-    BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
-
-  finally
-    bico_destroy(BICO);
-  end;
-
-  WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', AClusterCount:6);
-
-  if BICOClusterCount <= 0 then
-    Exit;
-
-  // use FLANN to compute cluster indexes
-
-  SetLength(FLANNClusters, DSLen);
-  SetLength(FLANNErrors, DSLen);
-
-  FLANNParams := CDefaultFLANNParameters;
-  FLANNParams.checks := cTileDCTSize;
-  FLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
-  FLANNParams.sorted := 0;
-  FLANNParams.max_neighbors := 1;
-
-  FLANN := flann_build_index_double(@BICOCentroids[0], BICOClusterCount, cTileDCTSize, @speedup, @FLANNParams);
-  try
-    flann_find_nearest_neighbors_index_double(FLANN, @Dataset[0], DSLen, @FLANNClusters[0], @FLANNErrors[0], 1, @FLANNParams);
-  finally
-    flann_free_index_double(FLANN, @FLANNParams);
-  end;
-
-  // build a list of this centroid tiles
-
-  SetLength(ToMerge, DSLen);
-  SetLength(ToMergeIdxs, DSLen);
-
-  for clusterIdx := 0 to BICOClusterCount - 1 do
-  begin
-    clusterLineCount := 0;
-    for lineIdx := 0 to DSLen - 1 do
-      if FLANNClusters[lineIdx] = clusterIdx then
+      SetLength(TileIndices, DSLen);
+      SetLength(Dataset, DSLen * cTileDCTSize);
+      cnt := 0;
+      for tidx := 0 to High(Tiles) do
       begin
-        ToMerge[clusterLineCount] := @Dataset[lineIdx * cTileDCTSize];
-        ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
-        Inc(clusterLineCount);
-      end;
+        Tile := Tiles[tidx];
 
-    if clusterLineCount > 0 then
-    begin
-      // get the closest tile to the centroid
-
-      best := MaxSingle;
-      clusterLineIdx := -1;
-      for i := 0 to clusterLineCount - 1 do
-      begin
-        v := CompareEuclidean(ToMerge[i], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
-        if v < best then
+        if Tile^.Active then
         begin
-          best := v;
-          clusterLineIdx := i;
+          Encoder.ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @Dataset[cnt * cTileDCTSize]);
+
+          // insert line into BICO
+          bico_insert_line(BICO, @Dataset[cnt * cTileDCTSize], Tile^.UseCount);
+
+          TileIndices[cnt] := tidx;
+          Inc(cnt);
         end;
       end;
+      Assert(cnt = DSLen);
 
-      // dither tile in its initial palette
+      // get BICO results
 
-      Tile := Tiles[ToMergeIdxs[clusterLineIdx]];
+      SetLength(BICOCentroids, BICOCoresetSize * cTileDCTSize);
+      SetLength(BICOWeights, BICOCoresetSize);
 
-      // put tile back in its natural mirrors for ordered dithering to work properly
-      if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
-      if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
-      try
-        Encoder.DitherTile(Tile^, MixingPlans[Tile^.PalIdx_Initial]);
-      finally
-        if Tile^.HMirror_Initial then Encoder.HMirrorTile(Tile^);
-        if Tile^.VMirror_Initial then Encoder.VMirrorTile(Tile^);
-      end;
+      BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
 
-      // merge centroid
-
-      MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
+    finally
+      bico_destroy(BICO);
     end;
-  end;
 
-  WriteLn('KF: ', StartFrame:8, ' Clustering end');
+    WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', AClusterCount:6);
+
+    if BICOClusterCount <= 0 then
+      Exit;
+
+    // use FLANN to compute cluster indexes
+
+    SetLength(FLANNClusters, DSLen);
+    SetLength(FLANNErrors, DSLen);
+
+    FLANNParams := CDefaultFLANNParameters;
+    FLANNParams.checks := cTileDCTSize;
+    FLANNParams.algorithm := FLANN_INDEX_KDTREE_SINGLE;
+    FLANNParams.sorted := 0;
+    FLANNParams.max_neighbors := 1;
+
+    FLANN := flann_build_index_double(@BICOCentroids[0], BICOClusterCount, cTileDCTSize, @speedup, @FLANNParams);
+    try
+      flann_find_nearest_neighbors_index_double(FLANN, @Dataset[0], DSLen, @FLANNClusters[0], @FLANNErrors[0], 1, @FLANNParams);
+    finally
+      flann_free_index_double(FLANN, @FLANNParams);
+    end;
+
+    // build a list of this centroid tiles
+
+    SetLength(ToMerge, DSLen);
+    SetLength(ToMergeIdxs, DSLen);
+
+    for clusterIdx := 0 to BICOClusterCount - 1 do
+    begin
+      clusterLineCount := 0;
+      for lineIdx := 0 to DSLen - 1 do
+        if FLANNClusters[lineIdx] = clusterIdx then
+        begin
+          ToMerge[clusterLineCount] := @Dataset[lineIdx * cTileDCTSize];
+          ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
+          Inc(clusterLineCount);
+        end;
+
+      if clusterLineCount > 0 then
+      begin
+        // get the closest tile to the centroid
+
+        best := MaxSingle;
+        clusterLineIdx := -1;
+        for i := 0 to clusterLineCount - 1 do
+        begin
+          v := CompareEuclidean(ToMerge[i], @BICOCentroids[clusterIdx * cTileDCTSize], cTileDCTSize);
+          if v < best then
+          begin
+            best := v;
+            clusterLineIdx := i;
+          end;
+        end;
+
+        // dither tile in its initial palette
+
+        Tile := Tiles[ToMergeIdxs[clusterLineIdx]];
+
+        DitherTile(Tile);
+
+        // merge centroid
+
+        MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
+      end;
+    end;
+  finally
+    WriteLn('KF: ', StartFrame:8, ' Clustering end');
+  end;
 end;
 
 procedure TKeyFrame.PrepareKFTiling(APaletteIndex, AFTGamma: Integer);
