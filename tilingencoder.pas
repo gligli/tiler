@@ -4796,7 +4796,7 @@ begin
         kfReason := kfrNone;
     end;
 
-    //if kfReason <> kfrNone then
+    if kfReason <> kfrNone then
     begin
       FKeyFrames[kfIdx] := TKeyFrame.Create(Self, kfIdx, FPaletteCount, 0, 0);
       FKeyFrames[kfIdx].Reason := kfReason;
