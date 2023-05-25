@@ -64,11 +64,7 @@ begin
     Encoder := TTilingEncoder.Create;
     try
       Encoder.LoadSettings(ParamStr(1));
-
-      Encoder.Load;
       Encoder.Run;
-      Encoder.Save;
-
     finally
       Encoder.Free;
     end;

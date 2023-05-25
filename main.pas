@@ -59,11 +59,9 @@ type
     Label3: TLabel;
     Label4: TLabel;
     Label6: TLabel;
-    Label7: TLabel;
     Label9: TLabel;
     lblPct: TLabel;
     llPalTileDesc: TPanel;
-    MenuItem8: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
     miSaveSettings: TMenuItem;
@@ -83,7 +81,6 @@ type
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
     sePage: TSpinEdit;
-    seAddlTiles: TFloatSpinEdit;
     seStartFrame: TSpinEdit;
     seTempoSmoo: TFloatSpinEdit;
     seEncGamma: TFloatSpinEdit;
@@ -100,7 +97,6 @@ type
     MenuItem4: TMenuItem;
     MenuItem5: TMenuItem;
     MenuItem6: TMenuItem;
-    MenuItem7: TMenuItem;
     miLoad: TMenuItem;
     MenuItem1: TMenuItem;
     pmProcesses: TPopupMenu;
@@ -111,12 +107,10 @@ type
 
     // processes
     procedure btnGlobalLoadClick(Sender: TObject);
-    procedure btnLoadTilesClick(Sender: TObject);
-    procedure btnDitherClick(Sender: TObject);
+    procedure btnPreparePalettesClick(Sender: TObject);
     procedure btnClusterClick(Sender: TObject);
     procedure btnReconstructClick(Sender: TObject);
     procedure btnPMClick(Sender: TObject);
-    procedure btnReColorClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
@@ -193,56 +187,44 @@ end;
 
 procedure TMainForm.btnClusterClick(Sender: TObject);
 begin
-  FTilingEncoder.Run(kfpCluster);
+  FTilingEncoder.Run(esCluster);
   UpdateVideo(nil);
 end;
 
-procedure TMainForm.btnDitherClick(Sender: TObject);
+procedure TMainForm.btnPreparePalettesClick(Sender: TObject);
 begin
-  FTilingEncoder.Run(kfpDither);
+  FTilingEncoder.Run(esPreparePalettes);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReconstructClick(Sender: TObject);
 begin
-  FTilingEncoder.Run(kfpReconstruct);
-  UpdateVideo(nil);
-end;
-
-procedure TMainForm.btnReColorClick(Sender: TObject);
-begin
-  FTilingEncoder.Run(kfpOptimizePalettes);
+  FTilingEncoder.Run(esReconstruct);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnGlobalLoadClick(Sender: TObject);
 begin
-  FTilingEncoder.Load;
+  FTilingEncoder.Run(esLoad);
   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
-  UpdateVideo(nil);
-end;
-
-procedure TMainForm.btnLoadTilesClick(Sender: TObject);
-begin
-  FTilingEncoder.Run(kfpLoadTiles);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnReindexClick(Sender: TObject);
 begin
-  FTilingEncoder.Run(kfpReindex);
+  FTilingEncoder.Run(esReindex);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnSaveClick(Sender: TObject);
 begin
-  FTilingEncoder.Save;
+  FTilingEncoder.Run(esSave);
   UpdateVideo(nil);
 end;
 
 procedure TMainForm.btnSmoothClick(Sender: TObject);
 begin
-  FTilingEncoder.Run(kfpSmooth);
+  FTilingEncoder.Run(esSmooth);
   UpdateVideo(nil);
 end;
 
@@ -299,12 +281,12 @@ begin
 
   if InRange(FTilingEncoder.RenderFrameIndex, 0, High(FTilingEncoder.Frames)) and
       Assigned(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame) and
-      InRange(tileIdx, 0, High(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Tiles)) then
+      InRange(tileIdx, 0, High(FTilingEncoder.Tiles)) then
     llPalTileDesc.Caption := Format('Tile #: %6d, UseCount: %6d%s%s', [
         tileIdx,
-        FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Tiles[tileIdx]^.UseCount,
-        IfThen(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Tiles[tileIdx]^.Active, ', [Active]'),
-        IfThen(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Tiles[tileIdx]^.IntraFrame, ', [Intra]')])
+        FTilingEncoder.Tiles[tileIdx]^.UseCount,
+        IfThen(FTilingEncoder.Tiles[tileIdx]^.Active, ', [Active]'),
+        IfThen(FTilingEncoder.Tiles[tileIdx]^.IntraKF, ', [IntraKF]')])
   else
     llPalTileDesc.Caption := 'Invalid tile!';
 end;
@@ -355,11 +337,20 @@ begin
   if OkStep(esLoad) then
     btnGlobalLoadClick(nil);
 
-  if OkStep(esRun) then
-  begin
-    FTilingEncoder.Run;
-    UpdateVideo(nil);
-  end;
+  if OkStep(esPreparePalettes) then
+    btnPreparePalettesClick(nil);
+
+  if OkStep(esCluster) then
+    btnClusterClick(nil);
+
+  if OkStep(esReconstruct) then
+    btnReconstructClick(nil);
+
+  if OkStep(esSmooth) then
+    btnSmoothClick(nil);
+
+  if OkStep(esReindex) then
+    btnReindexClick(nil);
 
   if OkStep(esSave) then
     btnSaveClick(nil);
@@ -610,7 +601,6 @@ begin
   FTilingEncoder.FrameTilingBlendingExtents := StrToInt(cbxFTBlendExtents.Text);
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
-  FTilingEncoder.SmoothingAdditionalTilesThreshold := seAddlTiles.Value;
 
   if pcPages.ActivePage = tsInput then
     FTilingEncoder.RenderPage := rpInput
@@ -673,7 +663,6 @@ begin
    cbxFTBlendExtents.Text := IntToStr(FTilingEncoder.FrameTilingBlendingExtents);
 
    seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
-   seAddlTiles.Value := FTilingEncoder.SmoothingAdditionalTilesThreshold;
 
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
    seMaxCores.Value := FTilingEncoder.MaxThreadCount;
