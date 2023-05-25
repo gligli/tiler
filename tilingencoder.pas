@@ -219,8 +219,6 @@ type
     Flags: set of (tfActive, tfIntraFrame, tfAdditional, tfHasRGBPixels, tfHasPalPixels, tfHMirror_Initial, tfVMirror_Initial);
   end;
 
-  PTileArray = array of PTile;
-
   { TTileHelper }
 
   TTileHelper = record helper for TTile
@@ -396,7 +394,7 @@ type
 
     FLock: TSpinlock;
 
-    Tiles: PTileArray;
+    Tiles: PTileDynArray;
 
     PaletteRGB: TIntegerDynArray2;
     PaletteCentroids: TDoubleDynArray2;
