@@ -61,7 +61,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 5, -1, 1, -1, -1, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 5, -1, 2, -1, -1, 1, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -617,6 +617,7 @@ type
     procedure LoadTiles;
     procedure MakeTilesUnique(AKFIdx: Integer);
     procedure DoGlobalKMeans(AClusterCount: Integer);
+    procedure OptimizeGlobalPalettes;
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
     procedure SaveStream(AStream: TStream; ASpecificKF: Integer = -1);
@@ -2796,8 +2797,6 @@ procedure TKeyFrame.PreparePalettes;
     end;
   end;
 
-var
-  palIdx: Integer;
 begin
   if FrameCount = 0 then
     Exit;
@@ -2817,10 +2816,6 @@ begin
   FinishQuantizePalettes;
 
   OptimizePalettes;
-
-  // build ditherer
-  for palIdx := 0 to Encoder.FPaletteCount - 1 do
-    Encoder.PreparePlan(MixingPlans[palIdx], Encoder.FDitheringYliluoma2MixedColors, PaletteRGB[palIdx]);
 end;
 
 procedure TKeyFrame.Reconstruct;
@@ -2886,7 +2881,7 @@ begin
   SetLength(InnerPalB, Encoder.FPaletteSize);
   SetLength(InnerPerm, Encoder.FPaletteSize);
 
-  // stepwise algoritam on palette colors permutations
+  // stepwise algorithm on palette colors permutations
 
   best := 0;
   iteration := 0;
@@ -3220,21 +3215,35 @@ begin
 end;
 
 procedure TTilingEncoder.Cluster;
+var
+  kfIdx, palIdx: Integer;
 begin
   if FrameCount = 0 then
     Exit;
 
   ProgressRedraw(0, esCluster);
 
+  OptimizeGlobalPalettes;
+
+  ProgressRedraw(1);
+
+  // build ditherers
+  for kfIdx := 0 to High(FKeyFrames) do
+    for palIdx := 0 to FPaletteCount - 1 do
+      PreparePlan(FKeyFrames[kfIdx].MixingPlans[palIdx], FDitheringYliluoma2MixedColors, FKeyFrames[kfIdx].PaletteRGB[palIdx]);
   FTileSet.InitMergeTiles;
   try
     // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
     DoGlobalKMeans(FGlobalTilingTileCount);
   finally
     FTileSet.FinishMergeTiles;
+    // cleanup ditherers
+    for kfIdx := 0 to High(FKeyFrames) do
+      for palIdx := 0 to FPaletteCount - 1 do
+        TerminatePlan(FKeyFrames[kfIdx].MixingPlans[palIdx]);
   end;
 
-  ProgressRedraw(1);
+  ProgressRedraw(2);
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -5759,6 +5768,133 @@ begin
       FTileSet.MergeTiles(ToMergeIdxs, clusterLineCount, ToMergeIdxs[clusterLineIdx], nil, nil);
     end;
   end;
+end;
+
+procedure TTilingEncoder.OptimizeGlobalPalettes;
+var
+  i, j, kfIdx, palIdx, colIdx1, colIdx2, iteration, bestKFIdx, bestColIdx1, bestColIdx2, uc, tmp: Integer;
+  r, g, b: byte;
+  prevBest, best, v: Double;
+  InnerPerm: TByteDynArray;
+  PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: TDoubleDynArray;
+  GlobalPalette: TFloatDynArray3;
+  tmpArr: TFloatDynArray;
+begin
+  SetLength(GlobalPalette, Length(FKeyFrames), FPaletteSize, cColorCpns);
+  SetLength(PalR, FPaletteSize);
+  SetLength(PalG, FPaletteSize);
+  SetLength(PalB, FPaletteSize);
+  SetLength(InnerPalR, FPaletteSize);
+  SetLength(InnerPalG, FPaletteSize);
+  SetLength(InnerPalB, FPaletteSize);
+  SetLength(InnerPerm, FPaletteSize);
+
+  for kfIdx := 0 to High(FKeyFrames) do
+    for palIdx := 0 to FPaletteCount - 1 do
+    begin
+      uc := FKeyFrames[kfIdx].PaletteUseCount[palIdx].UseCount;
+      for i := 0 to FPaletteSize - 1 do
+      begin
+        FromRGB(FKeyFrames[kfIdx].PaletteRGB[palIdx, i], r, g, b);
+
+        GlobalPalette[kfIdx, i, 0] += r * uc;
+        GlobalPalette[kfIdx, i, 1] += g * uc;
+        GlobalPalette[kfIdx, i, 2] += b * uc;
+      end;
+    end;
+
+  // stepwise algorithm on palette colors permutations across keyframes
+
+  best := 0;
+  iteration := 0;
+  repeat
+    prevBest := best;
+    best := 0;
+
+    bestKFIdx := -1;
+    bestColIdx1 := -1;
+    bestColIdx2 := -1;
+    for kfIdx := 0 to High(FKeyFrames) do
+    begin
+      // accumulate the whole palette except for the keyframe that will be permutated
+
+      FillQWord(PalR[0], Length(PalR), 0);
+      FillQWord(PalG[0], Length(PalG), 0);
+      FillQWord(PalB[0], Length(PalB), 0);
+      for i := 0 to High(FKeyFrames) do
+      begin
+        uc := FKeyFrames[i].FrameCount;
+        for j := 0 to FPaletteSize - 1 do
+          if i <> kfIdx then
+          begin
+            PalR[j] += GlobalPalette[i, j, 0] * uc;
+            PalG[j] += GlobalPalette[i, j, 1] * uc;
+            PalB[j] += GlobalPalette[i, j, 2] * uc;
+          end;
+      end;
+
+      // try all permutations in the current keyframe
+
+      for colIdx1 := 0 to High(InnerPerm) do
+        for colIdx2 := colIdx1 + 1 to High(InnerPerm) do
+        begin
+          for i := 0 to FPaletteSize - 1 do
+            InnerPerm[i] := i;
+
+          tmp := InnerPerm[colIdx1];
+          InnerPerm[colIdx1] := InnerPerm[colIdx2];
+          InnerPerm[colIdx2] := tmp;
+
+          Move(PalR[0], InnerPalR[0], Length(PalR) * SizeOf(Double));
+          Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
+          Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
+
+          uc := FKeyFrames[kfIdx].FrameCount;
+          for i := 0 to FPaletteSize - 1 do
+          begin
+            tmpArr := GlobalPalette[kfIdx, InnerPerm[i]];
+
+            InnerPalR[i] += tmpArr[0] * uc;
+            InnerPalG[i] += tmpArr[1] * uc;
+            InnerPalB[i] += tmpArr[2] * uc;
+          end;
+
+          // try to maximize accumulated palette standard deviation
+          // rationale: the less samey it is, the better the palettes pair with each other across keyframes
+
+          v := cRedMul * StdDev(InnerPalR) + cGreenMul * StdDev(InnerPalG) + cBlueMul * StdDev(InnerPalB);
+
+          if v > best then
+          begin
+            best := v;
+            bestKFIdx := kfIdx;
+            bestColIdx1 := colIdx1;
+            bestColIdx2 := colIdx2;
+          end;
+        end;
+    end;
+
+    if (bestKFIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
+    begin
+      tmpArr := GlobalPalette[bestKFIdx, bestColIdx1];
+      GlobalPalette[bestKFIdx, bestColIdx1] := GlobalPalette[bestKFIdx, bestColIdx2];
+      GlobalPalette[bestKFIdx, bestColIdx2] := tmpArr;
+
+      for palIdx := 0 to FPaletteCount - 1 do
+      begin
+        tmp := FKeyFrames[bestKFIdx].PaletteRGB[palIdx, bestColIdx1];
+        FKeyFrames[bestKFIdx].PaletteRGB[palIdx, bestColIdx1] := FKeyFrames[bestKFIdx].PaletteRGB[palIdx, bestColIdx2];
+        FKeyFrames[bestKFIdx].PaletteRGB[palIdx, bestColIdx2] := tmp;
+      end;
+    end;
+
+    Inc(iteration);
+
+    WriteLn(iteration:3, bestKFIdx:3, bestColIdx1:3, bestColIdx2:3, best:16:0);
+
+  until best <= prevBest;
+
+  WriteLn('OptimizeGlobalPalettes: ', iteration, ' iterations');
 end;
 
 procedure TTilingEncoder.ReindexTiles(KeepRGBPixels: Boolean);
