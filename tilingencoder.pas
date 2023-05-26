@@ -375,7 +375,6 @@ type
   TFrame = class
     PKeyFrame: TKeyFrame;
     Index: Integer;
-    EuclideanDist: TFloat;
 
     TileMap: array of array of TTileMapItem;
 
@@ -561,8 +560,7 @@ type
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
     function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
     function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-    function ComputeInterFrameCorrelation(AFrameA, AFrameB: TFrame; AEuclideanDistOnly: Boolean; out AEuclideanDist: TFloat
-     ): TFloat;
+    function ComputeInterFrameCorrelation(AFrameA, AFrameB: TFrame): TFloat;
 
     function GetSettings: String;
     procedure ClearAll;
@@ -3507,7 +3505,7 @@ begin
   Result := CompareEuclidean(ya, yb) / (Length(a) * cLumaDiv * 256.0);
 end;
 
-function TTilingEncoder.ComputeInterFrameCorrelation(AFrameA, AFrameB: TFrame; AEuclideanDistOnly: Boolean; out AEuclideanDist: TFloat): TFloat;
+function TTilingEncoder.ComputeInterFrameCorrelation(AFrameA, AFrameB: TFrame): TFloat;
 var
   sz, i, tx, ty, sx, sy: Integer;
   rr, gg, bb: Integer;
@@ -3517,7 +3515,6 @@ var
   pat, pbt: PInteger;
   zeroPixels: TRGBPixels;
 begin
-  Result := NaN;
   sz := FTileMapSize * Sqr(cTileWidth);
   SetLength(ya, sz * 3);
   SetLength(yb, sz * 3);
@@ -3558,20 +3555,7 @@ begin
           end;
         end;
 
-    if not AEuclideanDistOnly then
-      Result := PearsonCorrelation(ya, yb);
-
-    par := @ya[0];
-    pbr := @yb[0];
-    acc := 0;
-    for i := 0 to Length(ya) div cTileDCTSize - 1 do
-    begin
-      acc += CompareEuclideanDCTPtr_asm(par, pbr);
-      Inc(par, cTileDCTSize);
-      Inc(pbr, cTileDCTSize);
-    end;
-
-    AEuclideanDist := Sqrt(acc / sz);
+    Result := PearsonCorrelation(ya, yb);
   finally
     if Assigned(AFrameA) then AFrameA.ReleaseFrameTiles;
     if Assigned(AFrameB) then AFrameB.ReleaseFrameTiles;
@@ -4740,19 +4724,7 @@ var
     if not InRange(AIndex, 1, High(FFrames)) then
       Exit;
 
-    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex], AManualMode, FFrames[AIndex].EuclideanDist);
-  end;
-
-  procedure DoKFEuclidean(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    Frame: TFrame;
-  begin
-    if not InRange(AIndex, 0, High(FKeyFrames)) then
-      Exit;
-
-    Frame := FFrames[FKeyFrames[AIndex].StartFrame];
-
-    ComputeInterFrameCorrelation(nil, Frame, True, Frame.EuclideanDist);
+    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex]);
   end;
 
 const
@@ -4768,7 +4740,8 @@ begin
   // compute interframe correlations
 
   SetLength(Correlations, Length(FFrames));
-  ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
+  if not AManualMode then
+    ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
 
   // find keyframes
 
@@ -4833,9 +4806,6 @@ begin
 
     WriteLn('KF: ', FKeyFrames[kfIdx].StartFrame:8, ' (', kfIdx:3, ') FCnt: ', FKeyFrames[kfIdx].FrameCount:3, ' Reason: ', Copy(GetEnumName(TypeInfo(TKeyFrameReason), Ord(FKeyFrames[kfIdx].Reason)), 4));
   end;
-
-  // consider the first frame of a keyframe from black screen (because EuclideanDist used for tile count sharing)
-  ProcThreadPool.DoParallelLocalProc(@DoKFEuclidean, 0, High(FKeyFrames));
 end;
 
 procedure TTilingEncoder.ClearAll;
