@@ -5629,8 +5629,6 @@ procedure TTilingEncoder.DoGlobalKMeans(AClusterCount: Integer);
 var
   DSLen, BICOClusterCount: Integer;
   TileIndices: TInt64DynArray;
-  Dataset: TDoubleDynArray;
-  BICOCentroids, BICOWeights: TDoubleDynArray;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TDoubleDynArray;
 
@@ -5705,6 +5703,8 @@ var
   FLANN: flann_index_t;
   FLANNParams: TFLANNParameters;
   Tile: PTile;
+  Dataset: TDoubleDynArray;
+  BICOCentroids, BICOWeights: TDoubleDynArray;
 begin
   DSLen := FTileSet.GetTileCount(True);
   if (DSLen <= AClusterCount) or (AClusterCount <= 1) then
@@ -5790,6 +5790,7 @@ begin
     flann_find_nearest_neighbors_index_double(FLANN, @Dataset[0], DSLen, @FLANNClusters[0], @FLANNErrors[0], 1, @FLANNParams);
   finally
     flann_free_index_double(FLANN, @FLANNParams);
+    SetLength(Dataset, 0); // free up memory
   end;
 
   // build a list of this centroid tiles
