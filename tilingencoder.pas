@@ -5205,8 +5205,8 @@ begin
   FrameCountSetting := 0;
   Scaling := 1.0;
 
-  PaletteSize := 32;
-  PaletteCount := 64;
+  PaletteSize := 16;
+  PaletteCount := 128;
   QuantizerUseYakmo := True;
   QuantizerDennisLeeBitsPerComponent := 7;
   QuantizerPosterize := False;
@@ -5224,7 +5224,7 @@ begin
   FrameTilingBlendingExtents := 2;
   FrameTilingBlendingBinSize := 64;
 
-  SmoothingFactor := 0.02;
+  SmoothingFactor := 0.2;
 
   EncoderGammaValue := 2.0;
 end;
