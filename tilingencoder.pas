@@ -5627,29 +5627,43 @@ end;
 
 procedure TTilingEncoder.DoGlobalKMeans(AClusterCount: Integer);
 var
-  DSLen: Integer;
+  DSLen, BICOClusterCount: Integer;
   TileIndices: TInt64DynArray;
   Dataset: TDoubleDynArray;
   BICOCentroids, BICOWeights: TDoubleDynArray;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TDoubleDynArray;
 
+  procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    Tile: PTile;
+  begin
+    if not InRange(AIndex, 0, High(TileIndices)) then
+      Exit;
+
+    Tile := Tiles[TileIndices[AIndex]];
+    DitherTile(Tile^, FKeyFrames[Tile^.KFIdx_Initial].MixingPlans[Tile^.PalIdx_Initial]);
+  end;
+
   procedure DoCluster(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     i, lineIdx, clusterLineCount, clusterLineIdx: Integer;
     v, best: TFloat;
-    ToMerge: array of PDouble;
+    ToMergeErrs: TDoubleDynArray;
     ToMergeIdxs: TInt64DynArray;
     Tile: PTile;
   begin
-    SetLength(ToMerge, DSLen);
+    if not InRange(AIndex, 0, BICOClusterCount - 1) then
+      Exit;
+
+    SetLength(ToMergeErrs, DSLen);
     SetLength(ToMergeIdxs, DSLen);
 
     clusterLineCount := 0;
     for lineIdx := 0 to DSLen - 1 do
       if FLANNClusters[lineIdx] = AIndex then
       begin
-        ToMerge[clusterLineCount] := @Dataset[lineIdx * cTileDCTSize];
+        ToMergeErrs[clusterLineCount] := FLANNErrors[lineIdx];
         ToMergeIdxs[clusterLineCount] := TileIndices[lineIdx];
         Inc(clusterLineCount);
       end;
@@ -5662,7 +5676,7 @@ var
       clusterLineIdx := -1;
       for i := 0 to clusterLineCount - 1 do
       begin
-        v := CompareEuclidean(ToMerge[i], @BICOCentroids[AIndex * cTileDCTSize], cTileDCTSize);
+        v := ToMergeErrs[i];
         if v < best then
         begin
           best := v;
@@ -5683,7 +5697,7 @@ var
   end;
 
 var
-  BICOClusterCount, BICOCoresetSize: Integer;
+  BICOCoresetSize: Integer;
   cnt, tidx: Int64;
   speedup: Double;
 
@@ -5696,12 +5710,21 @@ begin
   if (DSLen <= AClusterCount) or (AClusterCount <= 1) then
   begin
     // still dither tiles in case no need for clustering
+
+    SetLength(TileIndices, DSLen);
+    cnt := 0;
     for tidx := 0 to High(Tiles) do
     begin
       Tile := Tiles[tidx];
       if Tile^.Active then
-        DitherTile(Tile^, FKeyFrames[Tile^.KFIdx_Initial].MixingPlans[Tile^.PalIdx_Initial]);
+      begin
+        TileIndices[cnt] := tidx;
+        Inc(cnt);
+      end;
     end;
+    Assert(cnt = DSLen);
+
+    ProcThreadPool.DoParallelLocalProc(@DoDither, 0, DSLen - 1);
 
     Exit;
   end;
@@ -6010,7 +6033,6 @@ begin
   cnt := 0;
   for tidx := 0 to High(Tiles) do
   begin
-    Assert(Tiles[tidx]^.KFSoleIndex <> MaxInt);
     Tiles[tidx]^.IntraKF := Tiles[tidx]^.KFSoleIndex >= 0;
     if Tiles[tidx]^.IntraKF then
       Inc(cnt);
