@@ -5662,7 +5662,8 @@ begin
   // use BICO to prepare a noise-aware set of centroids
 
   BICOCoresetSize := Ceil(AClusterCount * cGlobalTilingCoresetMultiplier);
-  BICO := bico_create(cTileDCTSize, DSLen, AClusterCount, 7, BICOCoresetSize, CRandomSeed);
+  bico_set_num_threads(MaxThreadCount);
+  BICO := bico_create(cTileDCTSize, DSLen, AClusterCount, 32, BICOCoresetSize, CRandomSeed);
   try
     // parse bin dataset
 
