@@ -2754,6 +2754,7 @@ begin
             TMI^.PalIdx_Smoothed := PrevTMI^.PalIdx_Smoothed;
             TMI^.HMirror_Smoothed := PrevTMI^.HMirror_Smoothed;
             TMI^.VMirror_Smoothed := PrevTMI^.VMirror_Smoothed;
+            TMI^.Blend_Smoothed := PrevTMI^.Blend_Smoothed;
           end
           else
           begin
@@ -2762,6 +2763,7 @@ begin
             PrevTMI^.PalIdx_Smoothed := TMI^.PalIdx_Smoothed;
             PrevTMI^.HMirror_Smoothed := TMI^.HMirror_Smoothed;
             PrevTMI^.VMirror_Smoothed := TMI^.VMirror_Smoothed;
+            PrevTMI^.Blend_Smoothed := TMI^.Blend_Smoothed;
           end;
 
           TMI^.Smoothed := True;
