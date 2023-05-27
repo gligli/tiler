@@ -2886,7 +2886,7 @@ end;
 
 procedure TTilingEncoder.Load;
 var
-  loadedFrameCount: Integer;
+  doneFrameCount: Integer;
 
   procedure DoLoadFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -2904,8 +2904,7 @@ var
 
       FFrames[AIndex].Index := AIndex;
 
-      InterLockedIncrement(loadedFrameCount);
-      Write(loadedFrameCount:8, ' / ', Length(FFrames):8, #13);
+      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
     finally
       bmp.Free;
     end;
@@ -2979,7 +2978,7 @@ begin
 
   ProgressRedraw(1);
 
-  loadedFrameCount := 0;
+  doneFrameCount := 0;
   SetLength(FFrames, frmCnt);
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(PtrInt(startFrmIdx)));
   WriteLn;
@@ -4566,6 +4565,7 @@ end;
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
 var
   Correlations: TFloatDynArray;
+  doneFrameCount: Integer;
 
   procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
@@ -4573,6 +4573,8 @@ var
       Exit;
 
     Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex]);
+
+    Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
   end;
 
 const
@@ -4587,6 +4589,7 @@ var
 begin
   // compute interframe correlations
 
+  doneFrameCount := 0;
   SetLength(Correlations, Length(FFrames));
   if not AManualMode then
     ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
@@ -5346,6 +5349,7 @@ procedure TTilingEncoder.DoGlobalKMeans(AClusterCount: Integer);
 var
   DSLen: Int64;
   BICOClusterCount: Integer;
+  doneFrameCount: Integer;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TSingleDynArray;
   FLANNPalIdxs: TSmallIntDynArray;
@@ -5387,6 +5391,7 @@ var
         end;
     finally
       Frame.ReleaseFrameTiles;
+      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
     end;
   end;
 
@@ -5425,6 +5430,7 @@ var
       flann_find_nearest_neighbors_index(FLANN, @Dataset[0], FTileMapSize, @FLANNClusters[frameOffset], @FLANNErrors[frameOffset], 1, @FLANNParams);
     finally
       Frame.ReleaseFrameTiles;
+      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
     end;
   end;
 
@@ -5497,6 +5503,7 @@ var
       end;
     finally
       Frame.ReleaseFrameTiles;
+      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
     end;
   end;
 
@@ -5519,6 +5526,7 @@ begin
 
     FTiles := TTile.Array1DNew(DSLen, True, True);
 
+    doneFrameCount := 0;
     ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
 
     Exit;
@@ -5531,6 +5539,7 @@ begin
   try
     // insert frame tiles into BICO
 
+    doneFrameCount := 0;
     cnt := 0;
     for frmIdx := 0 to High(FFrames) do
     begin
@@ -5551,6 +5560,7 @@ begin
         end;
       finally
         Frame.ReleaseFrameTiles;
+        Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
       end;
     end;
     Assert(cnt = DSLen);
@@ -5591,6 +5601,7 @@ begin
 
   FLANN := flann_build_index(@FLANNDataset[0], BICOClusterCount, cTileDCTSize, @speedup, @FLANNParams);
   try
+    doneFrameCount := 0;
     ProcThreadPool.DoParallelLocalProc(@DoFLANN, 0, High(FFrames));
   finally
     flann_free_index(FLANN, @FLANNParams);
@@ -5611,6 +5622,7 @@ begin
 
   // dither final tiles
 
+  doneFrameCount := 0;
   ProcThreadPool.DoParallelLocalProc(@DoClusterDither, 0, High(FFrames));
 end;
 
@@ -6327,7 +6339,6 @@ begin
   FFramesPerSecond := 24.0;
 
   LoadDefaultSettings;
-
 end;
 
 destructor TTilingEncoder.Destroy;
