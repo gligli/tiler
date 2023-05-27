@@ -5476,35 +5476,35 @@ var
     for i := 0 to BICOClusterCount - 1 do
     begin
       DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
-      if frmIdx = AIndex then
+      if (frmIdx = AIndex) and (TileLineIdxs[i] >= 0) then
       begin
         hasFrame := True;
         Break;
       end;
     end;
 
-    if not hasFrame then
-      Exit;
-
-    Frame.AcquireFrameTiles;
-    try
-      for i := 0 to BICOClusterCount - 1 do
-      begin
-        DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
-        if frmIdx = AIndex then
+    if hasFrame then
+    begin
+      Frame.AcquireFrameTiles;
+      try
+        for i := 0 to BICOClusterCount - 1 do
         begin
+          DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
+          if (frmIdx = AIndex) and (TileLineIdxs[i] >= 0) then
+          begin
+            Tile := Tiles[i];
 
-          Tile := Tiles[i];
+            Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-          Tile^.CopyFrom(Frame.FrameTiles[si]^);
-
-          DitherTile(Tile^, Frame.PKeyFrame.MixingPlans[FLANNPalIdxs[TileLineIdxs[i]]]);
+            DitherTile(Tile^, Frame.PKeyFrame.MixingPlans[FLANNPalIdxs[TileLineIdxs[i]]]);
+          end;
         end;
+      finally
+        Frame.ReleaseFrameTiles;
       end;
-    finally
-      Frame.ReleaseFrameTiles;
-      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
     end;
+
+    Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
   end;
 
 var
