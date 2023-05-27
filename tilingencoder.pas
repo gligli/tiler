@@ -61,7 +61,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 5, -1, 2, -1, -1, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 5, -1, 5, -1, -1, 1, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -614,6 +614,7 @@ type
 
     procedure LoadTiles;
     procedure MakeTilesUnique(AKFIdx: Integer);
+    procedure PackTiles;
     procedure DoGlobalKMeans(AClusterCount: Integer);
     procedure OptimizeGlobalPalettes;
     procedure ReindexTiles(KeepRGBPixels: Boolean);
@@ -3153,9 +3154,22 @@ begin
   ProgressRedraw(2);
 
   FindKeyFrames(manualKeyFrames);
-  FKeyFramesLeft := Length(FKeyFrames);
 
   ProgressRedraw(3);
+
+  LoadTiles;
+
+  ProgressRedraw(4);
+
+  // make tiles unique
+  FTileSet.InitMergeTiles;
+  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FKeyFrames));
+  FTileSet.FinishMergeTiles;
+
+  // remove inactive tiles to save memory
+  PackTiles;
+
+  ProgressRedraw(5);
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
   begin
@@ -3163,16 +3177,6 @@ begin
     SetGlobalTilingQualityBasedTileCount(0.0);
     SetGlobalTilingQualityBasedTileCount(qbTC);
   end;
-
-  LoadTiles;
-
-  ProgressRedraw(4);
-
-  FTileSet.InitMergeTiles;
-  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FKeyFrames));
-  FTileSet.FinishMergeTiles;
-
-  ProgressRedraw(5);
 end;
 
 procedure TTilingEncoder.PreparePalettes;
@@ -3238,7 +3242,12 @@ begin
         TerminatePlan(FKeyFrames[kfIdx].MixingPlans[palIdx]);
   end;
 
-  ProgressRedraw(2);
+  ProgressRedraw(4);
+
+  // remove inactive tiles to save memory
+  PackTiles;
+
+  ProgressRedraw(5);
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -3272,6 +3281,7 @@ begin
   StepProgress := 0;
   ProgressRedraw(0, esReconstruct);
 
+  FKeyFramesLeft := Length(FKeyFrames);
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
 
@@ -5597,6 +5607,43 @@ begin
   end;
 end;
 
+procedure TTilingEncoder.PackTiles;
+var
+  tidx, copyPos: Int64;
+begin
+  FTileSet.InitMergeTiles;
+  try
+    // pack tiles
+
+    copyPos := 0;
+    for tidx := High(Tiles) downto 0 do
+    begin
+      if Tiles[tidx]^.Active then
+      begin
+        while (copyPos < Length(Tiles)) and Tiles[copyPos]^.Active do
+          Inc(copyPos);
+
+        if copyPos < tidx then
+        begin
+          Tiles[copyPos]^.CopyFrom(Tiles[tidx]^);
+          Tiles[tidx]^.MergeIndex := copyPos;
+          Tiles[tidx]^.Active := False;
+        end
+        else
+        begin
+          Break;
+        end;
+      end;
+    end;
+  finally
+    FTileSet.FinishMergeTiles;
+  end;
+
+  // redim tile list
+
+  TTile.Array1DRealloc(FTileSet.Tiles, copyPos);
+end;
+
 procedure TTilingEncoder.DoGlobalKMeans(AClusterCount: Integer);
 var
   DSLen, BICOClusterCount: Integer;
@@ -5742,6 +5789,8 @@ begin
 
   WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', AClusterCount:6);
 
+  ProgressRedraw(2);
+
   if BICOClusterCount <= 0 then
     Exit;
 
@@ -5764,6 +5813,8 @@ begin
     flann_free_index_double(FLANN, @FLANNParams);
     SetLength(Dataset, 0); // free up memory
   end;
+
+  ProgressRedraw(3);
 
   // build a list of this centroid tiles
 
