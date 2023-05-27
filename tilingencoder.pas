@@ -61,7 +61,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 5, -1, 5, -1, -1, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 6, -1, 5, -1, -1, 1, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -3163,13 +3163,18 @@ begin
 
   // make tiles unique
   FTileSet.InitMergeTiles;
-  ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FKeyFrames));
-  FTileSet.FinishMergeTiles;
+  try
+    ProcThreadPool.DoParallelLocalProc(@DoMakeUnique, 0, High(FKeyFrames));
+  finally
+    FTileSet.FinishMergeTiles;
+  end;
+
+  ProgressRedraw(5);
 
   // remove inactive tiles to save memory
   PackTiles;
 
-  ProgressRedraw(5);
+  ProgressRedraw(6);
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
   begin
