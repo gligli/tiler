@@ -2408,28 +2408,23 @@ begin
   begin
     Frame := Encoder.FFrames[frmIdx];
 
-    Frame.AcquireFrameTiles;
-    try
-      for sy := 0 to Encoder.FTileMapHeight - 1 do
-        for sx := 0 to Encoder.FTileMapWidth - 1 do
-        begin
-          TMI := @Frame.TileMap[sy, sx];
+    for sy := 0 to Encoder.FTileMapHeight - 1 do
+      for sx := 0 to Encoder.FTileMapWidth - 1 do
+      begin
+        TMI := @Frame.TileMap[sy, sx];
 
-          if TMI^.PalIdx <> APaletteIndex then
-            Continue;
+        if TMI^.PalIdx <> APaletteIndex then
+          Continue;
 
-          T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
+        T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
-          Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cFTQWeighting, False, False, False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
+        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cFTQWeighting, False, False, False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
 
-          TMI^.HMirror := T^.HMirror_Initial;
-          TMI^.VMirror := T^.VMirror_Initial;
+        TMI^.HMirror := T^.HMirror_Initial;
+        TMI^.VMirror := T^.VMirror_Initial;
 
-          Inc(annQueryPos);
-        end;
-    finally
-      Frame.ReleaseFrameTiles;
-    end;
+        Inc(annQueryPos);
+      end;
   end;
 
   // query KNN
@@ -2676,19 +2671,27 @@ procedure TKeyFrame.Reconstruct;
 var
   kfIdx: Integer;
   tileResd, errCml: Double;
+  frmIdx: Integer;
 begin
   if FrameCount = 0 then
     Exit;
 
-  ReconstructErrCml := 0.0;
-  PalettesLeft := Encoder.FPaletteCount;
-  SetLength(TileDS, Encoder.FPaletteCount);
-  InterLockedDecrement(Encoder.FKeyFramesThreadCount);
+  for frmIdx := StartFrame to EndFrame do
+    Encoder.FFrames[frmIdx].AcquireFrameTiles;
   try
-    ProcThreadPool.DoParallelLocalProc(@DoTiling, 0, Encoder.FPaletteCount - 1, nil, GetFreeThreadCount);
+    ReconstructErrCml := 0.0;
+    PalettesLeft := Encoder.FPaletteCount;
+    SetLength(TileDS, Encoder.FPaletteCount);
+    InterLockedDecrement(Encoder.FKeyFramesThreadCount);
+    try
+      ProcThreadPool.DoParallelLocalProc(@DoTiling, 0, Encoder.FPaletteCount - 1, nil, GetFreeThreadCount);
+    finally
+      InterLockedIncrement(Encoder.FKeyFramesThreadCount);
+      SetLength(TileDS, 0);
+    end;
   finally
-    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
-    SetLength(TileDS, 0);
+    for frmIdx := StartFrame to EndFrame do
+      Encoder.FFrames[frmIdx].ReleaseFrameTiles;
   end;
 
   InterLockedDecrement(Encoder.FKeyFramesLeft);
