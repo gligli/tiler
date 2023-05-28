@@ -3047,6 +3047,9 @@ begin
 
   ProgressRedraw(1);
 
+  // cleanup any prior tile set
+  TTile.Array1DDispose(FTiles);
+
   // build ditherers
   for kfIdx := 0 to High(FKeyFrames) do
     for palIdx := 0 to FPaletteCount - 1 do
