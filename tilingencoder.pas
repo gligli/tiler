@@ -386,13 +386,12 @@ type
     FLock: TSpinlock;
 
     PaletteRGB: TIntegerDynArray2;
-    PaletteCentroids: TDoubleDynArray2;
     CS: TRTLCriticalSection;
-    MixingPlans: array of TMixingPlan;
     TileDS: array of PTilingDataset;
 
     PaletteInfo: array of record
       UseCount: Integer;
+      MixingPlan: TMixingPlan;
       PalIdx_Initial: Integer;
     end;
 
@@ -1827,7 +1826,6 @@ begin
   InitializeCriticalSection(CS);
   SpinLeave(@FLock);
 
-  SetLength(MixingPlans, APaletteCount);
   SetLength(PaletteRGB, APaletteCount);
 end;
 
@@ -1865,7 +1863,6 @@ begin
 
   SetLength(YakmoDataset, DSLen, cFeatureCount);
   SetLength(YakmoClusters, Length(YakmoDataset));
-  SetLength(PaletteCentroids, Encoder.FPaletteCount, cFeatureCount);
 
   di := 0;
   for frmIdx := StartFrame to EndFrame do
@@ -1905,7 +1902,6 @@ begin
     yakmo_load_train_data(Yakmo, Length(YakmoDataset), cFeatureCount, PPDouble(@YakmoDataset[0]));
     SetLength(YakmoDataset, 0); // free up some memmory
     yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-    yakmo_get_centroids(Yakmo, PPDouble(@PaletteCentroids[0]));
     yakmo_destroy(Yakmo);
   end
   else
@@ -2417,6 +2413,9 @@ begin
           Continue;
 
         T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
+
+        if Encoder.FFrameTilingFromPalette then
+          Encoder.DitherTile(T^, PaletteInfo[APaletteIndex].MixingPlan);
 
         Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cFTQWeighting, False, False, False, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
 
@@ -3045,24 +3044,18 @@ begin
 
   OptimizeGlobalPalettes;
 
+  // build ditherers
+  for kfIdx := 0 to High(FKeyFrames) do
+    for palIdx := 0 to FPaletteCount - 1 do
+      PreparePlan(FKeyFrames[kfIdx].PaletteInfo[palIdx].MixingPlan, FDitheringYliluoma2MixedColors, FKeyFrames[kfIdx].PaletteRGB[palIdx]);
+
   ProgressRedraw(1);
 
   // cleanup any prior tile set
   TTile.Array1DDispose(FTiles);
 
-  // build ditherers
-  for kfIdx := 0 to High(FKeyFrames) do
-    for palIdx := 0 to FPaletteCount - 1 do
-      PreparePlan(FKeyFrames[kfIdx].MixingPlans[palIdx], FDitheringYliluoma2MixedColors, FKeyFrames[kfIdx].PaletteRGB[palIdx]);
-  try
-    // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
-    DoGlobalKMeans(FGlobalTilingTileCount);
-  finally
-    // cleanup ditherers
-    for kfIdx := 0 to High(FKeyFrames) do
-      for palIdx := 0 to FPaletteCount - 1 do
-        TerminatePlan(FKeyFrames[kfIdx].MixingPlans[palIdx]);
-  end;
+  // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
+  DoGlobalKMeans(FGlobalTilingTileCount);
 
   ProgressRedraw(5);
 end;
@@ -5386,7 +5379,7 @@ var
 
           Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-          DitherTile(Tile^, Frame.PKeyFrame.MixingPlans[TMI^.PalIdx]);
+          DitherTile(Tile^, Frame.PKeyFrame.PaletteInfo[TMI^.PalIdx].MixingPlan);
 
           TMI^.HMirror := Tile^.HMirror_Initial;
           TMI^.VMirror := Tile^.VMirror_Initial;
@@ -5502,7 +5495,7 @@ var
 
             Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-            DitherTile(Tile^, Frame.PKeyFrame.MixingPlans[FLANNPalIdxs[TileLineIdxs[i]]]);
+            DitherTile(Tile^, Frame.PKeyFrame.PaletteInfo[FLANNPalIdxs[TileLineIdxs[i]]].MixingPlan);
           end;
         end;
       finally
