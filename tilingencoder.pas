@@ -398,7 +398,7 @@ type
     PalettesLeft: Integer;
     ReconstructErrCml: Double;
 
-    constructor Create(AParent: TTilingEncoder; AIndex, APaletteCount, AStartFrame, AEndFrame: Integer);
+    constructor Create(AParent: TTilingEncoder; AIndex, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
 
     // algorithms
@@ -1813,9 +1813,8 @@ end;
 
 { TKeyFrame }
 
-constructor TKeyFrame.Create(AParent: TTilingEncoder; AIndex, APaletteCount, AStartFrame, AEndFrame: Integer);
+constructor TKeyFrame.Create(AParent: TTilingEncoder; AIndex, AStartFrame, AEndFrame: Integer);
 begin
-  Assert(AIndex <= High(SmallInt), 'More than 32767 KeyFrames!');
   Encoder := AParent;
   Index := AIndex;
   StartFrame := AStartFrame;
@@ -1825,8 +1824,6 @@ begin
 
   InitializeCriticalSection(CS);
   SpinLeave(@FLock);
-
-  SetLength(PaletteRGB, APaletteCount);
 end;
 
 destructor TKeyFrame.Destroy;
@@ -2628,6 +2625,8 @@ var
 begin
   if FrameCount = 0 then
     Exit;
+
+  SetLength(PaletteRGB, Encoder.FPaletteCount);
 
   for frmIdx := StartFrame to EndFrame do
     Encoder.FFrames[frmIdx].AcquireFrameTiles;
@@ -4625,7 +4624,7 @@ begin
 
     if kfReason <> kfrNone then
     begin
-      FKeyFrames[kfIdx] := TKeyFrame.Create(Self, kfIdx, FPaletteCount, 0, 0);
+      FKeyFrames[kfIdx] := TKeyFrame.Create(Self, kfIdx, 0, 0);
       FKeyFrames[kfIdx].Reason := kfReason;
 
       Inc(kfIdx);
