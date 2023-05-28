@@ -60,7 +60,7 @@ const
   );
   cDitheringLen = length(cDitheringMap);
 
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 5, -1, -1, 1, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 6, -1, -1, 2, 1);
 
   cQ = sqrt(16);
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
@@ -542,7 +542,7 @@ type
 
     function GetSettings: String;
     procedure ClearAll;
-    procedure ProgressRedraw(ASubStepIdx: Integer = -1; AProgressStep: TEncoderStep = esAll; AThread: TThread = nil);
+    procedure ProgressRedraw(ASubStepIdx: Integer; AReason: String; AProgressStep: TEncoderStep = esAll; AThread: TThread = nil);
     procedure SyncProgress;
     procedure InitLuts(ATilePaletteSize, APaletteCount: Integer);
     function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
@@ -2830,8 +2830,6 @@ begin
 
   for frmIdx := StartFrame + 1 to EndFrame do
     DoTemporalSmoothing(Encoder.FFrames[frmIdx], Encoder.FFrames[frmIdx - 1]);
-
-  WriteLn('KF: ', StartFrame:8, ' Smooth end');
 end;
 
 { TTilingEncoder }
@@ -2921,7 +2919,7 @@ begin
   eqtc := EqualQualityTileCount(FrameCount * FTileMapSize);
   wasAutoQ := (Length(FFrames) > 0) and (FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * eqtc));
 
-  ProgressRedraw(-1, esAll);
+  ProgressRedraw(-1, '', esAll);
 
   ClearAll;
 
@@ -2929,7 +2927,7 @@ begin
 
   WriteLn(GetSettings);
 
-  ProgressRedraw(0, esLoad);
+  ProgressRedraw(0, '', esLoad);
 
   // init Gamma LUTs
 
@@ -2977,18 +2975,18 @@ begin
     bmp.Free;
   end;
 
-  ProgressRedraw(1);
+  ProgressRedraw(1, 'ExtractPNGs');
 
   doneFrameCount := 0;
   SetLength(FFrames, frmCnt);
   ProcThreadPool.DoParallelLocalProc(@DoLoadFrame, 0, High(FFrames), Pointer(PtrInt(startFrmIdx)));
   WriteLn;
 
-  ProgressRedraw(2);
+  ProgressRedraw(2, 'LoadFrames');
 
   FindKeyFrames(manualKeyFrames);
 
-  ProgressRedraw(3);
+  ProgressRedraw(3, 'FindKeyFrames');
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
   begin
@@ -3016,7 +3014,7 @@ var
       keyFrame.PreparePalettes;
 
       Inc(StepProgress, keyFrame.FrameCount);
-      ProgressRedraw(StepProgress, esPreparePalettes, AItem.Thread);
+      ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esPreparePalettes, AItem.Thread);
     finally
       InterLockedDecrement(FKeyFramesThreadCount);
     end;
@@ -3027,7 +3025,7 @@ begin
     Exit;
 
   StepProgress := 0;
-  ProgressRedraw(0, esPreparePalettes);
+  ProgressRedraw(0, '', esPreparePalettes);
 
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
@@ -3039,24 +3037,24 @@ begin
   if FrameCount = 0 then
     Exit;
 
-  ProgressRedraw(0, esCluster);
+  ProgressRedraw(0, '', esCluster);
 
   OptimizeGlobalPalettes;
+
+  ProgressRedraw(1, 'OptimizeGlobalPalettes');
 
   // build ditherers
   for kfIdx := 0 to High(FKeyFrames) do
     for palIdx := 0 to FPaletteCount - 1 do
       PreparePlan(FKeyFrames[kfIdx].PaletteInfo[palIdx].MixingPlan, FDitheringYliluoma2MixedColors, FKeyFrames[kfIdx].PaletteRGB[palIdx]);
 
-  ProgressRedraw(1);
+  ProgressRedraw(2, 'BuildDitherers');
 
   // cleanup any prior tile set
   TTile.Array1DDispose(FTiles);
 
   // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
   DoGlobalKMeans(FGlobalTilingTileCount);
-
-  ProgressRedraw(5);
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -3077,7 +3075,7 @@ var
       keyFrame.Reconstruct;
 
       Inc(StepProgress, keyFrame.FrameCount);
-      ProgressRedraw(StepProgress, esReconstruct, AItem.Thread);
+      ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esReconstruct, AItem.Thread);
     finally
       InterLockedDecrement(FKeyFramesThreadCount);
     end;
@@ -3088,7 +3086,7 @@ begin
     Exit;
 
   StepProgress := 0;
-  ProgressRedraw(0, esReconstruct);
+  ProgressRedraw(0, '', esReconstruct);
 
   FKeyFramesLeft := Length(FKeyFrames);
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
@@ -3112,7 +3110,7 @@ var
       keyFrame.Smooth;
 
       Inc(StepProgress, keyFrame.FrameCount);
-      ProgressRedraw(StepProgress, esSmooth, AItem.Thread);
+      ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esSmooth, AItem.Thread);
     finally
       InterLockedDecrement(FKeyFramesThreadCount);
     end;
@@ -3123,7 +3121,7 @@ begin
     Exit;
 
   StepProgress := 0;
-  ProgressRedraw(0, esSmooth);
+  ProgressRedraw(0, '', esSmooth);
 
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
@@ -3147,7 +3145,7 @@ begin
   if FrameCount = 0 then
     Exit;
 
-  ProgressRedraw(0, esReindex);
+  ProgressRedraw(0, '', esReindex);
 
   for tidx := 0 to High(Tiles) do
   begin
@@ -3167,9 +3165,11 @@ begin
         HandleTileIndex(TMI^.BlendedTileIdx_Smoothed);
       end;
 
+  ProgressRedraw(1, 'UseCount');
+
   ReindexTiles(False);
 
-  ProgressRedraw(1);
+  ProgressRedraw(2, 'Sort');
 end;
 
 procedure TTilingEncoder.Save;
@@ -3179,7 +3179,7 @@ begin
   if Length(FFrames) = 0 then
     Exit;
 
-  ProgressRedraw(0, esSave);
+  ProgressRedraw(0, '', esSave);
 
   fs := TFileStream.Create(FOutputFileName, fmCreate or fmShareDenyWrite);
   try
@@ -3188,7 +3188,7 @@ begin
     fs.Free;
   end;
 
-  ProgressRedraw(1);
+  ProgressRedraw(1, '');
 end;
 
 procedure TTilingEncoder.GeneratePNGs;
@@ -5240,7 +5240,8 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.ProgressRedraw(ASubStepIdx: Integer; AProgressStep: TEncoderStep; AThread: TThread);
+procedure TTilingEncoder.ProgressRedraw(ASubStepIdx: Integer; AReason: String; AProgressStep: TEncoderStep;
+ AThread: TThread);
 
   function GetStepLen: Integer;
   begin
@@ -5292,7 +5293,9 @@ begin
   if ASubStepIdx >= 0 then
   begin
     WriteLn('Step: ', Copy(GetEnumName(TypeInfo(TEncoderStep), Ord(FProgressStep)), 3), ' / ', ProgressStepPosition,
-      #9'Time: ', FormatFloat('0.000', (curTime - FProgressProcessStartTime) / 1000), #9'All: ', FormatFloat('0.000', (curTime - FProgressAllStartTime) / 1000));
+      #9'Time: ', FormatFloat('0.000', (curTime - FProgressProcessStartTime) / 1000),
+      #9'All: ', FormatFloat('0.000', (curTime - FProgressAllStartTime) / 1000),
+      IfThen(AReason <> '', ', Reason: '), AReason);
   end;
   FProgressPrevTime := curTime;
 
@@ -5347,7 +5350,7 @@ procedure TTilingEncoder.DoGlobalKMeans(AClusterCount: Integer);
 var
   DSLen: Int64;
   BICOClusterCount: Integer;
-  doneFrameCount: Integer;
+  doneFrameCount, doneClusterCount: Integer;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TSingleDynArray;
   FLANNPalIdxs: TSmallIntDynArray;
@@ -5435,6 +5438,7 @@ var
   procedure DoClusterPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     clusterLineIdx, lineIdx: Int64;
+    dcc: Integer;
     v, best: Single;
   begin
     if not InRange(AIndex, 0, BICOClusterCount - 1) then
@@ -5456,6 +5460,10 @@ var
       end;
 
     TileLineIdxs[AIndex] := clusterLineIdx;
+
+    dcc := InterLockedIncrement(doneClusterCount);
+    if dcc mod 1000 = 0 then
+      Write(dcc:8, ' / ', BICOClusterCount:8, #13);
   end;
 
   procedure DoClusterDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -5527,6 +5535,7 @@ begin
     doneFrameCount := 0;
     ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
 
+    ProgressRedraw(6, 'DitherTiles');
     Exit;
   end;
 
@@ -5581,7 +5590,7 @@ begin
 
   WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', AClusterCount:6);
 
-  ProgressRedraw(2);
+  ProgressRedraw(3, 'BICOClustering');
 
   if BICOClusterCount <= 0 then
     Exit;
@@ -5605,7 +5614,7 @@ begin
     flann_free_index(FLANN, @FLANNParams);
   end;
 
-  ProgressRedraw(3);
+  ProgressRedraw(4, 'FLANNReconstruct');
 
   // allocate tile set
 
@@ -5614,14 +5623,17 @@ begin
 
   // prepare final tiles infos
 
+  doneClusterCount := 0;
   ProcThreadPool.DoParallelLocalProc(@DoClusterPrepare, 0, BICOClusterCount - 1);
 
-  ProgressRedraw(4);
+  ProgressRedraw(5, 'PrepareTiles');
 
   // dither final tiles
 
   doneFrameCount := 0;
   ProcThreadPool.DoParallelLocalProc(@DoClusterDither, 0, High(FFrames));
+
+  ProgressRedraw(6, 'DitherTiles');
 end;
 
 procedure TTilingEncoder.OptimizeGlobalPalettes;
