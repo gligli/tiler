@@ -54,8 +54,13 @@ type
     Label14: TLabel;
     Label15: TLabel;
     Label16: TLabel;
+    Label17: TLabel;
     Label18: TLabel;
+    Label19: TLabel;
     Label2: TLabel;
+    Label20: TLabel;
+    Label21: TLabel;
+    Label22: TLabel;
     Label3: TLabel;
     Label4: TLabel;
     Label6: TLabel;
@@ -74,6 +79,8 @@ type
     sbTiles: TScrollBox;
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
+    seShotTransMaxSecondsPerKF: TFloatSpinEdit;
+    seShotTransCorrelLoThres: TFloatSpinEdit;
     seFTBlendThres: TFloatSpinEdit;
     seMaxCores: TSpinEdit;
     seQbTiles: TFloatSpinEdit;
@@ -84,6 +91,7 @@ type
     seStartFrame: TSpinEdit;
     seTempoSmoo: TFloatSpinEdit;
     seEncGamma: TFloatSpinEdit;
+    seShotTransMinSecondsPerKF: TFloatSpinEdit;
     tsTilesPal: TTabSheet;
     To1: TLabel;
     tsSettings: TTabSheet;
@@ -602,6 +610,11 @@ begin
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
 
+  FTilingEncoder.ShotTransMinSecondsPerKF := seShotTransMinSecondsPerKF.Value;
+  FTilingEncoder.ShotTransMaxSecondsPerKF := seShotTransMaxSecondsPerKF.Value;
+  FTilingEncoder.ShotTransCorrelLoThres := seShotTransCorrelLoThres.Value;
+
+
   if pcPages.ActivePage = tsInput then
     FTilingEncoder.RenderPage := rpInput
   else if pcPages.ActivePage = tsOutput then
@@ -666,6 +679,10 @@ begin
 
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
    seMaxCores.Value := FTilingEncoder.MaxThreadCount;
+
+   seShotTransMinSecondsPerKF.Value := FTilingEncoder.ShotTransMinSecondsPerKF;
+   seShotTransMaxSecondsPerKF.Value := FTilingEncoder.ShotTransMaxSecondsPerKF;
+   seShotTransCorrelLoThres.Value := FTilingEncoder.ShotTransCorrelLoThres;
   finally
     FLockChanges := False;
   end;

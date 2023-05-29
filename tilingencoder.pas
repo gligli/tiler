@@ -482,6 +482,10 @@ type
     FFrameTilingBlendingExtents: Integer;
     FFrameTilingBlendingBinSize: Integer;
     FSmoothingFactor: TFloat;
+    FShotTransMaxSecondsPerKF: TFloat;
+    FShotTransMinSecondsPerKF: TFloat;
+    FShotTransCorrelLoThres: TFloat;
+
 
     // GUI state variables
 
@@ -532,6 +536,9 @@ type
     procedure SetRenderTilePage(AValue: Integer);
     procedure SetGlobalTilingTileCount(AValue: Integer);
     procedure SetScaling(AValue: TFloat);
+    procedure SetShotTransCorrelLoThres(AValue: TFloat);
+    procedure SetShotTransMaxSecondsPerKF(AValue: TFloat);
+    procedure SetShotTransMinSecondsPerKF(AValue: TFloat);
     procedure SetSmoothingFactor(AValue: TFloat);
     procedure SetStartFrame(AValue: Integer);
 
@@ -663,9 +670,12 @@ type
     property FrameTilingBlendingThreshold: TFloat read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
     property FrameTilingBlendingExtents: Integer read FFrameTilingBlendingExtents write SetFrameTilingBlendExtents;
     property FrameTilingBlendingBinSize: Integer read FFrameTilingBlendingBinSize write SetFrameTilingBlendBinSize;
-
     property SmoothingFactor: TFloat read FSmoothingFactor write SetSmoothingFactor;
     property MaxThreadCount: Integer read GetMaxThreadCount write SetMaxThreadCount;
+    property ShotTransMaxSecondsPerKF: TFloat read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
+    property ShotTransMinSecondsPerKF: TFloat read FShotTransMinSecondsPerKF write SetShotTransMinSecondsPerKF;
+    property ShotTransCorrelLoThres: TFloat read FShotTransCorrelLoThres write SetShotTransCorrelLoThres;
+
 
     // GUI state variables
 
@@ -4058,6 +4068,24 @@ begin
   FScaling := Max(0.01, AValue);
 end;
 
+procedure TTilingEncoder.SetShotTransCorrelLoThres(AValue: TFloat);
+begin
+ if FShotTransCorrelLoThres = AValue then Exit;
+ FShotTransCorrelLoThres := EnsureRange(AValue, -1.0, 1.0);
+end;
+
+procedure TTilingEncoder.SetShotTransMaxSecondsPerKF(AValue: TFloat);
+begin
+ if FShotTransMaxSecondsPerKF = AValue then Exit;
+ FShotTransMaxSecondsPerKF := max(0.0, AValue);
+end;
+
+procedure TTilingEncoder.SetShotTransMinSecondsPerKF(AValue: TFloat);
+begin
+ if FShotTransMinSecondsPerKF = AValue then Exit;
+ FShotTransMinSecondsPerKF := max(0.0, AValue);
+end;
+
 procedure TTilingEncoder.SetSmoothingFactor(AValue: TFloat);
 begin
   if FSmoothingFactor = AValue then Exit;
@@ -4575,10 +4603,6 @@ var
     Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
   end;
 
-const
-  CShotTransMaxSecondsPerKF = 2.0;  // maximum seconds between keyframes
-  CShotTransMinSecondsPerKF = 0.25; // minimum seconds between keyframes
-  CShotTransCorrelLoThres = 0.75;   // interframe pearson correlation low limit
 var
   frmIdx, kfIdx, lastKFIdx: Integer;
   correl: TFloat;
@@ -4612,13 +4636,13 @@ begin
       if (kfReason = kfrNone) and (frmIdx = 0) then
         kfReason := kfrManual;
 
-      if (kfReason = kfrNone) and (correl < CShotTransCorrelLoThres) then
+      if (kfReason = kfrNone) and (correl < FShotTransCorrelLoThres) then
         kfReason := kfrDecorrelation;
 
-      if (kfReason = kfrNone) and ((frmIdx - lastKFIdx) >= (CShotTransMaxSecondsPerKF * FFramesPerSecond)) then
+      if (kfReason = kfrNone) and ((frmIdx - lastKFIdx) >= (FShotTransMaxSecondsPerKF * FFramesPerSecond)) then
         kfReason := kfrLength;
 
-      if (frmIdx - lastKFIdx) < (CShotTransMinSecondsPerKF * FFramesPerSecond) then
+      if (frmIdx - lastKFIdx) < (FShotTransMinSecondsPerKF * FFramesPerSecond) then
         kfReason := kfrNone;
     end;
 
@@ -5026,7 +5050,11 @@ begin
     ini.WriteFloat('Smoothing', 'SmoothingFactor', RoundTo(Double(SmoothingFactor), -6));
 
     ini.WriteFloat('Misc', 'EncoderGammaValue', RoundTo(Double(EncoderGammaValue), -6));
-    ini.WriteFloat('Misc', 'MaxThreadCount', MaxThreadCount);
+    ini.WriteInteger('Misc', 'MaxThreadCount', MaxThreadCount);
+
+    ini.WriteFloat('Load', 'ShotTransMaxSecondsPerKF', RoundTo(ShotTransMaxSecondsPerKF, -6));
+    ini.WriteFloat('Load', 'ShotTransMinSecondsPerKF', RoundTo(ShotTransMinSecondsPerKF, -6));
+    ini.WriteFloat('Load', 'ShotTransCorrelLoThres', RoundTo(ShotTransCorrelLoThres, -6));
 
   finally
     ini.Free;
@@ -5071,6 +5099,10 @@ begin
     EncoderGammaValue := ini.ReadFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
     MaxThreadCount := ini.ReadInteger('Misc', 'MaxThreadCount', MaxThreadCount);
 
+    ShotTransMaxSecondsPerKF := ini.ReadFloat('Load', 'ShotTransMaxSecondsPerKF', ShotTransMaxSecondsPerKF);
+    ShotTransMinSecondsPerKF := ini.ReadFloat('Load', 'ShotTransMinSecondsPerKF', ShotTransMinSecondsPerKF);
+    ShotTransCorrelLoThres := ini.ReadFloat('Load', 'ShotTransCorrelLoThres', ShotTransCorrelLoThres);
+
   finally
     ini.Free;
   end;
@@ -5106,6 +5138,10 @@ begin
   SmoothingFactor := 0.2;
 
   EncoderGammaValue := 2.0;
+
+  FShotTransMaxSecondsPerKF := 2.0;  // maximum seconds between keyframes
+  FShotTransMinSecondsPerKF := 0.25; // minimum seconds between keyframes
+  FShotTransCorrelLoThres := 0.75;   // interframe pearson correlation low limit
 end;
 
 procedure TTilingEncoder.Test;
