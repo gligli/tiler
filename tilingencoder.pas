@@ -5643,8 +5643,8 @@ var
   prevBest, best, v: Double;
   InnerPerm: TByteDynArray;
   PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: TDoubleDynArray;
-  GlobalPalette: TFloatDynArray3;
-  tmpArr: TFloatDynArray;
+  GlobalPalette: TDoubleDynArray3;
+  tmpArr: TDoubleDynArray;
 begin
   SetLength(GlobalPalette, Length(FKeyFrames), FPaletteSize, cColorCpns);
   SetLength(PalR, FPaletteSize);
