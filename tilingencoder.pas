@@ -5360,6 +5360,7 @@ var
 
   procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
+    frameOffset: Int64;
     sx, sy, si: Integer;
     Frame: TFrame;
     Tile: PTile;
@@ -5369,6 +5370,7 @@ var
       Exit;
 
     Frame := FFrames[AIndex];
+    frameOffset := AIndex * FTileMapSize;
 
     Frame.AcquireFrameTiles;
     try
@@ -5385,6 +5387,7 @@ var
 
           TMI^.HMirror := Tile^.HMirror_Initial;
           TMI^.VMirror := Tile^.VMirror_Initial;
+          TMI^.TileIdx := frameOffset + si;
 
           TMI^.CopyToSmoothed;
 
@@ -5420,15 +5423,31 @@ var
         for sx := 0 to FTileMapWidth - 1 do
         begin
           Tile := Frame.FrameTiles[si];
-          TMI := @Frame.TileMap[sy, sx];
 
           ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @Dataset[si * cTileDCTSize]);
-          FLANNPalIdxs[frameOffset + si] := TMI^.PalIdx;
 
           Inc(si);
         end;
 
       flann_find_nearest_neighbors_index(FLANN, @Dataset[0], FTileMapSize, @FLANNClusters[frameOffset], @FLANNErrors[frameOffset], 1, @FLANNParams);
+
+      si := 0;
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          Tile := Frame.FrameTiles[si];
+          TMI := @Frame.TileMap[sy, sx];
+
+          TMI^.HMirror := Tile^.HMirror_Initial;
+          TMI^.VMirror := Tile^.VMirror_Initial;
+          TMI^.TileIdx := FLANNClusters[frameOffset + si];
+
+          TMI^.CopyToSmoothed;
+
+          FLANNPalIdxs[frameOffset + si] := TMI^.PalIdx;
+
+          Inc(si);
+        end;
     finally
       Frame.ReleaseFrameTiles;
       Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
