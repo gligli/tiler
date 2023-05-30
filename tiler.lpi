@@ -32,6 +32,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="ffmpeg-5.1-binding\headers;ffmpeg-5.1-binding\examples"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)-$(BuildMode)"/>
           </SearchPaths>
           <Parsing>
@@ -70,6 +71,7 @@
           </Target>
           <SearchPaths>
             <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="ffmpeg-5.1-binding\headers;ffmpeg-5.1-binding\examples"/>
             <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)-$(BuildMode)"/>
           </SearchPaths>
           <Parsing>
@@ -109,6 +111,10 @@
             <CustomOptions Value="-Xs-
 -FWlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo
 -OWALL"/>
+            <OtherDefines Count="2">
+              <Define0 Value="DEBUG"/>
+              <Define1 Value="FF_API_LAVF_AVCTX"/>
+            </OtherDefines>
             <ExecuteBefore>
               <Command Value="xcopy /D /F tools\nm.exe $(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\"/>
             </ExecuteBefore>
@@ -171,6 +177,7 @@
     </Target>
     <SearchPaths>
       <IncludeFiles Value="$(ProjOutDir)"/>
+      <OtherUnitFiles Value="ffmpeg-5.1-binding\headers;ffmpeg-5.1-binding\examples"/>
       <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)-$(BuildMode)"/>
     </SearchPaths>
     <Parsing>
@@ -201,6 +208,10 @@
       </CompilerMessages>
       <CustomOptions Value="-Si-
 -dDEBUG"/>
+      <OtherDefines Count="2">
+        <Define0 Value="DEBUG"/>
+        <Define1 Value="FF_API_LAVF_AVCTX"/>
+      </OtherDefines>
     </Other>
   </CompilerOptions>
   <Debugging>
