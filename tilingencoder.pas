@@ -2966,8 +2966,6 @@ var
 
       LoadFrame(FFrames[AIndex], AIndex, bmp.RawImage.Description.Width, bmp.RawImage.Description.Height, PInteger(bmp.RawImage.Data));
 
-      FFrames[AIndex].Index := AIndex;
-
       Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
     finally
       bmp.Free;
@@ -4685,6 +4683,7 @@ var
   Tile: PTile;
 begin
   AFrame := TFrame.Create;
+  AFrame.Index := AFrameIndex;
 
   SetLength(AFrame.TileMap, FTileMapHeight, FTileMapWidth);
 
@@ -5656,37 +5655,6 @@ var
     end;
   end;
 
-  procedure DoClusterPrepare(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    clusterLineIdx, lineIdx: Int64;
-    dcc: Integer;
-    v, best: Single;
-  begin
-    if not InRange(AIndex, 0, BICOClusterCount - 1) then
-      Exit;
-
-    // get the closest tile to the centroid
-
-    best := MaxSingle;
-    clusterLineIdx := -1;
-    for lineIdx := 0 to DSLen - 1 do
-      if FLANNClusters[lineIdx] = AIndex then
-      begin
-        v := FLANNErrors[lineIdx];
-        if v < best then
-        begin
-          best := v;
-          clusterLineIdx := lineIdx;
-        end;
-      end;
-
-    TileLineIdxs[AIndex] := clusterLineIdx;
-
-    dcc := InterLockedIncrement(doneClusterCount);
-    if dcc mod 1000 = 0 then
-      Write(dcc:8, ' / ', BICOClusterCount:8, #13);
-  end;
-
   procedure DoClusterDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     i, frmIdx, si: Integer;
@@ -5735,9 +5703,10 @@ var
   end;
 
 var
-  i, frmIdx, si: Integer;
-  cnt: Int64;
+  i, frmIdx, clusterIdx, si: Integer;
+  lineIdx, cnt: Int64;
   speedup: Single;
+  err: Double;
 
   Frame: TFrame;
   BICO: PBICO;
@@ -5745,6 +5714,8 @@ var
   BICOCentroids, BICOWeights: TDoubleDynArray;
   FLANNDataset: TSingleDynArray;
   DCT: array[0 .. cTileDCTSize - 1] of Double;
+  TileBestErr: TDoubleDynArray;
+
 begin
   DSLen := Length(FFrames) * FTileMapSize;
   if DSLen <= AClusterCount then
@@ -5841,11 +5812,25 @@ begin
 
   FTiles := TTile.Array1DNew(BICOClusterCount, True, True);
   SetLength(TileLineIdxs, BICOClusterCount);
+  SetLength(TileBestErr, BICOClusterCount);
 
   // prepare final tiles infos
 
-  doneClusterCount := 0;
-  ProcThreadPool.DoParallelLocalProc(@DoClusterPrepare, 0, BICOClusterCount - 1);
+  for clusterIdx := 0 to BICOClusterCount - 1 do
+    TileBestErr[clusterIdx] := MaxSingle;
+
+  for lineIdx := 0 to DSLen - 1 do
+  begin
+    clusterIdx := FLANNClusters[lineIdx];
+
+    err := FLANNErrors[lineIdx];
+
+    if err < TileBestErr[clusterIdx] then
+    begin
+      TileBestErr[clusterIdx] := err;
+      TileLineIdxs[clusterIdx] := lineIdx;
+    end;
+  end;
 
   ProgressRedraw(5, 'PrepareTiles');
 
