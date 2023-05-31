@@ -3022,16 +3022,21 @@ var
         if ret = AVERROR_EAGAIN then
         begin
           ret2 := av_read_frame(FFFmtCtx, @FFPacket);
-          if ret2 = AVERROR_EOF then
-            Break
-          else if ret2 < 0 then
-            raise EFFMPEGError.Create('Error reading frame');
+          try
+            if ret2 = AVERROR_EOF then
+              Break
+            else if ret2 < 0 then
+              raise EFFMPEGError.Create('Error reading frame');
 
-          if FFPacket.stream_index = FFVideoStream then
-          begin
-            if avcodec_send_packet(FFCodecCtx, @FFPacket) < 0 then
-              raise EFFMPEGError.Create('Error sending a packet for decoding');
+            if FFPacket.stream_index = FFVideoStream then
+            begin
+              if avcodec_send_packet(FFCodecCtx, @FFPacket) < 0 then
+                raise EFFMPEGError.Create('Error sending a packet for decoding');
+            end;
+          finally
+            av_packet_unref(@FFPacket);
           end;
+
           Continue;
         end
         else if ret < 0 then
