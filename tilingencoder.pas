@@ -2974,21 +2974,27 @@ var
 
   procedure DoLoadFFFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
+    frmTS: Int64;
     frmIdx, ret, ret2: Integer;
     FFFmtCtx: PAVFormatContext;
     FFCodecCtx: PAVCodecContext;
     FFCodec: PAVCodec;
     FFFrame: PAVFrame;
     FFSWSCtx: PSwsContext;
-    FFPacket: TAVPacket;
+    FFPacket: PAVPacket;
     FFDstData: array[0..3] of PByte;
     FFDstLinesize: array[0..3] of Integer;
     FFVideoStream, FFDstWidth, FFDstHeight: Integer;
     FFDstPixFmt: TAVPixelFormat;
+    FFTimeBase: TAVRational;
   begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
     FFLoad(True, FFFmtCtx, FFCodecCtx, FFCodec, FFVideoStream);
     FFFrame := nil;
     FFSWSCtx := nil;
+    FFPacket := nil;
     FillChar(FFDstData, Sizeof(FFDstData), 0);
     try
       FFDstWidth := round(FFCodecCtx^.width * FScaling);
@@ -3011,30 +3017,31 @@ var
       if not Assigned(FFSWSCtx) then
         raise EFFMPEGError.Create('Could not get scaler context');
 
-      if av_seek_frame(FFFmtCtx, -1, FStartFrame + AIndex, AVSEEK_FLAG_ANY or AVSEEK_FLAG_FRAME) < 0 then
+      FFTimeBase := PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.time_base;
+      frmTS := Round((FStartFrame + AIndex) * FFTimeBase.den / (FFramesPerSecond * FFTimeBase.num));
+      if avformat_seek_file(FFFmtCtx, FFVideoStream, 0, frmTS, frmTS, 0) < 0 then
         raise EFFMPEGError.Create('Could not seek to frame');
 
       avcodec_flush_buffers(FFCodecCtx);
+
+      FFPacket := av_packet_alloc;
 
       while True do
       begin
         ret := avcodec_receive_frame(FFCodecCtx, FFFrame);
         if ret = AVERROR_EAGAIN then
         begin
-          ret2 := av_read_frame(FFFmtCtx, @FFPacket);
+          ret2 := av_read_frame(FFFmtCtx, FFPacket);
+          if (ret2 < 0) and (ret2 <> AVERROR_EOF) then
+            raise EFFMPEGError.Create('Error reading frame');
           try
-            if ret2 = AVERROR_EOF then
-              Break
-            else if ret2 < 0 then
-              raise EFFMPEGError.Create('Error reading frame');
-
-            if FFPacket.stream_index = FFVideoStream then
+            if FFPacket^.stream_index = FFVideoStream then
             begin
-              if avcodec_send_packet(FFCodecCtx, @FFPacket) < 0 then
+              if avcodec_send_packet(FFCodecCtx, FFPacket) < 0 then
                 raise EFFMPEGError.Create('Error sending a packet for decoding');
             end;
           finally
-            av_packet_unref(@FFPacket);
+            av_packet_unref(FFPacket);
           end;
 
           Continue;
@@ -3042,8 +3049,12 @@ var
         else if ret < 0 then
           raise EFFMPEGError.Create('Error receiving frame');
 
+        frmIdx := FFFrame^.best_effort_timestamp div FFFrame^.pkt_duration;
+
+        Assert(frmIdx <= FStartFrame + AIndex, 'Seeking went past frame');
+
         // seeking can be inaccurate, so ensure we have the frame we want
-        if FFFrame^.best_effort_timestamp div FFFrame^.pkt_duration = FStartFrame + AIndex then
+        if frmIdx = FStartFrame + AIndex then
         begin
           // Convert the image from its native format to RGB
           if sws_scale(FFSWSCtx, FFFrame^.data, FFFrame^.linesize, 0, FFCodecCtx^.height, FFDstData, FFDstLinesize) < 0 then
@@ -3057,6 +3068,7 @@ var
         end;
       end;
     finally
+      av_packet_free(@FFPacket);
       sws_freeContext(FFSWSCtx);
       av_freep(@FFDstData[0]);
       av_frame_free(@FFFrame);
@@ -3074,6 +3086,7 @@ var
   FFCodecCtx: PAVCodecContext;
   FFCodec: PAVCodec;
   FFVideoStream, FFDstWidth, FFDstHeight: Integer;
+  FFTimeBase: TAVRational;
 begin
   eqtc := EqualQualityTileCount(FrameCount * FTileMapSize);
   wasAutoQ := (Length(FFrames) > 0) and (FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * eqtc));
@@ -3107,14 +3120,23 @@ begin
       FFDstWidth := round(FFCodecCtx^.width * FScaling);
       FFDstHeight := round(FFCodecCtx^.height * FScaling);
 
-      frmCnt := PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.nb_frames;
-      if fFrameCountSetting > 0 then
-        frmCnt := FrameCountSetting;
-
       FFramesPerSecond := av_q2d(PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.r_frame_rate);
       ReframeUI((FFDstWidth - 1) div cTileWidth + 1, (FFDstHeight - 1) div cTileWidth + 1);
-      WriteLn(FFDstWidth:4, ' x ', FFDstHeight:4, ' @ ', FFramesPerSecond:6:3, ' fps');
 
+      frmCnt := PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.nb_frames;
+      if frmCnt <= 0 then
+      begin
+        // estimate frame count using duration
+        FFTimeBase := PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.time_base;
+        frmCnt := Round(PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.duration * FFTimeBase.den / (FFramesPerSecond * FFTimeBase.num));
+      end;
+
+      WriteLn(frmCnt:8, ' frames, ', FFDstWidth:4, ' x ', FFDstHeight:4, ' @ ', FFramesPerSecond:6:3, ' fps');
+
+      if frmCnt > 0 then
+        frmCnt -= FStartFrame;
+      if FrameCountSetting > 0 then
+        frmCnt := FrameCountSetting;
     finally
       FFClose(FFFmtCtx, FFCodecCtx);
     end;

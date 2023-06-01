@@ -59,6 +59,9 @@
             <CompilerMessages>
               <IgnoredMessages idx7122="True" idx7121="True" idx6058="True" idx5044="True" idx5024="True"/>
             </CompilerMessages>
+            <OtherDefines Count="1">
+              <Define0 Value="DEBUG"/>
+            </OtherDefines>
           </Other>
         </CompilerOptions>
       </Item2>
@@ -111,9 +114,8 @@
             <CustomOptions Value="-Xs-
 -FWlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo
 -OWALL"/>
-            <OtherDefines Count="2">
+            <OtherDefines Count="1">
               <Define0 Value="DEBUG"/>
-              <Define1 Value="FF_API_LAVF_AVCTX"/>
             </OtherDefines>
             <ExecuteBefore>
               <Command Value="xcopy /D /F tools\nm.exe $(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\"/>
@@ -208,9 +210,8 @@
       </CompilerMessages>
       <CustomOptions Value="-Si-
 -dDEBUG"/>
-      <OtherDefines Count="2">
+      <OtherDefines Count="1">
         <Define0 Value="DEBUG"/>
-        <Define1 Value="FF_API_LAVF_AVCTX"/>
       </OtherDefines>
     </Other>
   </CompilerOptions>
