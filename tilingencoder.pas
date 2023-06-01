@@ -5733,7 +5733,7 @@ var
   i, frmIdx, clusterIdx, si: Integer;
   lineIdx, cnt: Int64;
   speedup: Single;
-  err: Double;
+  err: Single;
 
   Frame: TFrame;
   BICO: PBICO;
@@ -5741,7 +5741,7 @@ var
   BICOCentroids, BICOWeights: TDoubleDynArray;
   FLANNDataset: TSingleDynArray;
   DCT: array[0 .. cTileDCTSize - 1] of Double;
-  TileBestErr: TDoubleDynArray;
+  TileBestErr: TSingleDynArray;
 
 begin
   DSLen := Length(FFrames) * FTileMapSize;
