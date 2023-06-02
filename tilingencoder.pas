@@ -3049,12 +3049,12 @@ var
         else if ret < 0 then
           raise EFFMPEGError.Create('Error receiving frame');
 
-        frmIdx := FFFrame^.best_effort_timestamp div FFFrame^.pkt_duration;
+        frmIdx := Round(FFFrame^.best_effort_timestamp * FFramesPerSecond * FFTimeBase.num / FFTimeBase.den);
 
-        Assert(frmIdx <= FStartFrame + AIndex, 'Seeking went past frame');
+        //writeln(frmTS:8, frmIdx:8, FStartFrame + AIndex:8);
 
         // seeking can be inaccurate, so ensure we have the frame we want
-        if frmIdx = FStartFrame + AIndex then
+        if frmIdx >= FStartFrame + AIndex then
         begin
           // Convert the image from its native format to RGB
           if sws_scale(FFSWSCtx, FFFrame^.data, FFFrame^.linesize, 0, FFCodecCtx^.height, FFDstData, FFDstLinesize) < 0 then
@@ -3131,12 +3131,13 @@ begin
         frmCnt := Round(PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.duration * FFTimeBase.den / (FFramesPerSecond * FFTimeBase.num));
       end;
 
-      WriteLn(frmCnt:8, ' frames, ', FFDstWidth:4, ' x ', FFDstHeight:4, ' @ ', FFramesPerSecond:6:3, ' fps');
-
       if frmCnt > 0 then
         frmCnt -= FStartFrame;
       if FrameCountSetting > 0 then
         frmCnt := FrameCountSetting;
+
+      WriteLn(frmCnt:8, ' frames, ', FFDstWidth:4, ' x ', FFDstHeight:4, ' @ ', FFramesPerSecond:6:3, ' fps');
+
     finally
       FFClose(FFFmtCtx, FFCodecCtx);
     end;
