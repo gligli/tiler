@@ -464,8 +464,8 @@ type
     FOutputFileName: String;
     FStartFrame: Integer;
     FFrameCountSetting: Integer;
-    FScaling: TFloat;
-    FEncoderGammaValue: TFloat;
+    FScaling: Double;
+    FEncoderGammaValue: Double;
     FPaletteSize: Integer;
     FPaletteCount: Integer;
     FQuantizerUseYakmo: Boolean;
@@ -476,25 +476,25 @@ type
     FDitheringUseThomasKnoll: Boolean;
     FDitheringYliluoma2MixedColors: Integer;
     FGlobalTilingTileCount: Integer;
-    FGlobalTilingQualityBasedTileCount: TFloat;
+    FGlobalTilingQualityBasedTileCount: Double;
     FFrameTilingFromPalette: Boolean;
     FFrameTilingUseGamma: Boolean;
-    FFrameTilingBlendingThreshold: TFloat;
+    FFrameTilingBlendingThreshold: Double;
     FFrameTilingBlendingExtents: Integer;
     FFrameTilingBlendingBinSize: Integer;
-    FSmoothingFactor: TFloat;
-    FShotTransMaxSecondsPerKF: TFloat;
-    FShotTransMinSecondsPerKF: TFloat;
-    FShotTransCorrelLoThres: TFloat;
+    FSmoothingFactor: Double;
+    FShotTransMaxSecondsPerKF: Double;
+    FShotTransMinSecondsPerKF: Double;
+    FShotTransCorrelLoThres: Double;
 
 
     // GUI state variables
 
     FRenderBlended: Boolean;
     FRenderFrameIndex: Integer;
-    FRenderGammaValue: TFloat;
+    FRenderGammaValue: Double;
     FRenderPage: TRenderPage;
-    FRenderPsychoVisualQuality: TFloat;
+    FRenderPsychoVisualQuality: Double;
     FRenderTitleText: String;
     FRenderUseGamma: Boolean;
     FRenderMirrored: Boolean;
@@ -519,28 +519,28 @@ type
     function GetMaxThreadCount: Integer;
     function GetTiles: PTileDynArray;
     procedure SetDitheringYliluoma2MixedColors(AValue: Integer);
-    procedure SetEncoderGammaValue(AValue: TFloat);
+    procedure SetEncoderGammaValue(AValue: Double);
     procedure SetFrameCountSetting(AValue: Integer);
     procedure SetFramesPerSecond(AValue: Double);
     procedure SetFrameTilingBlendBinSize(AValue: Integer);
     procedure SetFrameTilingBlendExtents(AValue: Integer);
-    procedure SetFrameTilingBlendingThreshold(AValue: TFloat);
-    procedure SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
+    procedure SetFrameTilingBlendingThreshold(AValue: Double);
+    procedure SetGlobalTilingQualityBasedTileCount(AValue: Double);
     procedure SetMaxThreadCount(AValue: Integer);
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
     procedure SetQuantizerDennisLeeBitsPerComponent(AValue: Integer);
     procedure SetQuantizerPosterizeBitsPerComponent(AValue: Integer);
     procedure SetRenderFrameIndex(AValue: Integer);
-    procedure SetRenderGammaValue(AValue: TFloat);
+    procedure SetRenderGammaValue(AValue: Double);
     procedure SetRenderPaletteIndex(AValue: Integer);
     procedure SetRenderTilePage(AValue: Integer);
     procedure SetGlobalTilingTileCount(AValue: Integer);
-    procedure SetScaling(AValue: TFloat);
-    procedure SetShotTransCorrelLoThres(AValue: TFloat);
-    procedure SetShotTransMaxSecondsPerKF(AValue: TFloat);
-    procedure SetShotTransMinSecondsPerKF(AValue: TFloat);
-    procedure SetSmoothingFactor(AValue: TFloat);
+    procedure SetScaling(AValue: Double);
+    procedure SetShotTransCorrelLoThres(AValue: Double);
+    procedure SetShotTransMaxSecondsPerKF(AValue: Double);
+    procedure SetShotTransMinSecondsPerKF(AValue: Double);
+    procedure SetSmoothingFactor(AValue: Double);
     procedure SetStartFrame(AValue: Integer);
 
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
@@ -650,8 +650,8 @@ type
     property OutputFileName: String read FOutputFileName write FOutputFileName;
     property StartFrame: Integer read FStartFrame write SetStartFrame;
     property FrameCountSetting: Integer read FFrameCountSetting write SetFrameCountSetting;
-    property Scaling: TFloat read FScaling write SetScaling;
-    property EncoderGammaValue: TFloat read FEncoderGammaValue write SetEncoderGammaValue;
+    property Scaling: Double read FScaling write SetScaling;
+    property EncoderGammaValue: Double read FEncoderGammaValue write SetEncoderGammaValue;
     property PaletteSize: Integer read FPaletteSize write SetPaletteSize;
     property PaletteCount: Integer read FPaletteCount write SetPaletteCount;
     property QuantizerUseYakmo: Boolean read FQuantizerUseYakmo write FQuantizerUseYakmo;
@@ -662,17 +662,17 @@ type
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
     property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
-    property GlobalTilingQualityBasedTileCount: TFloat read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
+    property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
     property FrameTilingFromPalette: Boolean read FFrameTilingFromPalette write FFrameTilingFromPalette;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
-    property FrameTilingBlendingThreshold: TFloat read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
+    property FrameTilingBlendingThreshold: Double read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
     property FrameTilingBlendingExtents: Integer read FFrameTilingBlendingExtents write SetFrameTilingBlendExtents;
     property FrameTilingBlendingBinSize: Integer read FFrameTilingBlendingBinSize write SetFrameTilingBlendBinSize;
-    property SmoothingFactor: TFloat read FSmoothingFactor write SetSmoothingFactor;
+    property SmoothingFactor: Double read FSmoothingFactor write SetSmoothingFactor;
     property MaxThreadCount: Integer read GetMaxThreadCount write SetMaxThreadCount;
-    property ShotTransMaxSecondsPerKF: TFloat read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
-    property ShotTransMinSecondsPerKF: TFloat read FShotTransMinSecondsPerKF write SetShotTransMinSecondsPerKF;
-    property ShotTransCorrelLoThres: TFloat read FShotTransCorrelLoThres write SetShotTransCorrelLoThres;
+    property ShotTransMaxSecondsPerKF: Double read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
+    property ShotTransMinSecondsPerKF: Double read FShotTransMinSecondsPerKF write SetShotTransMinSecondsPerKF;
+    property ShotTransCorrelLoThres: Double read FShotTransCorrelLoThres write SetShotTransCorrelLoThres;
 
 
     // GUI state variables
@@ -686,10 +686,10 @@ type
     property RenderUseGamma: Boolean read FRenderUseGamma write FRenderUseGamma;
     property RenderPaletteIndex: Integer read FRenderPaletteIndex write SetRenderPaletteIndex;
     property RenderTilePage: Integer read FRenderTilePage write SetRenderTilePage;
-    property RenderGammaValue: TFloat read FRenderGammaValue write SetRenderGammaValue;
+    property RenderGammaValue: Double read FRenderGammaValue write SetRenderGammaValue;
     property RenderPage: TRenderPage read FRenderPage write FRenderPage;
     property RenderTitleText: String read FRenderTitleText;
-    property RenderPsychoVisualQuality: TFloat read FRenderPsychoVisualQuality;
+    property RenderPsychoVisualQuality: Double read FRenderPsychoVisualQuality;
     property OutputBitmap: TBitmap read FOutputBitmap;
     property InputBitmap: TBitmap read FInputBitmap;
     property PaletteBitmap: TBitmap read FPaletteBitmap;
@@ -4002,7 +4002,7 @@ begin
   FDitheringYliluoma2MixedColors := EnsureRange(AValue, 1, 16);
 end;
 
-procedure TTilingEncoder.SetEncoderGammaValue(AValue: TFloat);
+procedure TTilingEncoder.SetEncoderGammaValue(AValue: Double);
 begin
   if FEncoderGammaValue = AValue then Exit;
   FEncoderGammaValue := Max(0.0, AValue);
@@ -4035,15 +4035,15 @@ begin
  FFrameTilingBlendingExtents := EnsureRange(AValue, 2, 256);
 end;
 
-procedure TTilingEncoder.SetFrameTilingBlendingThreshold(AValue: TFloat);
+procedure TTilingEncoder.SetFrameTilingBlendingThreshold(AValue: Double);
 begin
-  if FFrameTilingBlendingThreshold = AValue then Exit;
-  FFrameTilingBlendingThreshold := Max(0.0, AValue);
+ if FFrameTilingBlendingThreshold = AValue then Exit;
+ FFrameTilingBlendingThreshold := Max(0.0, AValue);
 end;
 
-procedure TTilingEncoder.SetGlobalTilingQualityBasedTileCount(AValue: TFloat);
+procedure TTilingEncoder.SetGlobalTilingQualityBasedTileCount(AValue: Double);
 var
-  eqtc, RawTileCount: Integer;
+  eqtc, RawTileCount: Int64;
 begin
   if FGlobalTilingQualityBasedTileCount = AValue then Exit;
   FGlobalTilingQualityBasedTileCount := AValue;
@@ -4086,31 +4086,31 @@ begin
     FGlobalTilingTileCount := max(FGlobalTilingTileCount, 0);
 end;
 
-procedure TTilingEncoder.SetScaling(AValue: TFloat);
+procedure TTilingEncoder.SetScaling(AValue: Double);
 begin
   if FScaling = AValue then Exit;
   FScaling := Max(0.01, AValue);
 end;
 
-procedure TTilingEncoder.SetShotTransCorrelLoThres(AValue: TFloat);
+procedure TTilingEncoder.SetShotTransCorrelLoThres(AValue: Double);
 begin
  if FShotTransCorrelLoThres = AValue then Exit;
  FShotTransCorrelLoThres := EnsureRange(AValue, -1.0, 1.0);
 end;
 
-procedure TTilingEncoder.SetShotTransMaxSecondsPerKF(AValue: TFloat);
+procedure TTilingEncoder.SetShotTransMaxSecondsPerKF(AValue: Double);
 begin
  if FShotTransMaxSecondsPerKF = AValue then Exit;
  FShotTransMaxSecondsPerKF := max(0.0, AValue);
 end;
 
-procedure TTilingEncoder.SetShotTransMinSecondsPerKF(AValue: TFloat);
+procedure TTilingEncoder.SetShotTransMinSecondsPerKF(AValue: Double);
 begin
  if FShotTransMinSecondsPerKF = AValue then Exit;
  FShotTransMinSecondsPerKF := max(0.0, AValue);
 end;
 
-procedure TTilingEncoder.SetSmoothingFactor(AValue: TFloat);
+procedure TTilingEncoder.SetSmoothingFactor(AValue: Double);
 begin
   if FSmoothingFactor = AValue then Exit;
   FSmoothingFactor := Max(0.0, AValue);
@@ -4128,7 +4128,7 @@ begin
   FRenderFrameIndex := EnsureRange(AValue, 0, High(FFrames));
 end;
 
-procedure TTilingEncoder.SetRenderGammaValue(AValue: TFloat);
+procedure TTilingEncoder.SetRenderGammaValue(AValue: Double);
 begin
   if FRenderGammaValue = AValue then Exit;
   FRenderGammaValue := Max(0.0, AValue);
@@ -5053,7 +5053,7 @@ begin
     ini.WriteString('Load', 'OutputFileName', OutputFileName);
     ini.WriteInteger('Load', 'StartFrame', StartFrame);
     ini.WriteInteger('Load', 'FrameCount', FrameCountSetting);
-    ini.WriteFloat('Load', 'Scaling', RoundTo(Double(Scaling), -6));
+    ini.WriteFloat('Load', 'Scaling', Scaling);
 
     ini.WriteInteger('Dither', 'PaletteSize', PaletteSize);
     ini.WriteInteger('Dither', 'PaletteCount', PaletteCount);
@@ -5065,23 +5065,23 @@ begin
     ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
-    ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', RoundTo(Double(GlobalTilingQualityBasedTileCount), -6));
+    ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
 
     ini.WriteBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
-    ini.WriteFloat('FrameTiling', 'FrameTilingBlendingThreshold', RoundTo(Double(FrameTilingBlendingThreshold), -6));
+    ini.WriteFloat('FrameTiling', 'FrameTilingBlendingThreshold', FrameTilingBlendingThreshold);
     ini.WriteInteger('FrameTiling', 'FrameTilingBlendingExtents', FrameTilingBlendingExtents);
     ini.WriteInteger('FrameTiling', 'FrameTilingBlendingBinSize', FrameTilingBlendingBinSize);
 
-    ini.WriteFloat('Smoothing', 'SmoothingFactor', RoundTo(Double(SmoothingFactor), -6));
+    ini.WriteFloat('Smoothing', 'SmoothingFactor', SmoothingFactor);
 
-    ini.WriteFloat('Misc', 'EncoderGammaValue', RoundTo(Double(EncoderGammaValue), -6));
+    ini.WriteFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
     ini.WriteInteger('Misc', 'MaxThreadCount', MaxThreadCount);
 
-    ini.WriteFloat('Load', 'ShotTransMaxSecondsPerKF', RoundTo(ShotTransMaxSecondsPerKF, -6));
-    ini.WriteFloat('Load', 'ShotTransMinSecondsPerKF', RoundTo(ShotTransMinSecondsPerKF, -6));
-    ini.WriteFloat('Load', 'ShotTransCorrelLoThres', RoundTo(ShotTransCorrelLoThres, -6));
+    ini.WriteFloat('Load', 'ShotTransMaxSecondsPerKF', ShotTransMaxSecondsPerKF);
+    ini.WriteFloat('Load', 'ShotTransMinSecondsPerKF', ShotTransMinSecondsPerKF);
+    ini.WriteFloat('Load', 'ShotTransCorrelLoThres', ShotTransCorrelLoThres);
 
   finally
     ini.Free;
