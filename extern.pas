@@ -795,8 +795,8 @@ end;
 procedure FFMPEG_LoadFrames(AFFMPEG: TFFMPEG; AStartFrame, AFrameCount: Integer; AFrameCallback: TFFMPEGFrameCallback;
  AUserParameter: Pointer);
 var
-  frmTS: Int64;
-  frmIdx, doneFrameCount, ret, ret2: Integer;
+  frmTS, frmIdx: Int64;
+  doneFrameCount, ret, ret2: Integer;
   FFFrame: PAVFrame;
   FFSWSCtx: PSwsContext;
   FFPacket: PAVPacket;
@@ -829,8 +829,9 @@ begin
       raise EFFMPEGError.Create('Could not get scaler context');
 
     frmTS := Round(AStartFrame * AFFMPEG.TimeBase.den / (AFFMPEG.FramesPerSecond * AFFMPEG.TimeBase.num));
-    if avformat_seek_file(AFFMPEG.FmtCtx, AFFMPEG.VideoStream, 0, frmTS, frmTS, 0) < 0 then
-      raise EFFMPEGError.Create('Could not seek to frame');
+    if frmTS > 0 then
+      if avformat_seek_file(AFFMPEG.FmtCtx, AFFMPEG.VideoStream, 0, frmTS, frmTS, 0) < 0 then
+        raise EFFMPEGError.Create('Could not seek to frame');
 
     avcodec_flush_buffers(AFFMPEG.CodecCtx);
 
@@ -859,12 +860,12 @@ begin
       else if ret < 0 then
         raise EFFMPEGError.Create('Error receiving frame');
 
-      frmIdx := Round(FFFrame^.best_effort_timestamp * AFFMPEG.FramesPerSecond * AFFMPEG.TimeBase.num / AFFMPEG.TimeBase.den);
+      frmIdx := FFFrame^.best_effort_timestamp div FFFrame^.pkt_duration;
 
       //writeln(frmTS:8, frmIdx:8, FStartFrame + AIndex:8);
 
       // seeking can be inaccurate, so ensure we have the frame we want
-      if frmIdx >= AStartFrame then
+      if (frmIdx >= AStartFrame) or (frmIdx < 0) then
       begin
         // Convert the image from its native format to RGB
         if sws_scale(FFSWSCtx, FFFrame^.data, FFFrame^.linesize, 0, AFFMPEG.CodecCtx^.height, FFDstData, FFDstLinesize) < 0 then
