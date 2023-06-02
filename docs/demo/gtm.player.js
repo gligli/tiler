@@ -90,6 +90,7 @@ let gtmPlaying = true;
 let gtmUnpackingFinished = false;
 let gtmDataBufIdx = 0;
 let gtmDataBufPos = 0;
+let gtmDataBufGlobalPos = 0;
 let gtmWidth = 0;
 let gtmHeight = 0;
 let gtmFrameLength = 0;
@@ -166,6 +167,7 @@ function resetDecoding() {
 	gtmUnpackingFinished = false;
 	gtmDataBufIdx = 0;
 	gtmDataBufPos = 0;
+	gtmDataBufGlobalPos = 0;
 	gtmFrameLength = 0;
 	gtmTileCount = 0;
 	gtmPalSize = 0;
@@ -188,6 +190,7 @@ function startFromReader(buffer) {
 		if (!gtmReady) {
 			gtmDataBufIdx = 0;
 			gtmDataBufPos = 0;
+			gtmDataBufGlobalPos = 0;
 			gtmReady = true;
 			setTimeout(decodeFrame, 10);
 		}
@@ -430,7 +433,18 @@ function skipBlock(skipCount) {
 }
 
 function readByte() {
-	return gtmOutStream.buffers[gtmDataBufIdx][gtmDataBufPos++];
+	let v = gtmOutStream.buffers[gtmDataBufIdx][gtmDataBufPos++];
+	
+	if (gtmDataBufPos >= gtmOutStream.buffers[gtmDataBufIdx].length)
+	{
+		// move to next buffer
+		++gtmDataBufIdx;
+		gtmDataBufPos = 0;
+	}
+	
+	++gtmDataBufGlobalPos;
+	
+	return v;
 }
 
 function readWord() {
@@ -451,7 +465,7 @@ function readCommand() {
 }
 
 function decodeFrame() {
-	gtmReady |= gtmDataBufIdx < gtmOutStream.buffers.length;
+	gtmReady |= gtmDataBufGlobalPos < gtmOutStream.size;
 	
 	if (gtmReady && gtmPlaying) {
 		renderEnd();
@@ -513,10 +527,6 @@ function decodeFrame() {
 				gtmKFPrevDblBuff = gtmKFCurDblBuff;
 				if (cmd[1] & 1) // keyframe?
 				{
-					// move to next buffer (one buffer per keyframe)
-					gtmDataBufIdx++;
-					gtmDataBufPos = 0;
-					
 					gtmKFCurDblBuff = 1 - gtmKFCurDblBuff;
 				}
 				doContinue = false;
@@ -592,16 +602,17 @@ function decodeFrame() {
 				break;
 
 			default:
-				console.error('Undecoded command @' + gtmDataBufIdx + ',' + gtmDataBufPos + ': ' + cmd + '\n');
+				console.error('Undecoded command @' + gtmDataBufGlobalPos + ': ' + cmd + '\n');
 				break;
 			}
-			
-			gtmReady = gtmDataBufIdx < gtmOutStream.buffers.length;
+
+			gtmReady = gtmDataBufGlobalPos < gtmOutStream.size;
 		} while (doContinue && gtmReady);
 		
 		if (!doContinue && !gtmReady && gtmUnpackingFinished) {
 			gtmDataBufIdx = 0;
 			gtmDataBufPos = 0;
+			gtmDataBufGlobalPos = 0;
 			gtmLoopCount++;
 			gtmReady = true;
 		}
