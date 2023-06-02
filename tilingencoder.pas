@@ -11,9 +11,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger, IniFiles, Graphics,
-  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc,
-  libavcodec_codec, libavcodec_packet, libavcodec, libavformat, libavutil, libavutil_error, libavutil_frame,
-  libavutil_imgutils, libavutil_log, libavutil_mem, libavutil_pixfmt, libavutil_rational, libswscale, FFUtils;
+  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc;
 
 type
   TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esCluster, esReconstruct, esSmooth, esReindex, esSave);
@@ -209,8 +207,6 @@ type
   PRGBPixels = ^TRGBPixels;
   PPalPixels = ^TPalPixels;
   PCpnPixels = ^TCpnPixels;
-
-  EFFMPEGError = class(Exception);
 
   { TTile }
 
@@ -439,6 +435,7 @@ type
     FCS: TRTLCriticalSection;
     FKeyFramesLeft: Integer;
     FKeyFramesThreadCount: Integer;
+    FLoadedFrameCount: Integer;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -2894,63 +2891,20 @@ begin
   Result := EnsureRange(Round(x * 255.0), 0, 255);
 end;
 
-procedure TTilingEncoder.Load;
+procedure DoLoadFFMPEGFrame(AIndex, AWidth, AHeight:Integer; AFrameData: PInteger; AUserParameter: Pointer);
 var
-  doneFrameCount: Integer;
+  Encoder: TTilingEncoder;
+  frmIdx: Integer;
+begin
+  Encoder := TTilingEncoder(AUserParameter);
+  frmIdx := AIndex - Encoder.FStartFrame;
 
-  procedure FFLoad(ASilent: Boolean; out AFmtCtx: PAVFormatContext; out ACodecCtx: PAVCodecContext; out ACodec: PAVCodec; out AVideoStream: Integer);
-  var
-    FFFmtCtx: PAVFormatContext;
-    FFCodecCtx: PAVCodecContext;
-    FFCodec: PAVCodec;
-    FFVideoStream: Integer;
-  begin
-    FFFmtCtx := nil;
-    FFCodecCtx := nil;
-    FFCodec := nil;
-    FFVideoStream := -1;
-    try
-      // Open video file
-      if avformat_open_input(@FFFmtCtx, PChar(FInputFileName), nil, nil) <> 0 then
-        raise EFFMPEGError.Create('Could not open file: ' + FInputFileName);
+  Encoder.LoadFrame(Encoder.FFrames[frmIdx], frmIdx, AWidth, AHeight, AFrameData);
 
-      // Retrieve stream information
-      if avformat_find_stream_info(FFFmtCtx, nil) < 0 then
-        raise EFFMPEGError.Create('Could not find stream information');
+  Write(InterLockedIncrement(Encoder.FLoadedFrameCount):8, ' / ', Length(Encoder.FFrames):8, #13);
+end;
 
-      if not ASilent then
-      begin
-        // Dump information about file onto standard error
-        av_dump_format(FFFmtCtx, 0, PChar(FInputPath), 0);
-      end;
-
-      // Find the first video stream
-      FFVideoStream := av_find_best_stream(FFFmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, @FFCodec, 0);
-      if FFVideoStream < 0 then
-        raise EFFMPEGError.Create('Did not find a video stream');
-
-      // create decoding context
-      FFCodecCtx := avcodec_alloc_context3(FFCodec);
-      if not Assigned(FFCodecCtx) then
-        raise EFFMPEGError.Create('Could not create decoding context');
-      avcodec_parameters_to_context(FFCodecCtx, PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.codecpar);
-
-      // Open codec
-      if avcodec_open2(FFCodecCtx, FFCodec, nil) < 0 then
-        raise EFFMPEGError.Create('Could not open codec');
-    finally
-      AFmtCtx := FFFmtCtx;
-      ACodecCtx := FFCodecCtx;
-      ACodec := FFCodec;
-      AVideoStream := FFVideoStream;
-    end;
-  end;
-
-  procedure FFClose(AFmtCtx: PAVFormatContext; ACodecCtx: PAVCodecContext);
-  begin
-    avcodec_free_context(@ACodecCtx);
-    avformat_close_input(@AFmtCtx);
-  end;
+procedure TTilingEncoder.Load;
 
   procedure DoLoadPNGFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -2966,113 +2920,9 @@ var
 
       LoadFrame(FFrames[AIndex], AIndex, bmp.RawImage.Description.Width, bmp.RawImage.Description.Height, PInteger(bmp.RawImage.Data));
 
-      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+      Write(InterLockedIncrement(FLoadedFrameCount):8, ' / ', Length(FFrames):8, #13);
     finally
       bmp.Free;
-    end;
-  end;
-
-  procedure DoLoadFFFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    frmTS: Int64;
-    frmIdx, ret, ret2: Integer;
-    FFFmtCtx: PAVFormatContext;
-    FFCodecCtx: PAVCodecContext;
-    FFCodec: PAVCodec;
-    FFFrame: PAVFrame;
-    FFSWSCtx: PSwsContext;
-    FFPacket: PAVPacket;
-    FFDstData: array[0..3] of PByte;
-    FFDstLinesize: array[0..3] of Integer;
-    FFVideoStream, FFDstWidth, FFDstHeight: Integer;
-    FFDstPixFmt: TAVPixelFormat;
-    FFTimeBase: TAVRational;
-  begin
-    if not InRange(AIndex, 0, High(FFrames)) then
-      Exit;
-
-    FFLoad(True, FFFmtCtx, FFCodecCtx, FFCodec, FFVideoStream);
-    FFFrame := nil;
-    FFSWSCtx := nil;
-    FFPacket := nil;
-    FillChar(FFDstData, Sizeof(FFDstData), 0);
-    try
-      FFDstWidth := round(FFCodecCtx^.width * FScaling);
-      FFDstHeight := round(FFCodecCtx^.height * FScaling);
-      FFDstPixFmt := AV_PIX_FMT_RGB32; // compatible with TPortableNetworkGraphic
-
-      // Allocate video frame
-      FFFrame := av_frame_alloc;
-      if not Assigned(FFFrame) then
-        raise EFFMPEGError.Create('Could not allocate frame');
-
-      // Allocate destination image
-      if av_image_alloc(@FFDstData[0], @FFDstLinesize[0], FFDstWidth, FFDstHeight, FFDstPixFmt, 1) < 0 then
-        raise EFFMPEGError.Create('Could not allocate destination image');
-
-      FFSWSCtx := sws_getContext(
-          FFCodecCtx^.width, FFCodecCtx^.height, FFCodecCtx^.pix_fmt,
-          FFDstWidth, FFDstHeight ,FFDstPixFmt,
-          SWS_LANCZOS, nil, nil, nil);
-      if not Assigned(FFSWSCtx) then
-        raise EFFMPEGError.Create('Could not get scaler context');
-
-      FFTimeBase := PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.time_base;
-      frmTS := Round((FStartFrame + AIndex) * FFTimeBase.den / (FFramesPerSecond * FFTimeBase.num));
-      if avformat_seek_file(FFFmtCtx, FFVideoStream, 0, frmTS, frmTS, 0) < 0 then
-        raise EFFMPEGError.Create('Could not seek to frame');
-
-      avcodec_flush_buffers(FFCodecCtx);
-
-      FFPacket := av_packet_alloc;
-
-      while True do
-      begin
-        ret := avcodec_receive_frame(FFCodecCtx, FFFrame);
-        if ret = AVERROR_EAGAIN then
-        begin
-          ret2 := av_read_frame(FFFmtCtx, FFPacket);
-          if (ret2 < 0) and (ret2 <> AVERROR_EOF) then
-            raise EFFMPEGError.Create('Error reading frame');
-          try
-            if FFPacket^.stream_index = FFVideoStream then
-            begin
-              if avcodec_send_packet(FFCodecCtx, FFPacket) < 0 then
-                raise EFFMPEGError.Create('Error sending a packet for decoding');
-            end;
-          finally
-            av_packet_unref(FFPacket);
-          end;
-
-          Continue;
-        end
-        else if ret < 0 then
-          raise EFFMPEGError.Create('Error receiving frame');
-
-        frmIdx := Round(FFFrame^.best_effort_timestamp * FFramesPerSecond * FFTimeBase.num / FFTimeBase.den);
-
-        //writeln(frmTS:8, frmIdx:8, FStartFrame + AIndex:8);
-
-        // seeking can be inaccurate, so ensure we have the frame we want
-        if frmIdx >= FStartFrame + AIndex then
-        begin
-          // Convert the image from its native format to RGB
-          if sws_scale(FFSWSCtx, FFFrame^.data, FFFrame^.linesize, 0, FFCodecCtx^.height, FFDstData, FFDstLinesize) < 0 then
-            raise EFFMPEGError.Create('Error rescaling frame');
-
-          LoadFrame(FFrames[AIndex], AIndex, FFDstLinesize[0] shr 2, FFDstHeight, PInteger(FFDstData[0]));
-
-          Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
-
-          Break;
-        end;
-      end;
-    finally
-      av_packet_free(@FFPacket);
-      sws_freeContext(FFSWSCtx);
-      av_freep(@FFDstData[0]);
-      av_frame_free(@FFFrame);
-      FFClose(FFFmtCtx, FFCodecCtx);
     end;
   end;
 
@@ -3082,11 +2932,7 @@ var
   bmp: TPicture;
   wasAutoQ, manualKeyFrames: Boolean;
   qbTC: TFloat;
-  FFFmtCtx: PAVFormatContext;
-  FFCodecCtx: PAVCodecContext;
-  FFCodec: PAVCodec;
-  FFVideoStream, FFDstWidth, FFDstHeight: Integer;
-  FFTimeBase: TAVRational;
+  FFMPEG: TFFMPEG;
 begin
   eqtc := EqualQualityTileCount(FrameCount * FTileMapSize);
   wasAutoQ := (Length(FFrames) > 0) and (FGlobalTilingTileCount = round(FGlobalTilingQualityBasedTileCount * eqtc));
@@ -3112,40 +2958,27 @@ begin
 
   if FileExists(FInputFileName) then
   begin
-    av_log_set_level(AV_LOG_INFO);
-    FFLoad(False, FFFmtCtx, FFCodecCtx, FFCodec, FFVideoStream);
+    FFMPEG := FFMPEG_Open(FInputFileName, FScaling, True);
     try
-      av_log_set_level(AV_LOG_QUIET);
 
-      FFDstWidth := round(FFCodecCtx^.width * FScaling);
-      FFDstHeight := round(FFCodecCtx^.height * FScaling);
+      FFramesPerSecond := FFMPEG.FramesPerSecond;
+      ReframeUI((FFMPEG.DstWidth - 1) div cTileWidth + 1, (FFMPEG.DstHeight - 1) div cTileWidth + 1);
 
-      FFramesPerSecond := av_q2d(PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.r_frame_rate);
-      ReframeUI((FFDstWidth - 1) div cTileWidth + 1, (FFDstHeight - 1) div cTileWidth + 1);
-
-      frmCnt := PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.nb_frames;
-      if frmCnt <= 0 then
-      begin
-        // estimate frame count using duration
-        FFTimeBase := PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.time_base;
-        frmCnt := Round(PPtrIdx(FFFmtCtx^.streams, FFVideoStream)^.duration * FFTimeBase.den / (FFramesPerSecond * FFTimeBase.num));
-      end;
-
+      frmCnt := FFMPEG.FrameCount;
       if frmCnt > 0 then
         frmCnt -= FStartFrame;
       if FrameCountSetting > 0 then
         frmCnt := FrameCountSetting;
 
-      WriteLn(frmCnt:8, ' frames, ', FFDstWidth:4, ' x ', FFDstHeight:4, ' @ ', FFramesPerSecond:6:3, ' fps');
+      WriteLn(frmCnt:8, ' frames, ', FFMPEG.DstWidth:4, ' x ', FFMPEG.DstHeight:4, ' @ ', FFramesPerSecond:6:3, ' fps');
+
+      SetLength(FFrames, frmCnt);
+      FFMPEG_LoadFrames(FFMPEG, FStartFrame, frmCnt, @DoLoadFFMPEGFrame, Self);
+      WriteLn;
 
     finally
-      FFClose(FFFmtCtx, FFCodecCtx);
+      FFMPEG_Close(FFMPEG);
     end;
-
-    doneFrameCount := 0;
-    SetLength(FFrames, frmCnt);
-    ProcThreadPool.DoParallelLocalProc(@DoLoadFFFrame, 0, High(FFrames));
-    WriteLn;
   end
   else
   begin
@@ -3178,7 +3011,6 @@ begin
       bmp.Free;
     end;
 
-    doneFrameCount := 0;
     SetLength(FFrames, frmCnt);
     ProcThreadPool.DoParallelLocalProc(@DoLoadPNGFrame, 0, High(FFrames), Pointer(PtrInt(startFrmIdx)));
     WriteLn;
@@ -4887,6 +4719,8 @@ begin
     if Assigned(FKeyFrames[i]) then
       FreeAndNil(FKeyFrames[i]);
   SetLength(FKeyFrames, 0);
+
+  FLoadedFrameCount := 0;
 end;
 
 procedure TTilingEncoder.Render(AFast: Boolean);

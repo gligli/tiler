@@ -5,7 +5,9 @@ unit extern;
 interface
 
 uses
-  LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math;
+  LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math,
+  libavcodec_codec, libavcodec_packet, libavcodec, libavformat, libavutil, libavutil_error, libavutil_frame,
+  libavutil_imgutils, libavutil_log, libavutil_mem, libavutil_pixfmt, libavutil_rational, libswscale, FFUtils;
 
 type
   TFloat = Single;
@@ -134,7 +136,20 @@ type
 
   PFLANNParameters = ^TFLANNParameters;
 
-  TCompareFunction=function(Item1,Item2,UserParameter:Pointer):Integer;
+  TFFMPEG = record
+    FmtCtx: PAVFormatContext;
+    CodecCtx: PAVCodecContext;
+    Codec: PAVCodec;
+    VideoStream, DstWidth, DstHeight, FrameCount: Integer;
+    Scaling, FramesPerSecond: Double;
+    TimeBase: TAVRational;
+  end;
+
+  TFFMPEGFrameCallback = procedure(AIndex, AWidth, AHeight:Integer; AFrameData: PInteger; AUserParameter: Pointer);
+
+  EFFMPEGError = class(Exception);
+
+  TCompareFunction = function(Item1,Item2,UserParameter:Pointer):Integer;
 
 procedure QuickSort(var AData;AFirstItem,ALastItem:Int64;AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
 
@@ -147,6 +162,16 @@ procedure GenerateSVMLightData(Dataset: TFloatDynArray2; Output: TStringList; He
 function GenerateSVMLightFile(Dataset: TFloatDynArray2; Header: Boolean): String;
 function GetSVMLightLine(index: Integer; lines: TStringList): TFloatDynArray;
 function GetSVMLightClusterCount(lines: TStringList): Integer;
+
+function NumberOfProcessors: Integer;
+function HalfNumberOfProcessors: Integer;
+function QuarterNumberOfProcessors: Integer;
+function InvariantFormatSettings: TFormatSettings;
+function RunProcess(p:TProcess;var outputstring:string; var stderrstring:string; var exitstatus:integer; PrintOut: Boolean):integer;
+
+function FFMPEG_Open(AFileName: String; AScaling: Double; ASilent: Boolean): TFFMPEG;
+procedure FFMPEG_Close(AFFMPEG: TFFMPEG);
+procedure FFMPEG_LoadFrames(AFFMPEG: TFFMPEG; AStartFrame, AFrameCount: Integer; AFrameCallback: TFFMPEGFrameCallback; AUserParameter: Pointer = nil);
 
 function ann_kdtree_create(pa: PPANNFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; external 'ANN.dll';
 procedure ann_kdtree_destroy(akd: PANNkdtree); external 'ANN.dll';
@@ -190,13 +215,6 @@ procedure bico_set_num_threads(num_threads: Integer); stdcall; external 'BICO.dl
 procedure bico_insert_line(bico: PBICO; line: PDouble; weight: Double); stdcall; external 'BICO.dll';
 function bico_get_results(bico: PBICO; centroids: PDouble; weights: PDouble): Int64; stdcall; external 'BICO.dll';
 
-function NumberOfProcessors: Integer;
-function HalfNumberOfProcessors: Integer;
-function QuarterNumberOfProcessors: Integer;
-function InvariantFormatSettings: TFormatSettings;
-function internalRuncommand(p:TProcess;var outputstring:string;
-                            var stderrstring:string; var exitstatus:integer; PrintOut: Boolean):integer;
-
 const
   CRandomSeed = $42381337;
 
@@ -234,7 +252,7 @@ const
 // helperfunction that does the bulk of the work.
 // We need to also collect stderr output in order to avoid
 // lock out if the stderr pipe is full.
-function internalRuncommand(p:TProcess;var outputstring:string;
+function RunProcess(p:TProcess;var outputstring:string;
                             var stderrstring:string; var exitstatus:integer; PrintOut: Boolean):integer;
 var
     numbytes,bytesread,available : integer;
@@ -419,7 +437,7 @@ begin
   Process.Priority := ppIdle;
 
   RetCode := 0;
-  internalRuncommand(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
+  RunProcess(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
 
   DstStream := TFileStream.Create(DstFN, fmOpenRead or fmShareDenyWrite);
   try
@@ -487,7 +505,7 @@ begin
     Process.Priority := ppIdle;
 
     st := 0;
-    internalRuncommand(Process, Output, ErrOut, st, PrintProgress); // destroys Process
+    RunProcess(Process, Output, ErrOut, st, PrintProgress); // destroys Process
     Write(Output);
     Write(ErrOut);
 
@@ -557,7 +575,7 @@ begin
     Process.Priority := ppIdle;
 
     st := 0;
-    internalRuncommand(Process, Output, ErrOut, st, PrintProgress); // destroys Process
+    RunProcess(Process, Output, ErrOut, st, PrintProgress); // destroys Process
 
     OutSL.LoadFromFile(InFN + '.membership');
 
@@ -714,6 +732,157 @@ end;
 function InvariantFormatSettings: TFormatSettings;
 begin
   Result := GInvariantFormatSettings;
+end;
+
+function FFMPEG_Open(AFileName: String; AScaling: Double; ASilent: Boolean): TFFMPEG;
+var
+  FFMPEG: TFFMPEG;
+begin
+  FillChar(FFMPEG, SizeOf(FFMPEG), 0);
+  FFMPEG.VideoStream := -1;
+  FFMPEG.Scaling := AScaling;
+
+  // Open video file
+  if avformat_open_input(@FFMPEG.FmtCtx, PChar(AFileName), nil, nil) <> 0 then
+    raise EFFMPEGError.Create('Could not open file: ' + AFileName);
+
+  // Retrieve stream information
+  if avformat_find_stream_info(FFMPEG.FmtCtx, nil) < 0 then
+    raise EFFMPEGError.Create('Could not find stream information');
+
+  // Dump information about file onto standard error
+  av_dump_format(FFMPEG.FmtCtx, 0, PChar(AFileName), 0);
+
+  // Find the first video stream
+  FFMPEG.VideoStream := av_find_best_stream(FFMPEG.FmtCtx, AVMEDIA_TYPE_VIDEO, -1, -1, @FFMPEG.Codec, 0);
+  if FFMPEG.VideoStream < 0 then
+    raise EFFMPEGError.Create('Did not find a video stream');
+
+  // create decoding context
+  FFMPEG.CodecCtx := avcodec_alloc_context3(FFMPEG.Codec);
+  if not Assigned(FFMPEG.CodecCtx) then
+    raise EFFMPEGError.Create('Could not create decoding context');
+  avcodec_parameters_to_context(FFMPEG.CodecCtx, PPtrIdx(FFMPEG.FmtCtx^.streams, FFMPEG.VideoStream)^.codecpar);
+
+  // Open codec
+  if avcodec_open2(FFMPEG.CodecCtx, FFMPEG.Codec, nil) < 0 then
+    raise EFFMPEGError.Create('Could not open codec');
+
+  FFMPEG.DstWidth := round(FFMPEG.CodecCtx^.width * FFMPEG.Scaling);
+  FFMPEG.DstHeight := round(FFMPEG.CodecCtx^.height * FFMPEG.Scaling);
+  FFMPEG.FramesPerSecond := av_q2d(PPtrIdx(FFMPEG.FmtCtx^.streams, FFMPEG.VideoStream)^.r_frame_rate);
+  FFMPEG.TimeBase := PPtrIdx(FFMPEG.FmtCtx^.streams, FFMPEG.VideoStream)^.time_base;
+
+  FFMPEG.FrameCount := PPtrIdx(FFMPEG.FmtCtx^.streams, FFMPEG.VideoStream)^.nb_frames;
+  if FFMPEG.FrameCount <= 0 then
+  begin
+    // estimate frame count using duration
+    FFMPEG.FrameCount := Round(PPtrIdx(FFMPEG.FmtCtx^.streams, FFMPEG.VideoStream)^.duration * FFMPEG.TimeBase.den / (FFMPEG.FramesPerSecond * FFMPEG.TimeBase.num));
+  end;
+
+  if ASilent then
+    av_log_set_level(AV_LOG_QUIET);
+
+  Result := FFMPEG;
+end;
+
+procedure FFMPEG_Close(AFFMPEG: TFFMPEG);
+begin
+  avcodec_free_context(@AFFMPEG.CodecCtx);
+  avformat_close_input(@AFFMPEG.FmtCtx);
+end;
+
+procedure FFMPEG_LoadFrames(AFFMPEG: TFFMPEG; AStartFrame, AFrameCount: Integer; AFrameCallback: TFFMPEGFrameCallback;
+ AUserParameter: Pointer);
+var
+  frmTS: Int64;
+  frmIdx, doneFrameCount, ret, ret2: Integer;
+  FFFrame: PAVFrame;
+  FFSWSCtx: PSwsContext;
+  FFPacket: PAVPacket;
+  FFDstData: array[0..3] of PByte;
+  FFDstLinesize: array[0..3] of Integer;
+  FFDstPixFmt: TAVPixelFormat;
+begin
+  FFFrame := nil;
+  FFSWSCtx := nil;
+  FFPacket := nil;
+  FillChar(FFDstData, Sizeof(FFDstData), 0);
+  doneFrameCount := 0;
+  try
+    FFDstPixFmt := AV_PIX_FMT_RGB32; // compatible with TPortableNetworkGraphic
+
+    // Allocate video frame
+    FFFrame := av_frame_alloc;
+    if not Assigned(FFFrame) then
+      raise EFFMPEGError.Create('Could not allocate frame');
+
+    // Allocate destination image
+    if av_image_alloc(@FFDstData[0], @FFDstLinesize[0], AFFMPEG.DstWidth, AFFMPEG.DstHeight, FFDstPixFmt, 1) < 0 then
+      raise EFFMPEGError.Create('Could not allocate destination image');
+
+    FFSWSCtx := sws_getContext(
+        AFFMPEG.CodecCtx^.width, AFFMPEG.CodecCtx^.height, AFFMPEG.CodecCtx^.pix_fmt,
+        AFFMPEG.DstWidth, AFFMPEG.DstHeight ,FFDstPixFmt,
+        SWS_LANCZOS, nil, nil, nil);
+    if not Assigned(FFSWSCtx) then
+      raise EFFMPEGError.Create('Could not get scaler context');
+
+    frmTS := Round(AStartFrame * AFFMPEG.TimeBase.den / (AFFMPEG.FramesPerSecond * AFFMPEG.TimeBase.num));
+    if avformat_seek_file(AFFMPEG.FmtCtx, AFFMPEG.VideoStream, 0, frmTS, frmTS, 0) < 0 then
+      raise EFFMPEGError.Create('Could not seek to frame');
+
+    avcodec_flush_buffers(AFFMPEG.CodecCtx);
+
+    FFPacket := av_packet_alloc;
+
+    while True do
+    begin
+      ret := avcodec_receive_frame(AFFMPEG.CodecCtx, FFFrame);
+      if ret = AVERROR_EAGAIN then
+      begin
+        ret2 := av_read_frame(AFFMPEG.FmtCtx, FFPacket);
+        if (ret2 < 0) and (ret2 <> AVERROR_EOF) then
+          raise EFFMPEGError.Create('Error reading frame');
+        try
+          if FFPacket^.stream_index = AFFMPEG.VideoStream then
+          begin
+            if avcodec_send_packet(AFFMPEG.CodecCtx, FFPacket) < 0 then
+              raise EFFMPEGError.Create('Error sending a packet for decoding');
+          end;
+        finally
+          av_packet_unref(FFPacket);
+        end;
+
+        Continue;
+      end
+      else if ret < 0 then
+        raise EFFMPEGError.Create('Error receiving frame');
+
+      frmIdx := Round(FFFrame^.best_effort_timestamp * AFFMPEG.FramesPerSecond * AFFMPEG.TimeBase.num / AFFMPEG.TimeBase.den);
+
+      //writeln(frmTS:8, frmIdx:8, FStartFrame + AIndex:8);
+
+      // seeking can be inaccurate, so ensure we have the frame we want
+      if frmIdx >= AStartFrame then
+      begin
+        // Convert the image from its native format to RGB
+        if sws_scale(FFSWSCtx, FFFrame^.data, FFFrame^.linesize, 0, AFFMPEG.CodecCtx^.height, FFDstData, FFDstLinesize) < 0 then
+          raise EFFMPEGError.Create('Error rescaling frame');
+
+        AFrameCallback(AStartFrame + doneFrameCount, FFDstLinesize[0] shr 2, AFFMPEG.DstHeight, PInteger(FFDstData[0]), AUserParameter);
+        Inc(doneFrameCount);
+
+        if doneFrameCount >= AFrameCount then
+          Break;
+      end;
+    end;
+  finally
+    av_packet_free(@FFPacket);
+    sws_freeContext(FFSWSCtx);
+    av_freep(@FFDstData[0]);
+    av_frame_free(@FFFrame);
+  end;
 end;
 
 var
