@@ -290,11 +290,12 @@ begin
   if InRange(FTilingEncoder.RenderFrameIndex, 0, High(FTilingEncoder.Frames)) and
       Assigned(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame) and
       InRange(tileIdx, 0, High(FTilingEncoder.Tiles)) then
-    llPalTileDesc.Caption := Format('Tile #: %6d, UseCount: %6d%s%s', [
+    llPalTileDesc.Caption := Format('Tile #: %6d, UseCount: %6d%s%s%s', [
         tileIdx,
         FTilingEncoder.Tiles[tileIdx]^.UseCount,
         IfThen(FTilingEncoder.Tiles[tileIdx]^.Active, ', [Active]'),
-        IfThen(FTilingEncoder.Tiles[tileIdx]^.IntraKF, ', [IntraKF]')])
+        IfThen(FTilingEncoder.Tiles[tileIdx]^.HMirror_Initial, ', [H]'),
+        IfThen(FTilingEncoder.Tiles[tileIdx]^.VMirror_Initial, ', [V]')])
   else
     llPalTileDesc.Caption := 'Invalid tile!';
 end;

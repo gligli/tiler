@@ -213,8 +213,7 @@ type
   TTile = packed record // /!\ update TTileHelper.CopyFrom each time this structure is changed /!\
     UseCount: Cardinal;
     TmpIndex: Integer;
-    KFSoleIndex: Integer;
-    Flags: set of (tfActive, tfIntraKF, tfHasRGBPixels, tfHasPalPixels, tfHMirror_Initial, tfVMirror_Initial);
+    Flags: set of (tfActive, tfHasRGBPixels, tfHasPalPixels, tfHMirror_Initial, tfVMirror_Initial);
   end;
 
   { TTileHelper }
@@ -225,13 +224,11 @@ type
     function GetHasPalPixels: Boolean;
     function GetHasRGBPixels: Boolean;
     function GetHMirror_Initial: Boolean;
-    function GetIntraKF: Boolean;
     function GetVMirror_Initial: Boolean;
     procedure SetActive(AValue: Boolean);
     procedure SetHasPalPixels(AValue: Boolean);
     procedure SetHasRGBPixels(AValue: Boolean);
     procedure SetHMirror_Initial(AValue: Boolean);
-    procedure SetIntraKF(AValue: Boolean);
     procedure SetVMirror_Initial(AValue: Boolean);
   public
     function GetRGBPixelsPtr: PRGBPixels;
@@ -264,7 +261,6 @@ type
     property PalPixels[y, x: Integer]: Byte read GetPalPixels write SetPalPixels;
 
     property Active: Boolean read GetActive write SetActive;
-    property IntraKF: Boolean read GetIntraKF write SetIntraKF;
     property HasRGBPixels: Boolean read GetHasRGBPixels write SetHasRGBPixels;
     property HasPalPixels: Boolean read GetHasPalPixels write SetHasPalPixels;
     property HMirror_Initial: Boolean read GetHMirror_Initial write SetHMirror_Initial;
@@ -1044,9 +1040,7 @@ begin
   t1 := PPTile(Item1)^;
   t2 := PPTile(Item2)^;
 
-  Result := CompareValue(t1^.KFSoleIndex, t2^.KFSoleIndex);
-  if Result = 0 then
-    Result := CompareValue(t2^.UseCount, t1^.UseCount);
+  Result := CompareValue(t2^.UseCount, t1^.UseCount);
   if Result = 0 then
     Result := t1^.ComparePalPixelsTo(t2^);
 end;
@@ -1533,11 +1527,6 @@ begin
   Result := tfHMirror_Initial in Flags;
 end;
 
-function TTileHelper.GetIntraKF: Boolean;
-begin
-  Result := tfIntraKF in Flags;
-end;
-
 function TTileHelper.GetVMirror_Initial: Boolean;
 begin
   Result := tfVMirror_Initial in Flags;
@@ -1573,14 +1562,6 @@ begin
     Flags += [tfHMirror_Initial]
   else
     Flags -= [tfHMirror_Initial];
-end;
-
-procedure TTileHelper.SetIntraKF(AValue: Boolean);
-begin
-  if AValue then
-    Flags += [tfIntraKF]
-  else
-    Flags -= [tfIntraKF];
 end;
 
 procedure TTileHelper.SetVMirror_Initial(AValue: Boolean);
@@ -1807,9 +1788,7 @@ procedure TTileHelper.CopyFrom(const ATile: TTile);
 begin
   UseCount := ATile.UseCount;
   TmpIndex := ATile.TmpIndex;
-  KFSoleIndex := ATile.KFSoleIndex;
   Active := ATile.Active;
-  IntraKF := ATile.IntraKF;
   HMirror_Initial := ATile.HMirror_Initial;
   VMirror_Initial := ATile.VMirror_Initial;
 
@@ -4597,7 +4576,6 @@ begin
     Tile^.Active := True;
     Tile^.UseCount := 1;
     Tile^.TmpIndex := -1;
-    Tile^.KFSoleIndex := -1;
     Tile^.HMirror_Initial := HMirror;
     Tile^.VMirror_Initial := VMirror;
 
@@ -4956,7 +4934,7 @@ begin
           p := FPaletteBitmap.ScanLine[j];
           for i := 0 to FPaletteBitmap.Width - 1 do
           begin
-            if Assigned(Frame.PKeyFrame.PaletteRGB[j]) then
+            if Assigned(Frame.PKeyFrame.PaletteRGB) and Assigned(Frame.PKeyFrame.PaletteRGB[j]) then
               p^ := SwapRB(Frame.PKeyFrame.PaletteRGB[j, i])
             else
               p^ := clFuchsia;
@@ -5836,17 +5814,6 @@ var
   IdxMap: TInt64DynArray;
   Frame: TFrame;
 
-  procedure HandleIntraKF(ATidx: Int64);
-  begin
-    if ATidx >= 0 then
-    begin
-      if Tiles[ATidx]^.KFSoleIndex = MaxInt then
-        Tiles[ATidx]^.KFSoleIndex := Frame.PKeyFrame.Index
-      else if Tiles[ATidx]^.KFSoleIndex <> Frame.PKeyFrame.Index then
-        Tiles[ATidx]^.KFSoleIndex := -1;
-    end;
-  end;
-
   procedure Remap(var ATidx: Integer);
   var
     tidx: Integer;
@@ -5869,7 +5836,6 @@ begin
   cnt := 0;
   for tidx := 0 to High(Tiles) do
   begin
-    Tiles[tidx]^.KFSoleIndex := MaxInt;
     Tiles[tidx]^.TmpIndex := tidx;
     if (Tiles[tidx]^.Active) and (Tiles[tidx]^.UseCount > 0) then
       Inc(cnt);
@@ -5877,21 +5843,6 @@ begin
 
   if cnt <= 0 then
     Exit;
-
-  // prepare tiles "intra frame" flag
-
-  for frmIdx := 0 to High(FFrames) do
-  begin
-    Frame := FFrames[frmIdx];
-    for sy := 0 to FTileMapHeight - 1 do
-      for sx := 0 to FTileMapWidth - 1 do
-      begin
-        TMI := @Frame.TileMap[sy, sx];
-
-        HandleIntraKF(TMI^.TileIdx_Smoothed);
-        HandleIntraKF(TMI^.BlendedTileIdx_Smoothed);
-      end;
-  end;
 
   // pack the global Tiles, removing inactive ones
 
@@ -5935,17 +5886,7 @@ begin
       end;
   end;
 
-  // mark tiles "intra frame" when they are used by only one frame
-
-  cnt := 0;
-  for tidx := 0 to High(Tiles) do
-  begin
-    Tiles[tidx]^.IntraKF := Tiles[tidx]^.KFSoleIndex >= 0;
-    if Tiles[tidx]^.IntraKF then
-      Inc(cnt);
-  end;
-
-  WriteLn('KF: ', StartFrame:8, ' ReindexTiles: ', cnt, ' / ', Length(Tiles), ' made intra');
+  WriteLn('KF: ', StartFrame:8, ' ReindexTiles: ', Length(Tiles), ' final tiles');
 end;
 
 class function TTilingEncoder.GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
@@ -6098,98 +6039,18 @@ var
     end;
   end;
 
-  procedure WriteListTiles(List: TIntegerList);
+  procedure WriteTiles;
   var
-    PrevIdx, StartIdx, idx, i, j: Integer;
+    i: Integer;
   begin
-    List.Sort(@CompareIntegers);
+    DoCmd(gtTileSet, FPaletteSize);
+    DoDWord(0); // start tile
+    DoDWord(High(Tiles)); // end tile
 
-    if List.Count > 0 then
+    for i := 0 to High(Tiles) do
     begin
-      StartIdx := List[0];
-      for i := 1 to List.Count - 1 + 1 do
-      begin
-        idx := MaxInt;
-        if i < List.Count then
-          idx := List[i];
-        PrevIdx := List[i - 1];
-
-        if idx - PrevIdx > 1 then
-        begin
-          DoCmd(gtTileSet, FPaletteSize);
-          DoDWord(StartIdx); // start tile
-          DoDWord(PrevIdx); // end tile
-          //writeln(StartIdx:8, PrevIdx:8);
-
-          for j := StartIdx to PrevIdx do
-          begin
-            Assert(Tiles[j]^.Active);
-            ZStream.Write(Tiles[j]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
-          end;
-
-          StartIdx := idx;
-        end;
-      end;
-    end;
-  end;
-
-  procedure WriteGlobalTiles;
-  var
-    frmIdx, tx, ty: Integer;
-    Frame: TFrame;
-    TMI: PTileMapItem;
-    KFList: TIntegerList;
-  begin
-    KFList := TIntegerList.Create;
-    try
-      for frmIdx := 0 to High(FFrames) do
-      begin
-        Frame := FFrames[frmIdx];
-
-        for ty := 0 to FTileMapHeight - 1 do
-          for tx := 0 to FTileMapWidth - 1 do
-          begin
-            TMI := @Frame.TileMap[ty, tx];
-            if not Tiles[TMI^.TileIdx_Smoothed]^.IntraKF then
-              KFList.Add(TMI^.TileIdx_Smoothed);
-            if (TMI^.BlendedTileIdx_Smoothed >= 0) and not Tiles[TMI^.BlendedTileIdx_Smoothed]^.IntraKF then
-              KFList.Add(TMI^.BlendedTileIdx_Smoothed);
-          end;
-      end;
-
-      WriteListTiles(KFList);
-    finally
-      KFList.Free;
-    end;
-  end;
-
-  procedure WriteKFIntraTiles(KeyFrame: TKeyFrame);
-  var
-    frmIdx, tx, ty: Integer;
-    Frame: TFrame;
-    TMI: PTileMapItem;
-    IntraList: TIntegerList;
-  begin
-    IntraList := TIntegerList.Create;
-    try
-      for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
-      begin
-        Frame := FFrames[frmIdx];
-
-        for ty := 0 to FTileMapHeight - 1 do
-          for tx := 0 to FTileMapWidth - 1 do
-          begin
-            TMI := @Frame.TileMap[ty, tx];
-            if Tiles[TMI^.TileIdx_Smoothed]^.IntraKF then
-              IntraList.Add(TMI^.TileIdx_Smoothed);
-            if (TMI^.BlendedTileIdx_Smoothed >= 0) and Tiles[TMI^.BlendedTileIdx_Smoothed]^.IntraKF then
-              IntraList.Add(TMI^.BlendedTileIdx_Smoothed);
-          end;
-      end;
-
-      WriteListTiles(IntraList);
-    finally
-      IntraList.Free;
+      Assert(Tiles[i]^.Active);
+      ZStream.Write(Tiles[i]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
     end;
   end;
 
@@ -6248,14 +6109,13 @@ begin
   ZStream := TMemoryStream.Create;
   try
     WriteDimensions;
-    WriteGlobalTiles;
+    WriteTiles;
 
     LastKF := 0;
     for kfIdx := 0 to High(FKeyFrames) do
     begin
       KeyFrame := FKeyFrames[kfIdx];
 
-      WriteKFIntraTiles(KeyFrame); // has to be called before writing palettes
       WriteKFAttributes(KeyFrame);
 
       for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
