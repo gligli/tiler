@@ -307,8 +307,8 @@ type
   { TTilingDataset }
 
   TTilingDataset = record
+    KNNSize: Integer;
     Dataset: TFloatDynArray;
-    DSToTileIdx: TIntegerDynArray;
     FLANN: flann_index_t;
     FLANNParams: PFLANNParameters;
   end;
@@ -2261,26 +2261,19 @@ var
     T: PTile;
     tidx: Int64;
     pDCT: PFloat;
-    pDS: PInteger;
   begin
     pDCT := PFloat(@DS^.Dataset[0]);
-    pDS := PInteger(@DS^.DSToTileIdx[0]);
     for tidx := 0 to High(Encoder.Tiles) do
     begin
       T := Encoder.Tiles[tidx];
 
-      if T^.Active then
-      begin
-        Encoder.ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, False, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
-        Inc(pDCT, cTileDCTSize);
-        pDS^ := tidx;
-        Inc(pDS);
-      end;
+      Assert(T^.Active);
+      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, False, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
+      Inc(pDCT, cTileDCTSize);
     end;
   end;
 
 var
-  KNNSize: Integer;
   speedup: Single;
 begin
   // Compute psycho visual model for all tiles (in curent palette)
@@ -2288,9 +2281,8 @@ begin
   DS := New(PTilingDataset);
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  KNNSize := Encoder.GetTileCount(True);
-  SetLength(DS^.Dataset, KNNSize * cTileDCTSize);
-  SetLength(DS^.DSToTileIdx, KNNSize);
+  DS^.KNNSize := Encoder.GetTileCount(True);
+  SetLength(DS^.Dataset, DS^.KNNSize * cTileDCTSize);
 
   DoPsyV;
 
@@ -2300,7 +2292,7 @@ begin
   DS^.FLANNParams^ := CDefaultFLANNParameters;
   DS^.FLANNParams^.checks := cTileDCTSize;
 
-  DS^.FLANN := flann_build_index(@DS^.Dataset[0], KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
+  DS^.FLANN := flann_build_index(@DS^.Dataset[0], DS^.KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
 
   // Dataset is ready
 
@@ -2315,7 +2307,6 @@ begin
     flann_free_index(TileDS[APaletteIndex]^.FLANN, TileDS[APaletteIndex]^.FLANNParams);
   TileDS[APaletteIndex]^.FLANN := nil;
   SetLength(TileDS[APaletteIndex]^.Dataset, 0);
-  SetLength(TileDS[APaletteIndex]^.DSToTileIdx, 0);
   Dispose(TileDS[APaletteIndex]);
 
   TileDS[APaletteIndex] := nil;
@@ -2349,7 +2340,7 @@ var
   Best: TKFTilingBest;
 begin
   DS := TileDS[APaletteIndex];
-  if Length(DS^.DSToTileIdx) < 1 then
+  if DS^.KNNSize <= 0 then
     Exit;
 
   BlendT := TTile.New(True, False);
@@ -2429,9 +2420,9 @@ begin
 
         dsIdx := idxs[annQueryPos];
 
-        if InRange(dsIdx, 0, High(DS^.DSToTileIdx)) then
+        if InRange(dsIdx, 0, DS^.KNNSize - 1) then
         begin
-          Best.TileIdx := DS^.DSToTileIdx[dsIdx];
+          Best.TileIdx := dsIdx;
           Best.ResidualErr := errs[annQueryPos];
           Best.BlendedTileIdx := -1;
           Best.Blend := 0;
@@ -2455,7 +2446,7 @@ begin
             begin
               blendDsIdx := blendIdxs[binIdx];
 
-              if InRange(blendDsIdx, 0, High(DS^.DSToTileIdx)) then
+              if InRange(blendDsIdx, 0, DS^.KNNSize - 1) then
               begin
                 for blendIdx := 1 to Encoder.FFrameTilingBlendingExtents - 1 do
                 begin
@@ -2467,18 +2458,18 @@ begin
                   // search for it in the KNN
                   flann_find_nearest_neighbors_index(DS^.FLANN, @DiffDCT[0], 1, @diffIdx, @diffErr, 1, DS^.FLANNParams);
 
-                  if InRange(diffIdx, 0, High(DS^.DSToTileIdx)) then
+                  if InRange(diffIdx, 0, DS^.KNNSize - 1) then
                   begin
                     // compute error from the final interpolation
-                    Encoder.BlendTiles(Encoder.Tiles[DS^.DSToTileIdx[diffIdx]]^, Encoder.Tiles[DS^.DSToTileIdx[blendDsIdx]]^, PaletteRGB[APaletteIndex], PaletteRGB[APaletteIndex], blendIdx, Encoder.FFrameTilingBlendingExtents - blendIdx, BlendT^);
+                    Encoder.BlendTiles(Encoder.Tiles[diffIdx]^, Encoder.Tiles[blendDsIdx]^, PaletteRGB[APaletteIndex], PaletteRGB[APaletteIndex], blendIdx, Encoder.FFrameTilingBlendingExtents - blendIdx, BlendT^);
                     Encoder.ComputeTilePsyVisFeatures(BlendT^, False, False, cFTQWeighting, False, False, False, AFTGamma, nil, @DiffDCT[0]);
                     blendErr := CompareEuclideanDCTPtr_asm(@DCTs[annQueryPos * cTileDCTSize], @DiffDCT[0]);
 
                     if blendErr < Best.ResidualErr then
                     begin
-                      Best.TileIdx := DS^.DSToTileIdx[blendDsIdx];
+                      Best.TileIdx := blendDsIdx;
                       Best.ResidualErr := blendErr;
-                      Best.BlendedTileIdx := DS^.DSToTileIdx[diffIdx];
+                      Best.BlendedTileIdx := diffIdx;
                       Best.Blend := blendIdx;
                     end;
                   end;
@@ -5391,7 +5382,7 @@ procedure TTilingEncoder.DoGlobalKMeans(AClusterCount: Integer);
 var
   DSLen: Int64;
   BICOClusterCount: Integer;
-  doneFrameCount, doneClusterCount: Integer;
+  doneFrameCount: Integer;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TSingleDynArray;
   FLANNPalIdxs: TSmallIntDynArray;
