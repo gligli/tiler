@@ -10,7 +10,7 @@ unit tilingencoder;
 interface
 
 uses
-  windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, Process, LazLogger, IniFiles, Graphics,
+  windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, LazLogger, IniFiles, Graphics,
   IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc;
 
 type
@@ -399,8 +399,6 @@ type
 
     // algorithms
 
-    function GetFreeThreadCount: Integer;
-
     procedure DoPalettization(ADitheringGamma: Integer);
     procedure DoQuantization(APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
     procedure OptimizePalettes;
@@ -430,7 +428,6 @@ type
 
     FCS: TRTLCriticalSection;
     FKeyFramesLeft: Integer;
-    FKeyFramesThreadCount: Integer;
     FLoadedFrameCount: Integer;
 
     FGamma: array[0..1] of TFloat;
@@ -1819,12 +1816,6 @@ begin
   inherited Destroy;
 end;
 
-function TKeyFrame.GetFreeThreadCount: Integer;
-begin
-  Result := Max(1, ProcThreadPool.MaxThreadCount - Encoder.FKeyFramesThreadCount);
-  //WriteLn('FreeThreadCount ', Result:2);
-end;
-
 procedure TKeyFrame.DoPalettization(ADitheringGamma: Integer);
 const
   cFeatureCount = cTileDCTSize + cColorCpns;
@@ -2590,12 +2581,7 @@ procedure TKeyFrame.PreparePalettes;
     if not InRange(AIndex, 0, Encoder.FPaletteCount - 1) then
       Exit;
 
-    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
-    try
-      DoQuantization(AIndex, Encoder.FQuantizerUseYakmo, Encoder.FQuantizerDennisLeeBitsPerComponent, IfThen(Encoder.FDitheringUseGamma, 0, -1));
-    finally
-      InterLockedDecrement(Encoder.FKeyFramesThreadCount);
-    end;
+    DoQuantization(AIndex, Encoder.FQuantizerUseYakmo, Encoder.FQuantizerDennisLeeBitsPerComponent, IfThen(Encoder.FDitheringUseGamma, 0, -1));
   end;
 
 var
@@ -2613,12 +2599,7 @@ begin
 
     PalettesLeft := Encoder.FPaletteCount;
 
-    InterLockedDecrement(Encoder.FKeyFramesThreadCount);
-    try
-      ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Encoder.FPaletteCount - 1, nil, GetFreeThreadCount);
-    finally
-      InterLockedIncrement(Encoder.FKeyFramesThreadCount);
-    end;
+    ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Encoder.FPaletteCount - 1);
   finally
     for frmIdx := StartFrame to EndFrame do
       Encoder.FFrames[frmIdx].ReleaseFrameTiles;
@@ -2634,14 +2615,9 @@ procedure TKeyFrame.Reconstruct;
     if not InRange(AIndex, 0, Encoder.FPaletteCount - 1) then
       Exit;
 
-    InterLockedIncrement(Encoder.FKeyFramesThreadCount);
-    try
-      PrepareKFTiling(AIndex, IfThen(Encoder.FFrameTilingUseGamma, 0, -1));
-      DoKFTiling(AIndex, IfThen(Encoder.FFrameTilingUseGamma, 0, -1));
-      FinishKFTiling(AIndex);
-    finally
-      InterLockedDecrement(Encoder.FKeyFramesThreadCount);
-    end;
+    PrepareKFTiling(AIndex, IfThen(Encoder.FFrameTilingUseGamma, 0, -1));
+    DoKFTiling(AIndex, IfThen(Encoder.FFrameTilingUseGamma, 0, -1));
+    FinishKFTiling(AIndex);
   end;
 
 var
@@ -2658,11 +2634,9 @@ begin
     ReconstructErrCml := 0.0;
     PalettesLeft := Encoder.FPaletteCount;
     SetLength(TileDS, Encoder.FPaletteCount);
-    InterLockedDecrement(Encoder.FKeyFramesThreadCount);
     try
-      ProcThreadPool.DoParallelLocalProc(@DoTiling, 0, Encoder.FPaletteCount - 1, nil, GetFreeThreadCount);
+      ProcThreadPool.DoParallelLocalProc(@DoTiling, 0, Encoder.FPaletteCount - 1);
     finally
-      InterLockedIncrement(Encoder.FKeyFramesThreadCount);
       SetLength(TileDS, 0);
     end;
   finally
@@ -3011,17 +2985,12 @@ var
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    InterLockedIncrement(FKeyFramesThreadCount);
-    try
-      keyFrame := FKeyFrames[AIndex];
+    keyFrame := FKeyFrames[AIndex];
 
-      keyFrame.PreparePalettes;
+    keyFrame.PreparePalettes;
 
-      Inc(StepProgress, keyFrame.FrameCount);
-      ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esPreparePalettes, AItem.Thread);
-    finally
-      InterLockedDecrement(FKeyFramesThreadCount);
-    end;
+    Inc(StepProgress, keyFrame.FrameCount);
+    ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esPreparePalettes, AItem.Thread);
   end;
 
 begin
@@ -3072,17 +3041,12 @@ var
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    InterLockedIncrement(FKeyFramesThreadCount);
-    try
-      keyFrame := FKeyFrames[AIndex];
+    keyFrame := FKeyFrames[AIndex];
 
-      keyFrame.Reconstruct;
+    keyFrame.Reconstruct;
 
-      Inc(StepProgress, keyFrame.FrameCount);
-      ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esReconstruct, AItem.Thread);
-    finally
-      InterLockedDecrement(FKeyFramesThreadCount);
-    end;
+    Inc(StepProgress, keyFrame.FrameCount);
+    ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esReconstruct, AItem.Thread);
   end;
 
 begin
@@ -3107,17 +3071,12 @@ var
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    InterLockedIncrement(FKeyFramesThreadCount);
-    try
-      keyFrame := FKeyFrames[AIndex];
+    keyFrame := FKeyFrames[AIndex];
 
-      keyFrame.Smooth;
+    keyFrame.Smooth;
 
-      Inc(StepProgress, keyFrame.FrameCount);
-      ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esSmooth, AItem.Thread);
-    finally
-      InterLockedDecrement(FKeyFramesThreadCount);
-    end;
+    Inc(StepProgress, keyFrame.FrameCount);
+    ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esSmooth, AItem.Thread);
   end;
 
 begin
