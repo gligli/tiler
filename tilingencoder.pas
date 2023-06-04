@@ -480,7 +480,6 @@ type
     FShotTransMinSecondsPerKF: Double;
     FShotTransCorrelLoThres: Double;
 
-
     // GUI state variables
 
     FRenderBlended: Boolean;
@@ -3750,7 +3749,7 @@ begin
       for y := 0 to (cTileWidth - 1) do
         for x := 0 to (cTileWidth - 1) do
         begin
-          map_value := cDitheringMap[(y * cTileWidth) + x];
+          map_value := cDitheringMap[((y and 7) shl 3) or (x and 7)];
           DeviseBestMixingPlanThomasKnoll(Plan, ATile.RGBPixels[y, x], TKList);
           ATile.PalPixels[y, x] := TKList[map_value];
         end;
@@ -3760,7 +3759,7 @@ begin
       for y := 0 to (cTileWidth - 1) do
         for x := 0 to (cTileWidth - 1) do
         begin
-          map_value := cDitheringMap[(y * cTileWidth) + x];
+          map_value := cDitheringMap[((y and 7) shl 3) or (x and 7)];
           count := DeviseBestMixingPlanYliluoma(Plan, ATile.RGBPixels[y, x], YilList);
           map_value := (map_value * count) shr 6;
           ATile.PalPixels[y, x] := YilList[map_value];
@@ -4344,7 +4343,7 @@ var
     vv := CpnPixels[2, y, x];
 
     if UseLAB then
-      Result := LABToRGB(yy, uu, vv , GammaCor)
+      Result := LABToRGB(yy, uu, vv, GammaCor)
     else
       Result := YUVToRGB(yy, uu, vv, GammaCor);
   end;
@@ -5122,8 +5121,8 @@ begin
   T := TTile.New(True, False);
   T2 := TTile.New(True, False);
 
-  for i := 0 to 7 do
-    for j := 0 to 7 do
+  for i := 0 to cTileWidth - 1 do
+    for j := 0 to cTileWidth - 1 do
       T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
 
   ComputeTilePsyVisFeatures(T^, False, False, False, False, False, True, -1, nil, @DCT[0]);
