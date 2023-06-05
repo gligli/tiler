@@ -582,15 +582,15 @@ type
     procedure BlendTiles(const ATileA, ATileB: TTile; const APalA, APalB: TIntegerDynArray; ABlendA, ABlendB: Integer;
      var AResult: TTile);
 
-    procedure LoadFrame(var AFrame: TFrame; AFrameIndex, AImageWidth, AImageHeight: Integer; AImage: PInteger);
+    procedure ReframeUI(AWidth, AHeight: Integer);
+    procedure InitFrames(AFrameCount: Integer);
+    procedure LoadFrame(var AFrame: TFrame; AImageWidth, AImageHeight: Integer; AImage: PInteger);
     procedure FindKeyFrames(AManualMode: Boolean);
     procedure DoGlobalKMeans(AClusterCount: Integer);
     procedure OptimizeGlobalPalettes;
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
     procedure SaveStream(AStream: TStream; ASpecificKF: Integer = -1);
-
-    procedure ReframeUI(AWidth, AHeight: Integer);
 
     // processes
 
@@ -2842,7 +2842,7 @@ begin
   Encoder := TTilingEncoder(AUserParameter);
   frmIdx := AIndex - Encoder.FStartFrame;
 
-  Encoder.LoadFrame(Encoder.FFrames[frmIdx], frmIdx, AWidth, AHeight, AFrameData);
+  Encoder.LoadFrame(Encoder.FFrames[frmIdx], AWidth, AHeight, AFrameData);
 
   Write(InterLockedIncrement(Encoder.FLoadedFrameCount):8, ' / ', Length(Encoder.FFrames):8, #13);
 end;
@@ -2861,7 +2861,7 @@ procedure TTilingEncoder.Load;
       bmp.PixelFormat:=pf32bit;
       bmp.LoadFromFile(Format(FInputPath, [AIndex + PtrUInt(AData)]));
 
-      LoadFrame(FFrames[AIndex], AIndex, bmp.RawImage.Description.Width, bmp.RawImage.Description.Height, PInteger(bmp.RawImage.Data));
+      LoadFrame(FFrames[AIndex], bmp.RawImage.Description.Width, bmp.RawImage.Description.Height, PInteger(bmp.RawImage.Data));
 
       Write(InterLockedIncrement(FLoadedFrameCount):8, ' / ', Length(FFrames):8, #13);
     finally
@@ -2915,7 +2915,7 @@ begin
 
       WriteLn(frmCnt:8, ' frames, ', FFMPEG.DstWidth:4, ' x ', FFMPEG.DstHeight:4, ' @ ', FFramesPerSecond:6:3, ' fps');
 
-      SetLength(FFrames, frmCnt);
+      InitFrames(frmCnt);
       FFMPEG_LoadFrames(FFMPEG, FStartFrame, frmCnt, @DoLoadFFMPEGFrame, Self);
       WriteLn;
 
@@ -2954,7 +2954,7 @@ begin
       bmp.Free;
     end;
 
-    SetLength(FFrames, frmCnt);
+    InitFrames(frmCnt);
     ProcThreadPool.DoParallelLocalProc(@DoLoadPNGFrame, 0, High(FFrames), Pointer(PtrInt(startFrmIdx)));
     WriteLn;
   end;
@@ -3733,6 +3733,37 @@ begin
   FPaletteBitmap.PixelFormat:=pf32bit;
 end;
 
+procedure TTilingEncoder.InitFrames(AFrameCount: Integer);
+var
+  frmIdx, sx, sy: Integer;
+  Frame: TFrame;
+  TMI: PTileMapItem;
+begin
+  SetLength(FFrames, AFrameCount);
+
+  for frmIdx := 0 to High(FFrames) do
+  begin
+    Frame := TFrame.Create;
+    Frame.Index := frmIdx;
+
+    SetLength(Frame.TileMap, FTileMapHeight, FTileMapWidth);
+
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
+      begin
+        TMI := @Frame.TileMap[sy, sx];
+
+        TMI^.TileIdx := -1;
+        TMI^.BlendedTileIdx := -1;
+        TMI^.PalIdx := -1;
+
+        TMI^.CopyToSmoothed;
+      end;
+
+    FFrames[frmIdx] := Frame;
+  end;
+end;
+
 procedure TTilingEncoder.DitherTile(var ATile: TTile; var Plan: TMixingPlan);
 var
   x, y: Integer;
@@ -4462,36 +4493,13 @@ begin
     end;
 end;
 
-procedure TTilingEncoder.LoadFrame(var AFrame: TFrame; AFrameIndex, AImageWidth, AImageHeight: Integer; AImage: PInteger);
+procedure TTilingEncoder.LoadFrame(var AFrame: TFrame; AImageWidth, AImageHeight: Integer; AImage: PInteger);
 var
   i, j, col, ti, tx, ty: Integer;
   HMirror, VMirror: Boolean;
   pcol: PInteger;
-  TMI: PTileMapItem;
   Tile: PTile;
 begin
-  AFrame := TFrame.Create;
-  AFrame.Index := AFrameIndex;
-
-  SetLength(AFrame.TileMap, FTileMapHeight, FTileMapWidth);
-
-  for j := 0 to FTileMapHeight - 1 do
-    for i := 0 to FTileMapWidth - 1 do
-    begin
-      TMI := @AFrame.TileMap[j, i];
-
-      TMI^.TileIdx := -1;
-      TMI^.BlendedTileIdx := -1;
-      TMI^.PalIdx := -1;
-      TMI^.HMirror := False;
-      TMI^.VMirror := False;
-      TMI^.Blend := 0;
-
-      TMI^.Smoothed := False;
-
-      TMI^.CopyToSmoothed;
-    end;
-
   Assert(AImageWidth <= FScreenWidth, 'Wrong video width!');
   Assert(AImageHeight <= FScreenHeight, 'Wrong video height!');
 
