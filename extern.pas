@@ -742,6 +742,8 @@ begin
   FFMPEG.VideoStream := -1;
   FFMPEG.Scaling := AScaling;
 
+  av_log_set_level(IfThen(ASilent, AV_LOG_QUIET, AV_LOG_INFO));
+
   // Open video file
   if avformat_open_input(@FFMPEG.FmtCtx, PChar(AFileName), nil, nil) <> 0 then
     raise EFFMPEGError.Create('Could not open file: ' + AFileName);
@@ -779,9 +781,6 @@ begin
     // estimate frame count using duration
     FFMPEG.FrameCount := Round(PPtrIdx(FFMPEG.FmtCtx^.streams, FFMPEG.VideoStream)^.duration * FFMPEG.TimeBase.den / (FFMPEG.FramesPerSecond * FFMPEG.TimeBase.num));
   end;
-
-  if ASilent then
-    av_log_set_level(AV_LOG_QUIET);
 
   Result := FFMPEG;
 end;
