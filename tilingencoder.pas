@@ -10,7 +10,7 @@ unit tilingencoder;
 interface
 
 uses
-  windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, LazLogger, IniFiles, Graphics,
+  windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, IniFiles, Graphics,
   IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc;
 
 type
@@ -356,17 +356,6 @@ type
     TileMap: array of array of TTileMapItem;
 
     FrameTiles: array of PTile;
-
-    FrameTilesRefCount: Integer;
-    FrameTilesEvent: THandle;
-    CompressedFrameTiles: TMemoryStream;
-
-    procedure CompressFrameTiles;
-    procedure AcquireFrameTiles;
-    procedure ReleaseFrameTiles;
-
-    constructor Create;
-    destructor Destroy; override;
   end;
 
   TFrameArray =  array of TFrame;
@@ -380,6 +369,8 @@ type
     Reason: TKeyFrameReason;
 
     FLock: TSpinlock;
+    FrameTilesRefCount: Integer;
+    FrameTilesEvent: THandle;
 
     PaletteRGB: TIntegerDynArray2;
     CS: TRTLCriticalSection;
@@ -396,6 +387,9 @@ type
 
     constructor Create(AParent: TTilingEncoder; AIndex, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
+
+    procedure AcquireFrameTiles;
+    procedure ReleaseFrameTiles;
 
     // algorithms
 
@@ -428,7 +422,6 @@ type
 
     FCS: TRTLCriticalSection;
     FKeyFramesLeft: Integer;
-    FLoadedFrameCount: Integer;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -443,7 +436,7 @@ type
 
     // video properties
 
-    FInputPath: String;
+    FLoadedInputPath: String;
     FTileMapWidth: Integer;
     FTileMapHeight: Integer;
     FTileMapSize: Integer;
@@ -482,6 +475,7 @@ type
 
     // GUI state variables
 
+    FRenderPrevKeyFrame: TKeyFrame;
     FRenderBlended: Boolean;
     FRenderFrameIndex: Integer;
     FRenderGammaValue: Double;
@@ -536,15 +530,12 @@ type
     procedure SetStartFrame(AValue: Integer);
 
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
-    function ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-    function ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-    function ComputeInterFrameCorrelation(AFrameA, AFrameB: TFrame): TFloat;
+    function PrepareInterFrameCorrelation(AFrame: TFrame): TFloatDynArray;
 
     function GetSettings: String;
-    procedure ClearAll;
     procedure ProgressRedraw(ASubStepIdx: Integer; AReason: String; AProgressStep: TEncoderStep = esAll; AThread: TThread = nil);
     procedure SyncProgress;
-    procedure InitLuts(ATilePaletteSize, APaletteCount: Integer);
+
     function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
     function GammaUncorrect(lut: Integer; x: TFloat): Byte; inline;
 
@@ -582,12 +573,16 @@ type
     procedure BlendTiles(const ATileA, ATileB: TTile; const APalA, APalB: TIntegerDynArray; ABlendA, ABlendB: Integer;
      var AResult: TTile);
 
+    procedure InitLuts;
+    procedure ClearAll;
     procedure ReframeUI(AWidth, AHeight: Integer);
     procedure InitFrames(AFrameCount: Integer);
-    procedure LoadFrame(var AFrame: TFrame; AImageWidth, AImageHeight: Integer; AImage: PInteger);
+    procedure LoadFrameTilesFromImage(var AFrame: TFrame; AImageWidth, AImageHeight: Integer; AImage: PInteger);
     procedure FindKeyFrames(AManualMode: Boolean);
-    procedure DoGlobalKMeans(AClusterCount: Integer);
+
     procedure OptimizeGlobalPalettes;
+    procedure DoGlobalKMeans(AClusterCount: Integer);
+
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
     procedure SaveStream(AStream: TStream; ASpecificKF: Integer = -1);
@@ -1417,80 +1412,6 @@ begin
   VMirror_Smoothed := VMirror;
 end;
 
-{ TFrame }
-
-procedure TFrame.CompressFrameTiles;
-var
-  CompStream: Tcompressionstream;
-begin
-  CompressedFrameTiles.Clear;
-  CompStream := Tcompressionstream.create(Tcompressionlevel.cldefault, CompressedFrameTiles, True);
-  try
-    CompStream.WriteBuffer(FrameTiles[0]^, Length(TileMap) * Length(TileMap[0]) * (SizeOf(TTile) + SizeOf(TRGBPixels) + SizeOf(TPalPixels)));
-    CompStream.flush;
-  finally
-    CompStream.Free;
-  end;
-
-  // now that FrameTiles are compressed, dispose them
-
-  TTile.Array1DDispose(FrameTiles);
-end;
-
-procedure TFrame.AcquireFrameTiles;
-var
-  CompStream: Tdecompressionstream;
-begin
-  if InterLockedIncrement(FrameTilesRefCount) = 1 then
-  begin
-    Assert(CompressedFrameTiles.Size > 0);
-
-    CompressedFrameTiles.Position := 0;
-    FrameTiles := TTile.Array1DNew(Length(TileMap) * Length(TileMap[0]), True, True);
-
-    CompStream := Tdecompressionstream.create(CompressedFrameTiles, True);
-    try
-      CompStream.ReadBuffer(FrameTiles[0]^, Length(TileMap) * Length(TileMap[0]) * (SizeOf(TTile) + SizeOf(TRGBPixels) + SizeOf(TPalPixels)));
-    finally
-      CompStream.Free;
-    end;
-
-    // signal other threads decompression is done
-    SetEvent(FrameTilesEvent);
-  end
-  else
-  begin
-    WaitForSingleObject(FrameTilesEvent, INFINITE);
-  end;
-end;
-
-procedure TFrame.ReleaseFrameTiles;
-var
-  ftrc: Integer;
-begin
-  ftrc := InterLockedDecrement(FrameTilesRefCount);
-  if ftrc <= 0 then
-  begin
-    ResetEvent(FrameTilesEvent);
-    TTile.Array1DDispose(FrameTiles);
-    Assert(ftrc = 0);
-  end;
-end;
-
-constructor TFrame.Create;
-begin
-  CompressedFrameTiles := TMemoryStream.Create;
-  FrameTilesEvent := CreateEvent(nil, True, False, nil);
-end;
-
-destructor TFrame.Destroy;
-begin
-  CompressedFrameTiles.Free;
-  CloseHandle(FrameTilesEvent);
-
-  inherited Destroy;
-end;
-
 { TFastPortableNetworkGraphic }
 
 procedure TFastPortableNetworkGraphic.InitializeWriter(AImage: TLazIntfImage; AWriter: TFPCustomImageWriter);
@@ -1807,12 +1728,81 @@ begin
 
   InitializeCriticalSection(CS);
   SpinLeave(@FLock);
+  FrameTilesEvent := CreateEvent(nil, True, False, nil);
 end;
 
 destructor TKeyFrame.Destroy;
 begin
+  CloseHandle(FrameTilesEvent);
   DeleteCriticalSection(CS);
   inherited Destroy;
+end;
+
+procedure DoLoadFFMPEGFrame(AIndex, AWidth, AHeight:Integer; AFrameData: PInteger; AUserParameter: Pointer);
+var
+  Encoder: TTilingEncoder;
+  frmIdx: Integer;
+begin
+  Encoder := TTilingEncoder(AUserParameter);
+  frmIdx := AIndex - Encoder.FStartFrame;
+
+  Encoder.LoadFrameTilesFromImage(Encoder.FFrames[frmIdx], AWidth, AHeight, AFrameData);
+end;
+
+procedure TKeyFrame.AcquireFrameTiles;
+var
+  FFMPEG: TFFMPEG;
+  PNG: TPortableNetworkGraphic;
+  frmIdx: Integer;
+begin
+  if InterLockedIncrement(FrameTilesRefCount) = 1 then
+  begin
+
+    if FileExists(Encoder.FLoadedInputPath) then
+    begin
+      FFMPEG := FFMPEG_Open(Encoder.FLoadedInputPath, Encoder.FScaling, True);
+      try
+        FFMPEG_LoadFrames(FFMPEG, StartFrame + Encoder.FStartFrame, FrameCount, @DoLoadFFMPEGFrame, Encoder);
+      finally
+        FFMPEG_Close(FFMPEG);
+      end;
+    end
+    else
+    begin
+      PNG := TPortableNetworkGraphic.Create;
+      try
+        PNG.PixelFormat:=pf32bit;
+        for frmIdx := StartFrame to EndFrame do
+        begin
+          PNG.LoadFromFile(Format(Encoder.FLoadedInputPath, [frmIdx + Encoder.FStartFrame]));
+          Encoder.LoadFrameTilesFromImage(Encoder.FFrames[frmIdx], PNG.RawImage.Description.Width, PNG.RawImage.Description.Height, PInteger(PNG.RawImage.Data));
+        end;
+      finally
+        PNG.Free;
+      end;
+    end;
+
+    // signal other threads decompression is done
+    SetEvent(FrameTilesEvent);
+  end
+  else
+  begin
+    WaitForSingleObject(FrameTilesEvent, INFINITE);
+  end;
+end;
+
+procedure TKeyFrame.ReleaseFrameTiles;
+var
+  frmIdx, ftrc: Integer;
+begin
+  ftrc := InterLockedDecrement(FrameTilesRefCount);
+  if ftrc <= 0 then
+  begin
+    Assert(ftrc = 0);
+    ResetEvent(FrameTilesEvent);
+    for frmIdx := StartFrame to EndFrame do
+      TTile.Array1DDispose(Encoder.FFrames[frmIdx].FrameTiles);
+  end;
 end;
 
 procedure TKeyFrame.DoPalettization(ADitheringGamma: Integer);
@@ -2583,16 +2573,13 @@ procedure TKeyFrame.PreparePalettes;
     DoQuantization(AIndex, Encoder.FQuantizerUseYakmo, Encoder.FQuantizerDennisLeeBitsPerComponent, IfThen(Encoder.FDitheringUseGamma, 0, -1));
   end;
 
-var
-  frmIdx: Integer;
 begin
   if FrameCount = 0 then
     Exit;
 
   SetLength(PaletteRGB, Encoder.FPaletteCount);
 
-  for frmIdx := StartFrame to EndFrame do
-    Encoder.FFrames[frmIdx].AcquireFrameTiles;
+  AcquireFrameTiles;
   try
     DoPalettization(IfThen(Encoder.FDitheringUseGamma, 0, -1));
 
@@ -2600,8 +2587,7 @@ begin
 
     ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Encoder.FPaletteCount - 1);
   finally
-    for frmIdx := StartFrame to EndFrame do
-      Encoder.FFrames[frmIdx].ReleaseFrameTiles;
+    ReleaseFrameTiles;
   end;
 
   OptimizePalettes;
@@ -2622,13 +2608,11 @@ procedure TKeyFrame.Reconstruct;
 var
   kfIdx: Integer;
   tileResd, errCml: Double;
-  frmIdx: Integer;
 begin
   if FrameCount = 0 then
     Exit;
 
-  for frmIdx := StartFrame to EndFrame do
-    Encoder.FFrames[frmIdx].AcquireFrameTiles;
+  AcquireFrameTiles;
   try
     ReconstructErrCml := 0.0;
     PalettesLeft := Encoder.FPaletteCount;
@@ -2639,8 +2623,7 @@ begin
       SetLength(TileDS, 0);
     end;
   finally
-    for frmIdx := StartFrame to EndFrame do
-      Encoder.FFrames[frmIdx].ReleaseFrameTiles;
+    ReleaseFrameTiles;
   end;
 
   InterLockedDecrement(Encoder.FKeyFramesLeft);
@@ -2785,7 +2768,7 @@ end;
 
 { TTilingEncoder }
 
-procedure TTilingEncoder.InitLuts(ATilePaletteSize, APaletteCount: Integer);
+procedure TTilingEncoder.InitLuts;
 var
   g, i, v, u, y, x: Int64;
 begin
@@ -2834,41 +2817,7 @@ begin
   Result := EnsureRange(Round(x * 255.0), 0, 255);
 end;
 
-procedure DoLoadFFMPEGFrame(AIndex, AWidth, AHeight:Integer; AFrameData: PInteger; AUserParameter: Pointer);
-var
-  Encoder: TTilingEncoder;
-  frmIdx: Integer;
-begin
-  Encoder := TTilingEncoder(AUserParameter);
-  frmIdx := AIndex - Encoder.FStartFrame;
-
-  Encoder.LoadFrame(Encoder.FFrames[frmIdx], AWidth, AHeight, AFrameData);
-
-  Write(InterLockedIncrement(Encoder.FLoadedFrameCount):8, ' / ', Length(Encoder.FFrames):8, #13);
-end;
-
 procedure TTilingEncoder.Load;
-
-  procedure DoLoadPNGFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    bmp: TPortableNetworkGraphic;
-  begin
-    if not InRange(AIndex, 0, High(FFrames)) then
-      Exit;
-
-    bmp := TPortableNetworkGraphic.Create;
-    try
-      bmp.PixelFormat:=pf32bit;
-      bmp.LoadFromFile(Format(FInputPath, [AIndex + PtrUInt(AData)]));
-
-      LoadFrame(FFrames[AIndex], bmp.RawImage.Description.Width, bmp.RawImage.Description.Height, PInteger(bmp.RawImage.Data));
-
-      Write(InterLockedIncrement(FLoadedFrameCount):8, ' / ', Length(FFrames):8, #13);
-    finally
-      bmp.Free;
-    end;
-  end;
-
 var
   frmIdx, frmCnt, eqtc, startFrmIdx: Integer;
   fn: String;
@@ -2892,16 +2841,17 @@ begin
 
   // init Gamma LUTs
 
-  InitLuts(FPaletteSize, FPaletteCount);
+  InitLuts;
 
   // load video
 
   frmCnt := FFrameCountSetting;
   manualKeyFrames := False;
+  FLoadedInputPath := FInputFileName;
 
-  if FileExists(FInputFileName) then
+  if FileExists(FLoadedInputPath) then
   begin
-    FFMPEG := FFMPEG_Open(FInputFileName, FScaling, True);
+    FFMPEG := FFMPEG_Open(FLoadedInputPath, FScaling, False);
     try
 
       FFramesPerSecond := FFMPEG.FramesPerSecond;
@@ -2914,18 +2864,12 @@ begin
         frmCnt := FrameCountSetting;
 
       WriteLn(frmCnt:8, ' frames, ', FFMPEG.DstWidth:4, ' x ', FFMPEG.DstHeight:4, ' @ ', FFramesPerSecond:6:3, ' fps');
-
-      InitFrames(frmCnt);
-      FFMPEG_LoadFrames(FFMPEG, FStartFrame, frmCnt, @DoLoadFFMPEGFrame, Self);
-      WriteLn;
-
     finally
       FFMPEG_Close(FFMPEG);
     end;
   end
   else
   begin
-    FInputPath := FInputFileName;
     FFramesPerSecond := 24.0;
     startFrmIdx := FStartFrame;
     manualKeyFrames := True;
@@ -2936,7 +2880,7 @@ begin
     begin
       frmIdx := 0;
       repeat
-        fn := Format(FInputPath, [frmIdx + startFrmIdx]);
+        fn := Format(FLoadedInputPath, [frmIdx + startFrmIdx]);
         Inc(frmIdx);
       until not FileExists(fn);
 
@@ -2948,16 +2892,14 @@ begin
     bmp := TPicture.Create;
     try
       bmp.Bitmap.PixelFormat:=pf32bit;
-      bmp.LoadFromFile(Format(FInputPath, [startFrmIdx]));
+      bmp.LoadFromFile(Format(FLoadedInputPath, [startFrmIdx]));
       ReframeUI((bmp.Width - 1) div cTileWidth + 1, (bmp.Height - 1) div cTileWidth + 1);
     finally
       bmp.Free;
     end;
-
-    InitFrames(frmCnt);
-    ProcThreadPool.DoParallelLocalProc(@DoLoadPNGFrame, 0, High(FFrames), Pointer(PtrInt(startFrmIdx)));
-    WriteLn;
   end;
+
+  InitFrames(frmCnt);
 
   ProgressRedraw(1, 'LoadFrames');
 
@@ -3246,67 +3188,21 @@ begin
   Result := Length(FFrames);
 end;
 
-function TTilingEncoder.ComputeCorrelationBGR(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-var
-  i: Integer;
-  ya, yb: TFloatDynArray;
-  fr, fg, fb: TFloat;
-begin
-  SetLength(ya, Length(a) * 3);
-  SetLength(yb, Length(a) * 3);
-
-  for i := 0 to High(a) do
-  begin
-    fr := (a[i] shr 16) and $ff; fg := (a[i] shr 8) and $ff; fb := a[i] and $ff;
-    ya[i] := fr * cRedMul; ya[i + Length(a)] := fg * cGreenMul; ya[i + Length(a) * 2] := fb * cBlueMul;
-
-    fr := (b[i] shr 16) and $ff; fg := (b[i] shr 8) and $ff; fb := b[i] and $ff;
-    yb[i] := fr * cRedMul; yb[i + Length(a)] := fg * cGreenMul; yb[i + Length(a) * 2] := fb * cBlueMul;
-  end;
-
-  Result := PearsonCorrelation(ya, yb);
-end;
-
-function TTilingEncoder.ComputeDistanceRGB(const a: TIntegerDynArray; const b: TIntegerDynArray): TFloat;
-var
-  i: Integer;
-  ya, yb: TFloatDynArray;
-  fr, fg, fb: TFloat;
-begin
-  SetLength(ya, Length(a) * 3);
-  SetLength(yb, Length(a) * 3);
-
-  for i := 0 to High(a) do
-  begin
-    fr := a[i] and $ff; fg := (a[i] shr 8) and $ff; fb := (a[i] shr 16) and $ff;
-    ya[i] := fr * cRedMul; ya[i + Length(a)] := fg * cGreenMul; ya[i + Length(a) * 2] := fb * cBlueMul;
-
-    fr := b[i] and $ff; fg := (b[i] shr 8) and $ff; fb := (b[i] shr 16) and $ff;
-    yb[i] := fr * cRedMul; yb[i + Length(a)] := fg * cGreenMul; yb[i + Length(a) * 2] := fb * cBlueMul;
-  end;
-
-  Result := CompareEuclidean(ya, yb) / (Length(a) * cLumaDiv * 256.0);
-end;
-
-function TTilingEncoder.ComputeInterFrameCorrelation(AFrameA, AFrameB: TFrame): TFloat;
+function TTilingEncoder.PrepareInterFrameCorrelation(AFrame: TFrame): TFloatDynArray;
 var
   sz, i, tx, ty, sx, sy: Integer;
   rr, gg, bb: Integer;
-  ya, yb: TFloatDynArray;
-  par, pag, pab, pbr, pbg, pbb: PFloat;
-  pat, pbt: PInteger;
+  par, pag, pab: PFloat;
+  pat: PInteger;
   zeroPixels: TRGBPixels;
 begin
   sz := FTileMapSize * Sqr(cTileWidth);
-  SetLength(ya, sz * 3);
-  SetLength(yb, sz * 3);
+  SetLength(Result, sz * 3);
   FillChar(zeroPixels, SizeOf(zeroPixels), 0);
 
-  if Assigned(AFrameA) then AFrameA.AcquireFrameTiles;
-  if Assigned(AFrameB) then AFrameB.AcquireFrameTiles;
+  if Assigned(AFrame) then AFrame.PKeyFrame.AcquireFrameTiles;
   try
-    par := @ya[sz * 0]; pag := @ya[sz * 1]; pab := @ya[sz * 2];
-    pbr := @yb[sz * 0]; pbg := @yb[sz * 1]; pbb := @yb[sz * 2];
+    par := @Result[sz * 0]; pag := @Result[sz * 1]; pab := @Result[sz * 2];
 
     for sy := 0 to FTileMapHeight - 1 do
       for ty := 0 to cTileWidth - 1 do
@@ -3314,14 +3210,10 @@ begin
         begin
           i := sy * FTileMapWidth + sx;
 
-          if Assigned(AFrameA) then
-            pat := PInteger(@AFrameA.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
+          if Assigned(AFrame) then
+            pat := PInteger(@AFrame.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
           else
             pat := PInteger(@zeroPixels[0, 0]);
-          if Assigned(AFrameB) then
-            pbt := PInteger(@AFrameB.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
-          else
-            pbt := PInteger(@zeroPixels[0, 0]);
 
           for tx := 0 to cTileWidth - 1 do
           begin
@@ -3329,18 +3221,10 @@ begin
             Inc(pat);
             RGBToLAB(rr, gg, bb, -1, par^, pag^, pab^);
             Inc(par); Inc(pag); Inc(pab);
-
-            FromRGB(pbt^, rr, gg, bb);
-            Inc(pbt);
-            RGBToLAB(rr, gg, bb, -1, pbr^, pbg^, pbb^);
-            Inc(pbr); Inc(pbg); Inc(pbb);
           end;
         end;
-
-    Result := PearsonCorrelation(ya, yb);
   finally
-    if Assigned(AFrameA) then AFrameA.ReleaseFrameTiles;
-    if Assigned(AFrameB) then AFrameB.ReleaseFrameTiles;
+    if Assigned(AFrame) then AFrame.PKeyFrame.ReleaseFrameTiles;
   end;
 end;
 
@@ -3967,7 +3851,7 @@ begin
   FEncoderGammaValue := Max(0.0, AValue);
 
   FGamma[0] := FEncoderGammaValue;
-  InitLuts(FPaletteSize, FPaletteCount);
+  InitLuts;
 end;
 
 procedure TTilingEncoder.SetFrameCountSetting(AValue: Integer);
@@ -4093,7 +3977,7 @@ begin
   FRenderGammaValue := Max(0.0, AValue);
 
   FGamma[1] := FRenderGammaValue;
-  InitLuts(FPaletteSize, FPaletteCount);
+  InitLuts;
 end;
 
 procedure TTilingEncoder.SetRenderPaletteIndex(AValue: Integer);
@@ -4493,7 +4377,7 @@ begin
     end;
 end;
 
-procedure TTilingEncoder.LoadFrame(var AFrame: TFrame; AImageWidth, AImageHeight: Integer; AImage: PInteger);
+procedure TTilingEncoder.LoadFrameTilesFromImage(var AFrame: TFrame; AImageWidth, AImageHeight: Integer; AImage: PInteger);
 var
   i, j, col, ti, tx, ty: Integer;
   HMirror, VMirror: Boolean;
@@ -4542,25 +4426,62 @@ begin
     if VMirror then
       VMirrorTile(Tile^);
   end;
-
-  // also compress frame tiles to save memory
-
-  AFrame.CompressFrameTiles;
 end;
 
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
 var
   Correlations: TFloatDynArray;
   doneFrameCount: Integer;
+  dummyKeyFrames: array of TKeyFrame;
+  dummyKFEndFrames: TFloatDynArray2;
 
   procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    frmIdx: Integer;
+    KeyFrame: TKeyFrame;
+    FrameData: TFloatDynArray2;
+    prevFrameData: TFloatDynArray;
   begin
-    if not InRange(AIndex, 1, High(FFrames)) then
+    if not InRange(AIndex, 0, High(dummyKeyFrames)) then
       Exit;
 
-    Correlations[AIndex] := ComputeInterFrameCorrelation(FFrames[AIndex - 1], FFrames[AIndex]);
+    KeyFrame := dummyKeyFrames[AIndex];
 
-    Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+    KeyFrame.AcquireFrameTiles;
+    try
+      SetLength(FrameData, KeyFrame.FrameCount);
+
+      // reverse order to make end Frame ready for next frame asap
+      for frmIdx := KeyFrame.EndFrame downto KeyFrame.StartFrame do
+      begin
+        FrameData[frmIdx - KeyFrame.StartFrame] := PrepareInterFrameCorrelation(FFrames[frmIdx]);
+        if frmIdx = KeyFrame.EndFrame then
+          dummyKFEndFrames[AIndex] := FrameData[frmIdx - KeyFrame.StartFrame];
+      end;
+
+      for frmIdx := Max(1, KeyFrame.StartFrame) to KeyFrame.EndFrame do
+      begin
+        if frmIdx > KeyFrame.StartFrame then
+        begin
+          prevFrameData := FrameData[frmIdx - 1 - KeyFrame.StartFrame];
+        end
+        else
+        begin
+          // wait for prev KeyFrame to compute end Frame
+          while not Assigned(dummyKFEndFrames[AIndex - 1]) do
+            Sleep(10);
+
+          prevFrameData := dummyKFEndFrames[AIndex - 1];
+          dummyKFEndFrames[AIndex - 1] := nil;
+        end;
+
+        Correlations[frmIdx] := PearsonCorrelation(prevFrameData, FrameData[frmIdx - KeyFrame.StartFrame]);
+      end;
+    finally
+      KeyFrame.ReleaseFrameTiles;
+
+      Write(InterLockedExchangeAdd(doneFrameCount, KeyFrame.FrameCount) + KeyFrame.FrameCount:8, ' / ', Length(FFrames):8, #13);
+    end;
   end;
 
 var
@@ -4574,7 +4495,29 @@ begin
   doneFrameCount := 0;
   SetLength(Correlations, Length(FFrames));
   if not AManualMode then
-    ProcThreadPool.DoParallelLocalProc(@DoCorrel, 1, High(FFrames));
+  begin
+    // needs dummy KeyFrames to be able to do AcquireFrameTiles / ReleaseFrameTiles
+
+    SetLength(dummyKeyFrames, (Length(FFrames) - 1) div Round(FFramesPerSecond) + 1);
+    SetLength(dummyKFEndFrames, Length(dummyKeyFrames));
+    for kfIdx := 0 to High(dummyKeyFrames) do
+    begin
+      dummyKeyFrames[kfIdx] := TKeyFrame.Create(Self, kfIdx, kfIdx * Round(FFramesPerSecond), min(High(FFrames), (kfIdx + 1) * Round(FFramesPerSecond) - 1));
+      for frmIdx := dummyKeyFrames[kfIdx].StartFrame to dummyKeyFrames[kfIdx].EndFrame do
+        FFrames[frmIdx].PKeyFrame := dummyKeyFrames[kfIdx];
+    end;
+    try
+      ProcThreadPool.DoParallelLocalProc(@DoCorrel, 0, High(dummyKeyFrames));
+    finally
+      for frmIdx := 0 to High(FFrames) do
+        FFrames[frmIdx].PKeyFrame := nil;
+
+      for kfIdx := 0 to High(dummyKeyFrames) do
+        FreeAndNil(dummyKeyFrames[kfIdx]);
+
+      SetLength(dummyKeyFrames, 0);
+    end;
+  end;
 
   // find keyframes
 
@@ -4588,7 +4531,7 @@ begin
     kfReason := kfrNone;
     if AManualMode then
     begin
-      if FileExists(Format(ChangeFileExt(FInputPath, '.kf'), [frmIdx + StartFrame])) or (frmIdx = 0) then
+      if FileExists(Format(ChangeFileExt(FLoadedInputPath, '.kf'), [frmIdx + StartFrame])) or (frmIdx = 0) then
         kfReason := kfrManual;
     end
     else
@@ -4655,7 +4598,8 @@ begin
       FreeAndNil(FKeyFrames[i]);
   SetLength(FKeyFrames, 0);
 
-  FLoadedFrameCount := 0;
+  FLoadedInputPath := '';
+  FRenderPrevKeyFrame := nil;
 end;
 
 procedure TTilingEncoder.Render(AFast: Boolean);
@@ -4779,8 +4723,11 @@ begin
       FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
 
       FInputBitmap.BeginUpdate;
-      Frame.AcquireFrameTiles;
+      Frame.PKeyFrame.AcquireFrameTiles;
       try
+        if Assigned(FRenderPrevKeyFrame) then
+          FRenderPrevKeyFrame.ReleaseFrameTiles;
+
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
           begin
@@ -4800,8 +4747,8 @@ begin
             end;
           end;
       finally
-        Frame.ReleaseFrameTiles;
         FInputBitmap.EndUpdate;
+        FRenderPrevKeyFrame := Frame.PKeyFrame;
       end;
     end;
 
@@ -4940,8 +4887,11 @@ begin
 
     if not (FRenderPlaying or AFast) then
     begin
-      Frame.AcquireFrameTiles;
+      Frame.PKeyFrame.AcquireFrameTiles;
       try
+        if Assigned(FRenderPrevKeyFrame) then
+          FRenderPrevKeyFrame.ReleaseFrameTiles;
+
         q := 0.0;
         i := 0;
         for sy := 0 to FTileMapHeight - 1 do
@@ -4969,7 +4919,7 @@ begin
 
         FRenderPsychoVisualQuality := Sqrt(q);
       finally
-        Frame.ReleaseFrameTiles;
+        FRenderPrevKeyFrame := Frame.PKeyFrame;
       end;
     end;
   finally
@@ -5359,131 +5309,147 @@ var
   procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     frameOffset: Int64;
-    sx, sy, si: Integer;
+    frmIdx, sx, sy, si: Integer;
+    KeyFrame: TKeyFrame;
     Frame: TFrame;
     Tile: PTile;
     TMI: PTileMapItem;
   begin
-    if not InRange(AIndex, 0, High(FFrames)) then
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    Frame := FFrames[AIndex];
-    frameOffset := AIndex * FTileMapSize;
+    KeyFrame := FKeyFrames[AIndex];
 
-    Frame.AcquireFrameTiles;
+    KeyFrame.AcquireFrameTiles;
     try
-      si := 0;
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          Tile := Tiles[AIndex * FTileMapSize + si];
-          TMI := @Frame.TileMap[sy, sx];
+      for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
+      begin
+        Frame := FFrames[frmIdx];
+        frameOffset := frmIdx * FTileMapSize;
 
-          Tile^.CopyFrom(Frame.FrameTiles[si]^);
+        si := 0;
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            Tile := Tiles[frmIdx * FTileMapSize + si];
+            TMI := @Frame.TileMap[sy, sx];
 
-          DitherTile(Tile^, Frame.PKeyFrame.PaletteInfo[TMI^.PalIdx].MixingPlan);
+            Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-          TMI^.HMirror := Tile^.HMirror_Initial;
-          TMI^.VMirror := Tile^.VMirror_Initial;
-          TMI^.TileIdx := frameOffset + si;
+            DitherTile(Tile^, Frame.PKeyFrame.PaletteInfo[TMI^.PalIdx].MixingPlan);
 
-          TMI^.CopyToSmoothed;
+            TMI^.HMirror := Tile^.HMirror_Initial;
+            TMI^.VMirror := Tile^.VMirror_Initial;
+            TMI^.TileIdx := frameOffset + si;
 
-          Inc(si);
-        end;
+            TMI^.CopyToSmoothed;
+
+            Inc(si);
+          end;
+
+        Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+      end;
     finally
-      Frame.ReleaseFrameTiles;
-      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+      KeyFrame.ReleaseFrameTiles;
     end;
   end;
 
   procedure DoFLANN(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     frameOffset: Int64;
-    sx, sy, si: Integer;
+    frmIdx, sx, sy, si: Integer;
+    KeyFrame: TKeyFrame;
     Frame: TFrame;
     Tile: PTile;
     TMI: PTileMapItem;
     Dataset: TSingleDynArray;
   begin
-    if not InRange(AIndex, 0, High(FFrames)) then
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
     SetLength(Dataset, cTileDCTSize * FTileMapSize);
 
-    Frame := FFrames[AIndex];
-    frameOffset := AIndex * FTileMapSize;
+    KeyFrame := FKeyFrames[AIndex];
 
-    Frame.AcquireFrameTiles;
+    KeyFrame.AcquireFrameTiles;
     try
-      si := 0;
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          Tile := Frame.FrameTiles[si];
+      for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
+      begin
+        Frame := FFrames[frmIdx];
+        frameOffset := frmIdx * FTileMapSize;
 
-          ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @Dataset[si * cTileDCTSize]);
+        si := 0;
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            Tile := Frame.FrameTiles[si];
 
-          Inc(si);
-        end;
+            ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @Dataset[si * cTileDCTSize]);
 
-      flann_find_nearest_neighbors_index(FLANN, @Dataset[0], FTileMapSize, @FLANNClusters[frameOffset], @FLANNErrors[frameOffset], 1, @FLANNParams);
+            Inc(si);
+          end;
 
-      si := 0;
-      for sy := 0 to FTileMapHeight - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          Tile := Frame.FrameTiles[si];
-          TMI := @Frame.TileMap[sy, sx];
+        flann_find_nearest_neighbors_index(FLANN, @Dataset[0], FTileMapSize, @FLANNClusters[frameOffset], @FLANNErrors[frameOffset], 1, @FLANNParams);
 
-          TMI^.HMirror := Tile^.HMirror_Initial;
-          TMI^.VMirror := Tile^.VMirror_Initial;
-          TMI^.TileIdx := FLANNClusters[frameOffset + si];
+        si := 0;
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            Tile := Frame.FrameTiles[si];
+            TMI := @Frame.TileMap[sy, sx];
 
-          TMI^.CopyToSmoothed;
+            TMI^.HMirror := Tile^.HMirror_Initial;
+            TMI^.VMirror := Tile^.VMirror_Initial;
+            TMI^.TileIdx := FLANNClusters[frameOffset + si];
 
-          FLANNPalIdxs[frameOffset + si] := TMI^.PalIdx;
+            TMI^.CopyToSmoothed;
 
-          Inc(si);
-        end;
+            FLANNPalIdxs[frameOffset + si] := TMI^.PalIdx;
+
+            Inc(si);
+          end;
+
+        Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+      end;
     finally
-      Frame.ReleaseFrameTiles;
-      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+      KeyFrame.ReleaseFrameTiles;
     end;
   end;
 
   procedure DoClusterDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     i, frmIdx, si: Integer;
-    hasFrame: Boolean;
+    hasKeyFrame: Boolean;
+    KeyFrame: TKeyFrame;
     Frame: TFrame;
     Tile: PTile;
   begin
-    if not InRange(AIndex, 0, High(FFrames)) then
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    Frame := FFrames[AIndex];
+    KeyFrame := FKeyFrames[AIndex];
 
-    hasFrame := False;
+    hasKeyFrame := False;
     for i := 0 to BICOClusterCount - 1 do
     begin
       DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
-      if (frmIdx = AIndex) and (TileLineIdxs[i] >= 0) then
+      if InRange(frmIdx, KeyFrame.StartFrame, KeyFrame.EndFrame) and (TileLineIdxs[i] >= 0) then
       begin
-        hasFrame := True;
+        hasKeyFrame := True;
         Break;
       end;
     end;
 
-    if hasFrame then
+    if hasKeyFrame then
     begin
-      Frame.AcquireFrameTiles;
+      KeyFrame.AcquireFrameTiles;
       try
         for i := 0 to BICOClusterCount - 1 do
         begin
           DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
-          if (frmIdx = AIndex) and (TileLineIdxs[i] >= 0) then
+          if InRange(frmIdx, KeyFrame.StartFrame, KeyFrame.EndFrame) and (TileLineIdxs[i] >= 0) then
           begin
+            Frame := FFrames[frmIdx];
             Tile := Tiles[i];
 
             Tile^.CopyFrom(Frame.FrameTiles[si]^);
@@ -5492,19 +5458,19 @@ var
           end;
         end;
       finally
-        Frame.ReleaseFrameTiles;
+        KeyFrame.ReleaseFrameTiles;
       end;
     end;
 
-    Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+    Write(InterLockedExchangeAdd(doneFrameCount, KeyFrame.FrameCount) + KeyFrame.FrameCount:8, ' / ', Length(FFrames):8, #13);
   end;
 
 var
-  i, frmIdx, clusterIdx, si: Integer;
+  i, kfIdx, frmIdx, clusterIdx, si: Integer;
   lineIdx, cnt: Int64;
   speedup: Single;
   err: Single;
-
+  KeyFrame: TKeyFrame;
   Frame: TFrame;
   BICO: PBICO;
   Tile: PTile;
@@ -5522,7 +5488,7 @@ begin
     FTiles := TTile.Array1DNew(DSLen, True, True);
 
     doneFrameCount := 0;
-    ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FKeyFrames));
 
     ProgressRedraw(6, 'DitherTiles');
     Exit;
@@ -5537,26 +5503,33 @@ begin
 
     doneFrameCount := 0;
     cnt := 0;
-    for frmIdx := 0 to High(FFrames) do
+    for kfIdx := 0 to High(FKeyFrames) do
     begin
-      Frame := FFrames[frmIdx];
+      KeyFrame := FKeyFrames[kfIdx];
 
-      Frame.AcquireFrameTiles;
+      KeyFrame.AcquireFrameTiles;
       try
-        for si := 0 to FTileMapSize - 1 do
+        for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
         begin
-          Tile := Frame.FrameTiles[si];
+          Frame := FFrames[frmIdx];
 
-          ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @DCT[0]);
+          for si := 0 to FTileMapSize - 1 do
+          begin
+            Tile := Frame.FrameTiles[si];
 
-          // insert line into BICO
-          bico_insert_line(BICO, @DCT[0], 1);
+            ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @DCT[0]);
 
-          Inc(cnt);
+            // insert line into BICO
+            bico_insert_line(BICO, @DCT[0], 1);
+
+            Inc(cnt);
+          end;
+
+          Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
         end;
+
       finally
-        Frame.ReleaseFrameTiles;
-        Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+        KeyFrame.ReleaseFrameTiles;
       end;
     end;
     Assert(cnt = DSLen);
@@ -5598,7 +5571,7 @@ begin
   FLANN := flann_build_index(@FLANNDataset[0], BICOClusterCount, cTileDCTSize, @speedup, @FLANNParams);
   try
     doneFrameCount := 0;
-    ProcThreadPool.DoParallelLocalProc(@DoFLANN, 0, High(FFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoFLANN, 0, High(FKeyFrames));
   finally
     flann_free_index(FLANN, @FLANNParams);
   end;
@@ -5634,7 +5607,7 @@ begin
   // dither final tiles
 
   doneFrameCount := 0;
-  ProcThreadPool.DoParallelLocalProc(@DoClusterDither, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoClusterDither, 0, High(FKeyFrames));
 
   ProgressRedraw(6, 'DitherTiles');
 end;
