@@ -5225,7 +5225,6 @@ begin
       FProgressAllStartTime += curTime - FProgressPrevTime;
       FProgressProcessStartTime := curTime;
     end;
-
     FProgressStep := AProgressStep;
   end;
 
@@ -5246,6 +5245,10 @@ begin
       IfThen(AReason <> '', ', Reason: '), AReason);
   end;
   FProgressPrevTime := curTime;
+
+  // reset time for "named" substeps (ie. not by frame)
+  if cEncoderStepLen[FProgressStep] >= 0 then
+    FProgressProcessStartTime := curTime;
 
   EnterCriticalSection(FCS);
   try
