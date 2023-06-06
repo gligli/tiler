@@ -1809,68 +1809,136 @@ procedure TKeyFrame.DoPalettization(ADitheringGamma: Integer);
 const
   cFeatureCount = cTileDCTSize + cColorCpns;
 var
-  frmIdx, ftIdx, sx, sy, ty, tx, di, DSLen, palIdx: Integer;
-  rr, gg, bb: Byte;
-  l, a, b: TFloat;
-  Frame: TFrame;
-  Tile: PTile;
+  DSLen: Integer;
+  BICO: PBICO;
+  FLANN: flann_index_t;
+  FLANNParams: TFLANNParameters;
+  FLANNClusters: TIntegerDynArray;
 
-  YakmoDataset: TDoubleDynArray2;
+  procedure DoDataset(AFLANN: Boolean);
+  var
+    frmIdx, ftIdx, ty, tx, di: Integer;
+    rr, gg, bb: Byte;
+    l, a, b: TFloat;
+    FLANNError: Double;
+    Frame: TFrame;
+    Tile: PTile;
+    DCT: array[0 .. cFeatureCount - 1] of Double;
+  begin
+    di := 0;
+    for frmIdx := StartFrame to EndFrame do
+    begin
+      Frame := Encoder.FFrames[frmIdx];
+
+      for ftIdx := 0 to Encoder.FTileMapSize - 1 do
+      begin
+        Tile := Frame.FrameTiles[ftIdx];
+
+        Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, False, False, False, True, ADitheringGamma, nil, @DCT[cColorCpns]);
+
+        DCT[0] := 0.0; DCT[1] := 0.0; DCT[2] := 0.0;
+        for ty := 0 to cTileWidth - 1 do
+          for tx := 0 to cTileWidth - 1 do
+          begin
+            FromRGB(Tile^.RGBPixels[ty, tx], rr, gg, bb);
+
+            Encoder.RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
+
+            DCT[0] += l;
+            DCT[1] += a;
+            DCT[2] += b;
+          end;
+
+        if AFLANN then
+          flann_find_nearest_neighbors_index_double(FLANN, @DCT[0], 1, @FLANNClusters[di], @FLANNError, 1, @FLANNParams)
+        else
+          bico_insert_line(BICO, @DCT[0], 1.0);
+
+        Inc(di);
+      end;
+    end;
+    Assert(di = DSLen);
+  end;
+
+var
+  frmIdx, sx, sy, di, palIdx, BICOCoresetSize, BICOClusterCount: Integer;
+  speedup: Double;
+
+  Frame: TFrame;
+
+  Yakmo: PYakmo;
+
+  BICOCentroids: TDoubleDynArray;
+  BICOWeights: TDoubleDynArray;
+
+  YakmoDataset: array of PDouble;
   YakmoClusters: TIntegerDynArray;
   PalIdxLUT: TIntegerDynArray;
 
-  Yakmo: PYakmo;
 begin
   // build dataset
 
   DSLen := Encoder.FTileMapSize * FrameCount;
+  BICOCoresetSize := Encoder.FTileMapSize;
 
-  SetLength(YakmoDataset, DSLen, cFeatureCount);
-  SetLength(YakmoClusters, Length(YakmoDataset));
+  bico_set_num_threads(EnsureRange(Encoder.MaxThreadCount - Encoder.FKeyFramesLeft - 1, 1, 2));
+  BICO := bico_create(cFeatureCount, DSLen, BICOCoresetSize, 7, BICOCoresetSize, CRandomSeed);
+  try
+    DoDataset(False);
 
-  di := 0;
-  for frmIdx := StartFrame to EndFrame do
-  begin
-    Frame := Encoder.FFrames[frmIdx];
-
-    for ftIdx := 0 to Encoder.FTileMapSize - 1 do
-    begin
-      Tile := Frame.FrameTiles[ftIdx];
-
-      Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, True, False, False, True, ADitheringGamma, nil, @YakmoDataset[di, cColorCpns]);
-
-      for ty := 0 to cTileWidth - 1 do
-        for tx := 0 to cTileWidth - 1 do
-        begin
-          FromRGB(Tile^.RGBPixels[ty, tx], rr, gg, bb);
-
-          Encoder.RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
-
-          YakmoDataset[di, 0] += l;
-          YakmoDataset[di, 1] += a;
-          YakmoDataset[di, 2] += b;
-        end;
-
-      Inc(di);
-    end;
+    SetLength(BICOCentroids, BICOCoresetSize * cFeatureCount);
+    SetLength(BICOWeights, BICOCoresetSize);
+    BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
+  finally
+    bico_destroy(BICO);
   end;
-  Assert(di = DSLen);
 
-  WriteLn('KF: ', StartFrame:8, ' Palettization start');
+  WriteLn('KF: ', StartFrame:8, ' Palettization BICOClusterCount: ', BICOClusterCount:6);
+
+  // use FLANN to compute cluster indexes
+
+  SetLength(FLANNClusters, DSLen);
+
+  FLANNParams := CDefaultFLANNParameters;
+  FLANNParams.checks := cFeatureCount;
+  FLANNParams.algorithm := FLANN_INDEX_KDTREE;
+  FLANNParams.sorted := 0;
+  FLANNParams.max_neighbors := 1;
+
+  FLANN := flann_build_index_double(@BICOCentroids[0], BICOClusterCount, cFeatureCount, @speedup, @FLANNParams);
+  try
+    DoDataset(True);
+  finally
+    flann_free_index_double(FLANN, @FLANNParams);
+  end;
 
   // cluster by palette index
 
-  if (Length(YakmoDataset) >= Encoder.FPaletteCount) and (Encoder.FPaletteCount > 1) then
+  if BICOClusterCount > Encoder.FPaletteCount then
   begin
-    Yakmo := yakmo_create(Encoder.FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-    yakmo_load_train_data(Yakmo, Length(YakmoDataset), cFeatureCount, PPDouble(@YakmoDataset[0]));
-    SetLength(YakmoDataset, 0); // free up some memmory
-    yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-    yakmo_destroy(Yakmo);
+    if Encoder.FPaletteCount > 1 then
+    begin
+      SetLength(YakmoDataset, BICOClusterCount);
+      for di := 0 to High(YakmoDataset) do
+        YakmoDataset[di] := @BICOCentroids[di * cFeatureCount];
+      SetLength(YakmoClusters, BICOClusterCount);
+
+      Yakmo := yakmo_create(Encoder.FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
+      yakmo_load_train_data(Yakmo, Length(YakmoDataset), cFeatureCount, PPDouble(@YakmoDataset[0]));
+      SetLength(YakmoDataset, 0); // free up some memmory
+      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+      yakmo_destroy(Yakmo);
+    end
+    else
+    begin
+      SetLength(YakmoClusters, Length(YakmoDataset));
+    end;
   end
   else
   begin
-    SetLength(YakmoClusters, Length(YakmoDataset));
+    SetLength(YakmoClusters, BICOClusterCount);
+    for di := 0 to High(YakmoClusters) do
+      YakmoClusters[di] := di;
   end;
 
   // sort entire palettes by use count
@@ -1881,8 +1949,8 @@ begin
   for palIdx := 0 to Encoder.FPaletteCount - 1 do
     PaletteInfo[palIdx].PalIdx_Initial := palIdx;
 
-  for di := 0 to High(YakmoClusters) do
-    Inc(PaletteInfo[YakmoClusters[di]].UseCount);
+  for di := 0 to High(FLANNClusters) do
+    Inc(PaletteInfo[YakmoClusters[FLANNClusters[di]]].UseCount);
 
   QuickSort(PaletteInfo[0], 0, Encoder.FPaletteCount - 1, SizeOf(PaletteInfo[0]), @ComparePaletteUseCount, Self);
   for palIdx := 0 to Encoder.FPaletteCount - 1 do
@@ -1897,7 +1965,7 @@ begin
     for sy := 0 to Encoder.FTileMapHeight - 1 do
       for sx := 0 to Encoder.FTileMapWidth - 1 do
       begin
-        Encoder.FFrames[frmIdx].TileMap[sy, sx].PalIdx := PalIdxLUT[YakmoClusters[di]];
+        Frame.TileMap[sy, sx].PalIdx := PalIdxLUT[YakmoClusters[FLANNClusters[di]]];
         Inc(di);
       end;
   end;
@@ -2591,6 +2659,8 @@ begin
   end;
 
   OptimizePalettes;
+
+  InterLockedDecrement(Encoder.FKeyFramesLeft);
 end;
 
 procedure TKeyFrame.Reconstruct;
@@ -2941,6 +3011,7 @@ begin
   StepProgress := 0;
   ProgressRedraw(0, '', esPreparePalettes);
 
+  FKeyFramesLeft := Length(FKeyFrames);
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
 
