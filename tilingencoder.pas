@@ -570,8 +570,6 @@ type
     class procedure GetTileHVMirrorHeuristics(const ATile: TTile; out AHMirror, AVMirror: Boolean);
     class procedure HMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
     class procedure VMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
-    procedure BlendTiles(const ATileA, ATileB: TTile; const APalA, APalB: TIntegerDynArray; ABlendA, ABlendB: Integer;
-     var AResult: TTile);
 
     procedure InitLuts;
     procedure ClearAll;
@@ -2509,9 +2507,7 @@ begin
                   if InRange(diffIdx, 0, DS^.KNNSize - 1) then
                   begin
                     // compute error from the final interpolation
-                    Encoder.BlendTiles(Encoder.Tiles[diffIdx]^, Encoder.Tiles[blendDsIdx]^, PaletteRGB[APaletteIndex], PaletteRGB[APaletteIndex], blendIdx, Encoder.FFrameTilingBlendingExtents - blendIdx, BlendT^);
-                    Encoder.ComputeTilePsyVisFeatures(BlendT^, False, False, cFTQWeighting, False, False, False, AFTGamma, nil, @DiffDCT[0]);
-                    blendErr := CompareEuclideanDCTPtr_asm(@DCTs[annQueryPos * cTileDCTSize], @DiffDCT[0]);
+                    blendErr := ComputeBlendingError_Asm(@DCTs[annQueryPos * cTileDCTSize], @DS^.Dataset[diffIdx * cTileDCTSize], @DS^.Dataset[blendDsIdx * cTileDCTSize], blend, 1.0 - blend);
 
                     if blendErr < Best.ResidualErr then
                     begin
@@ -4379,44 +4375,6 @@ begin
         ATile.RGBPixels[j, i] := sv;
         ATile.RGBPixels[cTileWidth - 1 - j, i] := v;
       end;
-    end;
-end;
-
-procedure TTilingEncoder.BlendTiles(const ATileA, ATileB: TTile; const APalA, APalB: TIntegerDynArray; ABlendA,
- ABlendB: Integer; var AResult: TTile);
-
-  function BlendPx(APxA, APxB: Integer): Integer;
-  var
-    r, g, b, ra, ga, ba, rb, gb, bb: Byte;
-  begin
-    FromRGB(APxA, ra, ga, ba);
-    FromRGB(APxB, rb, gb, bb);
-
-    r := (ABlendA * ra + ABlendB * rb) div FFrameTilingBlendingExtents;
-    g := (ABlendA * ga + ABlendB * gb) div FFrameTilingBlendingExtents;
-    b := (ABlendA * ba + ABlendB * bb) div FFrameTilingBlendingExtents;
-
-    Result := ToRGB(r, g, b);
-  end;
-
-var
-  tx, ty: Integer;
-  pxA, pxB: Integer;
-begin
-  for ty := 0 to cTileWidth - 1 do
-    for tx := 0 to cTileWidth - 1 do
-    begin
-      if Assigned(APalA) then
-        pxA := APalA[ATileA.PalPixels[ty, tx]]
-      else
-        pxA := ATileA.RGBPixels[ty, tx];
-
-      if Assigned(APalB) then
-        pxB := APalB[ATileB.PalPixels[ty, tx]]
-      else
-        pxB := ATileB.RGBPixels[ty, tx];
-
-      AResult.RGBPixels[ty, tx] := BlendPx(pxA, pxB);
     end;
 end;
 
