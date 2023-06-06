@@ -1879,14 +1879,14 @@ begin
   DSLen := Encoder.FTileMapSize * FrameCount;
   BICOCoresetSize := Encoder.FTileMapSize;
 
-  bico_set_num_threads(EnsureRange(Encoder.MaxThreadCount - Encoder.FKeyFramesLeft - 1, 1, 2));
+  bico_set_num_threads(EnsureRange(Encoder.MaxThreadCount - (Encoder.FKeyFramesLeft - 1), 1, 2));
   BICO := bico_create(cFeatureCount, DSLen, BICOCoresetSize, 7, BICOCoresetSize, CRandomSeed);
   try
     DoDataset(False);
 
     SetLength(BICOCentroids, BICOCoresetSize * cFeatureCount);
     SetLength(BICOWeights, BICOCoresetSize);
-    BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
+    BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
   finally
     bico_destroy(BICO);
   end;
@@ -5571,7 +5571,7 @@ begin
     SetLength(BICOCentroids, AClusterCount * cTileDCTSize);
     SetLength(BICOWeights, AClusterCount);
 
-    BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
+    BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
 
     SetLength(FLANNDataset, BICOClusterCount * cTileDCTSize);
     for i := 0 to High(FLANNDataset) do
