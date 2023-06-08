@@ -421,6 +421,7 @@ type
     // encoder state variables
 
     FCS: TRTLCriticalSection;
+    FConcurrentKeyFrames: Integer;
     FKeyFramesLeft: Integer;
 
     FGamma: array[0..1] of TFloat;
@@ -1813,6 +1814,35 @@ var
   FLANNParams: TFLANNParameters;
   FLANNClusters: TIntegerDynArray;
 
+  function IsEmptyKF: Boolean;
+  var
+    frmIdx, ftIdx, ti: Integer;
+    acc: UInt64;
+    prgb: PCardinal;
+    Frame: TFrame;
+    Tile: PTile;
+  begin
+    acc := 0;
+    for frmIdx := StartFrame to EndFrame do
+    begin
+      Frame := Encoder.FFrames[frmIdx];
+
+      for ftIdx := 0 to Encoder.FTileMapSize - 1 do
+      begin
+        Tile := Frame.FrameTiles[ftIdx];
+
+        prgb := PCardinal(Tile^.GetRGBPixelsPtr);
+        for ti := 0 to Sqr(cTileWidth) - 1 do
+        begin
+          acc += prgb^;
+          Inc(prgb);
+        end;
+      end;
+    end;
+
+    Result := acc = 0;
+  end;
+
   procedure DoDataset(AFLANN: Boolean);
   var
     frmIdx, ftIdx, ty, tx, di: Integer;
@@ -1859,7 +1889,7 @@ var
   end;
 
 var
-  frmIdx, sx, sy, di, palIdx, BICOCoresetSize, BICOClusterCount: Integer;
+  frmIdx, sx, sy, di, palIdx, BICOCoresetSize, BICOClusterCount, freeThreadCount: Integer;
   speedup: Double;
 
   Frame: TFrame;
@@ -1877,21 +1907,34 @@ begin
   // build dataset
 
   DSLen := Encoder.FTileMapSize * FrameCount;
-  BICOCoresetSize := Encoder.FTileMapSize;
 
-  bico_set_num_threads(EnsureRange(Encoder.MaxThreadCount - (Encoder.FKeyFramesLeft - 1), 1, 2));
-  BICO := bico_create(cFeatureCount, DSLen, BICOCoresetSize, 7, BICOCoresetSize, CRandomSeed);
-  try
-    DoDataset(False);
+  if not IsEmptyKF then
+  begin
+    BICOCoresetSize := Encoder.FTileMapSize;
 
-    SetLength(BICOCentroids, BICOCoresetSize * cFeatureCount);
-    SetLength(BICOWeights, BICOCoresetSize);
-    BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
-  finally
-    bico_destroy(BICO);
+    freeThreadCount := Max(0, Encoder.MaxThreadCount - Encoder.FKeyFramesLeft);
+    bico_set_num_threads(1 + freeThreadCount div Encoder.FConcurrentKeyFrames);
+    BICO := bico_create(cFeatureCount, DSLen, BICOCoresetSize, 7, BICOCoresetSize, CRandomSeed);
+    try
+      DoDataset(False);
+
+      SetLength(BICOCentroids, BICOCoresetSize * cFeatureCount);
+      SetLength(BICOWeights, BICOCoresetSize);
+      BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
+
+      WriteLn('KF: ', StartFrame:8, ' Palettization BICOClusterCount: ', BICOClusterCount:6);
+    finally
+      bico_destroy(BICO);
+    end;
+  end
+  else
+  begin
+    BICOClusterCount := 1;
+    SetLength(BICOCentroids, BICOClusterCount * cFeatureCount);
+    SetLength(BICOWeights, BICOClusterCount);
+
+    WriteLn('KF: ', StartFrame:8, ' Empty KeyFrame!');
   end;
-
-  WriteLn('KF: ', StartFrame:8, ' Palettization BICOClusterCount: ', BICOClusterCount:6);
 
   // use FLANN to compute cluster indexes
 
@@ -1941,6 +1984,7 @@ begin
 
   // sort entire palettes by use count
 
+  SetLength(PaletteRGB, Encoder.FPaletteCount);
   SetLength(PaletteInfo, Encoder.FPaletteCount);
   SetLength(PalIdxLUT, Encoder.FPaletteCount);
 
@@ -2641,22 +2685,23 @@ begin
   if FrameCount = 0 then
     Exit;
 
-  SetLength(PaletteRGB, Encoder.FPaletteCount);
-
-  AcquireFrameTiles;
+  InterLockedIncrement(Encoder.FConcurrentKeyFrames);
   try
-    DoPalettization(IfThen(Encoder.FDitheringUseGamma, 0, -1));
+    AcquireFrameTiles;
+    try
+      DoPalettization(IfThen(Encoder.FDitheringUseGamma, 0, -1));
 
-    PalettesLeft := Encoder.FPaletteCount;
+      PalettesLeft := Encoder.FPaletteCount;
+      ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Encoder.FPaletteCount - 1);
+    finally
+      ReleaseFrameTiles;
+    end;
 
-    ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Encoder.FPaletteCount - 1);
+    OptimizePalettes;
   finally
-    ReleaseFrameTiles;
+    InterLockedDecrement(Encoder.FConcurrentKeyFrames);
+    InterLockedDecrement(Encoder.FKeyFramesLeft);
   end;
-
-  OptimizePalettes;
-
-  InterLockedDecrement(Encoder.FKeyFramesLeft);
 end;
 
 procedure TKeyFrame.Reconstruct;
@@ -3007,6 +3052,7 @@ begin
   StepProgress := 0;
   ProgressRedraw(0, '', esPreparePalettes);
 
+  FConcurrentKeyFrames := 0;
   FKeyFramesLeft := Length(FKeyFrames);
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
