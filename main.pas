@@ -19,6 +19,7 @@ type
     btnPM: TButton;
     cbxFTBlendBinSize: TComboBox;
     cbxFTBlendExtents: TComboBox;
+    chkGlobGamma: TCheckBox;
     chkPosterize: TCheckBox;
     cbxPosterizeBPC: TComboBox;
     cbxScaling: TComboBox;
@@ -601,6 +602,7 @@ begin
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
+  FTilingEncoder.GlobalTilingUseGamma := chkGlobGamma.Checked;
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
@@ -667,6 +669,7 @@ begin
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
    cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
+   chkGlobGamma.Checked := FTilingEncoder.GlobalTilingUseGamma;
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
 

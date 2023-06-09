@@ -462,6 +462,7 @@ type
     FDitheringUseGamma: Boolean;
     FDitheringUseThomasKnoll: Boolean;
     FDitheringYliluoma2MixedColors: Integer;
+    FGlobalTilingUseGamma: Boolean;
     FGlobalTilingTileCount: Integer;
     FGlobalTilingQualityBasedTileCount: Double;
     FFrameTilingFromPalette: Boolean;
@@ -580,7 +581,7 @@ type
     procedure FindKeyFrames(AManualMode: Boolean);
 
     procedure OptimizeGlobalPalettes;
-    procedure DoGlobalKMeans(AClusterCount: Integer);
+    procedure DoGlobalKMeans(AClusterCount, AGamma: Integer);
 
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
@@ -647,6 +648,7 @@ type
     property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
     property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
+    property GlobalTilingUseGamma: Boolean read FGlobalTilingUseGamma write FGlobalTilingUseGamma;
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
     property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
     property FrameTilingFromPalette: Boolean read FFrameTilingFromPalette write FFrameTilingFromPalette;
@@ -1972,7 +1974,7 @@ begin
     end
     else
     begin
-      SetLength(YakmoClusters, Length(YakmoDataset));
+      SetLength(YakmoClusters, BICOClusterCount);
     end;
   end
   else
@@ -2924,7 +2926,7 @@ end;
 function TTilingEncoder.GammaUncorrect(lut: Integer; x: TFloat): Byte;
 begin
   if lut >= 0 then
-    x := power(x, 1 / FGamma[lut]);
+    x := power(Max(0, x), 1 / FGamma[lut]);
   Result := EnsureRange(Round(x * 255.0), 0, 255);
 end;
 
@@ -3081,7 +3083,7 @@ begin
   TTile.Array1DDispose(FTiles);
 
   // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
-  DoGlobalKMeans(FGlobalTilingTileCount);
+  DoGlobalKMeans(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1));
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -5025,6 +5027,7 @@ begin
     ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
+    ini.WriteBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
 
@@ -5072,6 +5075,7 @@ begin
     DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
+    GlobalTilingUseGamma := ini.ReadBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
 
@@ -5372,7 +5376,7 @@ begin
     Inc(Result, Used[sx]);
 end;
 
-procedure TTilingEncoder.DoGlobalKMeans(AClusterCount: Integer);
+procedure TTilingEncoder.DoGlobalKMeans(AClusterCount, AGamma: Integer);
 var
   DSLen: Int64;
   BICOClusterCount: Integer;
@@ -5462,7 +5466,7 @@ var
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @Dataset[si * cTileDCTSize]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, AGamma, nil, @Dataset[si * cTileDCTSize]);
 
             Inc(si);
           end;
@@ -5595,7 +5599,7 @@ begin
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, -1, nil, @DCT[0]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, AGamma, nil, @DCT[0]);
 
             // insert line into BICO
             bico_insert_line(BICO, @DCT[0], 1);
