@@ -17,7 +17,7 @@ type
     btnGTM: TButton;
     btnRunAll: TButton;
     btnPM: TButton;
-    cbxFTBlendBinSize: TComboBox;
+    cbxFTBlendRadius: TComboBox;
     cbxFTBlendExtents: TComboBox;
     chkGlobGamma: TCheckBox;
     chkPosterize: TCheckBox;
@@ -608,7 +608,7 @@ begin
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingBlendingThreshold := seFTBlendThres.Value;
-  FTilingEncoder.FrameTilingBlendingBinSize := StrToInt(cbxFTBlendBinSize.Text);
+  FTilingEncoder.FrameTilingBlendingRadius := StrToInt(cbxFTBlendRadius.Text);
   FTilingEncoder.FrameTilingBlendingExtents := StrToInt(cbxFTBlendExtents.Text);
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
@@ -676,7 +676,7 @@ begin
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
    seFTBlendThres.Value := FTilingEncoder.FrameTilingBlendingThreshold;
-   cbxFTBlendBinSize.Text := IntToStr(FTilingEncoder.FrameTilingBlendingBinSize);
+   cbxFTBlendRadius.Text := IntToStr(FTilingEncoder.FrameTilingBlendingRadius);
    cbxFTBlendExtents.Text := IntToStr(FTilingEncoder.FrameTilingBlendingExtents);
 
    seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;

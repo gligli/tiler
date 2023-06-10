@@ -569,11 +569,11 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 286
-        Width = 225
-        Caption = 'Reconstruct blending tries (0: no blending)'
+        Width = 235
+        Caption = 'Reconstruct blending radius (0: no blending)'
         ParentColor = False
       end
-      object cbxFTBlendBinSize: TComboBox
+      object cbxFTBlendRadius: TComboBox
         Left = 328
         Height = 23
         Top = 282
@@ -584,13 +584,12 @@ object MainForm: TMainForm
           '0'
           '1'
           '2'
+          '3'
           '4'
+          '5'
+          '6'
+          '7'
           '8'
-          '16'
-          '32'
-          '64'
-          '128'
-          '256'
         )
         OnChange = UpdateGUI
         Style = csDropDownList
@@ -616,10 +615,6 @@ object MainForm: TMainForm
           '4'
           '8'
           '16'
-          '32'
-          '64'
-          '128'
-          '256'
         )
         OnChange = UpdateGUI
         Style = csDropDownList
