@@ -2517,6 +2517,8 @@ begin
 
           TMI^.CopyToSmoothed;
 
+          system.InterLockedIncrement(Encoder.Tiles[dsIdx]^.UseCount);
+
           errCml += TMI^.ResidualErr;
         end;
 
@@ -3165,7 +3167,7 @@ var
   end;
 
 var
-  kfIdx: Integer;
+  tIdx, kfIdx: Integer;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -3173,6 +3175,8 @@ begin
   StepProgress := 0;
   ProgressRedraw(0, '', esReconstruct);
 
+  for tIdx := 0 to High(Tiles) do
+    Tiles[tIdx]^.UseCount := 0;
   for kfIdx := 0 to High(FKeyFrames) do
     ResetEvent(FKeyFrames[kfIdx].KFTilingDoneEvent);
   FKeyFramesLeft := Length(FKeyFrames);
