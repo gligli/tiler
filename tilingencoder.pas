@@ -2600,63 +2600,66 @@ begin
         Best.BlendedY := High(ShortInt);
         Best.Blend := Encoder.FFrameTilingBlendingExtents - 1;
 
-        Assert(Assigned(GetDCT(TMI)^));
-        pCurDCT := @GetDCT(TMI)^[0];
-
-        T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
-        if Encoder.FFrameTilingFromPalette then
-          Encoder.DitherTile(T^, PaletteInfo[TMI^.PalIdx].MixingPlan);
-        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cFTQWeighting, T^.HMirror_Initial, T^.VMirror_Initial, False, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @PlainDCT[0]);
-
-        for oy := sy - radius to sy + radius do
+        if not IsZero(Sqrt(Best.ResidualErr), Encoder.FFrameTilingBlendingThreshold) then
         begin
-          if not InRange(oy, 0, Encoder.FTileMapHeight - 1) then
-            Continue;
+          Assert(Assigned(GetDCT(TMI)^));
+          pCurDCT := @GetDCT(TMI)^[0];
 
-          for ox := sx - radius to sx + radius do
+          T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
+          if Encoder.FFrameTilingFromPalette then
+            Encoder.DitherTile(T^, PaletteInfo[TMI^.PalIdx].MixingPlan);
+          Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cFTQWeighting, T^.HMirror_Initial, T^.VMirror_Initial, False, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @PlainDCT[0]);
+
+          for oy := sy - radius to sy + radius do
           begin
-            if not InRange(ox, 0, Encoder.FTileMapWidth - 1) then
+            if not InRange(oy, 0, Encoder.FTileMapHeight - 1) then
               Continue;
 
-            if Frame.Index > 0 then
+            for ox := sx - radius to sx + radius do
             begin
-              prevTMI := @Encoder.FFrames[Frame.Index - 1].TileMap[oy, ox];
-              Assert(Assigned(GetDCT(prevTMI)^));
-              pPrevDCT := @GetDCT(prevTMI)^[0];
-            end
-            else
-            begin
-              if (ox <> sx) or (oy <> sy) then
+              if not InRange(ox, 0, Encoder.FTileMapWidth - 1) then
                 Continue;
-              pPrevDCT := @EmptyDCT[0];
-            end;
 
-            for blendIdx := 1 to Encoder.FFrameTilingBlendingExtents - 1 do
-            begin
-              blend := blendIdx / Encoder.FFrameTilingBlendingExtents;
-
-              // compute error from the final interpolation
-              blendErr := ComputeBlendingError_Asm(@PlainDCT[0], pCurDCT, pPrevDCT, blend, 1.0 - blend);
-
-              if blendErr < Best.ResidualErr then
+              if Frame.Index > 0 then
               begin
-                Best.ResidualErr := blendErr;
-                Best.BlendedX := ox - sx;
-                Best.BlendedY := oy - sy;
-                Best.Blend := blendIdx;
+                prevTMI := @Encoder.FFrames[Frame.Index - 1].TileMap[oy, ox];
+                Assert(Assigned(GetDCT(prevTMI)^));
+                pPrevDCT := @GetDCT(prevTMI)^[0];
+              end
+              else
+              begin
+                if (ox <> sx) or (oy <> sy) then
+                  Continue;
+                pPrevDCT := @EmptyDCT[0];
+              end;
+
+              for blendIdx := 1 to Encoder.FFrameTilingBlendingExtents - 1 do
+              begin
+                blend := blendIdx / Encoder.FFrameTilingBlendingExtents;
+
+                // compute error from the final interpolation
+                blendErr := ComputeBlendingError_Asm(@PlainDCT[0], pCurDCT, pPrevDCT, blend, 1.0 - blend);
+
+                if blendErr < Best.ResidualErr then
+                begin
+                  Best.ResidualErr := blendErr;
+                  Best.BlendedX := ox - sx;
+                  Best.BlendedY := oy - sy;
+                  Best.Blend := blendIdx;
+                end;
               end;
             end;
           end;
+
+          errCml += Best.ResidualErr - TMI^.ResidualErr;
+
+          TMI^.ResidualErr := Best.ResidualErr;
+          TMI^.BlendedX := Best.BlendedX;
+          TMI^.BlendedY := Best.BlendedY;
+          TMI^.Blend := Best.Blend;
+
+          TMI^.CopyToSmoothed;
         end;
-
-        errCml += Best.ResidualErr - TMI^.ResidualErr;
-
-        TMI^.ResidualErr := Best.ResidualErr;
-        TMI^.BlendedX := Best.BlendedX;
-        TMI^.BlendedY := Best.BlendedY;
-        TMI^.Blend := Best.Blend;
-
-        TMI^.CopyToSmoothed;
       end;
   end;
 
