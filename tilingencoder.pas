@@ -21,7 +21,8 @@ type
 const
   // tweakable constants
 
-  cFTQWeighting = False;
+  cClusterQWeighting = True;
+  cReconstructQWeighting = False;
   cYakmoMaxIterations = 300;
 
 {$if false}
@@ -2364,7 +2365,7 @@ var
       T := Encoder.Tiles[tidx];
 
       Assert(T^.Active);
-      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cFTQWeighting, False, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
+      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
       Inc(pDCT, cTileDCTSize);
     end;
   end;
@@ -2480,7 +2481,7 @@ begin
         if Encoder.FFrameTilingFromPalette then
           Encoder.DitherTile(T^, PaletteInfo[APaletteIndex].MixingPlan);
 
-        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cFTQWeighting, False, False, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
+        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
 
         TMI^.HMirror := T^.HMirror_Initial;
         TMI^.VMirror := T^.VMirror_Initial;
@@ -2639,7 +2640,7 @@ begin
         if not Assigned(GetDCT(Frame, TMI)^) and (not IsZero(Sqrt(TMI^.ResidualErr), Encoder.FFrameTilingBlendingThreshold) or (frmIdx < EndFrame)) then
         begin
           SetLength(GetDCT(Frame, TMI)^, cTileDCTSize);
-          Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[TMI^.TileIdx]^, True, False, cFTQWeighting, TMI^.HMirror, TMI^.VMirror, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @GetDCT(Frame, TMI)^[0]);
+          Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[TMI^.TileIdx]^, True, False, cReconstructQWeighting, TMI^.HMirror, TMI^.VMirror, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @GetDCT(Frame, TMI)^[0]);
         end;
       end;
   end;
@@ -2669,7 +2670,7 @@ begin
           T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
           if Encoder.FFrameTilingFromPalette then
             Encoder.DitherTile(T^, PaletteInfo[TMI^.PalIdx].MixingPlan);
-          Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cFTQWeighting, T^.HMirror_Initial, T^.VMirror_Initial, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @PlainDCT[0]);
+          Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, T^.HMirror_Initial, T^.VMirror_Initial, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @PlainDCT[0]);
 
           for oy := sy - radius to sy + radius do
           begin
@@ -5614,7 +5615,7 @@ var
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, 1, AGamma, nil, @Dataset[si * cFeatureCount]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, 1, AGamma, nil, @Dataset[si * cFeatureCount]);
 
             Inc(si);
           end;
@@ -5727,7 +5728,7 @@ begin
   // use BICO to prepare a noise-aware set of centroids
 
   bico_set_num_threads(MaxThreadCount);
-  BICO := bico_create(cFeatureCount, DSLen, AClusterCount, 32, AClusterCount, CRandomSeed);
+  BICO := bico_create(cFeatureCount, DSLen, AClusterCount, 32, AClusterCount * 2, CRandomSeed);
   try
     // insert frame tiles into BICO
 
@@ -5747,7 +5748,7 @@ begin
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, False, False, False, False, 1, AGamma, nil, @DCT[0]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, 1, AGamma, nil, @DCT[0]);
 
             // insert line into BICO
             bico_insert_line(BICO, @DCT[0], 1.0);
