@@ -204,10 +204,12 @@ procedure yakmo_single_load_train_data(ay: PYakmoSingle; rowCount: Cardinal; col
 procedure yakmo_single_train_on_data(ay: PYakmoSingle; pointToCluster: PInteger); stdcall; external 'yakmo_single.dll' name 'yakmo_train_on_data';
 procedure yakmo_single_get_centroids(ay: PYakmoSingle; centroids: PPANNFloat); stdcall; external 'yakmo_single.dll' name 'yakmo_get_centroids';
 
-function birch_create(dist_threshold: TFloat; mem_limit: UInt64): PBIRCH; stdcall; external 'BIRCH.dll';
+function birch_create(dist_threshold: TFloat; k_limit: UInt64; rebuild_interval: Cardinal): PBIRCH; stdcall; external 'BIRCH.dll';
 procedure birch_destroy(birch: PBIRCH); stdcall; external 'BIRCH.dll';
 procedure birch_insert_line(birch: PBIRCH; line: PDouble); stdcall; external 'BIRCH.dll';
-procedure birch_get_results(birch: PBIRCH; pointToCluster: PInteger); stdcall; external 'BIRCH.dll';
+function birch_compute(birch: PBIRCH; extend, cluster: LongBool): Cardinal; stdcall; external 'BIRCH.dll';
+procedure birch_get_centroids(birch: PBIRCH; centroids: PDouble); stdcall; external 'BIRCH.dll';
+procedure birch_get_clusters(birch: PBIRCH; dataset: PDouble; rows: Cardinal; pointToCluster: PInteger); stdcall; external 'BIRCH.dll';
 
 function bico_create(dimension, npoints, k, nrandproj, coresetsize: Int64; randomSeed: Integer): PBICO; stdcall; external 'BICO.dll';
 procedure bico_destroy(bico: PBICO); stdcall; external 'BICO.dll';
