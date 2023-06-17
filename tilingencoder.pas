@@ -21,6 +21,7 @@ type
 const
   // tweakable constants
 
+  cClusterColorCpns = 1;
   cClusterQWeighting = True;
   cReconstructQWeighting = False;
   cYakmoMaxIterations = 300;
@@ -63,40 +64,40 @@ const
 
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, -1, 6, -1, -1, 2, 1);
 
-  cQ = sqrt(16);
+  cQ = 16;
   cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
     (
       // Luma
-      (cQ / sqrt(16), cQ / sqrt( 11), cQ / sqrt( 10), cQ / sqrt( 16), cQ / sqrt( 24), cQ / sqrt( 40), cQ / sqrt( 51), cQ / sqrt( 61)),
-      (cQ / sqrt(12), cQ / sqrt( 12), cQ / sqrt( 14), cQ / sqrt( 19), cQ / sqrt( 26), cQ / sqrt( 58), cQ / sqrt( 60), cQ / sqrt( 55)),
-      (cQ / sqrt(14), cQ / sqrt( 13), cQ / sqrt( 16), cQ / sqrt( 24), cQ / sqrt( 40), cQ / sqrt( 57), cQ / sqrt( 69), cQ / sqrt( 56)),
-      (cQ / sqrt(14), cQ / sqrt( 17), cQ / sqrt( 22), cQ / sqrt( 29), cQ / sqrt( 51), cQ / sqrt( 87), cQ / sqrt( 80), cQ / sqrt( 62)),
-      (cQ / sqrt(18), cQ / sqrt( 22), cQ / sqrt( 37), cQ / sqrt( 56), cQ / sqrt( 68), cQ / sqrt(109), cQ / sqrt(103), cQ / sqrt( 77)),
-      (cQ / sqrt(24), cQ / sqrt( 35), cQ / sqrt( 55), cQ / sqrt( 64), cQ / sqrt( 81), cQ / sqrt(104), cQ / sqrt(113), cQ / sqrt( 92)),
-      (cQ / sqrt(49), cQ / sqrt( 64), cQ / sqrt( 78), cQ / sqrt( 87), cQ / sqrt(103), cQ / sqrt(121), cQ / sqrt(120), cQ / sqrt(101)),
-      (cQ / sqrt(72), cQ / sqrt( 92), cQ / sqrt( 95), cQ / sqrt( 98), cQ / sqrt(112), cQ / sqrt(100), cQ / sqrt(103), cQ / sqrt( 99))
+      (cQ / 16, cQ /  11, cQ /  10, cQ /  16, cQ /  24, cQ /  40, cQ /  51, cQ /  61),
+      (cQ / 12, cQ /  12, cQ /  14, cQ /  19, cQ /  26, cQ /  58, cQ /  60, cQ /  55),
+      (cQ / 14, cQ /  13, cQ /  16, cQ /  24, cQ /  40, cQ /  57, cQ /  69, cQ /  56),
+      (cQ / 14, cQ /  17, cQ /  22, cQ /  29, cQ /  51, cQ /  87, cQ /  80, cQ /  62),
+      (cQ / 18, cQ /  22, cQ /  37, cQ /  56, cQ /  68, cQ / 109, cQ / 103, cQ /  77),
+      (cQ / 24, cQ /  35, cQ /  55, cQ /  64, cQ /  81, cQ / 104, cQ / 113, cQ /  92),
+      (cQ / 49, cQ /  64, cQ /  78, cQ /  87, cQ / 103, cQ / 121, cQ / 120, cQ / 101),
+      (cQ / 72, cQ /  92, cQ /  95, cQ /  98, cQ / 112, cQ / 100, cQ / 103, cQ /  99)
     ),
     (
       // U, weighted by luma importance
-      (cQ / sqrt(17), cQ / sqrt( 18), cQ / sqrt( 24), cQ / sqrt( 47), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99)),
-      (cQ / sqrt(18), cQ / sqrt( 21), cQ / sqrt( 26), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112)),
-      (cQ / sqrt(24), cQ / sqrt( 26), cQ / sqrt( 56), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128)),
-      (cQ / sqrt(47), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144)),
-      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160)),
-      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176)),
-      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192)),
-      (cQ / sqrt(99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192), cQ / sqrt(208))
+      (cQ / 17, cQ /  18, cQ /  24, cQ /  47, cQ /  99, cQ /  99, cQ /  99, cQ /  99),
+      (cQ / 18, cQ /  21, cQ /  26, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112),
+      (cQ / 24, cQ /  26, cQ /  56, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128),
+      (cQ / 47, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144),
+      (cQ / 99, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160),
+      (cQ / 99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176),
+      (cQ / 99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192),
+      (cQ / 99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192, cQ / 208)
     ),
     (
       // V, weighted by luma importance
-      (cQ / sqrt(17), cQ / sqrt( 18), cQ / sqrt( 24), cQ / sqrt( 47), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99)),
-      (cQ / sqrt(18), cQ / sqrt( 21), cQ / sqrt( 26), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112)),
-      (cQ / sqrt(24), cQ / sqrt( 26), cQ / sqrt( 56), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128)),
-      (cQ / sqrt(47), cQ / sqrt( 66), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144)),
-      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160)),
-      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176)),
-      (cQ / sqrt(99), cQ / sqrt( 99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192)),
-      (cQ / sqrt(99), cQ / sqrt(112), cQ / sqrt(128), cQ / sqrt(144), cQ / sqrt(160), cQ / sqrt(176), cQ / sqrt(192), cQ / sqrt(208))
+      (cQ / 17, cQ /  18, cQ /  24, cQ /  47, cQ /  99, cQ /  99, cQ /  99, cQ /  99),
+      (cQ / 18, cQ /  21, cQ /  26, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112),
+      (cQ / 24, cQ /  26, cQ /  56, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128),
+      (cQ / 47, cQ /  66, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144),
+      (cQ / 99, cQ /  99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160),
+      (cQ / 99, cQ /  99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176),
+      (cQ / 99, cQ /  99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192),
+      (cQ / 99, cQ / 112, cQ / 128, cQ / 144, cQ / 160, cQ / 176, cQ / 192, cQ / 208)
     )
   );
 
@@ -4500,9 +4501,9 @@ var
   end;
 
 begin
-  pCpn := @CpnPixels[0, 0, 0];
   for cpn := 0 to cColorCpns - 1 do
   begin
+    pCpn := @CpnPixels[cpn, 0, 0];
     pLut := @FInvDCTLutDouble[0];
 
     for y := 0 to (cTileWidth - 1) do
@@ -5290,6 +5291,8 @@ var
   DCT: array [0..cTileDCTSize-1] of Double;
   T, T2: PTile;
 begin
+  InitLuts;
+
   for i := 0 to 10000 do
   begin
     rng := RandomRange(0, (1 shl 24) - 1);
@@ -5525,7 +5528,7 @@ end;
 
 procedure TTilingEncoder.DoGlobalKMeans(AClusterCount, AGamma: Integer);
 const
-  cFeatureCount = cTileDCTSize div cColorCpns;
+  cFeatureCount = cTileDCTSize div cColorCpns * cClusterColorCpns;
 var
   DSLen: Int64;
   BICOClusterCount: Integer;
@@ -5615,7 +5618,7 @@ var
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, 1, AGamma, nil, @Dataset[si * cFeatureCount]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, cClusterColorCpns, AGamma, nil, @Dataset[si * cFeatureCount]);
 
             Inc(si);
           end;
@@ -5728,8 +5731,10 @@ begin
   // use BICO to prepare a noise-aware set of centroids
 
   bico_set_num_threads(MaxThreadCount);
-  BICO := bico_create(cFeatureCount, DSLen, AClusterCount, 32, AClusterCount * 2, CRandomSeed);
+  BICO := bico_create(cFeatureCount, DSLen, AClusterCount, 32, AClusterCount, CRandomSeed);
   try
+    bico_set_rebuild_properties(BICO, FTileMapSize, cPhi, cPhi);
+
     // insert frame tiles into BICO
 
     doneFrameCount := 0;
@@ -5748,7 +5753,7 @@ begin
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, 1, AGamma, nil, @DCT[0]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, cClusterColorCpns, AGamma, nil, @DCT[0]);
 
             // insert line into BICO
             bico_insert_line(BICO, @DCT[0], 1.0);

@@ -212,6 +212,7 @@ procedure birch_get_results(birch: PBIRCH; pointToCluster: PInteger); stdcall; e
 function bico_create(dimension, npoints, k, nrandproj, coresetsize: Int64; randomSeed: Integer): PBICO; stdcall; external 'BICO.dll';
 procedure bico_destroy(bico: PBICO); stdcall; external 'BICO.dll';
 procedure bico_set_num_threads(num_threads: Integer); stdcall; external 'BICO.dll';
+procedure bico_set_rebuild_properties(bico: PBICO; interval: Cardinal; initial: Double; grow: Double); stdcall; external 'BICO.dll';
 procedure bico_insert_line(bico: PBICO; line: PDouble; weight: Double); stdcall; external 'BICO.dll';
 function bico_get_results(bico: PBICO; centroids: PDouble; weights: PDouble): Int64; stdcall; external 'BICO.dll';
 
