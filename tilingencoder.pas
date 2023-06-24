@@ -2630,15 +2630,15 @@ begin
   errCml := 0.0;
   radius := Encoder.FFrameTilingBlendingRadius - 1;
 
-  if StartFrame > 0 then
-      WaitForSingleObject(Encoder.FFrames[StartFrame - 1].PKeyFrame.KFTilingDoneEvent, INFINITE);
-
   // prepare DCT of the whole keyframe plus (potentially) previous frame
 
   SetLength(DCTs, Length(Encoder.FTiles), Encoder.FPaletteCount * 2 {prevKF?} * 4 {mirrors});
-  for frmIdx := max(0, StartFrame - 1) to EndFrame do
+  for frmIdx := EndFrame downto max(0, StartFrame - 1) do
   begin
     Frame := Encoder.FFrames[frmIdx];
+
+    if Frame.PKeyFrame <> Self then
+        WaitForSingleObject(Frame.PKeyFrame.KFTilingDoneEvent, INFINITE);
 
     for sy := 0 to Encoder.FTileMapHeight - 1 do
       for sx := 0 to Encoder.FTileMapWidth - 1 do
@@ -2676,8 +2676,6 @@ begin
           pCurDCT := @GetDCT(Frame, TMI)^[0];
 
           T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
-          if Encoder.FFrameTilingFromPalette then
-            Encoder.DitherTile(T^, PaletteInfo[TMI^.PalIdx].MixingPlan);
           Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, T^.HMirror_Initial, T^.VMirror_Initial, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @PlainDCT[0]);
 
           for oy := sy - radius to sy + radius do
