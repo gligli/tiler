@@ -1,7 +1,7 @@
 object MainForm: TMainForm
-  Left = 1913
+  Left = 386
   Height = 600
-  Top = 464
+  Top = 176
   Width = 960
   HorzScrollBar.Increment = 128
   HorzScrollBar.Page = 1
@@ -25,7 +25,7 @@ object MainForm: TMainForm
   ParentDoubleBuffered = False
   PopupMenu = pmProcesses
   Position = poScreenCenter
-  LCLVersion = '2.2.6.0'
+  LCLVersion = '2.2.4.0'
   object tbFrame: TTrackBar
     Left = 0
     Height = 27
@@ -310,7 +310,7 @@ object MainForm: TMainForm
         Width = 170
         Caption = 'Dithering gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 28
+        TabOrder = 29
       end
       object chkFTGamma: TCheckBox
         Left = 328
@@ -319,7 +319,7 @@ object MainForm: TMainForm
         Width = 184
         Caption = 'Reconstruct gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 30
+        TabOrder = 31
       end
       object Label10: TLabel
         Left = 8
@@ -540,11 +540,11 @@ object MainForm: TMainForm
       object chkFTFromPal: TCheckBox
         Left = 8
         Height = 19
-        Top = 416
+        Top = 435
         Width = 205
         Caption = 'Do reconstruct from palettized tiles'
         OnChange = UpdateGUI
-        TabOrder = 27
+        TabOrder = 28
       end
       object Label16: TLabel
         Left = 8
@@ -682,7 +682,16 @@ object MainForm: TMainForm
         Width = 158
         Caption = 'Cluster gamma correction'
         OnChange = UpdateGUI
-        TabOrder = 29
+        TabOrder = 30
+      end
+      object chkGlobLumaOnly: TCheckBox
+        Left = 8
+        Height = 19
+        Top = 416
+        Width = 227
+        Caption = 'Cluster from luma features only (faster)'
+        OnChange = UpdateGUI
+        TabOrder = 27
       end
     end
     object tsInput: TTabSheet

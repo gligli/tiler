@@ -19,6 +19,7 @@ type
     btnPM: TButton;
     cbxFTBlendRadius: TComboBox;
     cbxFTBlendExtents: TComboBox;
+    chkGlobLumaOnly: TCheckBox;
     chkGlobGamma: TCheckBox;
     chkPosterize: TCheckBox;
     cbxPosterizeBPC: TComboBox;
@@ -604,6 +605,7 @@ begin
 
   FTilingEncoder.GlobalTilingUseGamma := chkGlobGamma.Checked;
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
+  FTilingEncoder.GlobalTilingLumaOnly := chkGlobLumaOnly.Checked;
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
@@ -672,6 +674,7 @@ begin
    chkGlobGamma.Checked := FTilingEncoder.GlobalTilingUseGamma;
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
+   chkGlobLumaOnly.Checked := FTilingEncoder.GlobalTilingLumaOnly;
 
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;

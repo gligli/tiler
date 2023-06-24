@@ -21,8 +21,7 @@ type
 const
   // tweakable constants
 
-  cClusterColorCpns = 3;
-  cClusterQWeighting = False;
+  cClusterQWeighting = True;
   cReconstructQWeighting = False;
   cYakmoMaxIterations = 300;
 
@@ -471,6 +470,7 @@ type
     FGlobalTilingUseGamma: Boolean;
     FGlobalTilingTileCount: Integer;
     FGlobalTilingQualityBasedTileCount: Double;
+    FGlobalTilingLumaOnly: Boolean;
     FFrameTilingFromPalette: Boolean;
     FFrameTilingUseGamma: Boolean;
     FFrameTilingBlendingThreshold: Double;
@@ -587,7 +587,7 @@ type
     procedure FindKeyFrames(AManualMode: Boolean);
 
     procedure OptimizeGlobalPalettes;
-    procedure DoGlobalKMeans(AClusterCount, AGamma: Integer);
+    procedure DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer);
 
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
@@ -657,6 +657,7 @@ type
     property GlobalTilingUseGamma: Boolean read FGlobalTilingUseGamma write FGlobalTilingUseGamma;
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
     property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
+    property GlobalTilingLumaOnly: Boolean read FGlobalTilingLumaOnly write FGlobalTilingLumaOnly;
     property FrameTilingFromPalette: Boolean read FFrameTilingFromPalette write FFrameTilingFromPalette;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingBlendingThreshold: Double read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
@@ -3204,7 +3205,7 @@ begin
   TTile.Array1DDispose(FTiles);
 
   // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
-  DoGlobalKMeans(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1));
+  DoGlobalKMeans(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1), IfThen(FGlobalTilingLumaOnly, 1, 3));
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -5183,6 +5184,7 @@ begin
     ini.WriteBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
+    ini.WriteBool('GlobalTiling', 'GlobalTilingLumaOnly', GlobalTilingLumaOnly);
 
     ini.WriteBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
@@ -5231,6 +5233,7 @@ begin
     GlobalTilingUseGamma := ini.ReadBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
+    GlobalTilingLumaOnly := ini.ReadBool('GlobalTiling', 'FGlobalTilingLumaOnly', FGlobalTilingLumaOnly);
 
     FrameTilingFromPalette := ini.ReadBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
@@ -5270,8 +5273,11 @@ begin
   DitheringUseThomasKnoll := True;
   DitheringYliluoma2MixedColors := 4;
 
+  GlobalTilingUseGamma := False;
   GlobalTilingQualityBasedTileCount := 4.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
+  FGlobalTilingLumaOnly := True;
+
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
@@ -5531,13 +5537,11 @@ begin
     Inc(Result, Used[sx]);
 end;
 
-procedure TTilingEncoder.DoGlobalKMeans(AClusterCount, AGamma: Integer);
-const
-  cFeatureCount = cTileDCTSize div cColorCpns * cClusterColorCpns;
+procedure TTilingEncoder.DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer);
 var
   DSLen: Int64;
+  featureCount, doneFrameCount: Integer;
   BICOClusterCount: Integer;
-  doneFrameCount: Integer;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TSingleDynArray;
   FLANNPalIdxs: TSmallIntDynArray;
@@ -5606,7 +5610,7 @@ var
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    SetLength(Dataset, cFeatureCount * FTileMapSize);
+    SetLength(Dataset, featureCount * FTileMapSize);
 
     KeyFrame := FKeyFrames[AIndex];
 
@@ -5623,7 +5627,7 @@ var
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, cClusterColorCpns, AGamma, nil, @Dataset[si * cFeatureCount]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, AColorCpns, AGamma, nil, @Dataset[si * featureCount]);
 
             Inc(si);
           end;
@@ -5715,10 +5719,13 @@ var
   Tile: PTile;
   BICOCentroids, BICOWeights: TDoubleDynArray;
   FLANNDataset: TSingleDynArray;
-  DCT: array[0 .. cFeatureCount - 1] of Double;
+  DCT: TDoubleDynArray;
   TileBestErr: TSingleDynArray;
 
 begin
+  featureCount := cTileDCTSize div cColorCpns * AColorCpns;
+  SetLength(DCT, featureCount);
+
   DSLen := Length(FFrames) * FTileMapSize;
   if DSLen <= AClusterCount then
   begin
@@ -5736,7 +5743,7 @@ begin
   // use BICO to prepare a noise-aware set of centroids
 
   bico_set_num_threads(MaxThreadCount);
-  BICO := bico_create(cFeatureCount, DSLen, AClusterCount, 32, AClusterCount, CRandomSeed);
+  BICO := bico_create(featureCount, DSLen, AClusterCount, 32, AClusterCount, CRandomSeed);
   try
     bico_set_rebuild_properties(BICO, FTileMapSize, cPhi, cPhi);
 
@@ -5754,11 +5761,14 @@ begin
         begin
           Frame := FFrames[frmIdx];
 
+          if (kfIdx = High(FKeyFrames)) and (frmIdx = KeyFrame.EndFrame) then
+            bico_set_rebuild_properties(BICO, FTileMapSize, NaN, 1.05); // lower grow on last rebuild for better K enforcement
+
           for si := 0 to FTileMapSize - 1 do
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, cClusterColorCpns, AGamma, nil, @DCT[0]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, AColorCpns, AGamma, nil, @DCT[0]);
 
             // insert line into BICO
             bico_insert_line(BICO, @DCT[0], 1.0);
@@ -5777,12 +5787,12 @@ begin
 
     // get BICO results
 
-    SetLength(BICOCentroids, AClusterCount * cFeatureCount);
+    SetLength(BICOCentroids, AClusterCount * featureCount);
     SetLength(BICOWeights, AClusterCount);
 
     BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
 
-    SetLength(FLANNDataset, BICOClusterCount * cFeatureCount);
+    SetLength(FLANNDataset, BICOClusterCount * featureCount);
     for i := 0 to High(FLANNDataset) do
       FLANNDataset[i] := BICOCentroids[i];
   finally
@@ -5805,11 +5815,11 @@ begin
   SetLength(FLANNPalIdxs, DSLen);
 
   FLANNParams := CDefaultFLANNParameters;
-  FLANNParams.checks := cFeatureCount;
+  FLANNParams.checks := featureCount;
   FLANNParams.sorted := 0;
   FLANNParams.max_neighbors := 1;
 
-  FLANN := flann_build_index(@FLANNDataset[0], BICOClusterCount, cFeatureCount, @speedup, @FLANNParams);
+  FLANN := flann_build_index(@FLANNDataset[0], BICOClusterCount, featureCount, @speedup, @FLANNParams);
   try
     doneFrameCount := 0;
     ProcThreadPool.DoParallelLocalProc(@DoFLANN, 0, High(FKeyFrames));
