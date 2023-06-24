@@ -5535,9 +5535,9 @@ procedure TTilingEncoder.DoGlobalKMeans(AClusterCount, AGamma: Integer);
 const
   cFeatureCount = cTileDCTSize div cColorCpns * cClusterColorCpns;
 var
-  doneFrameCount: Integer;
   DSLen: Int64;
-  BIRCHClusterCount: Integer;
+  BICOClusterCount: Integer;
+  doneFrameCount: Integer;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TSingleDynArray;
   FLANNPalIdxs: TSmallIntDynArray;
@@ -5669,7 +5669,7 @@ var
     KeyFrame := FKeyFrames[AIndex];
 
     hasKeyFrame := False;
-    for i := 0 to BIRCHClusterCount - 1 do
+    for i := 0 to BICOClusterCount - 1 do
     begin
       DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
       if InRange(frmIdx, KeyFrame.StartFrame, KeyFrame.EndFrame) and (TileLineIdxs[i] >= 0) then
@@ -5683,7 +5683,7 @@ var
     begin
       KeyFrame.AcquireFrameTiles;
       try
-        for i := 0 to BIRCHClusterCount - 1 do
+        for i := 0 to BICOClusterCount - 1 do
         begin
           DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
           if InRange(frmIdx, KeyFrame.StartFrame, KeyFrame.EndFrame) and (TileLineIdxs[i] >= 0) then
@@ -5692,8 +5692,6 @@ var
             Tile := Tiles[i];
 
             Tile^.CopyFrom(Frame.FrameTiles[si]^);
-
-            //ComputeInvTilePsyVisFeatures(@BIRCHCentroids[i * cFeatureCount], False, AGamma, Tile^);
 
             DitherTile(Tile^, Frame.PKeyFrame.PaletteInfo[FLANNPalIdxs[TileLineIdxs[i]]].MixingPlan);
           end;
@@ -5713,16 +5711,16 @@ var
   err: Single;
   KeyFrame: TKeyFrame;
   Frame: TFrame;
-  BIRCH: PBIRCH;
+  BICO: PBICO;
   Tile: PTile;
-  BIRCHCentroids: TDoubleDynArray;
+  BICOCentroids, BICOWeights: TDoubleDynArray;
   FLANNDataset: TSingleDynArray;
   DCT: array[0 .. cFeatureCount - 1] of Double;
   TileBestErr: TSingleDynArray;
 
 begin
   DSLen := Length(FFrames) * FTileMapSize;
-  if AClusterCount >= DSLen then
+  if DSLen <= AClusterCount then
   begin
     // still dither tiles in case no need for clustering
 
@@ -5735,11 +5733,14 @@ begin
     Exit;
   end;
 
-  // use BIRCH to prepare a noise-aware set of centroids
+  // use BICO to prepare a noise-aware set of centroids
 
-  BIRCH := birch_create(1.0, AClusterCount, FTileMapSize);
+  bico_set_num_threads(MaxThreadCount);
+  BICO := bico_create(cFeatureCount, DSLen, AClusterCount, 32, AClusterCount, CRandomSeed);
   try
-    // insert frame tiles into BIRCH
+    bico_set_rebuild_properties(BICO, FTileMapSize, cPhi, cPhi);
+
+    // insert frame tiles into BICO
 
     doneFrameCount := 0;
     cnt := 0;
@@ -5759,8 +5760,8 @@ begin
 
             ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, cClusterColorCpns, AGamma, nil, @DCT[0]);
 
-            // insert line into BIRCH
-            birch_insert_line(BIRCH, @DCT[0]);
+            // insert line into BICO
+            bico_insert_line(BICO, @DCT[0], 1.0);
 
             Inc(cnt);
           end;
@@ -5774,28 +5775,27 @@ begin
     end;
     Assert(cnt = DSLen);
 
-    // get BIRCH results
+    // get BICO results
 
-    BIRCHClusterCount := birch_compute(BIRCH, False, False);
+    SetLength(BICOCentroids, AClusterCount * cFeatureCount);
+    SetLength(BICOWeights, AClusterCount);
 
-    SetLength(BIRCHCentroids, BIRCHClusterCount * cFeatureCount);
+    BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
 
-    birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
-
-    SetLength(FLANNDataset, BIRCHClusterCount * cFeatureCount);
+    SetLength(FLANNDataset, BICOClusterCount * cFeatureCount);
     for i := 0 to High(FLANNDataset) do
-      FLANNDataset[i] := BIRCHCentroids[i];
-
+      FLANNDataset[i] := BICOCentroids[i];
   finally
-    birch_destroy(BIRCH);
-    SetLength(BIRCHCentroids, 0);
+    bico_destroy(BICO);
+    SetLength(BICOCentroids, 0);
+    SetLength(BICOWeights, 0);
   end;
 
-  WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' ClusterCount: ', AClusterCount:6, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
+  WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', AClusterCount:6);
 
   ProgressRedraw(3, 'BICOClustering');
 
-  if BIRCHClusterCount <= 0 then
+  if BICOClusterCount <= 0 then
     Exit;
 
   // use FLANN to compute cluster indexes
@@ -5809,7 +5809,7 @@ begin
   FLANNParams.sorted := 0;
   FLANNParams.max_neighbors := 1;
 
-  FLANN := flann_build_index(@FLANNDataset[0], BIRCHClusterCount, cFeatureCount, @speedup, @FLANNParams);
+  FLANN := flann_build_index(@FLANNDataset[0], BICOClusterCount, cFeatureCount, @speedup, @FLANNParams);
   try
     doneFrameCount := 0;
     ProcThreadPool.DoParallelLocalProc(@DoFLANN, 0, High(FKeyFrames));
@@ -5821,13 +5821,13 @@ begin
 
   // allocate tile set
 
-  FTiles := TTile.Array1DNew(BIRCHClusterCount, True, True);
-  SetLength(TileLineIdxs, BIRCHClusterCount);
-  SetLength(TileBestErr, BIRCHClusterCount);
+  FTiles := TTile.Array1DNew(BICOClusterCount, True, True);
+  SetLength(TileLineIdxs, BICOClusterCount);
+  SetLength(TileBestErr, BICOClusterCount);
 
   // prepare final tiles infos
 
-  for clusterIdx := 0 to BIRCHClusterCount - 1 do
+  for clusterIdx := 0 to BICOClusterCount - 1 do
     TileBestErr[clusterIdx] := MaxSingle;
 
   for lineIdx := 0 to DSLen - 1 do
