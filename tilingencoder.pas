@@ -5270,12 +5270,12 @@ begin
   DitheringUseThomasKnoll := True;
   DitheringYliluoma2MixedColors := 4;
 
-  GlobalTilingQualityBasedTileCount := 2.0;
+  GlobalTilingQualityBasedTileCount := 4.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
-  FrameTilingBlendingThreshold := 1.0;
+  FrameTilingBlendingThreshold := 0.5;
   FrameTilingBlendingExtents := 16;
   FrameTilingBlendingRadius := 3;
 
