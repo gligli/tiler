@@ -1979,7 +1979,7 @@ begin
         YakmoDataset[di] := @BIRCHCentroids[di * cFeatureCount];
       SetLength(YakmoClusters, BIRCHClusterCount);
 
-      Yakmo := yakmo_create(Encoder.FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
+      Yakmo := yakmo_create(Encoder.FPaletteCount, 1, cYakmoMaxIterations, 1, CRandomSeed, 0, 0);
       yakmo_load_train_data(Yakmo, Length(YakmoDataset), cFeatureCount, PPDouble(@YakmoDataset[0]));
       SetLength(YakmoDataset, 0); // free up some memmory
       yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
@@ -2181,7 +2181,7 @@ var
 
     if Length(Dataset) >= AColorCount then
     begin
-      Yakmo := yakmo_create(AColorCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
+      Yakmo := yakmo_create(AColorCount, 1, cYakmoMaxIterations, 1, CRandomSeed, 0, 0);
       yakmo_load_train_data(Yakmo, Length(Dataset), cFeatureCount, PPDouble(@Dataset[0]));
 
       SetLength(Dataset, 0); // free up some memmory
@@ -5537,7 +5537,6 @@ const
 var
   doneFrameCount: Integer;
   DSLen: Int64;
-  BIRCHClusterCount: Integer;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TSingleDynArray;
   FLANNPalIdxs: TSmallIntDynArray;
@@ -5669,7 +5668,7 @@ var
     KeyFrame := FKeyFrames[AIndex];
 
     hasKeyFrame := False;
-    for i := 0 to BIRCHClusterCount - 1 do
+    for i := 0 to AClusterCount - 1 do
     begin
       DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
       if InRange(frmIdx, KeyFrame.StartFrame, KeyFrame.EndFrame) and (TileLineIdxs[i] >= 0) then
@@ -5683,7 +5682,7 @@ var
     begin
       KeyFrame.AcquireFrameTiles;
       try
-        for i := 0 to BIRCHClusterCount - 1 do
+        for i := 0 to AClusterCount - 1 do
         begin
           DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
           if InRange(frmIdx, KeyFrame.StartFrame, KeyFrame.EndFrame) and (TileLineIdxs[i] >= 0) then
@@ -5707,15 +5706,21 @@ var
   end;
 
 var
-  i, kfIdx, frmIdx, clusterIdx, si: Integer;
+  i, j, kfIdx, frmIdx, clusterIdx, si: Integer;
+  BIRCHClusterCount, BICOClusterCount: Integer;
   lineIdx, cnt: Int64;
   speedup: Single;
   err: Single;
   KeyFrame: TKeyFrame;
   Frame: TFrame;
   BIRCH: PBIRCH;
+  BICO: PBICO;
+  Yakmo: PYakmo;
   Tile: PTile;
-  BIRCHCentroids: TDoubleDynArray;
+  BIRCHCentroids, BICOCentroids, BICOWeights: TDoubleDynArray;
+  YakmoDataset: array of PDouble;
+  YakmoClusters: TIntegerDynArray;
+  YakmoCentroids: TDoubleDynArray2;
   FLANNDataset: TSingleDynArray;
   DCT: array[0 .. cFeatureCount - 1] of Double;
   TileBestErr: TSingleDynArray;
@@ -5735,11 +5740,15 @@ begin
     Exit;
   end;
 
-  // use BIRCH to prepare a noise-aware set of centroids
+  // use BIRCH to prepare a noise-aware set of BIRCHCentroids
 
   BIRCH := birch_create(1.0, AClusterCount, FTileMapSize);
+  BICO := bico_create(cFeatureCount, DSLen, AClusterCount, 32, AClusterCount, CRandomSeed);
   try
-    // insert frame tiles into BIRCH
+    bico_set_rebuild_properties(BICO, FTileMapSize, cPhi, cPhi);
+    bico_set_num_threads(MaxThreadCount);
+
+    // insert frame tiles into BIRCH adn BICO
 
     doneFrameCount := 0;
     cnt := 0;
@@ -5762,6 +5771,9 @@ begin
             // insert line into BIRCH
             birch_insert_line(BIRCH, @DCT[0]);
 
+            // insert line into BICO
+            bico_insert_line(BICO, @DCT[0], 1.0);
+
             Inc(cnt);
           end;
 
@@ -5776,27 +5788,55 @@ begin
 
     // get BIRCH results
 
-    BIRCHClusterCount := birch_compute(BIRCH, False, False);
-
+    BIRCHClusterCount := birch_compute(BIRCH, False, True);
     SetLength(BIRCHCentroids, BIRCHClusterCount * cFeatureCount);
 
     birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
 
-    SetLength(FLANNDataset, BIRCHClusterCount * cFeatureCount);
-    for i := 0 to High(FLANNDataset) do
-      FLANNDataset[i] := BIRCHCentroids[i];
+    // get BICO results
+
+    SetLength(BICOCentroids, AClusterCount * cFeatureCount);
+    SetLength(BICOWeights, AClusterCount);
+    BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
+    SetLength(BICOCentroids, BICOClusterCount * cFeatureCount);
+
+    WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
+
+    // aggregate results using Yakmo
+
+    SetLength(YakmoDataset, BIRCHClusterCount + BICOClusterCount);
+    for i := 0 to BIRCHClusterCount - 1 do
+      YakmoDataset[i] := @BIRCHCentroids[i * cFeatureCount];
+    for i := 0 to BICOClusterCount - 1 do
+      YakmoDataset[BIRCHClusterCount + i] := @BICOCentroids[i * cFeatureCount];
+
+    Yakmo := yakmo_create(AClusterCount, 1, cYakmoMaxIterations, 1, CRandomSeed, 0, 1);
+    try
+      yakmo_load_train_data(Yakmo, Length(YakmoDataset), cFeatureCount, @YakmoDataset[0]);
+      SetLength(YakmoClusters, Length(YakmoDataset));
+      SetLength(YakmoDataset, 0);
+      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+      SetLength(YakmoClusters, 0);
+      SetLength(YakmoCentroids, AClusterCount, cFeatureCount);
+      yakmo_get_centroids(Yakmo, PPDouble(@YakmoCentroids[0]));
+    finally
+      yakmo_destroy(Yakmo);
+    end;
+
+    SetLength(FLANNDataset, AClusterCount * cFeatureCount);
+    for i := 0 to AClusterCount - 1 do
+      for j := 0 to cFeatureCount - 1 do
+        FLANNDataset[i * cFeatureCount + j] := NanDef(YakmoCentroids[i, j], 0.0);
 
   finally
+    bico_destroy(BICO);
     birch_destroy(BIRCH);
     SetLength(BIRCHCentroids, 0);
+    SetLength(BICOCentroids, 0);
+    SetLength(BICOWeights, 0);
   end;
 
-  WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' ClusterCount: ', AClusterCount:6, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
-
   ProgressRedraw(3, 'BICOClustering');
-
-  if BIRCHClusterCount <= 0 then
-    Exit;
 
   // use FLANN to compute cluster indexes
 
@@ -5809,7 +5849,7 @@ begin
   FLANNParams.sorted := 0;
   FLANNParams.max_neighbors := 1;
 
-  FLANN := flann_build_index(@FLANNDataset[0], BIRCHClusterCount, cFeatureCount, @speedup, @FLANNParams);
+  FLANN := flann_build_index(@FLANNDataset[0], AClusterCount, cFeatureCount, @speedup, @FLANNParams);
   try
     doneFrameCount := 0;
     ProcThreadPool.DoParallelLocalProc(@DoFLANN, 0, High(FKeyFrames));
@@ -5821,13 +5861,13 @@ begin
 
   // allocate tile set
 
-  FTiles := TTile.Array1DNew(BIRCHClusterCount, True, True);
-  SetLength(TileLineIdxs, BIRCHClusterCount);
-  SetLength(TileBestErr, BIRCHClusterCount);
+  FTiles := TTile.Array1DNew(AClusterCount, True, True);
+  SetLength(TileLineIdxs, AClusterCount);
+  SetLength(TileBestErr, AClusterCount);
 
   // prepare final tiles infos
 
-  for clusterIdx := 0 to BIRCHClusterCount - 1 do
+  for clusterIdx := 0 to AClusterCount - 1 do
     TileBestErr[clusterIdx] := MaxSingle;
 
   for lineIdx := 0 to DSLen - 1 do
