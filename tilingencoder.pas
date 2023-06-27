@@ -471,6 +471,7 @@ type
     FGlobalTilingTileCount: Integer;
     FGlobalTilingQualityBasedTileCount: Double;
     FGlobalTilingLumaOnly: Boolean;
+    FGlobalTilingRatio: Double;
     FFrameTilingFromPalette: Boolean;
     FFrameTilingUseGamma: Boolean;
     FFrameTilingBlendingThreshold: Double;
@@ -520,6 +521,7 @@ type
     procedure SetFrameTilingBlendExtents(AValue: Integer);
     procedure SetFrameTilingBlendingThreshold(AValue: Double);
     procedure SetGlobalTilingQualityBasedTileCount(AValue: Double);
+    procedure SetGlobalTilingRatio(AValue: Double);
     procedure SetMaxThreadCount(AValue: Integer);
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
@@ -587,7 +589,7 @@ type
     procedure FindKeyFrames(AManualMode: Boolean);
 
     procedure OptimizeGlobalPalettes;
-    procedure DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer);
+    procedure DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
 
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
@@ -658,6 +660,7 @@ type
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
     property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
     property GlobalTilingLumaOnly: Boolean read FGlobalTilingLumaOnly write FGlobalTilingLumaOnly;
+    property GlobalTilingRatio: Double read FGlobalTilingRatio write SetGlobalTilingRatio;
     property FrameTilingFromPalette: Boolean read FFrameTilingFromPalette write FFrameTilingFromPalette;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingBlendingThreshold: Double read FFrameTilingBlendingThreshold write SetFrameTilingBlendingThreshold;
@@ -3205,7 +3208,7 @@ begin
   TTile.Array1DDispose(FTiles);
 
   // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
-  DoGlobalKMeans(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1), IfThen(FGlobalTilingLumaOnly, 1, 3));
+  DoGlobalKMeans(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1), IfThen(FGlobalTilingLumaOnly, 1, 3), FGlobalTilingRatio, 1.0 - FGlobalTilingRatio);
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -4138,6 +4141,12 @@ begin
 
   RawTileCount := Length(FFrames) * FTileMapSize;
   FGlobalTilingTileCount := min(round(AValue * eqtc), RawTileCount);
+end;
+
+procedure TTilingEncoder.SetGlobalTilingRatio(AValue: Double);
+begin
+ if FGlobalTilingRatio = AValue then Exit;
+ FGlobalTilingRatio := EnsureRange(AValue, 0.01, 0.99);
 end;
 
 procedure TTilingEncoder.SetMaxThreadCount(AValue: Integer);
@@ -5185,6 +5194,7 @@ begin
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
     ini.WriteBool('GlobalTiling', 'GlobalTilingLumaOnly', GlobalTilingLumaOnly);
+    ini.WriteFloat('GlobalTiling', 'GlobalTilingRatio', GlobalTilingRatio);
 
     ini.WriteBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
@@ -5234,6 +5244,7 @@ begin
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
     GlobalTilingLumaOnly := ini.ReadBool('GlobalTiling', 'FGlobalTilingLumaOnly', FGlobalTilingLumaOnly);
+    GlobalTilingRatio := ini.ReadFloat('GlobalTiling', 'GlobalTilingRatio', GlobalTilingRatio);
 
     FrameTilingFromPalette := ini.ReadBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
@@ -5276,8 +5287,8 @@ begin
   GlobalTilingUseGamma := False;
   GlobalTilingQualityBasedTileCount := 4.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
-  FGlobalTilingLumaOnly := True;
-
+  GlobalTilingLumaOnly := True;
+  GlobalTilingRatio := 0.6;
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
@@ -5537,11 +5548,13 @@ begin
     Inc(Result, Used[sx]);
 end;
 
-procedure TTilingEncoder.DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer);
+procedure TTilingEncoder.DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
 var
   DSLen: Int64;
-  featureCount, doneFrameCount: Integer;
-  BICOClusterCount: Integer;
+  featureCount, clusterCount, doneFrameCount: Integer;
+  BIRCH: PBIRCH;
+  BICO: PBICO;
+  DCTs: TDoubleDynArray2;
   FLANNClusters: TIntegerDynArray;
   FLANNErrors: TSingleDynArray;
   FLANNPalIdxs: TSmallIntDynArray;
@@ -5673,7 +5686,7 @@ var
     KeyFrame := FKeyFrames[AIndex];
 
     hasKeyFrame := False;
-    for i := 0 to BICOClusterCount - 1 do
+    for i := 0 to clusterCount - 1 do
     begin
       DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
       if InRange(frmIdx, KeyFrame.StartFrame, KeyFrame.EndFrame) and (TileLineIdxs[i] >= 0) then
@@ -5687,7 +5700,7 @@ var
     begin
       KeyFrame.AcquireFrameTiles;
       try
-        for i := 0 to BICOClusterCount - 1 do
+        for i := 0 to clusterCount - 1 do
         begin
           DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
           if InRange(frmIdx, KeyFrame.StartFrame, KeyFrame.EndFrame) and (TileLineIdxs[i] >= 0) then
@@ -5708,23 +5721,43 @@ var
     Write(InterLockedExchangeAdd(doneFrameCount, KeyFrame.FrameCount) + KeyFrame.FrameCount:8, ' / ', Length(FFrames):8, #13);
   end;
 
+
+  procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    Frame: TFrame;
+  begin
+    if not InRange(AIndex, 0, FTileMapSize - 1) then
+      Exit;
+
+    Frame := TFrame(AData);
+    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, False, False, cClusterQWeighting, False, False, False, AColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
+  end;
+
+  procedure DoInsert(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    si: Integer;
+  begin
+    for si := 0 to FTileMapSize - 1 do
+      case AIndex of
+        0: bico_insert_line(BICO, @DCTs[si, 0], 1.0); // KLUDGE: must stay index 0 (main thread) to avoid OpenMP spawning too many threads
+        1: birch_insert_line(BIRCH, @DCTs[si, 0]);
+      end;
+  end;
+
 var
-  i, kfIdx, frmIdx, clusterIdx, si: Integer;
-  lineIdx, cnt: Int64;
+  i, j, kfIdx, frmIdx, clusterIdx: Integer;
+  BIRCHClusterCount, BICOClusterCount: Integer;
+  lineIdx: Int64;
   speedup: Single;
   err: Single;
   KeyFrame: TKeyFrame;
   Frame: TFrame;
-  BICO: PBICO;
-  Tile: PTile;
-  BICOCentroids, BICOWeights: TDoubleDynArray;
+  BIRCHCentroids, BICOCentroids, BICOWeights: TDoubleDynArray;
   FLANNDataset: TSingleDynArray;
-  DCT: TDoubleDynArray;
   TileBestErr: TSingleDynArray;
 
 begin
   featureCount := cTileDCTSize div cColorCpns * AColorCpns;
-  SetLength(DCT, featureCount);
 
   DSLen := Length(FFrames) * FTileMapSize;
   if DSLen <= AClusterCount then
@@ -5740,17 +5773,18 @@ begin
     Exit;
   end;
 
-  // use BICO to prepare a noise-aware set of centroids
+  // use BICO & BIRCH to prepare a noise-aware set of centroids
 
-  bico_set_num_threads(MaxThreadCount);
-  BICO := bico_create(featureCount, DSLen, AClusterCount, 32, AClusterCount, CRandomSeed);
+  SetLength(DCTs, FTileMapSize, cTileDCTSize);
+  BIRCH := birch_create(1.0, Round(AClusterCount * ABIRCHRatio), FTileMapSize);
+  BICO := bico_create(featureCount, DSLen, Round(AClusterCount * ABICORatio), 32, Round(AClusterCount * ABICORatio), CRandomSeed);
   try
+    bico_set_num_threads(Max(1, MaxThreadCount - 1));
     bico_set_rebuild_properties(BICO, FTileMapSize, cPhi, cPhi);
 
-    // insert frame tiles into BICO
+    // insert frame tiles into BICO & BIRCH
 
     doneFrameCount := 0;
-    cnt := 0;
     for kfIdx := 0 to High(FKeyFrames) do
     begin
       KeyFrame := FKeyFrames[kfIdx];
@@ -5761,20 +5795,14 @@ begin
         begin
           Frame := FFrames[frmIdx];
 
-          if (kfIdx = High(FKeyFrames)) and (frmIdx = KeyFrame.EndFrame) then
-            bico_set_rebuild_properties(BICO, FTileMapSize, NaN, 1.05); // lower grow on last rebuild for better K enforcement
+          //if (kfIdx = High(FKeyFrames)) and (frmIdx = KeyFrame.EndFrame) then
+          //  bico_set_rebuild_properties(BICO, FTileMapSize, NaN, 1.05); // lower grow on last rebuild for better K enforcement
 
-          for si := 0 to FTileMapSize - 1 do
-          begin
-            Tile := Frame.FrameTiles[si];
+          // compute DCTs for Frame
+          ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, FTileMapSize - 1, Frame);
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, AColorCpns, AGamma, nil, @DCT[0]);
-
-            // insert line into BICO
-            bico_insert_line(BICO, @DCT[0], 1.0);
-
-            Inc(cnt);
-          end;
+          // insert line into BICO & BIRCH
+          ProcThreadPool.DoParallelLocalProc(@DoInsert, 0, 1);
 
           Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
         end;
@@ -5783,29 +5811,47 @@ begin
         KeyFrame.ReleaseFrameTiles;
       end;
     end;
-    Assert(cnt = DSLen);
+
+    // get BIRCH results
+
+    BIRCHClusterCount := birch_compute(BIRCH, False, False);
+    SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize);
+
+    birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
 
     // get BICO results
 
-    SetLength(BICOCentroids, AClusterCount * featureCount);
-    SetLength(BICOWeights, AClusterCount);
+    SetLength(BICOWeights, Round(AClusterCount * ABICORatio));
+    SetLength(BICOCentroids, Length(BICOWeights) * featureCount);
 
     BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
 
-    SetLength(FLANNDataset, BICOClusterCount * featureCount);
-    for i := 0 to High(FLANNDataset) do
+    // join them to create the dataset for FLANN
+
+    clusterCount := BICOClusterCount + BIRCHClusterCount;
+
+    SetLength(FLANNDataset, clusterCount * featureCount);
+    for i := 0 to BICOClusterCount * featureCount - 1 do
       FLANNDataset[i] := BICOCentroids[i];
+
+    for i := 0 to BIRCHClusterCount - 1 do
+      for j := 0 to featureCount - 1 do
+        FLANNDataset[(BICOClusterCount + i) * featureCount + j] := BIRCHCentroids[i * cTileDCTSize + j];
+
   finally
+    birch_destroy(BIRCH);
     bico_destroy(BICO);
+    SetLength(BIRCHCentroids, 0);
     SetLength(BICOCentroids, 0);
     SetLength(BICOWeights, 0);
+    SetLength(DCTs, 0);
   end;
 
-  WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' ClusterCount: ', AClusterCount:6);
+  WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
 
   ProgressRedraw(3, 'BICOClustering');
 
-  if BICOClusterCount <= 0 then
+  if clusterCount <= 0 then
     Exit;
 
   // use FLANN to compute cluster indexes
@@ -5819,7 +5865,7 @@ begin
   FLANNParams.sorted := 0;
   FLANNParams.max_neighbors := 1;
 
-  FLANN := flann_build_index(@FLANNDataset[0], BICOClusterCount, featureCount, @speedup, @FLANNParams);
+  FLANN := flann_build_index(@FLANNDataset[0], clusterCount, featureCount, @speedup, @FLANNParams);
   try
     doneFrameCount := 0;
     ProcThreadPool.DoParallelLocalProc(@DoFLANN, 0, High(FKeyFrames));
@@ -5831,13 +5877,13 @@ begin
 
   // allocate tile set
 
-  FTiles := TTile.Array1DNew(BICOClusterCount, True, True);
-  SetLength(TileLineIdxs, BICOClusterCount);
-  SetLength(TileBestErr, BICOClusterCount);
+  FTiles := TTile.Array1DNew(clusterCount, True, True);
+  SetLength(TileLineIdxs, clusterCount);
+  SetLength(TileBestErr, clusterCount);
 
   // prepare final tiles infos
 
-  for clusterIdx := 0 to BICOClusterCount - 1 do
+  for clusterIdx := 0 to clusterCount - 1 do
     TileBestErr[clusterIdx] := MaxSingle;
 
   for lineIdx := 0 to DSLen - 1 do

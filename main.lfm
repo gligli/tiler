@@ -188,7 +188,7 @@ object MainForm: TMainForm
       object seTempoSmoo: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 314
+        Top = 338
         Width = 71
         DecimalPlaces = 4
         Increment = 0.05
@@ -208,7 +208,7 @@ object MainForm: TMainForm
       object cbxYilMix: TComboBox
         Left = 328
         Height = 23
-        Top = 202
+        Top = 200
         Width = 71
         ItemHeight = 15
         Items.Strings = (
@@ -233,7 +233,7 @@ object MainForm: TMainForm
       object chkUseTK: TCheckBox
         Left = 8
         Height = 19
-        Top = 398
+        Top = 422
         Width = 253
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
         OnChange = UpdateGUI
@@ -250,7 +250,7 @@ object MainForm: TMainForm
       object Label11: TLabel
         Left = 8
         Height = 15
-        Top = 206
+        Top = 204
         Width = 161
         Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
@@ -258,7 +258,7 @@ object MainForm: TMainForm
       object Label9: TLabel
         Left = 8
         Height = 15
-        Top = 318
+        Top = 342
         Width = 227
         Caption = 'Temporal smoothing strength (PsyV based)'
         ParentColor = False
@@ -306,7 +306,7 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 380
+        Top = 404
         Width = 170
         Caption = 'Dithering gamma correction'
         OnChange = UpdateGUI
@@ -315,7 +315,7 @@ object MainForm: TMainForm
       object chkFTGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 416
+        Top = 440
         Width = 184
         Caption = 'Reconstruct gamma correction'
         OnChange = UpdateGUI
@@ -324,7 +324,7 @@ object MainForm: TMainForm
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 349
+        Top = 373
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -332,7 +332,7 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 346
+        Top = 370
         Width = 71
         Increment = 0.1
         MaxValue = 10
@@ -344,7 +344,7 @@ object MainForm: TMainForm
       object seVisGamma: TFloatSpinEdit
         Left = 400
         Height = 23
-        Top = 346
+        Top = 370
         Width = 71
         Increment = 0.1
         MaxValue = 10
@@ -425,7 +425,7 @@ object MainForm: TMainForm
       object Label14: TLabel
         Left = 8
         Height = 15
-        Top = 158
+        Top = 156
         Width = 218
         Caption = 'Dennis Lee v3 output bits per component'
         ParentColor = False
@@ -433,7 +433,7 @@ object MainForm: TMainForm
       object cbxDLBPC: TComboBox
         Left = 328
         Height = 23
-        Top = 154
+        Top = 152
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -483,7 +483,7 @@ object MainForm: TMainForm
       object chkUseKMQuant: TCheckBox
         Left = 8
         Height = 19
-        Top = 380
+        Top = 404
         Width = 294
         Caption = 'Use Yakmo KMeans as quantizer (not Dennis Lee v3)'
         OnChange = UpdateGUI
@@ -492,7 +492,7 @@ object MainForm: TMainForm
       object Label18: TLabel
         Left = 8
         Height = 15
-        Top = 237
+        Top = 261
         Width = 237
         Caption = 'Reconstruct blending threshold (PSyV based)'
         ParentColor = False
@@ -500,7 +500,7 @@ object MainForm: TMainForm
       object seFTBlendThres: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 234
+        Top = 258
         Width = 71
         DecimalPlaces = 4
         Increment = 0.05
@@ -511,7 +511,7 @@ object MainForm: TMainForm
       object chkPosterize: TCheckBox
         Left = 8
         Height = 19
-        Top = 181
+        Top = 179
         Width = 278
         Caption = 'Posterize palettes to selected bits per component'
         TabOrder = 16
@@ -519,7 +519,7 @@ object MainForm: TMainForm
       object cbxPosterizeBPC: TComboBox
         Left = 328
         Height = 23
-        Top = 178
+        Top = 176
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -540,7 +540,7 @@ object MainForm: TMainForm
       object chkFTFromPal: TCheckBox
         Left = 8
         Height = 19
-        Top = 435
+        Top = 459
         Width = 205
         Caption = 'Do reconstruct from palettized tiles'
         OnChange = UpdateGUI
@@ -568,7 +568,7 @@ object MainForm: TMainForm
       object Label17: TLabel
         Left = 8
         Height = 15
-        Top = 286
+        Top = 310
         Width = 235
         Caption = 'Reconstruct blending radius (0: no blending)'
         ParentColor = False
@@ -576,7 +576,7 @@ object MainForm: TMainForm
       object cbxFTBlendRadius: TComboBox
         Left = 328
         Height = 23
-        Top = 282
+        Top = 306
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -598,7 +598,7 @@ object MainForm: TMainForm
       object Label19: TLabel
         Left = 8
         Height = 15
-        Top = 262
+        Top = 286
         Width = 145
         Caption = 'Reconstruct blending levels'
         ParentColor = False
@@ -606,7 +606,7 @@ object MainForm: TMainForm
       object cbxFTBlendExtents: TComboBox
         Left = 328
         Height = 23
-        Top = 258
+        Top = 282
         Width = 71
         DropDownCount = 20
         ItemHeight = 15
@@ -678,7 +678,7 @@ object MainForm: TMainForm
       object chkGlobGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 398
+        Top = 422
         Width = 158
         Caption = 'Cluster gamma correction'
         OnChange = UpdateGUI
@@ -687,11 +687,41 @@ object MainForm: TMainForm
       object chkGlobLumaOnly: TCheckBox
         Left = 8
         Height = 19
-        Top = 416
+        Top = 440
         Width = 227
         Caption = 'Cluster from luma features only (faster)'
         OnChange = UpdateGUI
         TabOrder = 27
+      end
+      object tbGlobRatio: TTrackBar
+        Left = 328
+        Height = 18
+        Top = 231
+        Width = 144
+        Frequency = 10
+        Max = 100
+        OnChange = UpdateGUI
+        Position = 1
+        ShowSelRange = False
+        TabOrder = 32
+      end
+      object Label23: TLabel
+        Left = 8
+        Height = 15
+        Top = 232
+        Width = 182
+        Caption = 'Global tiling BICO <-> BIRCH ratio'
+        ParentColor = False
+      end
+      object lblGlobRatio: TLabel
+        Left = 476
+        Height = 15
+        Top = 232
+        Width = 28
+        Alignment = taRightJustify
+        AutoSize = False
+        Caption = '0'
+        ParentColor = False
       end
     end
     object tsInput: TTabSheet
