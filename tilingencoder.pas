@@ -5274,8 +5274,8 @@ begin
   FrameCountSetting := 0;
   Scaling := 1.0;
 
-  PaletteSize := 16;
-  PaletteCount := 128;
+  PaletteSize := 32;
+  PaletteCount := 64;
   QuantizerUseYakmo := True;
   QuantizerDennisLeeBitsPerComponent := 7;
   QuantizerPosterize := False;
@@ -5285,7 +5285,7 @@ begin
   DitheringYliluoma2MixedColors := 4;
 
   GlobalTilingUseGamma := False;
-  GlobalTilingQualityBasedTileCount := 4.0;
+  GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
   GlobalTilingLumaOnly := True;
   GlobalTilingRatio := 0.6;
@@ -5294,9 +5294,9 @@ begin
   FrameTilingUseGamma := False;
   FrameTilingBlendingThreshold := 0.5;
   FrameTilingBlendingExtents := 16;
-  FrameTilingBlendingRadius := 3;
+  FrameTilingBlendingRadius := 0;
 
-  SmoothingFactor := 0.2;
+  SmoothingFactor := 0.3;
 
   EncoderGammaValue := 2.0;
 
