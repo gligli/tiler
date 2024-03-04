@@ -5284,7 +5284,7 @@ begin
   GlobalTilingUseGamma := False;
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
-  GlobalTilingLumaOnly := True;
+  GlobalTilingLumaOnly := False;
   GlobalTilingRatio := 0.6;
 
   FrameTilingFromPalette := False;
