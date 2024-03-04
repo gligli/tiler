@@ -432,8 +432,8 @@ type
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
     FVecInv: array[0..256 * 4 - 1] of Cardinal;
-    FDCTLut:array[Boolean {inversible?}, 0..sqr(sqr(cTileWidth)) - 1] of TFloat;
-    FDCTLutDouble:array[Boolean {inversible?}, 0..sqr(sqr(cTileWidth)) - 1] of Double;
+    FDCTLut:array[0..sqr(sqr(cTileWidth)) - 1] of TFloat;
+    FDCTLutDouble:array[0..sqr(sqr(cTileWidth)) - 1] of Double;
     FInvDCTLutDouble:array[0..sqr(sqr(cTileWidth)) - 1] of Double;
 
     FTiles: PTileDynArray;
@@ -559,10 +559,10 @@ type
     function LABToRGB(ll, aa, bb: TFloat; GammaCor: Integer): Integer;
     function YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
 
-    procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror,
-     Inversible: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
-    procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror,
-     Inversible: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
+    procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
+     ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
+    procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
+     ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
     procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB: Boolean; GammaCor: Integer; var ATile: TTile);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
@@ -1877,7 +1877,7 @@ var
       begin
         Tile := Frame.FrameTiles[ftIdx];
 
-        Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, False, False, False, True, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cFeatureCount]);
+        Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, False, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cFeatureCount]);
 
         DCTs[ftIdx * cFeatureCount + 63] := 0.0;
         DCTs[ftIdx * cFeatureCount + 127] := 0.0;
@@ -2377,7 +2377,7 @@ var
       T := Encoder.Tiles[tidx];
 
       Assert(T^.Active);
-      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
+      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
       Inc(pDCT, cTileDCTSize);
     end;
   end;
@@ -2493,7 +2493,7 @@ begin
         if Encoder.FFrameTilingFromPalette then
           Encoder.DitherTile(T^, PaletteInfo[APaletteIndex].MixingPlan);
 
-        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
+        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
 
         TMI^.HMirror := T^.HMirror_Initial;
         TMI^.VMirror := T^.VMirror_Initial;
@@ -2652,7 +2652,7 @@ begin
         if not Assigned(GetDCT(Frame, TMI)^) and (not IsZero(Sqrt(TMI^.ResidualErr), Encoder.FFrameTilingBlendingThreshold) or (frmIdx < EndFrame)) then
         begin
           SetLength(GetDCT(Frame, TMI)^, cTileDCTSize);
-          Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[TMI^.TileIdx]^, True, False, cReconstructQWeighting, TMI^.HMirror, TMI^.VMirror, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @GetDCT(Frame, TMI)^[0]);
+          Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[TMI^.TileIdx]^, True, False, cReconstructQWeighting, TMI^.HMirror, TMI^.VMirror, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @GetDCT(Frame, TMI)^[0]);
         end;
       end;
   end;
@@ -2680,7 +2680,7 @@ begin
           pCurDCT := @GetDCT(Frame, TMI)^[0];
 
           T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
-          Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, T^.HMirror_Initial, T^.VMirror_Initial, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @PlainDCT[0]);
+          Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, T^.HMirror_Initial, T^.VMirror_Initial, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[TMI^.PalIdx], @PlainDCT[0]);
 
           for oy := sy - radius to sy + radius do
           begin
@@ -2748,12 +2748,12 @@ begin
     for sx := 0 to Encoder.FTileMapWidth - 1 do
     begin
       PrevTMI := @APrevFrame.TileMap[sy, sx];
-      Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[PrevTMI^.TileIdx_Smoothed]^, True, False, True, PrevTMI^.HMirror_Smoothed, PrevTMI^.VMirror_Smoothed, False, cColorCpns, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.PalIdx_Smoothed], PFloat(@PrevDCT[0]));
+      Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[PrevTMI^.TileIdx_Smoothed]^, True, False, True, PrevTMI^.HMirror_Smoothed, PrevTMI^.VMirror_Smoothed, cColorCpns, -1, APrevFrame.PKeyFrame.PaletteRGB[PrevTMI^.PalIdx_Smoothed], PFloat(@PrevDCT[0]));
 
       // compare DCT of current tile with tile from prev frame tilemap
 
       TMI := @AFrame.TileMap[sy, sx];
-      Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[TMI^.TileIdx_Smoothed]^, True, False, True, TMI^.HMirror_Smoothed, TMI^.VMirror_Smoothed, False, cColorCpns, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.PalIdx_Smoothed], PFloat(@CurDCT[0]));
+      Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[TMI^.TileIdx_Smoothed]^, True, False, True, TMI^.HMirror_Smoothed, TMI^.VMirror_Smoothed, cColorCpns, -1, AFrame.PKeyFrame.PaletteRGB[TMI^.PalIdx_Smoothed], PFloat(@CurDCT[0]));
 
       cmp := CompareEuclideanDCT(CurDCT, PrevDCT);
       cmp := sqrt(cmp);
@@ -3032,11 +3032,8 @@ begin
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
         begin
-          FDCTLutDouble[False, i] := cos((x + 0.5) * u * PI / (cTileWidth * 2.0)) * cos((y + 0.5) * v * PI / (cTileWidth * 2.0)) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
-          FDCTLut[False, i] := FDCTLutDouble[False, i];
-
-          FDCTLutDouble[True, i] := cos((x + 0.5) * u * PI / cTileWidth) * cos((y + 0.5) * v * PI / cTileWidth) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
-          FDCTLut[True, i] := FDCTLutDouble[True, i];
+          FDCTLutDouble[i] := cos((x + 0.5) * u * PI / cTileWidth) * cos((y + 0.5) * v * PI / cTileWidth) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
+          FDCTLut[i] := FDCTLutDouble[i];
 
           FInvDCTLutDouble[i] := cos((u + 0.5) * x * PI / cTileWidth) * cos((v + 0.5) * y * PI / cTileWidth) * cDCTUVRatio[Min(y, 7), Min(x, 7)] * 2 / cTileWidth * 2 / cTileWidth;
           Inc(i);
@@ -4344,7 +4341,7 @@ begin
 end;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
-  VMirror, Inversible: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
+  VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
 var
   u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
@@ -4403,7 +4400,7 @@ begin
   pDCT := @DCT[0];
   for cpn := 0 to ColorCpns - 1 do
   begin
-    pLut := @FDCTLut[Inversible, 0];
+    pLut := @FDCTLut[0];
     for v := 0 to cTileWidth - 1 do
       for u := 0 to cTileWidth - 1 do
       begin
@@ -4420,7 +4417,7 @@ begin
 end;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
-  VMirror, Inversible: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble);
+  VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble);
 var
   u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
@@ -4479,7 +4476,7 @@ begin
   pDCT := @DCT[0];
   for cpn := 0 to ColorCpns - 1 do
   begin
-    pLut := @FDCTLutDouble[Inversible, 0];
+    pLut := @FDCTLutDouble[0];
     for v := 0 to cTileWidth - 1 do
       for u := 0 to cTileWidth - 1 do
       begin
@@ -5059,7 +5056,7 @@ begin
               end;
 
               if not (FRenderPlaying or AFast) then
-                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
+                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
             end;
           end;
       finally
@@ -5149,7 +5146,7 @@ begin
                 vmir := False;
               end;
 
-              ComputeTilePsyVisFeatures(tilePtr^, False, False, False, hmir, vmir, False, cColorCpns, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
+              ComputeTilePsyVisFeatures(tilePtr^, False, False, False, hmir, vmir, cColorCpns, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
               q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
               Inc(i);
             end;
@@ -5334,7 +5331,7 @@ begin
     for j := 0 to cTileWidth - 1 do
       T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
 
-  ComputeTilePsyVisFeatures(T^, False, False, False, False, False, True, cColorCpns, -1, nil, @DCT[0]);
+  ComputeTilePsyVisFeatures(T^, False, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
   ComputeInvTilePsyVisFeatures(@DCT[0], False, -1, T2^);
 
   //for i := 0 to 7 do
@@ -5640,7 +5637,7 @@ var
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, False, AColorCpns, AGamma, nil, @Dataset[si * featureCount]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @Dataset[si * featureCount]);
 
             Inc(si);
           end;
@@ -5730,7 +5727,7 @@ var
       Exit;
 
     Frame := TFrame(AData);
-    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, False, False, cClusterQWeighting, False, False, False, AColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
+    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
   end;
 
   procedure DoInsert(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
