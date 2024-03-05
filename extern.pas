@@ -7,7 +7,7 @@ interface
 uses
   LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math,
   libavcodec_codec, libavcodec_packet, libavcodec, libavformat, libavutil, libavutil_error, libavutil_frame,
-  libavutil_imgutils, libavutil_log, libavutil_mem, libavutil_pixfmt, libavutil_rational, libswscale, FFUtils;
+  libavutil_imgutils, libavutil_log, libavutil_mem, libavutil_pixfmt, libavutil_rational, libswscale, FFUtils, ULZMAEncoder;
 
 type
   TFloat = Single;
@@ -416,42 +416,23 @@ end;
 
 procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
 var
-  Process: TProcess;
-  RetCode: Integer;
-  Output, ErrOut, SrcFN, DstFN: String;
-  SrcStream, DstStream: TFileStream;
+  i: Integer;
+  LZMA: TLZMAEncoder;
 begin
-  Process := TProcess.Create(nil);
-  Process.CurrentDirectory := ExtractFilePath(ParamStr(0));
-  Process.Executable := 'lzma.exe';
+  ASourceStream.Seek(0, soBeginning);
 
-  SrcFN := GetTempFileName('', 'lz-' + IntToStr(GetCurrentThreadId) + '.dat');
-  DstFN := ChangeFileExt(SrcFN, ExtractFileExt(SrcFN) + '.lzma');
-
-  SrcStream := TFileStream.Create(SrcFN, fmCreate or fmShareDenyWrite);
+  LZMA := TLZMAEncoder.Create;
   try
-    ASourceStream.Seek(0, soBeginning);
-    SrcStream.CopyFrom(ASourceStream, ASourceStream.Size);
+    LZMA.SetEndMarkerMode(True);
+    LZMA.SetLcLpPb(8,0,2);
+    LZMA.WriteCoderProperties(ADestStream);
+    for i := 0 to 7 do
+        ADestStream.WriteByte($ff);
+
+    LZMA.Code(ASourceStream,ADestStream,-1,-1);
   finally
-    SrcStream.Free;
+    LZMA.Free;
   end;
-
-  Process.Parameters.Add('e "' + SrcFN + '" "' + DstFN + '" -lc8 -eos');
-  Process.ShowWindow := swoHIDE;
-  Process.Priority := ppIdle;
-
-  RetCode := 0;
-  RunProcess(Process, Output, ErrOut, RetCode, PrintProgress); // destroys Process
-
-  DstStream := TFileStream.Create(DstFN, fmOpenRead or fmShareDenyWrite);
-  try
-    ADestStream.CopyFrom(DstStream, DstStream.Size);
-  finally
-    DstStream.Free;
-  end;
-
-  DeleteFile(PChar(SrcFN));
-  DeleteFile(PChar(DstFN));
 end;
 
 procedure DoExternalSKLearn(Dataset: TByteDynArray2; ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean;
