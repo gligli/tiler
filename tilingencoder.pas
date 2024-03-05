@@ -592,7 +592,7 @@ type
 
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
-    procedure SaveStream(AStream: TStream; ASpecificKF: Integer = -1);
+    procedure SaveStream(AStream: TStream);
 
     // processes
 
@@ -6056,7 +6056,7 @@ begin
   AVMirror := q00 + q01 < q10 + q11;
 end;
 
-procedure TTilingEncoder.SaveStream(AStream: TStream; ASpecificKF: Integer);
+procedure TTilingEncoder.SaveStream(AStream: TStream);
 const
   CGTMCommandsCount = Ord(High(TGTMCommand)) + 1;
   CGTMCommandCodeBits = round(ln(CGTMCommandsCount) / ln(2));
