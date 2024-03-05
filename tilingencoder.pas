@@ -311,9 +311,8 @@ type
 
   TTilingDataset = record
     KNNSize: Integer;
-    Dataset: TFloatDynArray;
-    FLANN: flann_index_t;
-    FLANNParams: PFLANNParameters;
+    Dataset: TANNFloatDynArray2;
+    ANN: PANNkdtree;
   end;
 
   PTilingDataset = ^TTilingDataset;
@@ -1822,9 +1821,8 @@ const
 var
   DSLen: Integer;
   BIRCH: PBIRCH;
-  FLANN: flann_index_t;
-  FLANNParams: TFLANNParameters;
-  FLANNClusters: TIntegerDynArray;
+  ANN: PANNkdtree;
+  ANNClusters: TIntegerDynArray;
 
   function IsEmptyKF: Boolean;
   var
@@ -1863,10 +1861,10 @@ var
     Frame: TFrame;
     Tile: PTile;
     DCTs: TDoubleDynArray;
-    FLANNErrors: TDoubleDynArray;
+    ANNErrors: TANNFloatDynArray;
   begin
     SetLength(DCTs, Encoder.FTileMapSize * cFeatureCount);
-    SetLength(FLANNErrors, Encoder.FTileMapSize);
+    SetLength(ANNErrors, Encoder.FTileMapSize);
 
     di := 0;
     for frmIdx := StartFrame to EndFrame do
@@ -1899,7 +1897,8 @@ var
 
       if ACluster then
       begin
-        flann_find_nearest_neighbors_index_double(FLANN, @DCTs[0], Encoder.FTileMapSize, @FLANNClusters[(frmIdx - StartFrame) * Encoder.FTileMapSize], @FLANNErrors[0], 1, @FLANNParams);
+        for i := 0 to Encoder.FTileMapSize - 1 do
+          ANNClusters[(frmIdx - StartFrame) * Encoder.FTileMapSize + i] := ann_kdtree_search(ANN, @DCTs[i * cFeatureCount], 0.0, @ANNErrors[i]);
       end
       else
       begin
@@ -1911,8 +1910,7 @@ var
   end;
 
 var
-  frmIdx, sx, sy, di, palIdx, BIRCHClusterCount, threadCount: Integer;
-  speedup: Double;
+  frmIdx, sx, sy, di, palIdx, BIRCHClusterCount: Integer;
 
   Frame: TFrame;
 
@@ -1920,14 +1918,13 @@ var
 
   BIRCHCentroids: TDoubleDynArray;
 
-  YakmoDataset: array of PDouble;
+  ANNDataset: array of PDouble;
   YakmoClusters: TIntegerDynArray;
   PalIdxLUT: TIntegerDynArray;
 
 begin
   // build dataset
 
-  threadCount := 1 + Max(0, Encoder.MaxThreadCount - Encoder.FKeyFramesLeft) div Encoder.FConcurrentKeyFrames;
   DSLen := Encoder.FTileMapSize * FrameCount;
 
   if not IsEmptyKF then
@@ -1954,22 +1951,19 @@ begin
     WriteLn('KF: ', StartFrame:8, ' Empty KeyFrame!');
   end;
 
-  // use FLANN to compute cluster indexes
+  // use ANN to compute cluster indexes
 
-  SetLength(FLANNClusters, DSLen);
+  SetLength(ANNDataset, BIRCHClusterCount);
+  for di := 0 to High(ANNDataset) do
+    ANNDataset[di] := @BIRCHCentroids[di * cFeatureCount];
 
-  FLANNParams := CDefaultFLANNParameters;
-  FLANNParams.checks := cFeatureCount;
-  FLANNParams.algorithm := FLANN_INDEX_KDTREE;
-  FLANNParams.sorted := 0;
-  FLANNParams.max_neighbors := 1;
-  FLANNParams.cores := threadCount;
+  SetLength(ANNClusters, DSLen);
 
-  FLANN := flann_build_index_double(@BIRCHCentroids[0], BIRCHClusterCount, cFeatureCount, @speedup, @FLANNParams);
+  ANN := ann_kdtree_create(@ANNDataset[0], BIRCHClusterCount, cFeatureCount, 32, ANN_KD_SUGGEST);
   try
     DoDataset(True);
   finally
-    flann_free_index_double(FLANN, @FLANNParams);
+    ann_kdtree_destroy(ANN);
   end;
 
   // cluster by palette index
@@ -1978,14 +1972,11 @@ begin
   begin
     if Encoder.FPaletteCount > 1 then
     begin
-      SetLength(YakmoDataset, BIRCHClusterCount);
-      for di := 0 to High(YakmoDataset) do
-        YakmoDataset[di] := @BIRCHCentroids[di * cFeatureCount];
       SetLength(YakmoClusters, BIRCHClusterCount);
 
       Yakmo := yakmo_create(Encoder.FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-      yakmo_load_train_data(Yakmo, Length(YakmoDataset), cFeatureCount, PPDouble(@YakmoDataset[0]));
-      SetLength(YakmoDataset, 0); // free up some memmory
+      yakmo_load_train_data(Yakmo, Length(ANNDataset), cFeatureCount, PPDouble(@ANNDataset[0]));
+      SetLength(ANNDataset, 0); // free up some memmory
       yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
       yakmo_destroy(Yakmo);
     end
@@ -2010,8 +2001,8 @@ begin
   for palIdx := 0 to Encoder.FPaletteCount - 1 do
     PaletteInfo[palIdx].PalIdx_Initial := palIdx;
 
-  for di := 0 to High(FLANNClusters) do
-    Inc(PaletteInfo[YakmoClusters[FLANNClusters[di]]].UseCount);
+  for di := 0 to High(ANNClusters) do
+    Inc(PaletteInfo[YakmoClusters[ANNClusters[di]]].UseCount);
 
   QuickSort(PaletteInfo[0], 0, Encoder.FPaletteCount - 1, SizeOf(PaletteInfo[0]), @ComparePaletteUseCount, Self);
   for palIdx := 0 to Encoder.FPaletteCount - 1 do
@@ -2026,7 +2017,7 @@ begin
     for sy := 0 to Encoder.FTileMapHeight - 1 do
       for sx := 0 to Encoder.FTileMapWidth - 1 do
       begin
-        Frame.TileMap[sy, sx].PalIdx := PalIdxLUT[YakmoClusters[FLANNClusters[di]]];
+        Frame.TileMap[sy, sx].PalIdx := PalIdxLUT[YakmoClusters[ANNClusters[di]]];
         Inc(di);
       end;
   end;
@@ -2369,39 +2360,30 @@ var
   var
     T: PTile;
     tidx: Int64;
-    pDCT: PFloat;
   begin
-    pDCT := PFloat(@DS^.Dataset[0]);
     for tidx := 0 to High(Encoder.Tiles) do
     begin
       T := Encoder.Tiles[tidx];
 
       Assert(T^.Active);
-      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], pDCT);
-      Inc(pDCT, cTileDCTSize);
+      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], PANNFloat(@DS^.Dataset[tidx, 0]));
     end;
   end;
 
-var
-  speedup: Single;
 begin
   // Compute psycho visual model for all tiles (in curent palette)
 
   DS := New(PTilingDataset);
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  DS^.KNNSize := Encoder.GetTileCount(True);
-  SetLength(DS^.Dataset, DS^.KNNSize * cTileDCTSize);
+  DS^.KNNSize := Encoder.GetTileCount(False);
+  SetLength(DS^.Dataset, DS^.KNNSize, cTileDCTSize);
 
   DoPsyV;
 
   // Build KNN
 
-  New(DS^.FLANNParams);
-  DS^.FLANNParams^ := CDefaultFLANNParameters;
-  DS^.FLANNParams^.checks := cTileDCTSize;
-
-  DS^.FLANN := flann_build_index(@DS^.Dataset[0], DS^.KNNSize, cTileDCTSize, @speedup, DS^.FLANNParams);
+  DS^.ANN := ann_kdtree_create(PPANNFloat(@DS^.Dataset[0]), DS^.KNNSize, cTileDCTSize, 32, ANN_KD_STD);
 
   // Dataset is ready
 
@@ -2413,8 +2395,8 @@ var
   tileResd: Double;
 begin
   if Length(TileDS[APaletteIndex]^.Dataset) > 0 then
-    flann_free_index(TileDS[APaletteIndex]^.FLANN, TileDS[APaletteIndex]^.FLANNParams);
-  TileDS[APaletteIndex]^.FLANN := nil;
+    ann_kdtree_destroy(TileDS[APaletteIndex]^.ANN);
+  TileDS[APaletteIndex]^.ANN := nil;
   SetLength(TileDS[APaletteIndex]^.Dataset, 0);
   Dispose(TileDS[APaletteIndex]);
 
@@ -2430,17 +2412,16 @@ end;
 
 procedure TKeyFrame.DoKFTiling(APaletteIndex: Integer; AFTGamma: Integer);
 var
-  sx, sy, frmIdx, annQueryCount, annQueryPos, dsIdx: Integer;
+  sx, sy, frmIdx, dsIdx: Integer;
   errCml: Double;
+  dsErr: TANNFloat;
 
   T, BlendT: PTile;
   Frame: TFrame;
   TMI: PTileMapItem;
 
   DS: PTilingDataset;
-  idxs: TIntegerDynArray;
-  errs: TFloatDynArray;
-  DCTs: TFloatDynArray;
+  DCT: array[0 .. cTileDCTSize - 1] of TANNFloat;
 begin
   DS := TileDS[APaletteIndex];
   if DS^.KNNSize <= 0 then
@@ -2449,33 +2430,6 @@ begin
   BlendT := TTile.New(True, False);
   errCml := 0.0;
 
-  // compute KNN query count
-
-  annQueryCount := 0;
-  for frmIdx := StartFrame to EndFrame do
-  begin
-    Frame := Encoder.FFrames[frmIdx];
-
-    for sy := 0 to Encoder.FTileMapHeight - 1 do
-      for sx := 0 to Encoder.FTileMapWidth - 1 do
-      begin
-        if Frame.TileMap[sy, sx].PalIdx <> APaletteIndex then
-          Continue;
-
-        Inc(annQueryCount);
-      end;
-  end;
-
-  if annQueryCount <= 0 then
-    Exit;
-
-  SetLength(DCTs, annQueryCount * cTileDCTSize);
-  SetLength(idxs, annQueryCount);
-  SetLength(errs, annQueryCount);
-
-  // prepare KNN queries
-
-  annQueryPos := 0;
   for frmIdx := StartFrame to EndFrame do
   begin
     Frame := Encoder.FFrames[frmIdx];
@@ -2488,45 +2442,29 @@ begin
         if TMI^.PalIdx <> APaletteIndex then
           Continue;
 
+        // prepare KNN query
+
         T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
         if Encoder.FFrameTilingFromPalette then
           Encoder.DitherTile(T^, PaletteInfo[APaletteIndex].MixingPlan);
 
-        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCTs[annQueryPos * cTileDCTSize]);
+        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, Frame.PKeyFrame.PaletteRGB[APaletteIndex], @DCT[0]);
 
         TMI^.HMirror := T^.HMirror_Initial;
         TMI^.VMirror := T^.VMirror_Initial;
 
-        Inc(annQueryPos);
-      end;
-  end;
+        // query KNN
 
-  // query KNN
+        dsIdx := ann_kdtree_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
 
-  flann_find_nearest_neighbors_index(DS^.FLANN, @DCTs[0], annQueryCount, @idxs[0], @errs[0], 1, DS^.FLANNParams);
-
-  // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
-
-  annQueryPos := 0;
-  for frmIdx := StartFrame to EndFrame do
-  begin
-    Frame := Encoder.FFrames[frmIdx];
-
-    for sy := 0 to Encoder.FTileMapHeight - 1 do
-      for sx := 0 to Encoder.FTileMapWidth - 1 do
-      begin
-        if Frame.TileMap[sy, sx].PalIdx <> APaletteIndex then
-          Continue;
-
-        dsIdx := idxs[annQueryPos];
+        // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
 
         if InRange(dsIdx, 0, DS^.KNNSize - 1) then
         begin
-          TMI := @Frame.TileMap[sy, sx];
 
           TMI^.TileIdx := dsIdx;
-          TMI^.ResidualErr := errs[annQueryPos];
+          TMI^.ResidualErr := dsErr;
           TMI^.BlendedX := High(ShortInt);
           TMI^.BlendedY := High(ShortInt);
           TMI^.BlendCur := Encoder.FFrameTilingBlendingExtents - 1;
@@ -2538,11 +2476,8 @@ begin
 
           errCml += TMI^.ResidualErr;
         end;
-
-        Inc(annQueryPos);
       end;
   end;
-  Assert(annQueryPos = annQueryCount);
 
   SpinEnter(@FLock);
   ReconstructErrCml += errCml;
@@ -5552,11 +5487,10 @@ var
   BIRCH: PBIRCH;
   BICO: PBICO;
   DCTs: TDoubleDynArray2;
-  FLANNClusters: TIntegerDynArray;
-  FLANNErrors: TSingleDynArray;
-  FLANNPalIdxs: TSmallIntDynArray;
-  FLANN: flann_index_t;
-  FLANNParams: TFLANNParameters;
+  ANNClusters: TIntegerDynArray;
+  ANNErrors: TANNFloatDynArray;
+  ANNPalIdxs: TSmallIntDynArray;
+  ANN: PANNkdtree;
   TileLineIdxs: TInt64DynArray;
 
   procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -5607,7 +5541,7 @@ var
     end;
   end;
 
-  procedure DoFLANN(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoANN(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     frameOffset: Int64;
     frmIdx, sx, sy, si: Integer;
@@ -5615,12 +5549,10 @@ var
     Frame: TFrame;
     Tile: PTile;
     TMI: PTileMapItem;
-    Dataset: TSingleDynArray;
+    DCT: array[0 .. cTileDCTSize - 1] of TANNFloat;
   begin
     if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
-
-    SetLength(Dataset, featureCount * FTileMapSize);
 
     KeyFrame := FKeyFrames[AIndex];
 
@@ -5637,27 +5569,20 @@ var
           begin
             Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @Dataset[si * featureCount]);
+            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCT[0]);
 
-            Inc(si);
-          end;
+            ANNClusters[frameOffset + si] := ann_kdtree_search(ANN, @DCT[0], 0.0, @ANNErrors[frameOffset + si]);
 
-        flann_find_nearest_neighbors_index(FLANN, @Dataset[0], FTileMapSize, @FLANNClusters[frameOffset], @FLANNErrors[frameOffset], 1, @FLANNParams);
-
-        si := 0;
-        for sy := 0 to FTileMapHeight - 1 do
-          for sx := 0 to FTileMapWidth - 1 do
-          begin
             Tile := Frame.FrameTiles[si];
             TMI := @Frame.TileMap[sy, sx];
 
             TMI^.HMirror := Tile^.HMirror_Initial;
             TMI^.VMirror := Tile^.VMirror_Initial;
-            TMI^.TileIdx := FLANNClusters[frameOffset + si];
+            TMI^.TileIdx := ANNClusters[frameOffset + si];
 
             TMI^.CopyToSmoothed;
 
-            FLANNPalIdxs[frameOffset + si] := TMI^.PalIdx;
+            ANNPalIdxs[frameOffset + si] := TMI^.PalIdx;
 
             Inc(si);
           end;
@@ -5707,7 +5632,7 @@ var
 
             Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-            DitherTile(Tile^, Frame.PKeyFrame.PaletteInfo[FLANNPalIdxs[TileLineIdxs[i]]].MixingPlan);
+            DitherTile(Tile^, Frame.PKeyFrame.PaletteInfo[ANNPalIdxs[TileLineIdxs[i]]].MixingPlan);
           end;
         end;
       finally
@@ -5745,12 +5670,11 @@ var
   i, j, kfIdx, frmIdx, clusterIdx: Integer;
   BIRCHClusterCount, BICOClusterCount: Integer;
   lineIdx: Int64;
-  speedup: Single;
   err: Single;
   KeyFrame: TKeyFrame;
   Frame: TFrame;
   BIRCHCentroids, BICOCentroids, BICOWeights: TDoubleDynArray;
-  FLANNDataset: TSingleDynArray;
+  ANNDataset: array of PANNFloat;
   TileBestErr: TSingleDynArray;
 
 begin
@@ -5812,7 +5736,7 @@ begin
     // get BIRCH results
 
     BIRCHClusterCount := birch_compute(BIRCH, False, False);
-    SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize);
+    SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize); // not featureCount because BIRCH is hardcoded to cTileDCTSize
 
     birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
 
@@ -5823,23 +5747,20 @@ begin
 
     BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
 
-    // join them to create the dataset for FLANN
+    // join them to create the dataset for ANN
 
     clusterCount := BICOClusterCount + BIRCHClusterCount;
 
-    SetLength(FLANNDataset, clusterCount * featureCount);
-    for i := 0 to BICOClusterCount * featureCount - 1 do
-      FLANNDataset[i] := BICOCentroids[i];
+    SetLength(ANNDataset, clusterCount);
+    for i := 0 to BICOClusterCount - 1 do
+      ANNDataset[i] := @BICOCentroids[i * featureCount];
 
     for i := 0 to BIRCHClusterCount - 1 do
-      for j := 0 to featureCount - 1 do
-        FLANNDataset[(BICOClusterCount + i) * featureCount + j] := BIRCHCentroids[i * cTileDCTSize + j];
+      ANNDataset[BICOClusterCount + i] := @BIRCHCentroids[i * cTileDCTSize];
 
   finally
     birch_destroy(BIRCH);
     bico_destroy(BICO);
-    SetLength(BIRCHCentroids, 0);
-    SetLength(BICOCentroids, 0);
     SetLength(BICOWeights, 0);
     SetLength(DCTs, 0);
   end;
@@ -5851,26 +5772,21 @@ begin
   if clusterCount <= 0 then
     Exit;
 
-  // use FLANN to compute cluster indexes
+  // use ANN to compute cluster indexes
 
-  SetLength(FLANNClusters, DSLen);
-  SetLength(FLANNErrors, DSLen);
-  SetLength(FLANNPalIdxs, DSLen);
+  SetLength(ANNClusters, DSLen);
+  SetLength(ANNErrors, DSLen);
+  SetLength(ANNPalIdxs, DSLen);
 
-  FLANNParams := CDefaultFLANNParameters;
-  FLANNParams.checks := featureCount;
-  FLANNParams.sorted := 0;
-  FLANNParams.max_neighbors := 1;
-
-  FLANN := flann_build_index(@FLANNDataset[0], clusterCount, featureCount, @speedup, @FLANNParams);
+  ANN := ann_kdtree_create(@ANNDataset[0], clusterCount, featureCount, 32, ANN_KD_STD);
   try
     doneFrameCount := 0;
-    ProcThreadPool.DoParallelLocalProc(@DoFLANN, 0, High(FKeyFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoANN, 0, High(FKeyFrames));
   finally
-    flann_free_index(FLANN, @FLANNParams);
+    ann_kdtree_destroy(ANN);
   end;
 
-  ProgressRedraw(4, 'FLANNReconstruct');
+  ProgressRedraw(4, 'ANNReconstruct');
 
   // allocate tile set
 
@@ -5885,9 +5801,9 @@ begin
 
   for lineIdx := 0 to DSLen - 1 do
   begin
-    clusterIdx := FLANNClusters[lineIdx];
+    clusterIdx := ANNClusters[lineIdx];
 
-    err := FLANNErrors[lineIdx];
+    err := ANNErrors[lineIdx];
 
     if err < TileBestErr[clusterIdx] then
     begin
