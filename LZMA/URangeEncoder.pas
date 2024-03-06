@@ -2,8 +2,9 @@ unit URangeEncoder;
 
 {$IFDEF FPC}
 {$MODE Delphi}
-{$R-}
 {$ENDIF}
+
+{$R-}
 
 interface
 
