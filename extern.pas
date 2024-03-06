@@ -7,7 +7,8 @@ interface
 uses
   LazLogger, Windows, Classes, SysUtils, Types, Process, strutils, math,
   libavcodec_codec, libavcodec_packet, libavcodec, libavformat, libavutil, libavutil_error, libavutil_frame,
-  libavutil_imgutils, libavutil_log, libavutil_mem, libavutil_pixfmt, libavutil_rational, libswscale, FFUtils, ULZMAEncoder;
+  libavutil_imgutils, libavutil_log, libavutil_mem, libavutil_pixfmt, libavutil_rational, libswscale, FFUtils,
+  ULZMAEncoder, ULZMADecoder;
 
 type
   TFloat = Single;
@@ -154,7 +155,8 @@ type
 
 procedure QuickSort(var AData;AFirstItem,ALastItem:Int64;AItemSize:Integer;ACompareFunction:TCompareFunction;AUserParameter:Pointer=nil);
 
-procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
+procedure LZCompress(ASourceStream: TStream; ADestStream: TStream);
+procedure LZDecompress(ASourceStream: TStream; ADestStream: TStream);
 
 procedure DoExternalSKLearn(Dataset: TByteDynArray2; ClusterCount, Precision: Integer; Compiled, PrintProgress: Boolean; var Clusters: TIntegerDynArray);
 procedure DoExternalKMeans(Dataset: TFloatDynArray2;  ClusterCount, ThreadCount: Integer; PrintProgress: Boolean; var Clusters: TIntegerDynArray);
@@ -414,7 +416,7 @@ begin
   until I >= ALastItem;
 end;
 
-procedure LZCompress(ASourceStream: TStream; PrintProgress: Boolean; var ADestStream: TStream);
+procedure LZCompress(ASourceStream: TStream; ADestStream: TStream);
 var
   i: Integer;
   LZMA: TLZMAEncoder;
@@ -430,6 +432,25 @@ begin
         ADestStream.WriteByte($ff);
 
     LZMA.Code(ASourceStream,ADestStream,-1,-1);
+  finally
+    LZMA.Free;
+  end;
+end;
+
+procedure LZDecompress(ASourceStream: TStream; ADestStream: TStream);
+var
+  i: Integer;
+  LZMA: TLZMADecoder;
+  EncoderProperties: array[0..4] of Byte;
+begin
+  LZMA := TLZMADecoder.Create;
+  try
+    ASourceStream.Read(EncoderProperties,SizeOf(EncoderProperties));
+    LZMA.SetDecoderProperties(EncoderProperties);
+    for i := 0 to 7 do
+        ASourceStream.ReadByte;
+
+    LZMA.Code(ASourceStream, ADestStream, -1);
   finally
     LZMA.Free;
   end;

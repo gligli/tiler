@@ -25,7 +25,7 @@ object MainForm: TMainForm
   ParentDoubleBuffered = False
   PopupMenu = pmProcesses
   Position = poScreenCenter
-  LCLVersion = '2.2.4.0'
+  LCLVersion = '3.2.0.0'
   object tbFrame: TTrackBar
     Left = 0
     Height = 27
@@ -46,35 +46,35 @@ object MainForm: TMainForm
     Left = 8
     Height = 19
     Top = 575
-    Width = 71
+    Width = 69
     Anchors = [akLeft, akBottom]
     Caption = 'Play (F11)'
-    OnChange = UpdateVideo
     TabOrder = 7
+    OnChange = UpdateVideo
   end
   object chkBlended: TCheckBox
     Left = 248
     Height = 19
     Top = 575
-    Width = 63
+    Width = 61
     Anchors = [akLeft, akBottom]
     Caption = 'Blended'
     Checked = True
-    OnChange = UpdateVideo
     State = cbChecked
     TabOrder = 10
+    OnChange = UpdateVideo
   end
   object chkMirrored: TCheckBox
     Left = 168
     Height = 19
     Top = 575
-    Width = 66
+    Width = 64
     Anchors = [akLeft, akBottom]
     Caption = 'Mirrored'
     Checked = True
-    OnChange = UpdateVideo
     State = cbChecked
     TabOrder = 9
+    OnChange = UpdateVideo
   end
   object chkGamma: TCheckBox
     Left = 528
@@ -84,8 +84,8 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = 'Gamma'
-    OnChange = UpdateVideo
     TabOrder = 13
+    OnChange = UpdateVideo
   end
   object chkSmoothed: TCheckBox
     Left = 88
@@ -96,9 +96,9 @@ object MainForm: TMainForm
     AutoSize = False
     Caption = 'Smoothed'
     Checked = True
-    OnChange = UpdateVideo
     State = cbChecked
     TabOrder = 8
+    OnChange = UpdateVideo
   end
   object lblCorrel: TLabel
     Left = 880
@@ -162,8 +162,8 @@ object MainForm: TMainForm
         Height = 23
         Top = 32
         Width = 504
-        OnChange = UpdateGUI
         TabOrder = 2
+        OnChange = UpdateGUI
       end
       object seMaxTiles: TSpinEdit
         Left = 328
@@ -182,8 +182,8 @@ object MainForm: TMainForm
         Top = 7
         Width = 26
         Caption = '...'
-        OnClick = btnInputClick
         TabOrder = 1
+        OnClick = btnInputClick
       end
       object seTempoSmoo: TFloatSpinEdit
         Left = 328
@@ -218,8 +218,8 @@ object MainForm: TMainForm
           '8'
           '16'
         )
-        OnChange = UpdateGUI
         TabOrder = 18
+        OnChange = UpdateGUI
       end
       object seFrameCount: TSpinEdit
         Left = 872
@@ -234,10 +234,10 @@ object MainForm: TMainForm
         Left = 8
         Height = 19
         Top = 422
-        Width = 253
+        Width = 251
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
-        OnChange = UpdateGUI
         TabOrder = 26
+        OnChange = UpdateGUI
       end
       object Label13: TLabel
         Left = 656
@@ -284,8 +284,8 @@ object MainForm: TMainForm
         Height = 23
         Top = 8
         Width = 504
-        OnChange = UpdateGUI
         TabOrder = 0
+        OnChange = UpdateGUI
       end
       object Label3: TLabel
         Left = 656
@@ -307,19 +307,19 @@ object MainForm: TMainForm
         Left = 328
         Height = 19
         Top = 404
-        Width = 170
+        Width = 168
         Caption = 'Dithering gamma correction'
-        OnChange = UpdateGUI
         TabOrder = 29
+        OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
         Left = 328
         Height = 19
         Top = 440
-        Width = 184
+        Width = 182
         Caption = 'Reconstruct gamma correction'
-        OnChange = UpdateGUI
         TabOrder = 31
+        OnChange = UpdateGUI
       end
       object Label10: TLabel
         Left = 8
@@ -372,8 +372,8 @@ object MainForm: TMainForm
         Top = 31
         Width = 26
         Caption = '...'
-        OnClick = btnGTMClick
         TabOrder = 3
+        OnClick = btnGTMClick
       end
       object Label12: TLabel
         Left = 8
@@ -398,8 +398,8 @@ object MainForm: TMainForm
           '32'
           '64'
         )
-        OnChange = UpdateGUI
         TabOrder = 12
+        OnChange = UpdateGUI
       end
       object cbxPalCount: TComboBox
         Left = 328
@@ -419,8 +419,8 @@ object MainForm: TMainForm
           '128'
           '256'
         )
-        OnChange = UpdateGUI
         TabOrder = 11
+        OnChange = UpdateGUI
       end
       object Label14: TLabel
         Left = 8
@@ -446,9 +446,9 @@ object MainForm: TMainForm
           '7'
           '8'
         )
-        OnChange = UpdateGUI
         Style = csDropDownList
         TabOrder = 15
+        OnChange = UpdateGUI
       end
       object cbxScaling: TComboBox
         Left = 872
@@ -468,9 +468,9 @@ object MainForm: TMainForm
           '3'
           '4'
         )
-        OnChange = UpdateGUI
         Style = csDropDownList
         TabOrder = 6
+        OnChange = UpdateGUI
       end
       object Label15: TLabel
         Left = 656
@@ -484,10 +484,10 @@ object MainForm: TMainForm
         Left = 8
         Height = 19
         Top = 404
-        Width = 294
+        Width = 292
         Caption = 'Use Yakmo KMeans as quantizer (not Dennis Lee v3)'
-        OnChange = UpdateGUI
         TabOrder = 25
+        OnChange = UpdateGUI
       end
       object Label18: TLabel
         Left = 8
@@ -512,7 +512,7 @@ object MainForm: TMainForm
         Left = 8
         Height = 19
         Top = 179
-        Width = 278
+        Width = 276
         Caption = 'Posterize palettes to selected bits per component'
         TabOrder = 16
       end
@@ -533,18 +533,18 @@ object MainForm: TMainForm
           '7'
           '8'
         )
-        OnChange = UpdateGUI
         Style = csDropDownList
         TabOrder = 17
+        OnChange = UpdateGUI
       end
       object chkFTFromPal: TCheckBox
         Left = 8
         Height = 19
         Top = 459
-        Width = 205
+        Width = 203
         Caption = 'Do reconstruct from palettized tiles'
-        OnChange = UpdateGUI
         TabOrder = 28
+        OnChange = UpdateGUI
       end
       object Label16: TLabel
         Left = 8
@@ -591,9 +591,9 @@ object MainForm: TMainForm
           '7'
           '8'
         )
-        OnChange = UpdateGUI
         Style = csDropDownList
         TabOrder = 21
+        OnChange = UpdateGUI
       end
       object Label19: TLabel
         Left = 8
@@ -616,9 +616,9 @@ object MainForm: TMainForm
           '8'
           '16'
         )
-        OnChange = UpdateGUI
         Style = csDropDownList
         TabOrder = 20
+        OnChange = UpdateGUI
       end
       object Label20: TLabel
         Left = 656
@@ -679,19 +679,19 @@ object MainForm: TMainForm
         Left = 328
         Height = 19
         Top = 422
-        Width = 158
+        Width = 156
         Caption = 'Cluster gamma correction'
-        OnChange = UpdateGUI
         TabOrder = 30
+        OnChange = UpdateGUI
       end
       object chkGlobLumaOnly: TCheckBox
         Left = 8
         Height = 19
         Top = 440
-        Width = 227
+        Width = 225
         Caption = 'Cluster from luma features only (faster)'
-        OnChange = UpdateGUI
         TabOrder = 27
+        OnChange = UpdateGUI
       end
       object tbGlobRatio: TTrackBar
         Left = 328
@@ -850,9 +850,9 @@ object MainForm: TMainForm
     Top = 7
     Width = 72
     Caption = 'Run (F10)'
-    OnClick = btnRunAllClick
     PopupMenu = pmProcesses
     TabOrder = 0
+    OnClick = btnRunAllClick
   end
   object From: TLabel
     Left = 112
@@ -916,22 +916,22 @@ object MainForm: TMainForm
     Width = 16
     Caption = '6'
     Font.Name = 'Marlett'
-    OnClick = btnPMClick
     ParentFont = False
     PopupMenu = pmProcesses
     TabOrder = 1
+    OnClick = btnPMClick
   end
   object chkDithered: TCheckBox
     Left = 328
     Height = 19
     Top = 575
-    Width = 65
+    Width = 63
     Anchors = [akLeft, akBottom]
     Caption = 'Dithered'
     Checked = True
-    OnChange = UpdateVideo
     State = cbChecked
     TabOrder = 11
+    OnChange = UpdateVideo
   end
   object IdleTimer: TIdleTimer
     Interval = 42
@@ -977,9 +977,15 @@ object MainForm: TMainForm
       ShortCut = 120
       OnClick = btnSaveClick
     end
+    object Separator1: TMenuItem
+      Caption = '-'
+    end
     object miGeneratePNGs: TMenuItem
       Caption = 'Generate PNGs'
       OnClick = btnGeneratePNGsClick
+    end
+    object Separator2: TMenuItem
+      Caption = '-'
     end
     object miLoadSettings: TMenuItem
       Caption = 'Load settings...'
@@ -990,6 +996,13 @@ object MainForm: TMainForm
       Caption = 'Save settings as...'
       ShortCut = 16467
       OnClick = miSaveSettingsClick
+    end
+    object Separator3: TMenuItem
+      Caption = '-'
+    end
+    object miReload: TMenuItem
+      Caption = 'Reload GTM file... (needs loaded video)'
+      OnClick = miReloadClick
     end
   end
   object odFFInput: TOpenDialog
@@ -1022,5 +1035,11 @@ object MainForm: TMainForm
     OnTimer = PsyVTimerTimer
     Left = 888
     Top = 320
+  end
+  object odGTM: TOpenDialog
+    DefaultExt = '.gtm'
+    Filter = 'GTM Videos (*.gtm)|*.gtm'
+    Left = 888
+    Top = 368
   end
 end

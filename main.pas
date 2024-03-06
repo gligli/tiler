@@ -71,10 +71,12 @@ type
     Label9: TLabel;
     lblPct: TLabel;
     llPalTileDesc: TPanel;
+    miReload: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
     miSaveSettings: TMenuItem;
     odFFInput: TOpenDialog;
+    odGTM: TOpenDialog;
     odSettings: TOpenDialog;
     pbProgress: TProgressBar;
     pcPages: TPageControl;
@@ -83,6 +85,9 @@ type
     sbTiles: TScrollBox;
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
+    Separator1: TMenuItem;
+    Separator2: TMenuItem;
+    Separator3: TMenuItem;
     seShotTransMaxSecondsPerKF: TFloatSpinEdit;
     seShotTransCorrelLoThres: TFloatSpinEdit;
     seFTBlendThres: TFloatSpinEdit;
@@ -146,6 +151,7 @@ type
     procedure imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure imgTilesMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure miLoadSettingsClick(Sender: TObject);
+    procedure miReloadClick(Sender: TObject);
     procedure miSaveSettingsClick(Sender: TObject);
     procedure PsyVTimerTimer(Sender: TObject);
     procedure seMaxTilesEditingDone(Sender: TObject);
@@ -312,6 +318,16 @@ begin
   if odSettings.Execute then
   begin
     FTilingEncoder.LoadSettings(odSettings.FileName);
+    LoadGUISettings;
+    UpdateGUI(nil);
+  end;
+end;
+
+procedure TMainForm.miReloadClick(Sender: TObject);
+begin
+  if odGTM.Execute then
+  begin
+    FTilingEncoder.ReloadGTM(odGTM.FileName);
     LoadGUISettings;
     UpdateGUI(nil);
   end;
@@ -639,6 +655,7 @@ begin
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
   lblGlobRatio.Caption := IntToStr(Round(FTilingEncoder.GlobalTilingRatio * 100));
+  miReload.Enabled := FTilingEncoder.FrameCount > 0;
 end;
 
 procedure TMainForm.TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);

@@ -11,7 +11,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, IniFiles, Graphics,
-  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, sle;
+  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, sle, bufstream;
 
 type
   TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esCluster, esReconstruct, esSmooth, esReindex, esSave);
@@ -158,7 +158,7 @@ type
   //
   // FrameEnd:                data -> none; commandBits bit 0 -> keyframe end
   // TileSet:                 data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
-  // SetDimensions:           data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
+  // SetDimensions:           data -> width in tiles (16 bits); height in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
   // ExtendedCommand:         data -> following bytes count (32 bits); custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
   //
   // ReservedArea:            reserving the MSB for future use (do not use for new commands)
@@ -208,6 +208,8 @@ type
   PRGBPixels = ^TRGBPixels;
   PPalPixels = ^TPalPixels;
   PCpnPixels = ^TCpnPixels;
+
+  ETilingEncoderGTMReloadError = class(Exception);
 
   { TTile }
 
@@ -592,6 +594,7 @@ type
 
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
+    procedure LoadStream(AStream: TStream);
     procedure SaveStream(AStream: TStream);
 
     // processes
@@ -618,6 +621,8 @@ type
     procedure SaveSettings(ASettingsFileName: String);
     procedure LoadSettings(ASettingsFileName: String);
     procedure LoadDefaultSettings;
+
+    procedure ReloadGTM(AFileName: String);
 
     procedure Test;
 
@@ -706,6 +711,11 @@ type
   function iDiv0(x, y: Int64): Int64;overload;inline;
 
 implementation
+
+const
+  CGTMCommandsCount = Ord(High(TGTMCommand)) + 1;
+  CGTMCommandCodeBits = round(ln(CGTMCommandsCount) / ln(2));
+  CGTMCommandBits = 16 - CGTMCommandCodeBits;
 
 procedure SpinEnter(Lock: PSpinLock); assembler;
 label spin_lock;
@@ -3001,6 +3011,7 @@ begin
 
   ProgressRedraw(-1, '', esAll);
 
+  FLoadedInputPath := '';
   ClearAll;
 
   // print settings
@@ -3255,14 +3266,14 @@ end;
 
 procedure TTilingEncoder.Save;
 var
-  fs: TFileStream;
+  fs: TBufferedFileStream;
 begin
   if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(0, '', esSave);
 
-  fs := TFileStream.Create(FOutputFileName, fmCreate or fmShareDenyWrite);
+  fs := TBufferedFileStream.Create(FOutputFileName, fmCreate or fmShareDenyWrite);
   try
     SaveStream(fs);
   finally
@@ -3270,6 +3281,22 @@ begin
   end;
 
   ProgressRedraw(1, '');
+end;
+
+procedure TTilingEncoder.ReloadGTM(AFileName: String);
+var
+  fs: TBufferedFileStream;
+begin
+  ProgressRedraw(0, '', esLoad);
+
+  fs := TBufferedFileStream.Create(AFileName, fmOpenRead or fmShareDenyWrite);
+  try
+    LoadStream(fs);
+  finally
+    fs.Free;
+  end;
+
+  ProgressRedraw(2, '');
 end;
 
 procedure TTilingEncoder.GeneratePNGs;
@@ -4530,9 +4557,6 @@ var
   pcol: PInteger;
   Tile: PTile;
 begin
-  Assert(AImageWidth <= FScreenWidth, 'Wrong video width!');
-  Assert(AImageHeight <= FScreenHeight, 'Wrong video height!');
-
   // create frame tiles from image data
 
   AFrame.FrameTiles := TTile.Array1DNew(FTileMapSize, True, True);
@@ -4545,12 +4569,15 @@ begin
         col := pcol^;
         Inc(pcol);
 
-        ti := FTileMapWidth * (j shr cTileWidthBits) + (i shr cTileWidthBits);
-        tx := i and (cTileWidth - 1);
-        ty := j and (cTileWidth - 1);
-        col := SwapRB(col);
+        if (j < FScreenHeight) and (i < FScreenWidth) then
+        begin
+          ti := FTileMapWidth * (j shr cTileWidthBits) + (i shr cTileWidthBits);
+          tx := i and (cTileWidth - 1);
+          ty := j and (cTileWidth - 1);
+          col := SwapRB(col);
 
-        AFrame.FrameTiles[ti]^.RGBPixels[ty, tx] := col;
+          AFrame.FrameTiles[ti]^.RGBPixels[ty, tx] := col;
+        end;
       end;
   end;
 
@@ -4744,7 +4771,8 @@ begin
       FreeAndNil(FKeyFrames[i]);
   SetLength(FKeyFrames, 0);
 
-  FLoadedInputPath := '';
+  TTile.Array1DDispose(FTiles);
+
   FRenderPrevKeyFrame := nil;
 end;
 
@@ -6056,11 +6084,275 @@ begin
   AVMirror := q00 + q01 < q10 + q11;
 end;
 
+procedure TTilingEncoder.LoadStream(AStream: TStream);
+var
+  KFStream: TMemoryStream;
+
+  function ReadDWord: Cardinal;
+  begin
+    Result := KFStream.ReadDWord;
+  end;
+
+  function ReadWord: Word;
+  begin
+    Result := KFStream.ReadWord;
+  end;
+
+  function ReadByte: Byte;
+  begin
+    Result := KFStream.ReadByte;
+  end;
+
+  procedure ReadCmd(out Cmd: TGTMCommand; out Data: Word);
+  var
+    d: Word;
+  begin
+    d := ReadWord;
+    Cmd := TGTMCommand(d and ((1 shl CGTMCommandCodeBits) - 1));
+    Data := d shr CGTMCommandCodeBits;
+  end;
+
+  procedure ReadTiles(PaletteSize: Integer);
+  var
+    i, startIdx, endIdx: Integer;
+  begin
+    startIdx := ReadDWord; // start tile
+    endIdx := ReadDWord; // end tile
+
+    for i := startIdx to endIdx do
+    begin
+      KFStream.Read(FTiles[i]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
+      FTiles[i]^.Active := True;
+    end;
+
+    FPaletteSize := PaletteSize;
+  end;
+
+  procedure ReadDimensions;
+  var
+    w, h, frmLen, tileCount: Integer;
+  begin
+    w := ReadWord; // frame tilemap width
+    h := ReadWord; // frame tilemap height
+    ReframeUI(w, h);
+
+    frmLen := ReadDWord; // frame length in nanoseconds
+    FFramesPerSecond := 1000*1000*1000 / frmLen;
+
+    tileCount := ReadDWord; // tile count
+    FTiles := TTile.Array1DNew(tileCount, False, True); // tile count
+  end;
+
+  procedure ReadPalette(KF: TKeyFrame);
+  var
+    i, palIdx: Integer;
+  begin
+    palIdx := ReadByte;
+    ReadByte;
+
+    if Length(KF.PaletteRGB) <= palIdx then
+    begin
+      SetLength(KF.PaletteRGB, palIdx + 1, FPaletteSize);
+      SetLength(KF.PaletteInfo, Length(KF.PaletteRGB));
+      FPaletteCount := Length(KF.PaletteRGB);
+    end;
+
+    for i := 0 to FPaletteSize - 1 do
+      KF.PaletteRGB[palIdx, i] := ReadDWord and $ffffff;
+  end;
+
+  procedure SetTMI(tileIdx: Integer; attrs, blend: Integer; var TMI: TTileMapItem);
+  begin
+    TMI.TileIdx := tileIdx;
+    TMI.HMirror := attrs and 1 <> 0;
+    TMI.VMirror := attrs and 2 <> 0;
+    TMI.PalIdx := attrs shr 2;
+
+    if blend >= 0 then
+    begin
+      TMI.BlendCur := blend and $f;
+      TMI.BlendPrev := (blend shr 4) and $f;
+      TMI.BlendedX := ((blend shr 8) and $7) - ((blend shr 8) and $8);
+      TMI.BlendedY := ((blend shr 12) and $7) - ((blend shr 12) and $8);
+    end
+    else
+    begin
+      // no blending
+      TMI.BlendCur := FFrameTilingBlendingExtents - 1;
+      TMI.BlendPrev := 0;
+      TMI.BlendedX := High(ShortInt);
+      TMI.BlendedY := High(ShortInt);
+    end;
+
+    TMI.Smoothed := False;
+    TMI.CopyToSmoothed;
+  end;
+
+  function AddFrame(KF: TKeyFrame): TFrame;
+  begin
+    SetLength(FFrames, Length(FFrames) + 1);
+    Result := TFrame.Create;
+    Result.Index := High(FFrames);
+    Result.PKeyFrame := kf;
+    FFrames[High(FFrames)] := Result;
+
+    SetLength(Result.TileMap, FTileMapHeight, FTileMapWidth);
+  end;
+
+  procedure SkipBlock(frm: TFrame; SkipCount: Integer; var tmPos: Integer);
+  var
+    i: Integer;
+    sx, sy: Integer;
+  begin
+    Assert(frm.Index > 0);
+    for i := tmPos to tmPos + SkipCount - 1 do
+    begin
+      DivMod(i, FTileMapWidth, sy, sx);
+      frm.TileMap[sy, sx] := FFrames[frm.Index - 1].TileMap[sy, sx];
+      frm.TileMap[sy, sx].Smoothed := True;
+    end;
+    tmPos += SkipCount;
+  end;
+
+var
+  Header: TGTMHeader;
+  Command: TGTMCommand;
+  CommandData: Word;
+  frmCount, tmPos: Integer;
+  tileIdx: Cardinal;
+  blend: Integer;
+  frm: TFrame;
+  kf: TKeyFrame;
+  compat: String;
+begin
+  FillChar(Header, SizeOf(Header), 0);
+
+  AStream.ReadBuffer(Header, SizeOf(Header.FourCC));
+  AStream.Seek(0, soBeginning);
+
+  if Header.FourCC = 'GTMv' then
+  begin
+    AStream.ReadBuffer(Header, SizeOf(Header));
+    AStream.Seek(Header.WholeHeaderSize, soBeginning);
+
+    compat := '';
+    if Header.FrameCount <> FrameCount then
+      compat := compat + Format('GTM FrameCount = %d; FrameCount = %d' + sLineBreak, [Header.FrameCount, Length(FFrames)]);
+    if Header.FramePixelWidth <> ScreenWidth then
+      compat := compat + Format('GTM ScreenWidth = %d; ScreenWidth = %d' + sLineBreak, [Header.FramePixelWidth, FScreenWidth]);
+    if Header.FramePixelHeight <> ScreenHeight then
+      compat := compat + Format('GTM ScreenHeight = %d; ScreenHeight = %d' + sLineBreak, [Header.FramePixelHeight, FScreenHeight]);
+
+    if compat <> '' then
+      raise ETilingEncoderGTMReloadError.Create('Mismatch between GTM and loaded video!' + sLineBreak + compat);
+  end;
+
+  ClearAll;
+  FFrameTilingBlendingExtents := 16;
+
+  frm := nil;
+  frmCount := 0;
+  KFStream := TMemoryStream.Create;
+  try
+    repeat
+      KFStream.Clear;
+      LZDecompress(AStream, KFStream);
+      KFStream.Seek(0,soBeginning);
+
+      // add a keyframe
+      SetLength(FKeyFrames, Length(FKeyFrames) + 1);
+      kf := TKeyFrame.Create(Self, High(FKeyFrames), frmCount, -1);
+      FKeyFrames[High(FKeyFrames)] := kf;
+
+      tmPos := 0;
+      repeat
+        ReadCmd(Command, CommandData);
+
+        case Command of
+          gtExtendedCommand:
+          begin
+            KFStream.Seek(ReadDWord, soCurrent);
+          end;
+          gtSetDimensions:
+          begin
+            ReadDimensions;
+          end;
+          gtTileSet:
+          begin
+            ReadTiles(CommandData);
+          end;
+          gtLoadPalette:
+          begin
+            ReadPalette(kf);
+          end;
+          gtFrameEnd:
+          begin
+            Assert(tmPos = FTileMapSize, 'Incomplete tilemap');
+
+            // will have to create a new frame
+            frm := nil;
+            tmPos := 0;
+            Inc(frmCount);
+
+            if (CommandData and 1) <> 0 then // keyframe end?
+              Break;
+          end;
+          gtSkipBlock:
+          begin
+            // create frame if needed
+            if frm = nil then
+              frm := AddFrame(kf);
+
+            SkipBlock(frm, CommandData + 1, tmPos);
+          end;
+          gtShortTileIdx, gtLongTileIdx,
+          gtShortBlendTileIdx, gtLongBlendTileIdx,
+          gtShortAdditionalTileIdx, gtLongAdditionalTileIdx,
+          gtShortAddlBlendTileIdx, gtLongAddlBlendTileIdx:
+          begin
+            if Command in [gtShortTileIdx, gtShortBlendTileIdx, gtShortAdditionalTileIdx, gtShortAddlBlendTileIdx] then
+              tileIdx := ReadWord
+            else
+              tileIdx := ReadDWord;
+
+            // unused (not compatible anymore)
+            if Command in [gtShortAdditionalTileIdx, gtShortAddlBlendTileIdx] then
+              ReadWord
+            else if Command in [gtLongAdditionalTileIdx, gtLongAddlBlendTileIdx] then
+              ReadDWord;
+
+            blend := -1; // no blend
+            if Command in [gtShortBlendTileIdx, gtLongBlendTileIdx] then
+              blend := ReadWord
+            else if Command in [gtShortAddlBlendTileIdx, gtLongAddlBlendTileIdx] then
+              ReadWord; // unused (not compatible anymore)
+
+            // create frame if needed
+            if frm = nil then
+              frm := AddFrame(kf);
+
+            SetTMI(tileIdx, CommandData, blend, frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth]);
+            Inc(tmPos);
+          end;
+
+          else
+           Assert(False, 'Unknown command: ' + IntToStr(Ord(Command)) + ', ' + IntToStr(CommandData));
+        end;
+      until False;
+
+      kf.EndFrame := frmCount - 1;
+      kf.FrameCount := kf.EndFrame - kf.StartFrame + 1;
+
+    until AStream.Position >= AStream.Size;
+  finally
+    KFStream.Free;
+  end;
+
+  ReframeUI(FTileMapWidth, FTileMapHeight); // for FPaletteBitmap
+end;
+
 procedure TTilingEncoder.SaveStream(AStream: TStream);
 const
-  CGTMCommandsCount = Ord(High(TGTMCommand)) + 1;
-  CGTMCommandCodeBits = round(ln(CGTMCommandsCount) / ln(2));
-  CGTMCommandBits = 16 - CGTMCommandCodeBits;
   CMinBlkSkipCount = 1;
   CMaxBlkSkipCount = 1 shl CGTMCommandBits;
 
@@ -6090,7 +6382,7 @@ var
     DoWord((Data shl CGTMCommandCodeBits) or Ord(Cmd));
   end;
 
-  function ExtractTMIAttributes(KeyFrame: TKeyFrame; const TMI: TTileMapItem; out attrs, blend: Word; out isBlend: Boolean): Integer;
+  function ExtractTMIAttributes(const TMI: TTileMapItem; out attrs, blend: Word; out isBlend: Boolean): Integer;
   begin
     attrs := (TMI.PalIdx_Smoothed shl 2) or (Ord(TMI.VMirror_Smoothed) shl 1) or Ord(TMI.HMirror_Smoothed);
     blend := (Word(TMI.BlendedY and $f) shl 12) or (Word(TMI.BlendedX and $f) shl 8) or (((Word(TMI.BlendPrev) shl 4) div FFrameTilingBlendingExtents) shl 4) or ((Word(TMI.BlendCur) shl 4) div FFrameTilingBlendingExtents);
@@ -6098,7 +6390,7 @@ var
     Result := TMI.TileIdx_Smoothed;
   end;
 
-  procedure DoTMI(KeyFrame: TKeyFrame; const TMI: TTileMapItem);
+  procedure DoTMI(const TMI: TTileMapItem);
   var
     tileIdx: Integer;
     attrs, blend: Word;
@@ -6106,7 +6398,7 @@ var
   begin
     Assert((TMI.PalIdx_Smoothed >= 0) and (TMI.PalIdx_Smoothed < FPaletteCount));
 
-    tileIdx := ExtractTMIAttributes(KeyFrame, TMI, attrs, blend, isBlend);
+    tileIdx := ExtractTMIAttributes(TMI, attrs, blend, isBlend);
 
     if tileIdx < (1 shl 16) then
     begin
@@ -6276,7 +6568,7 @@ begin
               BlkSkipCount := 0;
 
               DivMod(yx, FTileMapWidth, sy, sx);
-              DoTMI(KeyFrame, Frame.TileMap[sy, sx]);
+              DoTMI(Frame.TileMap[sy, sx]);
               Inc(cs);
             end;
           end;
@@ -6295,7 +6587,7 @@ begin
 
           AStream.Position := AStream.Size;
           KFSize := AStream.Position;
-          LZCompress(ZStream, False, AStream);
+          LZCompress(ZStream, AStream);
 
           KFSize := AStream.Size - KFSize;
 
