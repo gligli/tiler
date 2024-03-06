@@ -114,11 +114,8 @@
             <CustomOptions Value="-Xs-
 -FWlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo
 -OWALL"/>
-            <OtherDefines Count="1">
-              <Define0 Value="DEBUG"/>
-            </OtherDefines>
             <ExecuteBefore>
-              <Command Value="xcopy /D /F tools\nm.exe $(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\"/>
+              <Command Value="xcopy /D /Y tools\nm.exe $(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\"/>
             </ExecuteBefore>
             <ExecuteAfter>
               <Command Value="$(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\strip.exe $(OutputFile)"/>
