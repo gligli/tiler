@@ -590,6 +590,14 @@ object MainForm: TMainForm
           '6'
           '7'
           '8'
+          '9'
+          '10'
+          '11'
+          '12'
+          '13'
+          '14'
+          '15'
+          '16'
         )
         Style = csDropDownList
         TabOrder = 21
@@ -615,6 +623,10 @@ object MainForm: TMainForm
           '4'
           '8'
           '16'
+          '32'
+          '64'
+          '128'
+          '256'
         )
         Style = csDropDownList
         TabOrder = 20
@@ -966,6 +978,10 @@ object MainForm: TMainForm
       Caption = 'Smooth'
       ShortCut = 118
       OnClick = btnSmoothClick
+    end
+    object miBlendTiles: TMenuItem
+      Caption = 'Blend tiles'
+      OnClick = btnBlendTilesClick
     end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'

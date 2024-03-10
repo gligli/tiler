@@ -71,6 +71,7 @@ type
     Label9: TLabel;
     lblPct: TLabel;
     llPalTileDesc: TPanel;
+    miBlendTiles: TMenuItem;
     miReload: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
@@ -128,11 +129,12 @@ type
     procedure btnPreparePalettesClick(Sender: TObject);
     procedure btnClusterClick(Sender: TObject);
     procedure btnReconstructClick(Sender: TObject);
-    procedure btnPMClick(Sender: TObject);
+    procedure btnBlendTilesClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
 
+    procedure btnPMClick(Sender: TObject);
     procedure btnGTMClick(Sender: TObject);
     procedure btnInputClick(Sender: TObject);
     procedure btnRunAllClick(Sender: TObject);
@@ -311,6 +313,12 @@ begin
     llPalTileDesc.Caption := 'Invalid tile!';
 end;
 
+procedure TMainForm.btnBlendTilesClick(Sender: TObject);
+begin
+  FTilingEncoder.Run(esBlendTiles);
+  UpdateVideo(nil);
+end;
+
 procedure TMainForm.miLoadSettingsClick(Sender: TObject);
 begin
   if FileExists(edInput.Text) then
@@ -378,6 +386,9 @@ begin
 
   if OkStep(esSmooth) then
     btnSmoothClick(nil);
+
+  if OkStep(esBlendTiles) then
+    btnBlendTilesClick(nil);
 
   if OkStep(esReindex) then
     btnReindexClick(nil);
@@ -515,7 +526,7 @@ begin
     pt.X := pt.X div cTileWidth;
     pt.Y := pt.Y div cTileWidth;
 
-    sedPalIdx.Value := FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].PalIdx;
+    sedPalIdx.Value := FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].Base.PalIdx;
   end;
 end;
 
@@ -629,9 +640,9 @@ begin
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
-  FTilingEncoder.FrameTilingBlendingThreshold := seFTBlendThres.Value;
-  FTilingEncoder.FrameTilingBlendingRadius := StrToInt(cbxFTBlendRadius.Text);
-  FTilingEncoder.FrameTilingBlendingExtents := StrToInt(cbxFTBlendExtents.Text);
+  FTilingEncoder.TileBlendingThreshold := seFTBlendThres.Value;
+  FTilingEncoder.TileBlendingRadius := StrToInt(cbxFTBlendRadius.Text);
+  FTilingEncoder.TileBlendingExtents := StrToInt(cbxFTBlendExtents.Text);
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
 
@@ -701,9 +712,9 @@ begin
 
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
-   seFTBlendThres.Value := FTilingEncoder.FrameTilingBlendingThreshold;
-   cbxFTBlendRadius.Text := IntToStr(FTilingEncoder.FrameTilingBlendingRadius);
-   cbxFTBlendExtents.Text := IntToStr(FTilingEncoder.FrameTilingBlendingExtents);
+   seFTBlendThres.Value := FTilingEncoder.TileBlendingThreshold;
+   cbxFTBlendRadius.Text := IntToStr(FTilingEncoder.TileBlendingRadius);
+   cbxFTBlendExtents.Text := IntToStr(FTilingEncoder.TileBlendingExtents);
 
    seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
 

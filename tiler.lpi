@@ -59,9 +59,6 @@
             <CompilerMessages>
               <IgnoredMessages idx7122="True" idx7121="True" idx6058="True" idx5044="True" idx5024="True"/>
             </CompilerMessages>
-            <OtherDefines Count="1">
-              <Define0 Value="DEBUG"/>
-            </OtherDefines>
           </Other>
         </CompilerOptions>
       </Item2>
@@ -96,7 +93,8 @@
           </CodeGeneration>
           <Linking>
             <Debugging>
-              <DebugInfoType Value="dsStabs"/>
+              <GenerateDebugInfo Value="False"/>
+              <RunWithoutDebug Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
             <Options>
@@ -207,9 +205,6 @@
       </CompilerMessages>
       <CustomOptions Value="-Si-
 -dDEBUG"/>
-      <OtherDefines Count="1">
-        <Define0 Value="DEBUG"/>
-      </OtherDefines>
     </Other>
   </CompilerOptions>
   <Debugging>
