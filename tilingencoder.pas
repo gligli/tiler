@@ -2437,9 +2437,6 @@ begin
 
   TileDS[APaletteIndex] := nil;
   InterLockedDecrement(PalettesLeft);
-
-  if PalettesLeft <= 0 then
-    KeyframeEndShowResidualErr;
 end;
 
 procedure TKeyFrame.DoKFTiling(APaletteIndex: Integer; AFTGamma: Integer);
