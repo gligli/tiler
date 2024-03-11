@@ -47,6 +47,7 @@ const GTMCommand = {
 	'LongBlendTileIdx' : 5,
 	'ShortAddlBlendTileIdx' : 6,
     'LongAddlBlendTileIdx' : 7,
+	'PrevFrameBlend' : 8,
     'ShortAdditionalTileIdx' : 9,
     'LongAdditionalTileIdx' : 10,
 	
@@ -102,6 +103,7 @@ let gtmKFCurDblBuff = 0;
 let gtmKFPrevDblBuff = 0;
 let gtmLoopCount = 0;
 let gtmMaxFTBlend = 16;
+let gtmMaxPFBlend = 255;
 
 function gtmPlayFromFile(file, canvasId) {
 	if (gtmReady) {
@@ -372,6 +374,53 @@ function drawBlendedTilemapItem(idx, attrs, blend) {
 	gtmTMPos++;
 }
 
+function drawPrevFrameBlended(offsets, blend) {
+	let offset = (((offsets >> 5) & 15) - ((offsets >> 5) & 16)) * gtmWidth + ((offsets & 15) - (offsets & 16));
+	let blendOff = (blend >> 8) & 255;
+	let blendPrev = blend & 255;
+	
+	let prevAttrs = gtmTMAttrs[1 - gtmTMDblBuff][gtmTMPos];
+	let prevIdx = gtmTMIndexes[1 - gtmTMDblBuff][gtmTMPos];
+	
+	let prevPalIdx = (prevAttrs >> 2)  + 256 * gtmKFPrevDblBuff;
+	let prevTOff = ((prevAttrs & 3) * gtmTileCount + prevIdx) * CTileSize;
+	let prevPalR = gtmPaletteR[prevPalIdx];
+	let prevPalG = gtmPaletteG[prevPalIdx];
+	let prevPalB = gtmPaletteB[prevPalIdx];
+	let prevPalA = gtmPaletteA[prevPalIdx];
+	
+	let offAttrs = gtmTMAttrs[1 - gtmTMDblBuff][gtmTMPos + offset];
+	let offIdx = gtmTMIndexes[1 - gtmTMDblBuff][gtmTMPos + offset];
+
+	let offPalIdx = (offAttrs >> 2)  + 256 * gtmKFPrevDblBuff;
+	let offTOff = ((offAttrs & 3) * gtmTileCount + offIdx) * CTileSize;
+	let offPalR = gtmPaletteR[offPalIdx];
+	let offPalG = gtmPaletteG[offPalIdx];
+	let offPalB = gtmPaletteB[offPalIdx];
+	
+	let x = (gtmTMPos % gtmWidth) * CTileWidth;
+	let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
+	let p = (y * gtmWidth * CTileWidth + x) * 4;
+	
+	var data = gtmTMImageData.data;
+	
+	for (let ty = 0; ty < CTileWidth; ty++) {
+		for (let tx = 0; tx < CTileWidth; tx++) {
+			let ov = gtmTiles[offTOff++];
+			let pv = gtmTiles[prevTOff++];
+			data[p++] = Math.min(255, ((offPalR[ov] * blendOff + prevPalR[pv] * blendPrev) / gtmMaxPFBlend) >> 0);
+			data[p++] = Math.min(255, ((offPalG[ov] * blendOff + prevPalG[pv] * blendPrev) / gtmMaxPFBlend) >> 0);
+			data[p++] = Math.min(255, ((offPalB[ov] * blendOff + prevPalB[pv] * blendPrev) / gtmMaxPFBlend) >> 0);
+			data[p++] = prevPalA[pv];
+		}
+		p += (gtmWidth - 1) * CTileWidth * 4;
+	}
+	
+	gtmTMIndexes[gtmTMDblBuff][gtmTMPos] = prevIdx;
+	gtmTMAttrs[gtmTMDblBuff][gtmTMPos] = prevAttrs;
+	gtmTMPos++;
+}
+
 function drawAdditionalTilemapItem(idx, idx2, attrs, blend) {
 	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
 	let tOff = ((attrs & 3) * gtmTileCount + idx) * CTileSize;
@@ -599,6 +648,11 @@ function decodeFrame() {
 				let idx1DW = readDWord();
 				let idx2DW = readDWord();
 				drawAdditionalTilemapItem(idx1DW, idx2DW, cmd[1], 128);
+				break;
+
+			case GTMCommand.PrevFrameBlend:
+				let blend = readWord();
+				drawPrevFrameBlended(cmd[1], blend);
 				break;
 
 			default:
