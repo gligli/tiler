@@ -71,7 +71,6 @@ type
     Label9: TLabel;
     lblPct: TLabel;
     llPalTileDesc: TPanel;
-    miBlendTiles: TMenuItem;
     miReload: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
@@ -129,7 +128,6 @@ type
     procedure btnPreparePalettesClick(Sender: TObject);
     procedure btnClusterClick(Sender: TObject);
     procedure btnReconstructClick(Sender: TObject);
-    procedure btnBlendTilesClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
     procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
@@ -313,12 +311,6 @@ begin
     llPalTileDesc.Caption := 'Invalid tile!';
 end;
 
-procedure TMainForm.btnBlendTilesClick(Sender: TObject);
-begin
-  FTilingEncoder.Run(esBlendTiles);
-  UpdateVideo(nil);
-end;
-
 procedure TMainForm.miLoadSettingsClick(Sender: TObject);
 begin
   if FileExists(edInput.Text) then
@@ -386,9 +378,6 @@ begin
 
   if OkStep(esSmooth) then
     btnSmoothClick(nil);
-
-  if OkStep(esBlendTiles) then
-    btnBlendTilesClick(nil);
 
   if OkStep(esReindex) then
     btnReindexClick(nil);

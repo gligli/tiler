@@ -979,10 +979,6 @@ object MainForm: TMainForm
       ShortCut = 118
       OnClick = btnSmoothClick
     end
-    object miBlendTiles: TMenuItem
-      Caption = 'Blend tiles'
-      OnClick = btnBlendTilesClick
-    end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'
       ShortCut = 119
