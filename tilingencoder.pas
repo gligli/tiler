@@ -21,7 +21,7 @@ type
 const
   // tweakable constants
 
-  cClusterQWeighting = True;
+  cClusterQWeighting = False;
   cReconstructQWeighting = False;
   cSmoothingQWeighting = True;
   cYakmoMaxIterations = 300;
@@ -5660,51 +5660,48 @@ var
   procedure DoANN(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     frameOffset: Int64;
-    frmIdx, sx, sy, si: Integer;
+    sx, sy, si: Integer;
     KeyFrame: TKeyFrame;
     Frame: TFrame;
     Tile: PTile;
     TMI: PTileMapItem;
     DCT: array[0 .. cTileDCTSize - 1] of TANNFloat;
   begin
-    if not InRange(AIndex, 0, High(FKeyFrames)) then
+    if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    KeyFrame := FKeyFrames[AIndex];
+    Frame := FFrames[AIndex];
+    KeyFrame := Frame.PKeyFrame;
 
     KeyFrame.AcquireFrameTiles;
     try
-      for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
-      begin
-        Frame := FFrames[frmIdx];
-        frameOffset := frmIdx * FTileMapSize;
+      frameOffset := AIndex * FTileMapSize;
 
-        si := 0;
-        for sy := 0 to FTileMapHeight - 1 do
-          for sx := 0 to FTileMapWidth - 1 do
-          begin
-            Tile := Frame.FrameTiles[si];
+      si := 0;
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          Tile := Frame.FrameTiles[si];
 
-            ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCT[0]);
+          ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCT[0]);
 
-            ANNClusters[frameOffset + si] := ann_kdtree_search(ANN, @DCT[0], 0.0, @ANNErrors[frameOffset + si]);
+          ANNClusters[frameOffset + si] := ann_kdtree_search(ANN, @DCT[0], 0.0, @ANNErrors[frameOffset + si]);
 
-            Tile := Frame.FrameTiles[si];
-            TMI := @Frame.TileMap[sy, sx];
+          Tile := Frame.FrameTiles[si];
+          TMI := @Frame.TileMap[sy, sx];
 
-            TMI^.Base.HMirror := Tile^.HMirror_Initial;
-            TMI^.Base.VMirror := Tile^.VMirror_Initial;
-            TMI^.Base.TileIdx := ANNClusters[frameOffset + si];
+          TMI^.Base.HMirror := Tile^.HMirror_Initial;
+          TMI^.Base.VMirror := Tile^.VMirror_Initial;
+          TMI^.Base.TileIdx := ANNClusters[frameOffset + si];
 
-            TMI^.Smoothed := TMI^.Base;
+          TMI^.Smoothed := TMI^.Base;
 
-            ANNPalIdxs[frameOffset + si] := TMI^.Base.PalIdx;
+          ANNPalIdxs[frameOffset + si] := TMI^.Base.PalIdx;
 
-            Inc(si);
-          end;
+          Inc(si);
+        end;
 
-        Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
-      end;
+      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
     finally
       KeyFrame.ReleaseFrameTiles;
     end;
@@ -5894,7 +5891,7 @@ begin
   ANN := ann_kdtree_create(@ANNDataset[0], clusterCount, featureCount, 32, ANN_KD_STD);
   try
     doneFrameCount := 0;
-    ProcThreadPool.DoParallelLocalProc(@DoANN, 0, High(FKeyFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoANN, 0, High(FFrames));
   finally
     ann_kdtree_destroy(ANN);
   end;
