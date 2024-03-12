@@ -6648,6 +6648,12 @@ var
     DoDWord(maxTileCount); // tile count
   end;
 
+  procedure WriteSettings;
+  begin
+    DoCmd(gtExtendedCommand, 0);
+    ZStream.WriteAnsiString(GetSettings);
+  end;
+
 var
   StartPos, StreamSize, LastKF, KFCount, KFSize, BlkSkipCount: Integer;
   kfIdx, frmIdx, yx, yxs, cs, sx, sy: Integer;
@@ -6689,6 +6695,7 @@ begin
 
   ZStream := TMemoryStream.Create;
   try
+    WriteSettings;
     WriteDimensions;
     WriteTiles;
 
