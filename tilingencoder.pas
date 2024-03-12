@@ -3011,10 +3011,6 @@ begin
   FLoadedInputPath := '';
   ClearAll;
 
-  // print settings
-
-  WriteLn(GetSettings);
-
   ProgressRedraw(0, '', esLoad);
 
   // init Gamma LUTs
@@ -3091,6 +3087,10 @@ begin
     SetGlobalTilingQualityBasedTileCount(0.0);
     SetGlobalTilingQualityBasedTileCount(qbTC);
   end;
+
+  // print settings
+
+  WriteLn(GetSettings);
 end;
 
 procedure TTilingEncoder.PreparePalettes;
