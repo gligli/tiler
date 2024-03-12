@@ -2437,6 +2437,9 @@ begin
 
   TileDS[APaletteIndex] := nil;
   InterLockedDecrement(PalettesLeft);
+
+  if (PalettesLeft <= 0) and (Encoder.FTileBlendingRadius <= 0) then
+    KeyframeEndShowResidualErr;
 end;
 
 procedure TKeyFrame.DoKFTiling(APaletteIndex: Integer; AFTGamma: Integer);
@@ -4114,7 +4117,7 @@ end;
 procedure TTilingEncoder.SetGlobalTilingRatio(AValue: Double);
 begin
  if FGlobalTilingRatio = AValue then Exit;
- FGlobalTilingRatio := EnsureRange(AValue, 0.01, 0.99);
+ FGlobalTilingRatio := EnsureRange(AValue, 0.0, 1.0);
 end;
 
 procedure TTilingEncoder.SetMaxThreadCount(AValue: Integer);
@@ -5328,13 +5331,13 @@ begin
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
   GlobalTilingLumaOnly := False;
-  GlobalTilingRatio := 0.6;
+  GlobalTilingRatio := 1.0;
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
   TileBlendingThreshold := 0.5;
   TileBlendingExtents := 16;
-  TileBlendingRadius := 4;
+  TileBlendingRadius := 0;
 
   SmoothingFactor := 0.3;
 
@@ -5787,11 +5790,18 @@ begin
   // use BICO & BIRCH to prepare a noise-aware set of centroids
 
   SetLength(DCTs, FTileMapSize, cTileDCTSize);
-  BIRCH := birch_create(1.0, Round(AClusterCount * ABIRCHRatio), FTileMapSize);
-  BICO := bico_create(featureCount, DSLen, Round(AClusterCount * ABICORatio), 32, Round(AClusterCount * ABICORatio), CRandomSeed);
+  BIRCH := nil;
+  BICO := nil;
+  if ABIRCHRatio > 0.0 then
+    BIRCH := birch_create(1.0, Round(AClusterCount * ABIRCHRatio), FTileMapSize);
+  if ABICORatio > 0.0 then
+    BICO := bico_create(featureCount, DSLen, Round(AClusterCount * ABICORatio), 32, Round(AClusterCount * ABICORatio), CRandomSeed);
   try
-    bico_set_num_threads(Max(1, MaxThreadCount - 1));
-    bico_set_rebuild_properties(BICO, FTileMapSize, cPhi, cPhi);
+    if Assigned(BICO) then
+    begin
+      bico_set_num_threads(Max(1, MaxThreadCount - 2));
+      bico_set_rebuild_properties(BICO, FTileMapSize, cPhi, cPhi);
+    end;
 
     // insert frame tiles into BICO & BIRCH
 
@@ -5813,7 +5823,12 @@ begin
           ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, FTileMapSize - 1, Frame);
 
           // insert line into BICO & BIRCH
-          ProcThreadPool.DoParallelLocalProc(@DoInsert, 0, 1);
+          if Assigned(BIRCH) and not Assigned(BICO) then
+            DoInsert(1, nil, nil)
+          else if not Assigned(BIRCH) and Assigned(BICO) then
+            DoInsert(0, nil, nil)
+          else if Assigned(BIRCH) and Assigned(BICO) then
+            ProcThreadPool.DoParallelLocalProc(@DoInsert, 0, 1);
 
           Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
         end;
@@ -5825,17 +5840,23 @@ begin
 
     // get BIRCH results
 
-    BIRCHClusterCount := birch_compute(BIRCH, False, False);
-    SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize); // not featureCount because BIRCH is hardcoded to cTileDCTSize
-
-    birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
+    BIRCHClusterCount := 0;
+    if Assigned(BIRCH) then
+    begin
+        BIRCHClusterCount := birch_compute(BIRCH, False, False);
+        SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize); // not featureCount because BIRCH is hardcoded to cTileDCTSize
+        birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
+    end;
 
     // get BICO results
 
-    SetLength(BICOWeights, Round(AClusterCount * ABICORatio));
-    SetLength(BICOCentroids, Length(BICOWeights) * featureCount);
-
-    BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
+    BICOClusterCount := 0;
+    if Assigned(BICO) then
+    begin
+      SetLength(BICOWeights, Round(AClusterCount * ABICORatio));
+      SetLength(BICOCentroids, Length(BICOWeights) * featureCount);
+      BICOClusterCount := Max(1, bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]));
+    end;
 
     // join them to create the dataset for ANN
 
@@ -5849,15 +5870,17 @@ begin
       ANNDataset[BICOClusterCount + i] := @BIRCHCentroids[i * cTileDCTSize];
 
   finally
-    birch_destroy(BIRCH);
-    bico_destroy(BICO);
+    if Assigned(BIRCH) then
+      birch_destroy(BIRCH);
+    if Assigned(BICO) then
+      bico_destroy(BICO);
     SetLength(BICOWeights, 0);
     SetLength(DCTs, 0);
   end;
 
   WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
 
-  ProgressRedraw(3, 'BICOClustering');
+  ProgressRedraw(3, 'Clustering');
 
   if clusterCount <= 0 then
     Exit;
@@ -6217,7 +6240,7 @@ begin
       end;
   end;
 
-  WriteLn('KF: ', StartFrame:8, ' ReindexTiles: ', Length(Tiles), ' final tiles');
+  WriteLn('ReindexTiles: ', Length(Tiles), ' final tiles');
 end;
 
 class function TTilingEncoder.GetTileZoneSum(const ATile: TTile; x, y, w, h: Integer): Integer;
