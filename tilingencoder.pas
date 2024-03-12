@@ -6346,34 +6346,33 @@ var
       KF.PaletteRGB[palIdx, i] := ReadDWord and $ffffff;
   end;
 
-  procedure SetTMI(tileIdx: Integer; attrs, blend: Integer; var TMI: TTileMapItem);
+  procedure SetTMI(tileIdx: Integer; attrs: Integer; var TMI: TTileMapItem);
   begin
     TMI.Base.TileIdx := tileIdx;
     TMI.Base.HMirror := attrs and 1 <> 0;
     TMI.Base.VMirror := attrs and 2 <> 0;
     TMI.Base.PalIdx := attrs shr 2;
 
-    if blend >= 0 then
-    begin
-      TMI.BlendPrev := blend and $f;
-      TMI.BlendOffset := (blend shr 4) and $f;
-      TMI.BlendedX := ((blend shr 8) and $7) - ((blend shr 8) and $8);
-      TMI.BlendedY := ((blend shr 12) and $7) - ((blend shr 12) and $8);
-      TMI.IsBlended := True;
-    end
-    else
-    begin
-      // no blending
-      TMI.BlendPrev := FTileBlendingMax;
-      TMI.BlendOffset := 0;
-      TMI.BlendedX := High(ShortInt);
-      TMI.BlendedY := High(ShortInt);
-      TMI.IsBlended := False;
-    end;
-
+    TMI.IsBlended := False;
     TMI.IsSmoothed := False;
     TMI.Smoothed := TMI.Base;
   end;
+
+  procedure SetPrevBlendedTMI(offsets, blend: Integer; const PrevTMI: TTileMapItem; var TMI: TTileMapItem);
+  begin
+    TMI.Base := PrevTMI.Base;
+
+    TMI.BlendPrev := blend and $ff;
+    TMI.BlendOffset := (blend shr 8) and $ff;
+    TMI.BlendedX := (offsets and $f) - (offsets and $10);
+    TMI.BlendedY := ((offsets shr 5) and $f) - ((offsets shr 5) and $10);
+    TMI.IsBlended := True;
+
+    TMI.IsBlended := True;
+    TMI.IsSmoothed := False;
+    TMI.Smoothed := TMI.Base;
+  end;
+
 
   function AddFrame(KF: TKeyFrame): TFrame;
   begin
@@ -6435,7 +6434,7 @@ begin
   end;
 
   ClearAll;
-  FTileBlendingMax := 15;
+  FTileBlendingMax := high(Byte);
 
   frm := nil;
   frmCount := 0;
@@ -6508,19 +6507,33 @@ begin
             else if Command in [gtLongAdditionalTileIdx, gtLongAddlBlendTileIdx] then
               ReadDWord;
 
-            blend := -1; // no blend
+            // unused (not compatible anymore)
             if Command in [gtShortBlendTileIdx, gtLongBlendTileIdx] then
-              blend := ReadWord
+              ReadWord
             else if Command in [gtShortAddlBlendTileIdx, gtLongAddlBlendTileIdx] then
-              ReadWord; // unused (not compatible anymore)
+              ReadWord;
 
             // create frame if needed
             if frm = nil then
               frm := AddFrame(kf);
 
-            SetTMI(tileIdx, CommandData, blend, frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth]);
+            SetTMI(tileIdx, CommandData, frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth]);
             Inc(tmPos);
           end;
+          gtPrevFrameBlend:
+          begin
+            blend := ReadWord;
+
+            // create frame if needed
+            if frm = nil then
+              frm := AddFrame(kf);
+
+            Assert(frm.Index > 0);
+            SetPrevBlendedTMI(CommandData, blend,
+                FFrames[frm.Index - 1].TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth],
+                frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth]);
+            Inc(tmPos);
+          end
 
           else
            Assert(False, 'Unknown command: ' + IntToStr(Ord(Command)) + ', ' + IntToStr(CommandData));
