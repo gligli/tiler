@@ -654,7 +654,13 @@ function decodeFrame() {
 				let blend = readWord();
 				drawPrevFrameBlended(cmd[1], blend);
 				break;
-
+				
+			case GTMCommand.ExtendedCommand:
+				let size = readDWord();
+				for (let i = 0; i < size; i++) {
+					readByte();
+				}
+			
 			default:
 				console.error('Undecoded command @' + gtmDataBufGlobalPos + ': ' + cmd + '\n');
 				break;
