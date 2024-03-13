@@ -577,7 +577,8 @@ type
      ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
      ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
-    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB, QWeighting: Boolean; GammaCor: Integer; var ATile: TTile);
+    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
+      var ATile: TTile);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
@@ -1914,9 +1915,9 @@ var
 
         Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, False, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cFeatureCount]);
 
-        DCTs[ftIdx * cFeatureCount + (cTileDCTSize div cColorCpns * 1 - 1)] := 0.0;
-        DCTs[ftIdx * cFeatureCount + (cTileDCTSize div cColorCpns * 2 - 1)] := 0.0;
-        DCTs[ftIdx * cFeatureCount + (cTileDCTSize div cColorCpns * 3 - 1)] := 0.0;
+        DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 3)] := 0.0;
+        DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 2)] := 0.0;
+        DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 1)] := 0.0;
         for ty := 0 to cTileWidth - 1 do
           for tx := 0 to cTileWidth - 1 do
           begin
@@ -1924,9 +1925,9 @@ var
 
             Encoder.RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
 
-            DCTs[ftIdx * cFeatureCount + (cTileDCTSize div cColorCpns * 1 - 1)] += l;
-            DCTs[ftIdx * cFeatureCount + (cTileDCTSize div cColorCpns * 2 - 1)] += a;
-            DCTs[ftIdx * cFeatureCount + (cTileDCTSize div cColorCpns * 3 - 1)] += b;
+            DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 3)] += l;
+            DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 2)] += a;
+            DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 1)] += b;
           end;
 
         Inc(di);
@@ -4376,9 +4377,9 @@ begin
       end;
   end;
 
-  pDCT := @DCT[0];
   for cpn := 0 to ColorCpns - 1 do
   begin
+    pDCT := @DCT[cpn];
     pLut := @FDCTLut[0];
     for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
       for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
@@ -4389,7 +4390,7 @@ begin
            z *= cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
 
         pDCT^ := z;
-        Inc(pDCT);
+        Inc(pDCT, ColorCpns);
         Inc(pLut, Sqr(cTileWidth));
       end;
   end;
@@ -4452,9 +4453,9 @@ begin
       end;
   end;
 
-  pDCT := @DCT[0];
   for cpn := 0 to ColorCpns - 1 do
   begin
+    pDCT := @DCT[cpn];
     pLut := @FDCTLutDouble[0];
     for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
       for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
@@ -4465,13 +4466,13 @@ begin
            z *= cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
 
         pDCT^ := z;
-        Inc(pDCT);
+        Inc(pDCT, ColorCpns);
         Inc(pLut, Sqr(cTileWidth));
       end;
   end;
 end;
 
-procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB, QWeighting: Boolean; GammaCor: Integer;
+procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
  var ATile: TTile);
 var
   u, v, x, y, cpn: Integer;
@@ -4494,22 +4495,24 @@ var
   end;
 
 begin
-  if QWeighting then
+  pWDCT := GetMem(cTileDCTSize * SizeOf(Double));
+  for cpn := 0 to ColorCpns - 1 do
   begin
-    pCur := DCT;
-    pWDCT := GetMem(cTileDCTSize * SizeOf(Double));
-    DCT := pWDCT;
-    for cpn := 0 to cColorCpns - 1 do
-      for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-        for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-        begin
-          pWDCT^ := pCur^ / cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
-          Inc(pWDCT);
-          Inc(pCur);
-        end;
+    pCur := @DCT[cpn];
+    for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+      for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+      begin
+        if QWeighting then
+          pWDCT^ := pCur^ / cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul]
+        else
+          pWDCT^ := pCur^;
+        Inc(pWDCT);
+        Inc(pCur, ColorCpns);
+      end;
   end;
+  Dec(pWDCT, cTileDCTSize);
 
-  for cpn := 0 to cColorCpns - 1 do
+  for cpn := 0 to ColorCpns - 1 do
   begin
     pCpn := @CpnPixels[cpn, 0, 0];
     pLut := @FInvDCTLutDouble[0];
@@ -4517,14 +4520,13 @@ begin
     for y := 0 to cTileWidth - 1 do
       for x := 0 to cTileWidth - 1 do
       begin
-        pCpn^ := specialize DCTInner<PDouble>(@DCT[cpn * (cTileDCTSize div cColorCpns)], pLut, sqr(cDCTFeaturesMul));
+        pCpn^ := specialize DCTInner<PDouble>(@pWDCT[cpn * (cTileDCTSize div ColorCpns)], pLut, sqr(cDCTFeaturesMul));
         Inc(pCpn);
         Inc(pLut, Sqr(cTileWidth * cDCTFeaturesMul));
       end;
   end;
 
-  if QWeighting then
-    Freemem(DCT);
+  Freemem(pWDCT);
 
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
@@ -5378,12 +5380,7 @@ begin
       T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
 
   ComputeTilePsyVisFeatures(T^, False, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], False, False, -1, T2^);
-
-  Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'DCT/InvDCT mismatch');
-
-  ComputeTilePsyVisFeatures(T^, False, False, True, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], False, True, -1, T2^);
+  ComputeInvTilePsyVisFeatures(@DCT[0], False, False, cColorCpns, -1, T2^);
 
   //for i := 0 to 7 do
   //  for j := 0 to 7 do
@@ -5393,6 +5390,11 @@ begin
   //  for j := 0 to 7 do
   //    write(IntToHex(T2^.RGBPixels[i, j], 6), '  ');
   //WriteLn();
+
+  Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'DCT/InvDCT mismatch');
+
+  ComputeTilePsyVisFeatures(T^, False, False, True, False, False, cColorCpns, -1, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], False, True, cColorCpns, -1, T2^);
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'QWeighted DCT/InvDCT mismatch');
 
@@ -5724,7 +5726,7 @@ var
     Tile := Tiles[AIndex];
 
     Move(ANNDataset[AIndex]^, DCT[0], featureCount * SizeOf(Double));
-    ComputeInvTilePsyVisFeatures(@DCT[0], False, cClusterQWeighting, AGamma, Tile^);
+    ComputeInvTilePsyVisFeatures(@DCT[0], False, cClusterQWeighting, AColorCpns, AGamma, Tile^);
 
     palIdx := ANNPalIdxs[TileLineIdxs[AIndex]];
     if AColorCpns = 1 then
@@ -5840,9 +5842,9 @@ begin
     BIRCHClusterCount := 0;
     if Assigned(BIRCH) then
     begin
-        BIRCHClusterCount := birch_compute(BIRCH, False, False);
-        SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize); // not featureCount because BIRCH is hardcoded to cTileDCTSize
-        birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
+      BIRCHClusterCount := birch_compute(BIRCH, False, False);
+      SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize); // not featureCount because BIRCH is hardcoded to cTileDCTSize
+      birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
     end;
 
     // get BICO results
