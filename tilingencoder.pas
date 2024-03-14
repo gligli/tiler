@@ -635,6 +635,7 @@ type
 
     procedure Render(AFast: Boolean);
     procedure GeneratePNGs;
+    procedure GenerateY4M(AFileName: String);
     procedure SaveSettings(ASettingsFileName: String);
     procedure LoadSettings(ASettingsFileName: String);
     procedure LoadDefaultSettings;
@@ -3340,6 +3341,74 @@ begin
     Render(False);
 
     palData.Free;
+  end;
+end;
+
+procedure TTilingEncoder.GenerateY4M(AFileName: String);
+var
+  fx, fy, i, oldRenderFrameIndex : Integer;
+  oldRenderPage: TRenderPage;
+  fs: TBufferedFileStream;
+  Header, FrameHeader: String;
+  ptr: PByte;
+  yf, uf, vf: TFloat;
+  r, g, b: Byte;
+  py, pu, pv: PByte;
+  FrameData: TByteDynArray;
+begin
+  oldRenderFrameIndex := RenderFrameIndex;
+  oldRenderPage := RenderPage;
+  fs := TBufferedFileStream.Create(AFileName, fmCreate or fmShareDenyWrite);
+  try
+    Header := Format('YUV4MPEG2 W%d H%d F%d:1000000 C444'#10, [FTileMapWidth * cTileWidth, FTileMapHeight * cTileWidth, round(FFramesPerSecond * 1000000)]);
+    fs.Write(Header[1], length(Header));
+
+    SetLength(FrameData, FTileMapWidth * cTileWidth * FTileMapHeight * cTileWidth * cColorCpns);
+
+    RenderPage := rpOutput;
+
+    for i := 0 to High(FFrames) do
+    begin
+      FrameHeader := 'FRAME '#10;
+      fs.Write(FrameHeader[1], Length(FrameHeader));
+
+      RenderFrameIndex := i;
+      Render(True);
+
+      py := @FrameData[0 * Length(FrameData) div cColorCpns];
+      pu := @FrameData[1 * Length(FrameData) div cColorCpns];
+      pv := @FrameData[2 * Length(FrameData) div cColorCpns];
+
+      FOutputBitmap.BeginUpdate;
+      try
+        for fy := 0 to FOutputBitmap.Height - 1 do
+        begin
+          ptr := PByte(FOutputBitmap.ScanLine[fy]);
+          for fx := 0 to FOutputBitmap.Width - 1 do
+          begin
+            b := ptr^; Inc(ptr);
+            g := ptr^; Inc(ptr);
+            r := ptr^; Inc(ptr);
+            Inc(ptr); // alpha
+
+            RGBToYUV(r, g, b, -1, yf, uf, vf);
+
+            py^ := Round(yf * High(Byte)); Inc(py);
+            pu^ := Round((uf + 0.5) * High(Byte)); Inc(pu);
+            pv^ := Round((vf + 0.5) * High(Byte)); Inc(pv);
+          end;
+        end;
+      finally
+        FOutputBitmap.EndUpdate;
+      end;
+
+      fs.Write(FrameData[0], Length(FrameData));
+    end;
+  finally
+    RenderFrameIndex := oldRenderFrameIndex;
+    RenderPage := oldRenderPage;
+    Render(False);
+    fs.Free;
   end;
 end;
 

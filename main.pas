@@ -71,6 +71,7 @@ type
     Label9: TLabel;
     lblPct: TLabel;
     llPalTileDesc: TPanel;
+    miGenerateY4M: TMenuItem;
     miReload: TMenuItem;
     miLoadSettings: TMenuItem;
     miGeneratePNGs: TMenuItem;
@@ -86,7 +87,6 @@ type
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
     Separator1: TMenuItem;
-    Separator2: TMenuItem;
     Separator3: TMenuItem;
     seShotTransMaxSecondsPerKF: TFloatSpinEdit;
     seShotTransCorrelLoThres: TFloatSpinEdit;
@@ -150,6 +150,7 @@ type
     procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
     procedure imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure imgTilesMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    procedure miGenerateY4MClick(Sender: TObject);
     procedure miLoadSettingsClick(Sender: TObject);
     procedure miReloadClick(Sender: TObject);
     procedure miSaveSettingsClick(Sender: TObject);
@@ -309,6 +310,12 @@ begin
         IfThen(FTilingEncoder.Tiles[tileIdx]^.VMirror_Initial, ', [V]')])
   else
     llPalTileDesc.Caption := 'Invalid tile!';
+end;
+
+procedure TMainForm.miGenerateY4MClick(Sender: TObject);
+begin
+  FTilingEncoder.GenerateY4M(FTilingEncoder.OutputFileName + '.y4m');
+  UpdateVideo(nil);
 end;
 
 procedure TMainForm.miLoadSettingsClick(Sender: TObject);

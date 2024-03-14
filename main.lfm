@@ -992,13 +992,6 @@ object MainForm: TMainForm
     object Separator1: TMenuItem
       Caption = '-'
     end
-    object miGeneratePNGs: TMenuItem
-      Caption = 'Generate PNGs'
-      OnClick = btnGeneratePNGsClick
-    end
-    object Separator2: TMenuItem
-      Caption = '-'
-    end
     object miLoadSettings: TMenuItem
       Caption = 'Load settings...'
       ShortCut = 16460
@@ -1011,6 +1004,14 @@ object MainForm: TMainForm
     end
     object Separator3: TMenuItem
       Caption = '-'
+    end
+    object miGeneratePNGs: TMenuItem
+      Caption = 'Generate PNGs'
+      OnClick = btnGeneratePNGsClick
+    end
+    object miGenerateY4M: TMenuItem
+      Caption = 'Generate Y4M video'
+      OnClick = miGenerateY4MClick
     end
     object miReload: TMenuItem
       Caption = 'Reload GTM file... (needs loaded video)'
