@@ -5339,14 +5339,14 @@ begin
   FrameTilingUseGamma := False;
   TileBlendingThreshold := 0.5;
   TileBlendingExtents := 16;
-  TileBlendingRadius := 0;
+  TileBlendingRadius := 8;
 
   SmoothingFactor := 0.3;
 
   EncoderGammaValue := 2.0;
 
   FShotTransMaxSecondsPerKF := 2.0;  // maximum seconds between keyframes
-  FShotTransMinSecondsPerKF := 0.25; // minimum seconds between keyframes
+  FShotTransMinSecondsPerKF := 0.0;  // minimum seconds between keyframes
   FShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
 end;
 
