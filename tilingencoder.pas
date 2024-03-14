@@ -2060,8 +2060,6 @@ begin
       end;
   end;
   Assert(di = DSLen);
-
-  WriteLn('KF: ', StartFrame:8, ' Palettization end');
 end;
 
 procedure TKeyFrame.DoQuantization(APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
@@ -2385,9 +2383,6 @@ begin
   finally
     CMPal.Free;
   end;
-
-  if InterLockedDecrement(PalettesLeft) <= 0 then
-    WriteLn('KF: ', StartFrame:8, ' Quantization end');
 end;
 
 procedure TKeyFrame.PrepareKFTiling(APaletteIndex, AFTGamma: Integer);
@@ -2758,8 +2753,6 @@ begin
     AcquireFrameTiles;
     try
       DoPalettization(IfThen(Encoder.FDitheringUseGamma, 0, -1));
-
-      PalettesLeft := Encoder.FPaletteCount;
       ProcThreadPool.DoParallelLocalProc(@DoQuantize, 0, Encoder.FPaletteCount - 1);
     finally
       ReleaseFrameTiles;
