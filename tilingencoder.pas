@@ -284,7 +284,7 @@ type
 
   TTileMapItem = packed record
     Base, Smoothed: TBaseTileMapItem;
-    ResidualErr: TFloat;
+    ResidualErr: Single;
     BlendPrev, BlendOffset: Byte;
     BlendedX, BlendedY: ShortInt;
     Flags: set of (tmfIsSmoothed, tmfIsBlended);
@@ -324,7 +324,7 @@ type
 
   TTilingDataset = record
     KNNSize: Integer;
-    Dataset: TANNFloatDynArray2;
+    Dataset: TSingleDynArray2;
     ANN: PANNkdtree;
   end;
 
@@ -1898,7 +1898,7 @@ var
     Frame: TFrame;
     Tile: PTile;
     DCTs: TDoubleDynArray;
-    ANNErrors: TANNFloatDynArray;
+    ANNErrors: TDoubleDynArray;
   begin
     SetLength(DCTs, Encoder.FTileMapSize * cFeatureCount);
     SetLength(ANNErrors, Encoder.FTileMapSize);
@@ -2398,7 +2398,7 @@ var
       T := Encoder.Tiles[tidx];
 
       Assert(T^.Active);
-      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], PANNFloat(@DS^.Dataset[tidx, 0]));
+      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], PSingle(@DS^.Dataset[tidx, 0]));
     end;
   end;
 
@@ -2415,7 +2415,7 @@ begin
 
   // Build KNN
 
-  DS^.ANN := ann_kdtree_create(PPANNFloat(@DS^.Dataset[0]), DS^.KNNSize, cTileDCTSize, 32, ANN_KD_STD);
+  DS^.ANN := ann_kdtree_single_create(PPSingle(@DS^.Dataset[0]), DS^.KNNSize, cTileDCTSize, 32, ANN_KD_STD);
 
   // Dataset is ready
 
@@ -2425,7 +2425,7 @@ end;
 procedure TKeyFrame.FinishKFTiling(APaletteIndex: Integer);
 begin
   if Length(TileDS[APaletteIndex]^.Dataset) > 0 then
-    ann_kdtree_destroy(TileDS[APaletteIndex]^.ANN);
+    ann_kdtree_single_destroy(TileDS[APaletteIndex]^.ANN);
   TileDS[APaletteIndex]^.ANN := nil;
   SetLength(TileDS[APaletteIndex]^.Dataset, 0);
   Dispose(TileDS[APaletteIndex]);
@@ -2441,14 +2441,14 @@ procedure TKeyFrame.DoKFTiling(APaletteIndex: Integer; AFTGamma: Integer);
 var
   sx, sy, frmIdx, dsIdx: Integer;
   errCml: Double;
-  dsErr: TANNFloat;
+  dsErr: Single;
 
   T, BlendT: PTile;
   Frame: TFrame;
   TMI: PTileMapItem;
 
   DS: PTilingDataset;
-  DCT: array[0 .. cTileDCTSize - 1] of TANNFloat;
+  DCT: array[0 .. cTileDCTSize - 1] of Single;
 begin
   DS := TileDS[APaletteIndex];
   if DS^.KNNSize <= 0 then
@@ -2483,7 +2483,7 @@ begin
 
         // query KNN
 
-        dsIdx := ann_kdtree_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
+        dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
 
         // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
 
@@ -5665,10 +5665,10 @@ var
   BICO: PBICO;
   DCTs: TDoubleDynArray2;
   ANNClusters: TIntegerDynArray;
-  ANNErrors: TANNFloatDynArray;
+  ANNErrors: TDoubleDynArray;
   ANNPalIdxs: TSmallIntDynArray;
   ANN: PANNkdtree;
-  ANNDataset: array of PANNFloat;
+  ANNDataset: array of PDouble;
   TileLineIdxs: TInt64DynArray;
 
   procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -5727,7 +5727,7 @@ var
     Frame: TFrame;
     Tile: PTile;
     TMI: PTileMapItem;
-    DCT: array[0 .. cTileDCTSize - 1] of TANNFloat;
+    DCT: array[0 .. cTileDCTSize - 1] of Double;
   begin
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;

@@ -25,6 +25,8 @@ type
   PPFloat = ^PFloat;
   PFloatDynArray = ^TFloatDynArray;
   PFloatDynArray2 = ^TFloatDynArray2;
+  PPSingle = ^PSingle;
+  TSingleDynArray2 = array of TSingleDynArray;
 
   TANNsplitRule = (
   		ANN_KD_STD = 0,      // the optimized kd-splitting rule
@@ -34,12 +36,6 @@ type
   		ANN_KD_SL_FAIR = 4,  // sliding fair split method
   		ANN_KD_SUGGEST = 5 // the authors' suggestion for best
   );
-
-  TANNFloat = Double;
-  PANNFloat = ^TANNFloat;
-  PPANNFloat = ^PANNFloat;
-  TANNFloatDynArray = array of TANNFloat;
-  TANNFloatDynArray2 = array of TANNFloatDynArray;
 
   TANNkdtree = record
   end;
@@ -176,12 +172,13 @@ function FFMPEG_Open(AFileName: String; AScaling: Double; ASilent: Boolean): TFF
 procedure FFMPEG_Close(AFFMPEG: TFFMPEG);
 procedure FFMPEG_LoadFrames(AFFMPEG: TFFMPEG; AStartFrame, AFrameCount: Integer; AFrameCallback: TFFMPEGFrameCallback; AUserParameter: Pointer = nil);
 
-function ann_kdtree_create(pa: PPANNFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; external 'ANN.dll';
+function ann_kdtree_create(pa: PPDouble; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; external 'ANN.dll';
 procedure ann_kdtree_destroy(akd: PANNkdtree); external 'ANN.dll';
-function ann_kdtree_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; external 'ANN.dll';
-function ann_kdtree_pri_search(akd: PANNkdtree; q: PANNFloat; eps: TANNFloat; err: PANNFloat): Integer; external 'ANN.dll';
-procedure ann_kdtree_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PANNFloat; cnt: Integer; q: PANNFloat; eps: TANNFloat); external 'ANN.dll';
-procedure ann_kdtree_pri_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PANNFloat; cnt: Integer; q: PANNFloat; eps: TANNFloat); external 'ANN.dll';
+function ann_kdtree_search(akd: PANNkdtree; q: PDouble; eps: Double; err: PDouble): Integer; external 'ANN.dll';
+
+function ann_kdtree_single_create(pa: PPFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; external 'ANN_single.dll' name 'ann_kdtree_create';
+procedure ann_kdtree_single_destroy(akd: PANNkdtree); external 'ANN_single.dll' name 'ann_kdtree_destroy';
+function ann_kdtree_single_search(akd: PANNkdtree; q: PSingle; eps: Single; err: PSingle): Integer; external 'ANN_single.dll' name 'ann_kdtree_search';
 
 procedure DEFAULT_FLANN_PARAMETERS; cdecl; external 'flann.dll';
 function flann_build_index(dataset: PSingle; rows, cols: Integer; speedup: PSingle; flann_params: PFLANNParameters): flann_index_t; cdecl; external 'flann.dll';
@@ -190,7 +187,6 @@ function flann_find_nearest_neighbors_index(index_id: flann_index_t; testset: PS
 function flann_build_index_double(dataset: PDouble; rows, cols: Integer; speedup: PDouble; flann_params: PFLANNParameters): flann_index_t; cdecl; external 'flann.dll';
 function flann_free_index_double(index_id: flann_index_t; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
 function flann_find_nearest_neighbors_index_double(index_id: flann_index_t; testset: PDouble; trows: Integer; indices: PInteger; dists: PDouble; nn: Integer; flann_params: PFLANNParameters): Integer; cdecl; external 'flann.dll';
-
 
 function dl1quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
 function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; userpal: PDLUserPal): Integer; stdcall; external 'dlquant_dll.dll';
@@ -203,9 +199,9 @@ procedure yakmo_get_centroids(ay: PYakmo; centroids: PPDouble); stdcall; externa
 
 function yakmo_single_create(k: Cardinal; restartCount: Cardinal; maxIter: Integer; initType: Integer; initSeed: Integer; doNormalize: Integer; isVerbose: Integer): PYakmoSingle; stdcall; external 'yakmo_single.dll' name 'yakmo_create';
 procedure yakmo_single_destroy(ay: PYakmoSingle); stdcall; external 'yakmo_single.dll' name 'yakmo_destroy';
-procedure yakmo_single_load_train_data(ay: PYakmoSingle; rowCount: Cardinal; colCount: Cardinal; dataset: PPANNFloat); stdcall; external 'yakmo_single.dll' name 'yakmo_load_train_data';
+procedure yakmo_single_load_train_data(ay: PYakmoSingle; rowCount: Cardinal; colCount: Cardinal; dataset: PPSingle); stdcall; external 'yakmo_single.dll' name 'yakmo_load_train_data';
 procedure yakmo_single_train_on_data(ay: PYakmoSingle; pointToCluster: PInteger); stdcall; external 'yakmo_single.dll' name 'yakmo_train_on_data';
-procedure yakmo_single_get_centroids(ay: PYakmoSingle; centroids: PPANNFloat); stdcall; external 'yakmo_single.dll' name 'yakmo_get_centroids';
+procedure yakmo_single_get_centroids(ay: PYakmoSingle; centroids: PPSingle); stdcall; external 'yakmo_single.dll' name 'yakmo_get_centroids';
 
 function birch_create(dist_threshold: TFloat; k_limit: UInt64; rebuild_interval: Cardinal): PBIRCH; stdcall; external 'BIRCH.dll';
 procedure birch_destroy(birch: PBIRCH); stdcall; external 'BIRCH.dll';
