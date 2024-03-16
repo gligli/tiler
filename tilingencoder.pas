@@ -1036,7 +1036,6 @@ begin
   Result := 0;
   for i := 0 to High(a) do
     Result += sqr(a[i] - b[i]);
-  Result := sqrt(Result);
 end;
 
 function CompareEuclidean(a, b: PDouble; size: Integer): Double; inline;
@@ -1046,7 +1045,6 @@ begin
   Result := 0;
   for i := 0 to size - 1 do
     Result += sqr(a[i] - b[i]);
-  Result := sqrt(Result);
 end;
 
 function CompareTilePixels(Item1, Item2:Pointer):Integer;
@@ -2491,13 +2489,13 @@ begin
 
         if InRange(dsIdx, 0, DS^.KNNSize - 1) then
         begin
-
           TMI^.Base.TileIdx := dsIdx;
           TMI^.ResidualErr := dsErr;
           TMI^.BlendedX := High(ShortInt);
           TMI^.BlendedY := High(ShortInt);
           TMI^.BlendPrev := Encoder.FTileBlendingMax;
           TMI^.BlendOffset := 0;
+          TMI^.Flags := [];
 
           TMI^.Smoothed := TMI^.Base;
 
@@ -2646,7 +2644,7 @@ begin
           end;
         end;
 
-        if Best.ResidualErr <= TMI^.ResidualErr then
+        if Best.ResidualErr < TMI^.ResidualErr then
         begin
           errCml += Best.ResidualErr - TMI^.ResidualErr;
 
@@ -5395,13 +5393,13 @@ begin
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
   GlobalTilingLumaOnly := False;
-  GlobalTilingRatio := 1.0;
+  GlobalTilingRatio := 0.9;
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
   TileBlendingThreshold := 0.5;
   TileBlendingExtents := 16;
-  TileBlendingRadius := 8;
+  TileBlendingRadius := 0;
 
   SmoothingFactor := 0.3;
 
@@ -6430,7 +6428,6 @@ var
     TMI.BlendOffset := (blend shr 8) and $ff;
     TMI.BlendedX := (offsets and $f) - (offsets and $10);
     TMI.BlendedY := ((offsets shr 5) and $f) - ((offsets shr 5) and $10);
-    TMI.IsBlended := True;
 
     TMI.IsBlended := True;
     TMI.IsSmoothed := False;
