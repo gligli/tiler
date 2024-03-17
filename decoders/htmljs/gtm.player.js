@@ -657,9 +657,14 @@ function decodeFrame() {
 				
 			case GTMCommand.ExtendedCommand:
 				let size = readDWord();
+				let settings = '';
 				for (let i = 0; i < size; i++) {
-					readByte();
+					settings += String.fromCharCode(readByte());
 				}
+				if (cmd[1] == 0) {
+					console.log(settings);
+				}
+				break;
 			
 			default:
 				console.error('Undecoded command @' + gtmDataBufGlobalPos + ': ' + cmd + '\n');
