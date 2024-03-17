@@ -5488,7 +5488,7 @@ begin
       end;
     end;
 
-  // stepwise algorithm on palette colors permutations across keyframes
+  // stepwise algorithm on palette colors permutations across frames
 
   best := 0;
   iteration := 0;
@@ -5499,26 +5499,23 @@ begin
     bestFrmIdx := -1;
     bestColIdx1 := -1;
     bestColIdx2 := -1;
-    for frmIdx := 0 to High(FKeyFrames) do
+    for frmIdx := 0 to High(FFrames) do
     begin
-      // accumulate the whole palette except for the keyframe that will be permutated
+      // accumulate the whole palette except for the frame that will be permutated
 
       FillQWord(PalR[0], Length(PalR), 0);
       FillQWord(PalG[0], Length(PalG), 0);
       FillQWord(PalB[0], Length(PalB), 0);
-      for i := 0 to High(FKeyFrames) do
-      begin
-        uc := FKeyFrames[i].FrameCount;
+      for i := 0 to High(FFrames) do
         for j := 0 to FPaletteSize - 1 do
           if i <> frmIdx then
           begin
-            PalR[j] += GlobalPalette[i, j, 0] * uc;
-            PalG[j] += GlobalPalette[i, j, 1] * uc;
-            PalB[j] += GlobalPalette[i, j, 2] * uc;
+            PalR[j] += GlobalPalette[i, j, 0];
+            PalG[j] += GlobalPalette[i, j, 1];
+            PalB[j] += GlobalPalette[i, j, 2];
           end;
-      end;
 
-      // try all permutations in the current keyframe
+      // try all permutations in the current frame
 
       for colIdx1 := 0 to High(InnerPerm) do
         for colIdx2 := colIdx1 + 1 to High(InnerPerm) do
@@ -5534,14 +5531,13 @@ begin
           Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
           Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
 
-          uc := FKeyFrames[frmIdx].FrameCount;
           for i := 0 to FPaletteSize - 1 do
           begin
             tmpArr := GlobalPalette[frmIdx, InnerPerm[i]];
 
-            InnerPalR[i] += tmpArr[0] * uc;
-            InnerPalG[i] += tmpArr[1] * uc;
-            InnerPalB[i] += tmpArr[2] * uc;
+            InnerPalR[i] += tmpArr[0];
+            InnerPalG[i] += tmpArr[1];
+            InnerPalB[i] += tmpArr[2];
           end;
 
           // try to maximize accumulated palette standard deviation
