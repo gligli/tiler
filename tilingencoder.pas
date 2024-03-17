@@ -4332,7 +4332,7 @@ var
   end;
 
 var
-  frmIdx, kfIdx, lastKFIdx: Integer;
+  frmIdx, kfIdx, lastKFIdx, dummyKFLen: Integer;
   correl: TFloat;
   kfReason: TKeyFrameReason;
   sfr, efr: Integer;
@@ -4345,11 +4345,13 @@ begin
   begin
     // needs dummy KeyFrames to be able to do AcquireFrameTiles / ReleaseFrameTiles
 
-    SetLength(dummyKeyFrames, (Length(FFrames) - 1) div Round(FFramesPerSecond) + 1);
+    dummyKFLen := Round(FFramesPerSecond * FShotTransMaxSecondsPerKF);
+
+    SetLength(dummyKeyFrames, (Length(FFrames) - 1) div dummyKFLen + 1);
     SetLength(dummyKFEndFrames, Length(dummyKeyFrames));
     for kfIdx := 0 to High(dummyKeyFrames) do
     begin
-      dummyKeyFrames[kfIdx] := TKeyFrame.Create(Self, kfIdx, kfIdx * Round(FFramesPerSecond), min(High(FFrames), (kfIdx + 1) * Round(FFramesPerSecond) - 1));
+      dummyKeyFrames[kfIdx] := TKeyFrame.Create(Self, kfIdx, kfIdx * dummyKFLen, min(High(FFrames), (kfIdx + 1) * dummyKFLen - 1));
       for frmIdx := dummyKeyFrames[kfIdx].StartFrame to dummyKeyFrames[kfIdx].EndFrame do
         FFrames[frmIdx].PKeyFrame := dummyKeyFrames[kfIdx];
     end;
