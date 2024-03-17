@@ -17,8 +17,6 @@ type
     btnGTM: TButton;
     btnRunAll: TButton;
     btnPM: TButton;
-    cbxFTBlendRadius: TComboBox;
-    cbxFTBlendExtents: TComboBox;
     chkGlobLumaOnly: TCheckBox;
     chkGlobGamma: TCheckBox;
     chkPosterize: TCheckBox;
@@ -37,7 +35,6 @@ type
     chkDitheringGamma: TCheckBox;
     chkSmoothed: TCheckBox;
     chkMirrored: TCheckBox;
-    chkBlended: TCheckBox;
     chkPlay: TCheckBox;
     chkFTFromPal: TCheckBox;
     chkUseTK: TCheckBox;
@@ -56,9 +53,6 @@ type
     Label14: TLabel;
     Label15: TLabel;
     Label16: TLabel;
-    Label17: TLabel;
-    Label18: TLabel;
-    Label19: TLabel;
     Label2: TLabel;
     Label20: TLabel;
     Label21: TLabel;
@@ -90,7 +84,6 @@ type
     Separator3: TMenuItem;
     seShotTransMaxSecondsPerKF: TFloatSpinEdit;
     seShotTransCorrelLoThres: TFloatSpinEdit;
-    seFTBlendThres: TFloatSpinEdit;
     seMaxCores: TSpinEdit;
     seQbTiles: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
@@ -282,8 +275,8 @@ begin
   useCount := -1;
   if InRange(FTilingEncoder.RenderFrameIndex, 0, High(FTilingEncoder.Frames)) and
       Assigned(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame) and
-      InRange(palIdx, 0, High(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.PaletteInfo)) then
-    useCount := FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.PaletteInfo[palIdx].UseCount;
+      InRange(palIdx, 0, High(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PaletteInfo)) then
+    useCount := FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PaletteInfo[palIdx].UseCount;
 
   llPalTileDesc.Caption := Format('Palette #: %3d, UseCount: %6d', [palIdx, useCount]);
 end;
@@ -522,7 +515,7 @@ begin
     pt.X := pt.X div cTileWidth;
     pt.Y := pt.Y div cTileWidth;
 
-    sedPalIdx.Value := FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].Base.PalIdx;
+    sedPalIdx.Value := FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].PalIdx;
   end;
 end;
 
@@ -612,7 +605,6 @@ begin
   FTilingEncoder.EncoderGammaValue := seEncGamma.Value;
   FTilingEncoder.RenderPlaying := chkPlay.Checked;
   FTilingEncoder.RenderFrameIndex := Max(0, tbFrame.Position);
-  FTilingEncoder.RenderBlended := chkBlended.Checked;
   FTilingEncoder.RenderMirrored := chkMirrored.Checked;
   FTilingEncoder.RenderSmoothed := chkSmoothed.Checked;
   FTilingEncoder.RenderDithered := chkDithered.Checked;
@@ -636,9 +628,6 @@ begin
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
-  FTilingEncoder.TileBlendingThreshold := seFTBlendThres.Value;
-  FTilingEncoder.TileBlendingRadius := StrToInt(cbxFTBlendRadius.Text);
-  FTilingEncoder.TileBlendingExtents := StrToInt(cbxFTBlendExtents.Text);
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
 
@@ -708,9 +697,6 @@ begin
 
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
-   seFTBlendThres.Value := FTilingEncoder.TileBlendingThreshold;
-   cbxFTBlendRadius.Text := IntToStr(FTilingEncoder.TileBlendingRadius);
-   cbxFTBlendExtents.Text := IntToStr(FTilingEncoder.TileBlendingExtents);
 
    seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
 
