@@ -2049,8 +2049,6 @@ begin
           TMI^.ResidualErr := dsErr;
           TMI^.Smoothed := False;
 
-          system.InterLockedIncrement(Encoder.Tiles[dsIdx]^.UseCount);
-
           errCml += TMI^.ResidualErr;
         end;
       end;
@@ -2859,8 +2857,6 @@ var
     ProgressRedraw(StepProgress, 'KF: ' + IntToStr(KF.StartFrame), esReconstruct, AItem.Thread);
   end;
 
-var
-  tIdx: Integer;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -2868,8 +2864,6 @@ begin
   StepProgress := 0;
   ProgressRedraw(0, '', esReconstruct);
 
-  for tIdx := 0 to High(Tiles) do
-    Tiles[tIdx]^.UseCount := 0;
   FKeyFramesLeft := Length(FKeyFrames);
 
   ProcThreadPool.DoParallelLocalProc(@DoRunKF, 0, High(FKeyFrames));
@@ -2942,7 +2936,7 @@ begin
 
   ProgressRedraw(1, 'UseCount');
 
-  ReindexTiles(False);
+  ReindexTiles(True);
 
   ProgressRedraw(2, 'Sort');
 end;
