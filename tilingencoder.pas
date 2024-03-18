@@ -362,27 +362,17 @@ type
       PalIdx_Initial: Integer;
     end;
 
-    TileDS: array of PTilingDataset;
-    ReconstructErrCml: Double;
-
-    procedure LogResidualErr;
-
     // algorithms
 
     procedure DoPalettization(ADitheringGamma: Integer);
     procedure DoQuantization(APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
     procedure OptimizePalettes;
 
-    procedure PrepareTiling(APaletteIndex, AFTGamma: Integer);
-    procedure FinishTiling(APaletteIndex: Integer);
-    procedure DoTiling(APaletteIndex: Integer; AFTGamma: Integer);
-
     constructor Create(AParent: TTilingEncoder; AIndex: Integer);
 
     // processes
 
     procedure PreparePalettes;
-    procedure Reconstruct;
   end;
 
   TFrameArray =  array of TFrame;
@@ -398,6 +388,13 @@ type
     FrameTilesRefCount: Integer;
     FrameTilesEvent: THandle;
 
+    Clusters: TIntegerDynArray;
+    ClusteredPaletteRGB: TIntegerDynArray2;
+    TileDS: array of PTilingDataset;
+    ReconstructErrCml: Double;
+
+    procedure LogResidualErr;
+
     constructor Create(AParent: TTilingEncoder; AIndex, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
 
@@ -406,10 +403,14 @@ type
 
     // algorithms
 
+    procedure PrepareTiling(AClusterIndex, AFTGamma: Integer);
+    procedure DoTiling(AClusterIndex: Integer; AFTGamma: Integer);
+    procedure FinishTiling(AClusterIndex: Integer);
     procedure DoTemporalSmoothing(AFrame, APrevFrame: TFrame);
 
     // processes
 
+    procedure Reconstruct;
     procedure Smooth;
   end;
 
@@ -424,7 +425,7 @@ type
     // encoder state variables
 
     FCS: TRTLCriticalSection;
-    FFramesLeft: Integer;
+    FKeyFramesLeft: Integer;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -1696,6 +1697,26 @@ end;
 
 { TKeyFrame }
 
+procedure TKeyFrame.LogResidualErr;
+var
+  kfIdx: Integer;
+  tileResd, errCml: Double;
+begin
+  tileResd := Sqrt(ReconstructErrCml / (Encoder.FTileMapSize * FrameCount));
+  WriteLn('KF: ', StartFrame:8, ' ResidualErr: ', tileResd:12:6, ' (by tile)');
+
+  InterLockedDecrement(Encoder.FKeyFramesLeft);
+  if Encoder.FKeyFramesLeft <= 0 then
+  begin
+    errCml := 0.0;
+    for kfIdx := 0 to High(Encoder.FKeyFrames) do
+      errCml += Encoder.FKeyFrames[kfIdx].ReconstructErrCml;
+
+    tileResd := Sqrt(errCml / (Encoder.FTileMapSize * Length(Encoder.FFrames)));
+    WriteLn('All:', Length(Encoder.FFrames):8, ' ResidualErr: ', tileResd:12:6, ' (by tile)');
+  end;
+end;
+
 constructor TKeyFrame.Create(AParent: TTilingEncoder; AIndex, AStartFrame, AEndFrame: Integer);
 begin
   Encoder := AParent;
@@ -1826,6 +1847,218 @@ begin
     end;
 end;
 
+procedure TKeyFrame.Reconstruct;
+var
+  clusterCount, gammaCor: Integer;
+
+  procedure DoCluster(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    if not InRange(AIndex, 0, clusterCount - 1) then
+      Exit;
+
+    PrepareTiling(AIndex, gammaCor);
+    DoTiling(AIndex, gammaCor);
+    FinishTiling(AIndex);
+  end;
+
+var
+  Dataset: TDoubleDynArray;
+  Centroids: TDoubleDynArray;
+  i, di, frmIdx, palIdx, colIdx, clusIdx: Integer;
+  r, g, b: Byte;
+  ll, aa, bb: TFloat;
+  err: Double;
+  BIRCH: PBIRCH;
+  ANN: PANNkdtree;
+  ANNDataset: array of PDouble;
+begin
+  gammaCor := IfThen(Encoder.FFrameTilingUseGamma, 0, -1);
+  SetLength(Dataset, FrameCount * Encoder.FPaletteCount * cTileDCTSize);
+
+  BIRCH := birch_create(1.0, FrameCount * Encoder.FPaletteCount, Encoder.FPaletteCount);
+  try
+
+    di := 0;
+    for frmIdx := StartFrame to EndFrame do
+      for palIdx := 0 to Encoder.FPaletteCount - 1 do
+      begin
+        for colIdx := 0 to Encoder.FPaletteSize - 1 do
+        begin
+          FromRGB(Encoder.FFrames[frmIdx].PaletteRGB[palidx, colIdx], r, g, b);
+          Encoder.RGBToLAB(r, g, b, gammaCor, ll, aa, bb);
+          Dataset[di * cTileDCTSize + colIdx * cColorCpns + 0] := ll;
+          Dataset[di * cTileDCTSize + colIdx * cColorCpns + 1] := aa;
+          Dataset[di * cTileDCTSize + colIdx * cColorCpns + 2] := bb;
+        end;
+
+        birch_insert_line(BIRCH, @Dataset[di * cTileDCTSize]);
+
+        Inc(di);
+      end;
+
+    clusterCount := birch_compute(BIRCH, False, False);
+
+    WriteLn('KF: ', StartFrame:8, ' clusterCount: ', clusterCount:8);
+
+    SetLength(Clusters, di);
+    SetLength(Centroids, clusterCount * cTileDCTSize);
+    SetLength(ClusteredPaletteRGB, clusterCount, Encoder.FPaletteSize);
+
+    birch_get_centroids(BIRCH, @Centroids[0]);
+
+    SetLength(ANNDataset, clusterCount);
+    for clusIdx := 0 to clusterCount - 1 do
+      ANNDataset[clusIdx] := @Centroids[clusIdx * cTileDCTSize];
+    ANN := ann_kdtree_create(@ANNDataset[0], clusterCount, Encoder.FPaletteSize * cColorCpns, 32, ANN_KD_STD);
+    try
+      for i := 0 to di - 1 do
+        Clusters[i] := ann_kdtree_search(ANN, @Dataset[i * cTileDCTSize], 0.0, @err);
+    finally
+      ann_kdtree_destroy(ANN);
+    end;
+
+    for clusIdx := 0 to clusterCount - 1 do
+      for colIdx := 0 to Encoder.FPaletteSize - 1 do
+      begin
+        ll := Centroids[clusIdx * cTileDCTSize + colIdx * cColorCpns + 0];
+        aa := Centroids[clusIdx * cTileDCTSize + colIdx * cColorCpns + 1];
+        bb := Centroids[clusIdx * cTileDCTSize + colIdx * cColorCpns + 2];
+        ClusteredPaletteRGB[clusIdx, colIdx] := Encoder.LABToRGB(ll, aa, bb, gammaCor);
+      end;
+
+  finally
+    birch_destroy(BIRCH);
+    SetLength(Centroids, 0);
+    SetLength(Dataset, 0);
+  end;
+
+  AcquireFrameTiles;
+  SetLength(TileDS, clusterCount);
+  try
+    ReconstructErrCml := 0.0;
+
+    ProcThreadPool.DoParallelLocalProc(@DoCluster, 0, clusterCount - 1);
+
+    LogResidualErr;
+  finally
+    SetLength(TileDS, 0);
+    ReleaseFrameTiles;
+  end;
+end;
+
+procedure TKeyFrame.PrepareTiling(AClusterIndex, AFTGamma: Integer);
+var
+  DS: PTilingDataset;
+
+  procedure DoPsyV;
+  var
+    T: PTile;
+    tidx: Int64;
+  begin
+    for tidx := 0 to High(Encoder.Tiles) do
+    begin
+      T := Encoder.Tiles[tidx];
+
+      Assert(T^.Active);
+      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, ClusteredPaletteRGB[AClusterIndex], PSingle(@DS^.Dataset[tidx, 0]));
+    end;
+  end;
+
+begin
+  // Compute psycho visual model for all tiles (in curent palette)
+
+  DS := New(PTilingDataset);
+  FillChar(DS^, SizeOf(TTilingDataset), 0);
+
+  DS^.KNNSize := Encoder.GetTileCount(False);
+  SetLength(DS^.Dataset, DS^.KNNSize, cTileDCTSize);
+
+  DoPsyV;
+
+  // Build KNN
+
+  DS^.ANN := ann_kdtree_single_create(PPSingle(@DS^.Dataset[0]), DS^.KNNSize, cTileDCTSize, 32, ANN_KD_STD);
+
+  // Dataset is ready
+
+  TileDS[AClusterIndex] := DS;
+end;
+
+procedure TKeyFrame.FinishTiling(AClusterIndex: Integer);
+begin
+  if Length(TileDS[AClusterIndex]^.Dataset) > 0 then
+    ann_kdtree_single_destroy(TileDS[AClusterIndex]^.ANN);
+  TileDS[AClusterIndex]^.ANN := nil;
+  SetLength(TileDS[AClusterIndex]^.Dataset, 0);
+  Dispose(TileDS[AClusterIndex]);
+
+  TileDS[AClusterIndex] := nil;
+end;
+
+procedure TKeyFrame.DoTiling(AClusterIndex: Integer; AFTGamma: Integer);
+var
+  sx, sy, frmIdx, dsIdx: Integer;
+  errCml: Double;
+  dsErr: Single;
+
+  T: PTile;
+  Frame: TFrame;
+  TMI: PTileMapItem;
+
+  DS: PTilingDataset;
+  DCT: array[0 .. cTileDCTSize - 1] of Single;
+begin
+  DS := TileDS[AClusterIndex];
+  if DS^.KNNSize <= 0 then
+    Exit;
+
+  errCml := 0.0;
+
+  for frmIdx := StartFrame to EndFrame do
+  begin
+    Frame := Encoder.FFrames[frmIdx];
+    for sy := 0 to Encoder.FTileMapHeight - 1 do
+      for sx := 0 to Encoder.FTileMapWidth - 1 do
+      begin
+        TMI := @Frame.TileMap[sy, sx];
+
+        if Clusters[(frmIdx - StartFrame) * Encoder.FPaletteCount + TMI^.PalIdx] <> AClusterIndex then
+          Continue;
+
+        // prepare KNN query
+
+        T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
+
+        if Encoder.FFrameTilingFromPalette then
+          Encoder.DitherTile(T^, Frame.PaletteInfo[TMI^.PalIdx].MixingPlan);
+
+        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, ClusteredPaletteRGB[AClusterIndex], @DCT[0]);
+
+        TMI^.HMirror := T^.HMirror_Initial;
+        TMI^.VMirror := T^.VMirror_Initial;
+
+        // query KNN
+
+        dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
+
+        // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
+
+        if InRange(dsIdx, 0, DS^.KNNSize - 1) then
+        begin
+          TMI^.TileIdx := dsIdx;
+          TMI^.ResidualErr := dsErr;
+          TMI^.Smoothed := False;
+
+          system.InterLockedIncrement(Encoder.Tiles[dsIdx]^.UseCount);
+
+          errCml += TMI^.ResidualErr;
+        end;
+      end;
+  end;
+
+  ReconstructErrCml += errCml;
+end;
+
 procedure TKeyFrame.Smooth;
 var
   frmIdx, sx, sy: Integer;
@@ -1850,26 +2083,6 @@ begin
 end;
 
 { TFrame }
-
-procedure TFrame.LogResidualErr;
-var
-  frmIdx: Integer;
-  tileResd, errCml: Double;
-begin
-  tileResd := Sqrt(ReconstructErrCml / Encoder.FTileMapSize);
-  WriteLn('Frame: ', Index:8, ' ResidualErr: ', tileResd:12:6, ' (by tile)');
-
-  InterLockedDecrement(Encoder.FFramesLeft);
-  if Encoder.FFramesLeft <= 0 then
-  begin
-    errCml := 0.0;
-    for frmIdx := 0 to High(Encoder.FFrames) do
-      errCml += Encoder.FFrames[frmIdx].ReconstructErrCml;
-
-    tileResd := Sqrt(errCml / (Encoder.FTileMapSize * Length(Encoder.FFrames)));
-    WriteLn('All:', Length(Encoder.FFrames):8, ' ResidualErr: ', tileResd:12:6, ' (by tile)');
-  end;
-end;
 
 procedure TFrame.DoPalettization(ADitheringGamma: Integer);
 var
@@ -2377,114 +2590,6 @@ begin
   WriteLn('Frame: ', Index:8, ' OptimizePalettes: ', iteration, ' iterations');
 end;
 
-procedure TFrame.PrepareTiling(APaletteIndex, AFTGamma: Integer);
-var
-  DS: PTilingDataset;
-
-  procedure DoPsyV;
-  var
-    T: PTile;
-    tidx: Int64;
-  begin
-    for tidx := 0 to High(Encoder.Tiles) do
-    begin
-      T := Encoder.Tiles[tidx];
-
-      Assert(T^.Active);
-      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], PSingle(@DS^.Dataset[tidx, 0]));
-    end;
-  end;
-
-begin
-  // Compute psycho visual model for all tiles (in curent palette)
-
-  DS := New(PTilingDataset);
-  FillChar(DS^, SizeOf(TTilingDataset), 0);
-
-  DS^.KNNSize := Encoder.GetTileCount(False);
-  SetLength(DS^.Dataset, DS^.KNNSize, cTileDCTSize);
-
-  DoPsyV;
-
-  // Build KNN
-
-  DS^.ANN := ann_kdtree_single_create(PPSingle(@DS^.Dataset[0]), DS^.KNNSize, cTileDCTSize, 32, ANN_KD_STD);
-
-  // Dataset is ready
-
-  TileDS[APaletteIndex] := DS;
-end;
-
-procedure TFrame.FinishTiling(APaletteIndex: Integer);
-begin
-  if Length(TileDS[APaletteIndex]^.Dataset) > 0 then
-    ann_kdtree_single_destroy(TileDS[APaletteIndex]^.ANN);
-  TileDS[APaletteIndex]^.ANN := nil;
-  SetLength(TileDS[APaletteIndex]^.Dataset, 0);
-  Dispose(TileDS[APaletteIndex]);
-
-  TileDS[APaletteIndex] := nil;
-end;
-
-procedure TFrame.DoTiling(APaletteIndex: Integer; AFTGamma: Integer);
-var
-  sx, sy, dsIdx: Integer;
-  errCml: Double;
-  dsErr: Single;
-
-  T: PTile;
-  TMI: PTileMapItem;
-
-  DS: PTilingDataset;
-  DCT: array[0 .. cTileDCTSize - 1] of Single;
-begin
-  DS := TileDS[APaletteIndex];
-  if DS^.KNNSize <= 0 then
-    Exit;
-
-  errCml := 0.0;
-
-  for sy := 0 to Encoder.FTileMapHeight - 1 do
-    for sx := 0 to Encoder.FTileMapWidth - 1 do
-    begin
-      TMI := @TileMap[sy, sx];
-
-      if TMI^.PalIdx <> APaletteIndex then
-        Continue;
-
-      // prepare KNN query
-
-      T := FrameTiles[sy * Encoder.FTileMapWidth + sx];
-
-      if Encoder.FFrameTilingFromPalette then
-        Encoder.DitherTile(T^, PaletteInfo[APaletteIndex].MixingPlan);
-
-      Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, PaletteRGB[APaletteIndex], @DCT[0]);
-
-      TMI^.HMirror := T^.HMirror_Initial;
-      TMI^.VMirror := T^.VMirror_Initial;
-
-      // query KNN
-
-      dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
-
-      // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
-
-      if InRange(dsIdx, 0, DS^.KNNSize - 1) then
-      begin
-        TMI^.TileIdx := dsIdx;
-        TMI^.ResidualErr := dsErr;
-        TMI^.Smoothed := False;
-
-        system.InterLockedIncrement(Encoder.Tiles[dsIdx]^.UseCount);
-
-        errCml += TMI^.ResidualErr;
-      end;
-    end;
-
-  ReconstructErrCml += errCml;
-end;
-
 constructor TFrame.Create(AParent: TTilingEncoder; AIndex: Integer);
 begin
   Encoder := AParent;
@@ -2508,33 +2613,9 @@ begin
 
     OptimizePalettes;
   finally
-    InterLockedDecrement(Encoder.FFramesLeft);
+    InterLockedDecrement(Encoder.FKeyFramesLeft);
   end;
 end;
-
-procedure TFrame.Reconstruct;
-var
-  palIdx: Integer;
-begin
-  PKeyFrame.AcquireFrameTiles;
-  SetLength(TileDS, Length(PaletteRGB));
-  try
-    ReconstructErrCml := 0.0;
-
-    for palIdx := 0 to High(PaletteRGB) do
-    begin
-      PrepareTiling(palIdx, IfThen(Encoder.FFrameTilingUseGamma, 0, -1));
-      DoTiling(palIdx, IfThen(Encoder.FFrameTilingUseGamma, 0, -1));
-      FinishTiling(palIdx);
-    end;
-
-    LogResidualErr;
-  finally
-    SetLength(TileDS, 0);
-    PKeyFrame.ReleaseFrameTiles;
-  end;
-end;
-
 
 { TTilingEncoder }
 
@@ -2719,7 +2800,7 @@ begin
   StepProgress := 0;
   ProgressRedraw(0, '', esPreparePalettes);
 
-  FFramesLeft := Length(FFrames);
+  FKeyFramesLeft := Length(FFrames);
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FFrames));
 end;
 
@@ -2763,19 +2844,19 @@ procedure TTilingEncoder.Reconstruct;
 var
   StepProgress: Integer;
 
-  procedure DoRun(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoRunKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    frame: TFrame;
+    KF: TKeyFrame;
   begin
-    if not InRange(AIndex, 0, High(FFrames)) then
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
       Exit;
 
-    frame := FFrames[AIndex];
+    KF := FKeyFrames[AIndex];
 
-    frame.Reconstruct;
+    KF.Reconstruct;
 
-    Inc(StepProgress);
-    ProgressRedraw(StepProgress, 'Frame: ' + IntToStr(frame.Index), esReconstruct, AItem.Thread);
+    Inc(StepProgress, KF.FrameCount);
+    ProgressRedraw(StepProgress, 'KF: ' + IntToStr(KF.StartFrame), esReconstruct, AItem.Thread);
   end;
 
 var
@@ -2789,9 +2870,9 @@ begin
 
   for tIdx := 0 to High(Tiles) do
     Tiles[tIdx]^.UseCount := 0;
-  FFramesLeft := Length(FFrames);
+  FKeyFramesLeft := Length(FKeyFrames);
 
-  ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FFrames));
+  ProcThreadPool.DoParallelLocalProc(@DoRunKF, 0, High(FKeyFrames));
 end;
 
 procedure TTilingEncoder.Smooth;
@@ -4862,7 +4943,7 @@ begin
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
   GlobalTilingLumaOnly := False;
-  GlobalTilingRatio := 0.9;
+  GlobalTilingRatio := 0.6;
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
@@ -4873,7 +4954,7 @@ begin
 
   FShotTransMaxSecondsPerKF := 15.0;  // maximum seconds between keyframes
   FShotTransMinSecondsPerKF := 1.0;  // minimum seconds between keyframes
-  FShotTransCorrelLoThres := 0.5;   // interframe pearson correlation low limit
+  FShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
 end;
 
 procedure TTilingEncoder.Test;
@@ -5457,22 +5538,94 @@ end;
 
 procedure TTilingEncoder.OptimizeGlobalPalettes;
 var
-  i, j, frmIdx, palIdx, colIdx1, colIdx2, iteration, bestFrmIdx, bestColIdx1, bestColIdx2, uc, tmp: Integer;
+  FrameBests: TDoubleDynArray;
+  FrameBestColIdx1, FrameBestColIdx2: TIntegerDynArray;
+  GlobalPalette: TDoubleDynArray3;
+
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    i, j, colIdx1, colIdx2, tmp, bestColIdx1, bestColIdx2: Integer;
+    InnerPerm: TByteDynArray;
+    PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: TDoubleDynArray;
+    tmpArr: TDoubleDynArray;
+    best, v: Double;
+  begin
+    SetLength(PalR, FPaletteSize);
+    SetLength(PalG, FPaletteSize);
+    SetLength(PalB, FPaletteSize);
+    SetLength(InnerPalR, FPaletteSize);
+    SetLength(InnerPalG, FPaletteSize);
+    SetLength(InnerPalB, FPaletteSize);
+    SetLength(InnerPerm, FPaletteSize);
+
+    // accumulate the whole palette except for the frame that will be permutated
+
+    for i := 0 to High(FFrames) do
+      for j := 0 to FPaletteSize - 1 do
+        if i <> AIndex then
+        begin
+          PalR[j] += GlobalPalette[i, j, 0];
+          PalG[j] += GlobalPalette[i, j, 1];
+          PalB[j] += GlobalPalette[i, j, 2];
+        end;
+
+    // try all permutations in the current frame
+
+    best := 0;
+    bestColIdx1 := -1;
+    bestColIdx2 := -1;
+    for colIdx1 := 0 to High(InnerPerm) do
+      for colIdx2 := colIdx1 + 1 to High(InnerPerm) do
+      begin
+        for i := 0 to FPaletteSize - 1 do
+          InnerPerm[i] := i;
+
+        tmp := InnerPerm[colIdx1];
+        InnerPerm[colIdx1] := InnerPerm[colIdx2];
+        InnerPerm[colIdx2] := tmp;
+
+        Move(PalR[0], InnerPalR[0], Length(PalR) * SizeOf(Double));
+        Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
+        Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
+
+        for i := 0 to FPaletteSize - 1 do
+        begin
+          tmpArr := GlobalPalette[AIndex, InnerPerm[i]];
+
+          InnerPalR[i] += tmpArr[0];
+          InnerPalG[i] += tmpArr[1];
+          InnerPalB[i] += tmpArr[2];
+        end;
+
+        // try to maximize accumulated palette standard deviation
+        // rationale: the less samey it is, the better the palettes pair with each other across keyframes
+
+        v := cRedMul * StdDev(InnerPalR) + cGreenMul * StdDev(InnerPalG) + cBlueMul * StdDev(InnerPalB);
+
+        if v > best then
+        begin
+          best := v;
+          bestColIdx1 := colIdx1;
+          bestColIdx2 := colIdx2;
+        end;
+      end;
+
+    FrameBests[AIndex] := best;
+    FrameBestColIdx1[AIndex] := bestColIdx1;
+    FrameBestColIdx2[AIndex] := bestColIdx2;
+  end;
+
+
+var
+  i, frmIdx, palIdx, iteration, bestFrmIdx, bestColIdx1, bestColIdx2, uc, tmp: Integer;
   r, g, b: byte;
   prevBest, best, v: Double;
-  InnerPerm: TByteDynArray;
-  PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: TDoubleDynArray;
-  GlobalPalette: TDoubleDynArray3;
   tmpArr: TDoubleDynArray;
 begin
   SetLength(GlobalPalette, Length(FFrames), FPaletteSize, cColorCpns);
-  SetLength(PalR, FPaletteSize);
-  SetLength(PalG, FPaletteSize);
-  SetLength(PalB, FPaletteSize);
-  SetLength(InnerPalR, FPaletteSize);
-  SetLength(InnerPalG, FPaletteSize);
-  SetLength(InnerPalB, FPaletteSize);
-  SetLength(InnerPerm, FPaletteSize);
+  SetLength(FrameBests, Length(FFrames));
+  SetLength(FrameBestColIdx1, Length(FFrames));
+  SetLength(FrameBestColIdx2, Length(FFrames));
 
   for frmIdx := 0 to High(FFrames) do
     for palIdx := 0 to High(FFrames[frmIdx].PaletteRGB) do
@@ -5494,65 +5647,24 @@ begin
   iteration := 0;
   repeat
     prevBest := best;
-    best := 0;
 
+    ProcThreadPool.DoParallelLocalProc(@DoFrame, 0, High(FFrames));
+
+    best := 0;
     bestFrmIdx := -1;
     bestColIdx1 := -1;
     bestColIdx2 := -1;
     for frmIdx := 0 to High(FFrames) do
     begin
-      // accumulate the whole palette except for the frame that will be permutated
+      v := FrameBests[frmIdx];
 
-      FillQWord(PalR[0], Length(PalR), 0);
-      FillQWord(PalG[0], Length(PalG), 0);
-      FillQWord(PalB[0], Length(PalB), 0);
-      for i := 0 to High(FFrames) do
-        for j := 0 to FPaletteSize - 1 do
-          if i <> frmIdx then
-          begin
-            PalR[j] += GlobalPalette[i, j, 0];
-            PalG[j] += GlobalPalette[i, j, 1];
-            PalB[j] += GlobalPalette[i, j, 2];
-          end;
-
-      // try all permutations in the current frame
-
-      for colIdx1 := 0 to High(InnerPerm) do
-        for colIdx2 := colIdx1 + 1 to High(InnerPerm) do
-        begin
-          for i := 0 to FPaletteSize - 1 do
-            InnerPerm[i] := i;
-
-          tmp := InnerPerm[colIdx1];
-          InnerPerm[colIdx1] := InnerPerm[colIdx2];
-          InnerPerm[colIdx2] := tmp;
-
-          Move(PalR[0], InnerPalR[0], Length(PalR) * SizeOf(Double));
-          Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
-          Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
-
-          for i := 0 to FPaletteSize - 1 do
-          begin
-            tmpArr := GlobalPalette[frmIdx, InnerPerm[i]];
-
-            InnerPalR[i] += tmpArr[0];
-            InnerPalG[i] += tmpArr[1];
-            InnerPalB[i] += tmpArr[2];
-          end;
-
-          // try to maximize accumulated palette standard deviation
-          // rationale: the less samey it is, the better the palettes pair with each other across keyframes
-
-          v := cRedMul * StdDev(InnerPalR) + cGreenMul * StdDev(InnerPalG) + cBlueMul * StdDev(InnerPalB);
-
-          if v > best then
-          begin
-            best := v;
-            bestFrmIdx := frmIdx;
-            bestColIdx1 := colIdx1;
-            bestColIdx2 := colIdx2;
-          end;
-        end;
+      if v > best then
+      begin
+        best := v;
+        bestFrmIdx := frmIdx;
+        bestColIdx1 := FrameBestColIdx1[frmIdx];
+        bestColIdx2 := FrameBestColIdx2[frmIdx];
+      end;
     end;
 
     if (best > prevBest) and (bestFrmIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
