@@ -7,7 +7,7 @@ interface
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, LazLogger,
   Forms, Controls, Graphics, Dialogs, ExtCtrls, StdCtrls, ComCtrls, Spin, Menus, IntfGraphics, Buttons,
-  FPimage, FPCanvas, FPWritePNG, GraphType, MTProcs, extern, tilingencoder;
+  FPimage, FPCanvas, FPWritePNG, GraphType, MTProcs, extern, tilingencoder, utils;
 
 type
   { TMainForm }
