@@ -408,8 +408,8 @@ end;
 
 procedure TMainForm.btnDebugClick(Sender: TObject);
 begin
-  edInput.Text := 'C:\tiler_misc\Star.Wars.Despecialized.Edition.v2.5.avi';
-  edOutput.Text := 'C:\tiler\debug.gtm';
+  edInput.Text := ExtractFilePath(Application.ExeName) + '..\tiler_misc\Star.Wars.Despecialized.Edition.v2.5.avi';
+  edOutput.Text := ExtractFilePath(Application.ExeName) + 'debug.gtm';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 48, 2), 12);
   cbxScaling.ItemIndex := 4;
 
@@ -420,8 +420,8 @@ end;
 
 procedure TMainForm.btnDebug2Click(Sender: TObject);
 begin
-  edInput.Text := 'C:\tiler_misc\sunflower_1080p25.y4m';
-  edOutput.Text := 'C:\tiler\debug.gtm';
+  edInput.Text := ExtractFilePath(Application.ExeName) + '..\tiler_misc\sunflower_1080p25.y4m';
+  edOutput.Text :=  ExtractFilePath(Application.ExeName) + 'debug.gtm';
   seFrameCount.Value := IfThen(seFrameCount.Value >= 12, IfThen(seFrameCount.Value = 12, 24, 1), 12);
   cbxScaling.ItemIndex := 2;
 
