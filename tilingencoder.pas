@@ -1356,7 +1356,7 @@ var
     begin
       Tile := FrameTiles[ftIdx];
 
-      Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, False, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx, 0]);
+      Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, cPalettizationQWeighting, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx, 0]);
 
       DCTs[ftIdx, cTileDCTSize - 3] := 0.0;
       DCTs[ftIdx, cTileDCTSize - 2] := 0.0;

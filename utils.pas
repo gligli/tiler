@@ -10,6 +10,7 @@ uses
 const
   // tweakable constants
 
+  cPalettizationQWeighting = True;
   cClusterQWeighting = False;
   cReconstructQWeighting = False;
   cSmoothingQWeighting = True;
