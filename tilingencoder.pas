@@ -11,7 +11,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, IniFiles, Graphics,
-  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils, TreeTypes;
+  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils;
 
 type
   TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esCluster, esReconstruct, esSmooth, esReindex, esSave);
@@ -4472,44 +4472,42 @@ var
   procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     frameOffset: Int64;
-    frmIdx, sx, sy, si: Integer;
+    sx, sy, si: Integer;
     KeyFrame: TKeyFrame;
     Frame: TFrame;
     Tile: PTile;
     TMI: PTileMapItem;
   begin
-    if not InRange(AIndex, 0, High(FKeyFrames)) then
+    if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    KeyFrame := FKeyFrames[AIndex];
+    KeyFrame := FFrames[AIndex].PKeyFrame;
 
     KeyFrame.AcquireFrameTiles;
     try
-      for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
-      begin
-        Frame := FFrames[frmIdx];
-        frameOffset := frmIdx * FTileMapSize;
+      Frame := FFrames[AIndex];
+      frameOffset := AIndex * FTileMapSize;
 
-        si := 0;
-        for sy := 0 to FTileMapHeight - 1 do
-          for sx := 0 to FTileMapWidth - 1 do
-          begin
-            Tile := Tiles[frmIdx * FTileMapSize + si];
-            TMI := @Frame.TileMap[sy, sx];
+      si := 0;
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          Tile := Tiles[AIndex * FTileMapSize + si];
+          TMI := @Frame.TileMap[sy, sx];
 
-            Tile^.CopyFrom(Frame.FrameTiles[si]^);
+          Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-            DitherTile(Tile^, Frame.PaletteInfo[TMI^.PalIdx].MixingPlan);
+          DitherTile(Tile^, Frame.PaletteInfo[TMI^.PalIdx].MixingPlan);
 
-            TMI^.HMirror := Tile^.HMirror_Initial;
-            TMI^.VMirror := Tile^.VMirror_Initial;
-            TMI^.TileIdx := frameOffset + si;
+          TMI^.HMirror := Tile^.HMirror_Initial;
+          TMI^.VMirror := Tile^.VMirror_Initial;
+          TMI^.TileIdx := frameOffset + si;
 
-            Inc(si);
-          end;
+          Inc(si);
+        end;
 
-        Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
-      end;
+      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+
     finally
       KeyFrame.ReleaseFrameTiles;
     end;
@@ -4634,7 +4632,7 @@ begin
     FTiles := TTile.Array1DNew(DSLen, True, True);
 
     doneFrameCount := 0;
-    ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FKeyFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
 
     ProgressRedraw(6, 'DitherTiles');
     Exit;
