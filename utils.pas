@@ -13,11 +13,12 @@ const
   cPalettizationQWeighting = True;
   cClusterQWeighting = False;
   cReconstructQWeighting = False;
+  cSmoothingQWeighting = True;
+
   cPalettizationWavelets = False;
   cClusterWavelets = False;
   cReconstructWavelets = False;
 
-  cSmoothingQWeighting = True;
   cYakmoMaxIterations = 300;
   cDCTFeaturesMul = 1;
 
