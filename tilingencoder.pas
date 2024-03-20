@@ -2462,42 +2462,50 @@ end;
 
 function TTilingEncoder.PrepareInterFrameCorrelation(AFrame: TFrame): TFloatDynArray;
 var
-  sz, i, tx, ty, sx, sy: Integer;
+  i, sy, sx, ty, tx, sz, di: Integer;
   rr, gg, bb: Integer;
-  par, pag, pab: PFloat;
+  lll, aaa, bbb: TFloat;
+  Dataset: TDoubleDynArray2;
   pat: PInteger;
-  zeroPixels: TRGBPixels;
 begin
   Result := nil;
-  sz := FTileMapSize * Sqr(cTileWidth);
-  SetLength(Result, sz * 3);
-  FillChar(zeroPixels, SizeOf(zeroPixels), 0);
+  sz := FTileMapSize;
 
-  if Assigned(AFrame) then AFrame.PKeyFrame.AcquireFrameTiles;
+  SetLength(Result, sz * cColorCpns);
+  if not Assigned(AFrame) then
+    Exit;
+
+  SetLength(Dataset, sz, cColorCpns);
+
+  AFrame.PKeyFrame.AcquireFrameTiles;
   try
-    par := @Result[sz * 0]; pag := @Result[sz * 1]; pab := @Result[sz * 2];
-
+    di := 0;
     for sy := 0 to FTileMapHeight - 1 do
-      for ty := 0 to cTileWidth - 1 do
-        for sx := 0 to FTileMapWidth - 1 do
-        begin
-          i := sy * FTileMapWidth + sx;
+      for sx := 0 to FTileMapWidth - 1 do
+      begin
+        i := sy * FTileMapWidth + sx;
+        pat := PInteger(@AFrame.FrameTiles[i]^.GetRGBPixelsPtr^[0, 0]);
 
-          if Assigned(AFrame) then
-            pat := PInteger(@AFrame.FrameTiles[i]^.GetRGBPixelsPtr^[ty, 0])
-          else
-            pat := PInteger(@zeroPixels[0, 0]);
-
+        for ty := 0 to cTileWidth - 1 do
           for tx := 0 to cTileWidth - 1 do
           begin
             FromRGB(pat^, rr, gg, bb);
             Inc(pat);
-            RGBToLAB(rr, gg, bb, -1, par^, pag^, pab^);
-            Inc(par); Inc(pag); Inc(pab);
+            RGBToLAB(rr, gg, bb, -1, lll, aaa, bbb);
+            Dataset[di, 0] += lll;
+            Dataset[di, 1] += aaa;
+            Dataset[di, 2] += bbb;
           end;
-        end;
+
+        Inc(di);
+      end;
+    Assert(di = sz);
+
+    for i := 0 to High(Result) do
+      Result[i] := Dataset[i mod sz, i div sz];
+
   finally
-    if Assigned(AFrame) then AFrame.PKeyFrame.ReleaseFrameTiles;
+    AFrame.PKeyFrame.ReleaseFrameTiles;
   end;
 end;
 
