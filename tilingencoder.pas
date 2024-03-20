@@ -237,6 +237,13 @@ type
   TTilingEncoder = class;
   TKeyFrame = class;
 
+  TPalette = record
+    UseCount: Integer;
+    PalIdx_Initial: Integer;
+    PaletteRGB: TIntegerDynArray;
+    MixingPlan, BWMixingPlan: TMixingPlan;
+  end;
+
   { TFrame }
 
   TFrame = class
@@ -245,14 +252,9 @@ type
     Index: Integer;
 
     FrameTiles: array of PTile;
-    TileMap: array of array of TTileMapItem;
+    FramePalettes: array of TPalette;
 
-    PaletteRGB: TIntegerDynArray2;
-    PaletteInfo: array of record
-      UseCount: Integer;
-      MixingPlan, BWMixingPlan: TMixingPlan;
-      PalIdx_Initial: Integer;
-    end;
+    TileMap: array of array of TTileMapItem;
 
     // algorithms
 
@@ -1087,13 +1089,13 @@ begin
           Tile^, False, True, False,
           TMI^.HMirror, TMI^.VMirror,
           cSmoothingQWeighting, cColorCpns, -1,
-          AFrame.PaletteRGB[TMI^.PalIdx], PFloat(@CurDCT[0]));
+          AFrame.FramePalettes[TMI^.PalIdx].PaletteRGB, PFloat(@CurDCT[0]));
 
       Encoder.ComputeTilePsyVisFeatures(
           PrevTile^, False, True, False,
           PrevTMI^.HMirror, PrevTMI^.VMirror,
           cSmoothingQWeighting, cColorCpns, -1,
-          APrevFrame.PaletteRGB[PrevTMI^.PalIdx], PFloat(@PrevDCT[0]));
+          APrevFrame.FramePalettes[PrevTMI^.PalIdx].PaletteRGB, PFloat(@PrevDCT[0]));
 
       // compare DCT of current tile with tile from prev frame tilemap
 
@@ -1143,7 +1145,7 @@ begin
       begin
         for colIdx := 0 to Encoder.FPaletteSize - 1 do
         begin
-          FromRGB(Encoder.FFrames[frmIdx].PaletteRGB[palidx, colIdx], r, g, b);
+          FromRGB(Encoder.FFrames[frmIdx].FramePalettes[palidx].PaletteRGB[colIdx], r, g, b);
           Encoder.RGBToLAB(r, g, b, gammaCor, ll, aa, bb);
           Dataset[di * cTileDCTSize + colIdx * cColorCpns + 0] := ll;
           Dataset[di * cTileDCTSize + colIdx * cColorCpns + 1] := aa;
@@ -1289,7 +1291,7 @@ begin
         T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
         if Encoder.FFrameTilingFromPalette then
-          Encoder.DitherTile(T^, Frame.PaletteInfo[TMI^.PalIdx].MixingPlan);
+          Encoder.DitherTile(T^, Frame.FramePalettes[TMI^.PalIdx].MixingPlan);
 
         Encoder.ComputeTilePsyVisFeatures(T^, cReconstructWavelets, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, ClusteredPaletteRGB[AClusterIndex], @DCT[0]);
 
@@ -1405,20 +1407,19 @@ begin
 
   // sort entire palettes by use count
 
-  SetLength(PaletteRGB, Encoder.FPaletteCount);
-  SetLength(PaletteInfo, Encoder.FPaletteCount);
+  SetLength(FramePalettes, Encoder.FPaletteCount);
   SetLength(PalIdxLUT, Encoder.FPaletteCount);
 
   for palIdx := 0 to Encoder.FPaletteCount - 1 do
-    PaletteInfo[palIdx].PalIdx_Initial := palIdx;
+    FramePalettes[palIdx].PalIdx_Initial := palIdx;
 
   for sy := 0 to Encoder.FTileMapHeight - 1 do
     for sx := 0 to Encoder.FTileMapWidth - 1 do
-      Inc(PaletteInfo[TileMap[sy, sx].PalIdx].UseCount);
+      Inc(FramePalettes[TileMap[sy, sx].PalIdx].UseCount);
 
-  QuickSort(PaletteInfo[0], 0, Encoder.FPaletteCount - 1, SizeOf(PaletteInfo[0]), @ComparePaletteUseCount, Self);
+  QuickSort(FramePalettes[0], 0, Encoder.FPaletteCount - 1, SizeOf(FramePalettes[0]), @ComparePaletteUseCount, Self);
   for palIdx := 0 to Encoder.FPaletteCount - 1 do
-    PalIdxLUT[PaletteInfo[palIdx].PalIdx_Initial] := palIdx;
+    PalIdxLUT[FramePalettes[palIdx].PalIdx_Initial] := palIdx;
 
   // assign final palette indexes
 
@@ -1733,9 +1734,9 @@ begin
 
     CMPal.Sort(@CompareCMULHS);
 
-    SetLength(PaletteRGB[APalIdx], Encoder.FPaletteSize);
+    SetLength(FramePalettes[APalIdx].PaletteRGB, Encoder.FPaletteSize);
     for i := 0 to Encoder.FPaletteSize - 1 do
-      PaletteRGB[APalIdx, i] := ToRGB(CMPal[i]^.R, CMPal[i]^.G, CMPal[i]^.B);
+      FramePalettes[APalIdx].PaletteRGB[i] := ToRGB(CMPal[i]^.R, CMPal[i]^.G, CMPal[i]^.B);
 
     for i := 0 to CMPal.Count - 1 do
       Dispose(CMPal[i]);
@@ -1771,20 +1772,20 @@ begin
     bestPalIdx := -1;
     bestColIdx1 := -1;
     bestColIdx2 := -1;
-    for palIdx := 0 to High(PaletteRGB) do
+    for palIdx := 0 to High(FramePalettes) do
     begin
       // accumulate the whole palette except the one that will be permutated
 
       FillQWord(PalR[0], Length(PalR), 0);
       FillQWord(PalG[0], Length(PalG), 0);
       FillQWord(PalB[0], Length(PalB), 0);
-      for i := 0 to High(PaletteRGB) do
+      for i := 0 to High(FramePalettes) do
       begin
-        uc := PaletteInfo[i].UseCount;
+        uc := FramePalettes[i].UseCount;
         for j := 0 to Encoder.FPaletteSize - 1 do
           if i <> palIdx then
           begin
-            FromRGB(PaletteRGB[i, j], r, g, b);
+            FromRGB(FramePalettes[i].PaletteRGB[j], r, g, b);
             PalR[j] += r * uc;
             PalG[j] += g * uc;
             PalB[j] += b * uc;
@@ -1807,10 +1808,10 @@ begin
           Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
           Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
 
-          uc := PaletteInfo[palIdx].UseCount;
+          uc := FramePalettes[palIdx].UseCount;
           for i := 0 to Encoder.FPaletteSize - 1 do
           begin
-            FromRGB(PaletteRGB[palIdx, InnerPerm[i]], r, g, b);
+            FromRGB(FramePalettes[palIdx].PaletteRGB[InnerPerm[i]], r, g, b);
             InnerPalR[i] += r * uc;
             InnerPalG[i] += g * uc;
             InnerPalB[i] += b * uc;
@@ -1833,9 +1834,9 @@ begin
 
     if (best > prevBest) and (bestPalIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
     begin
-      tmp := PaletteRGB[bestPalIdx, bestColIdx1];
-      PaletteRGB[bestPalIdx, bestColIdx1] := PaletteRGB[bestPalIdx, bestColIdx2];
-      PaletteRGB[bestPalIdx, bestColIdx2] := tmp;
+      tmp := FramePalettes[bestPalIdx].PaletteRGB[bestColIdx1];
+      FramePalettes[bestPalIdx].PaletteRGB[bestColIdx1] := FramePalettes[bestPalIdx].PaletteRGB[bestColIdx2];
+      FramePalettes[bestPalIdx].PaletteRGB[bestColIdx2] := tmp;
     end;
 
     Inc(iteration);
@@ -1862,7 +1863,7 @@ begin
     try
       DoPalettization(IfThen(Encoder.FDitheringUseGamma, 0, -1));
 
-      for palIdx := 0 to High(PaletteRGB) do
+      for palIdx := 0 to High(FramePalettes) do
         DoQuantization(palIdx, Encoder.FQuantizerUseYakmo, Encoder.FQuantizerDennisLeeBitsPerComponent, IfThen(Encoder.FDitheringUseGamma, 0, -1));
     finally
       PKeyFrame.ReleaseFrameTiles;
@@ -2078,14 +2079,14 @@ begin
   // build ditherers
   SetLength(BWPal, FPaletteSize);
   for frmIdx := 0 to High(FFrames) do
-    for palIdx := 0 to High(FFrames[frmIdx].PaletteRGB) do
+    for palIdx := 0 to High(FFrames[frmIdx].FramePalettes) do
     begin
-      pal := FFrames[frmIdx].PaletteRGB[palIdx];
-      PreparePlan(FFrames[frmIdx].PaletteInfo[palIdx].MixingPlan, FDitheringYliluoma2MixedColors, pal);
+      pal := FFrames[frmIdx].FramePalettes[palIdx].PaletteRGB;
+      PreparePlan(FFrames[frmIdx].FramePalettes[palIdx].MixingPlan, FDitheringYliluoma2MixedColors, pal);
 
       for colIdx := 0 to FPaletteSize - 1 do
         BWPal[colIdx] := ToBW(pal[colIdx]);
-      PreparePlan(FFrames[frmIdx].PaletteInfo[palIdx].BWMixingPlan, FDitheringYliluoma2MixedColors, BWPal);
+      PreparePlan(FFrames[frmIdx].FramePalettes[palIdx].BWMixingPlan, FDitheringYliluoma2MixedColors, BWPal);
     end;
 
   ProgressRedraw(2, 'BuildDitherers');
@@ -2263,9 +2264,9 @@ begin
       palPict.SaveToFile(Format('%s_%.4d.png', [ChangeFileExt(FOutputFileName, ''), i]));
 
       palData.Clear;
-      for palIdx := 0 to High(FFrames[i].PaletteRGB) do
+      for palIdx := 0 to High(FFrames[i].FramePalettes) do
         for colIdx := 0 to FPaletteSize - 1 do
-          palData.Add(IntToHex($ff000000 or FFrames[i].PaletteRGB[palIdx, colIdx], 8));
+          palData.Add(IntToHex($ff000000 or FFrames[i].FramePalettes[palIdx].PaletteRGB[colIdx], 8));
       palData.SaveToFile(Format('%s_%.4d.txt', [ChangeFileExt(FOutputFileName, ''), i]));
     end;
   finally
@@ -4177,15 +4178,15 @@ begin
               if FRenderDithered then
                 if FRenderPaletteIndex < 0 then
                 begin
-                  if not InRange(TMItem.PalIdx, 0, High(FFrames[frmIdx].PaletteRGB)) then
+                  if not InRange(TMItem.PalIdx, 0, High(FFrames[frmIdx].FramePalettes)) then
                     Continue;
-                  pal := FFrames[frmIdx].PaletteRGB[TMItem.PalIdx]
+                  pal := FFrames[frmIdx].FramePalettes[TMItem.PalIdx].PaletteRGB;
                 end
                 else
                 begin
                   if FRenderPaletteIndex <> TMItem.PalIdx then
                     Continue;
-                  pal := FFrames[frmIdx].PaletteRGB[FRenderPaletteIndex];
+                  pal := FFrames[frmIdx].FramePalettes[FRenderPaletteIndex].PaletteRGB;
                 end;
 
               tilePtr := Tiles[TMItem.TileIdx];
@@ -4218,8 +4219,8 @@ begin
           p := FPaletteBitmap.ScanLine[j];
           for i := 0 to FPaletteBitmap.Width - 1 do
           begin
-            if Assigned(Frame.PaletteRGB) and Assigned(Frame.PaletteRGB[j]) then
-              p^ := SwapRB(Frame.PaletteRGB[j, i])
+            if Assigned(Frame.FramePalettes) and Assigned(Frame.FramePalettes[j].PaletteRGB) then
+              p^ := SwapRB(Frame.FramePalettes[j].PaletteRGB[i])
             else
               p^ := clFuchsia;
 
@@ -4246,7 +4247,7 @@ begin
               tilePtr := Tiles[tidx];
               pal := nil;
               if FRenderDithered then
-                pal := Frame.PaletteRGB[Max(0, FRenderPaletteIndex)];
+                pal := Frame.FramePalettes[Max(0, FRenderPaletteIndex)].PaletteRGB;
 
               hmir := tilePtr^.HMirror_Initial;
               vmir := tilePtr^.VMirror_Initial;
@@ -4730,7 +4731,7 @@ var
 
           Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-          DitherTile(Tile^, Frame.PaletteInfo[TMI^.PalIdx].MixingPlan);
+          DitherTile(Tile^, Frame.FramePalettes[TMI^.PalIdx].MixingPlan);
 
           TMI^.HMirror := Tile^.HMirror_Initial;
           TMI^.VMirror := Tile^.VMirror_Initial;
@@ -4815,9 +4816,9 @@ var
 
     palIdx := ANNPalIdxs[TileLineIdxs[AIndex]];
     if AColorCpns = 1 then
-      DitherTile(Tile^, Frame.PaletteInfo[palIdx].BWMixingPlan)
+      DitherTile(Tile^, Frame.FramePalettes[palIdx].BWMixingPlan)
     else
-      DitherTile(Tile^, Frame.PaletteInfo[palIdx].MixingPlan);
+      DitherTile(Tile^, Frame.FramePalettes[palIdx].MixingPlan);
 
     Tile^.Active := True;
   end;
@@ -5110,12 +5111,12 @@ begin
   SetLength(FrameBestColIdx2, Length(FFrames));
 
   for frmIdx := 0 to High(FFrames) do
-    for palIdx := 0 to High(FFrames[frmIdx].PaletteRGB) do
+    for palIdx := 0 to High(FFrames[frmIdx].FramePalettes) do
     begin
-      uc := FFrames[frmIdx].PaletteInfo[palIdx].UseCount;
+      uc := FFrames[frmIdx].FramePalettes[palIdx].UseCount;
       for i := 0 to FPaletteSize - 1 do
       begin
-        FromRGB(FFrames[frmIdx].PaletteRGB[palIdx, i], r, g, b);
+        FromRGB(FFrames[frmIdx].FramePalettes[palIdx].PaletteRGB[i], r, g, b);
 
         GlobalPalette[frmIdx, i, 0] += r * uc;
         GlobalPalette[frmIdx, i, 1] += g * uc;
@@ -5155,11 +5156,11 @@ begin
       GlobalPalette[bestFrmIdx, bestColIdx1] := GlobalPalette[bestFrmIdx, bestColIdx2];
       GlobalPalette[bestFrmIdx, bestColIdx2] := tmpArr;
 
-      for palIdx := 0 to High(FFrames[bestFrmIdx].PaletteRGB) do
+      for palIdx := 0 to High(FFrames[bestFrmIdx].FramePalettes) do
       begin
-        tmp := FFrames[bestFrmIdx].PaletteRGB[palIdx, bestColIdx1];
-        FFrames[bestFrmIdx].PaletteRGB[palIdx, bestColIdx1] := FFrames[bestFrmIdx].PaletteRGB[palIdx, bestColIdx2];
-        FFrames[bestFrmIdx].PaletteRGB[palIdx, bestColIdx2] := tmp;
+        tmp := FFrames[bestFrmIdx].FramePalettes[palIdx].PaletteRGB[bestColIdx1];
+        FFrames[bestFrmIdx].FramePalettes[palIdx].PaletteRGB[bestColIdx1] := FFrames[bestFrmIdx].FramePalettes[palIdx].PaletteRGB[bestColIdx2];
+        FFrames[bestFrmIdx].FramePalettes[palIdx].PaletteRGB[bestColIdx2] := tmp;
       end;
     end;
 
@@ -5344,15 +5345,17 @@ var
     palIdx := ReadByte;
     ReadByte;
 
-    if Length(Frame.PaletteRGB) <= palIdx then
+    if Length(Frame.FramePalettes) <= palIdx then
     begin
-      SetLength(Frame.PaletteRGB, palIdx + 1, FPaletteSize);
-      SetLength(Frame.PaletteInfo, Length(Frame.PaletteRGB));
-      FPaletteCount := Length(Frame.PaletteRGB);
+      SetLength(Frame.FramePalettes, palIdx + 1);
+      for i := 0 to FPaletteCount - 1 do
+        SetLength(Frame.FramePalettes[i].PaletteRGB, FPaletteSize);
+
+      FPaletteCount := Length(Frame.FramePalettes);
     end;
 
     for i := 0 to FPaletteSize - 1 do
-      Frame.PaletteRGB[palIdx, i] := ReadDWord and $ffffff;
+      Frame.FramePalettes[palIdx].PaletteRGB[i] := ReadDWord and $ffffff;
   end;
 
   procedure SetTMI(tileIdx: Integer; attrs: Integer; var TMI: TTileMapItem);
@@ -5608,7 +5611,7 @@ var
       DoByte(j);
       DoByte(0);
       for i := 0 to FPaletteSize - 1 do
-        DoDWord(Frame.PaletteRGB[j, i] or $ff000000);
+        DoDWord(Frame.FramePalettes[j].PaletteRGB[i] or $ff000000);
     end;
   end;
 
