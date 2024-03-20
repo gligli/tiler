@@ -442,11 +442,13 @@ type
     function LABToRGB(ll, aa, bb: TFloat; GammaCor: Integer): Integer;
     function YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
 
-    procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
+    generic procedure WaveletGS<T, PT>(Data: PT; Output: PT; dx, dy, depth: cardinal);
+    generic procedure DeWaveletGS<T, PT>(wl: PT; pic: PT; dx, dy, depth: longint);
+    procedure ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
      ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
-    procedure ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
+    procedure ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
      ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
-    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
+    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; Wavelets, UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
       var ATile: TTile);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
@@ -1082,13 +1084,13 @@ begin
       PrevTile := Encoder.FTiles[PrevTMI^.TileIdx];
 
       Encoder.ComputeTilePsyVisFeatures(
-          Tile^, True, False,
+          Tile^, False, True, False,
           TMI^.HMirror, TMI^.VMirror,
           cSmoothingQWeighting, cColorCpns, -1,
           AFrame.PaletteRGB[TMI^.PalIdx], PFloat(@CurDCT[0]));
 
       Encoder.ComputeTilePsyVisFeatures(
-          PrevTile^, True, False,
+          PrevTile^, False, True, False,
           PrevTMI^.HMirror, PrevTMI^.VMirror,
           cSmoothingQWeighting, cColorCpns, -1,
           APrevFrame.PaletteRGB[PrevTMI^.PalIdx], PFloat(@PrevDCT[0]));
@@ -1217,7 +1219,7 @@ var
       T := Encoder.Tiles[tidx];
 
       Assert(T^.Active);
-      Encoder.ComputeTilePsyVisFeatures(T^, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, ClusteredPaletteRGB[AClusterIndex], PSingle(@DS^.Dataset[tidx, 0]));
+      Encoder.ComputeTilePsyVisFeatures(T^, cReconstructWavelets, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, ClusteredPaletteRGB[AClusterIndex], PSingle(@DS^.Dataset[tidx, 0]));
     end;
   end;
 
@@ -1289,7 +1291,7 @@ begin
         if Encoder.FFrameTilingFromPalette then
           Encoder.DitherTile(T^, Frame.PaletteInfo[TMI^.PalIdx].MixingPlan);
 
-        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, ClusteredPaletteRGB[AClusterIndex], @DCT[0]);
+        Encoder.ComputeTilePsyVisFeatures(T^, cReconstructWavelets, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, ClusteredPaletteRGB[AClusterIndex], @DCT[0]);
 
         TMI^.HMirror := T^.HMirror_Initial;
         TMI^.VMirror := T^.VMirror_Initial;
@@ -1356,7 +1358,7 @@ var
     begin
       Tile := FrameTiles[ftIdx];
 
-      Encoder.ComputeTilePsyVisFeatures(Tile^, False, True, cPalettizationQWeighting, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx, 0]);
+      Encoder.ComputeTilePsyVisFeatures(Tile^, cPalettizationWavelets, False, True, cPalettizationQWeighting, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx, 0]);
 
       DCTs[ftIdx, cTileDCTSize - 3] := 0.0;
       DCTs[ftIdx, cTileDCTSize - 2] := 0.0;
@@ -2937,6 +2939,199 @@ begin
   Result := ToRGB(GammaUncorrect(GammaCor, r), GammaUncorrect(GammaCor, g), GammaUncorrect(GammaCor, b));
 end;
 
+// from https://lists.freepascal.org/pipermail/fpc-announce/2006-September/000508.html
+generic procedure TTilingEncoder.WaveletGS<T, PT>(Data: PT; Output: PT; dx, dy, depth: cardinal);
+var
+  x, y: longint;
+  offset: cardinal;
+  factor: T;
+  tempX: array[0 .. sqr(cTileWidth) - 1] of T;
+  tempY: array[0 .. sqr(cTileWidth) - 1] of T;
+begin
+  FillChar(tempX[0], SizeOf(tempX), 0);
+  FillChar(tempY[0], SizeOf(tempY), 0);
+
+  factor:=(1.0 / sqrt(2.0)); //Normalized Haar
+
+  for y:=0 to dy - 1 do //Transform Rows
+  begin
+    offset := y * cTileWidth;
+    for x := 0 to (dx div 2) - 1 do
+    begin
+      tempX[x + offset]             := (Data[x * 2 + offset] + Data[(x * 2 + 1) + offset]) * factor; //LOW-PASS
+      tempX[(x + dx div 2) +offset] := (Data[x * 2 + offset] - Data[(x * 2 + 1) + offset]) * factor; //HIGH-PASS
+    end;
+  end;
+
+  for x := 0 to dx - 1 do //Transform Columns
+    for y := 0 to (dy div 2) - 1 do
+    begin
+      tempY[x +y * cTileWidth]              := (tempX[x +y * 2 * cTileWidth] + tempX[x +(y * 2 + 1) * cTileWidth]) * factor; //LOW-PASS
+      tempY[x +(y + dy div 2) * cTileWidth] := (tempX[x +y * 2 * cTileWidth] - tempX[x +(y * 2 + 1) * cTileWidth]) * factor; //HIGH-PASS
+    end;
+
+  for y := 0 to dy - 1 do
+    Move(tempY[y * cTileWidth], Output[y * cTileWidth], dx * sizeof(T)); //Copy to Wavelet
+
+  if depth>0 then
+    specialize waveletgs<T, PT>(Output, Output, dx div 2, dy div 2, depth - 1); //Repeat for SubDivisionDepth
+end;
+
+generic procedure TTilingEncoder.DeWaveletGS<T, PT>(wl: PT; pic: PT; dx, dy, depth: longint);
+Var x,y : longint;
+    tempX: array[0 .. sqr(cTileWidth) - 1] of T;
+    tempY: array[0 .. sqr(cTileWidth) - 1] of T;
+    offset,offsetm1,offsetp1 : longint;
+    factor : T;
+    dyoff,yhalf,yhalfoff,yhalfoff2,yhalfoff3 : longint;
+BEGIN
+ FillChar(tempX[0], SizeOf(tempX), 0);
+ FillChar(tempY[0], SizeOf(tempY), 0);
+
+ if depth>0 then specialize dewaveletgs<T, PT>(wl,wl,dx div 2,dy div 2,depth-1); //Repeat for SubDivisionDepth
+
+ factor:=(1.0/sqrt(2.0)); //Normalized Haar
+
+ ////
+
+ yhalf:=(dy div 2)-1;
+ dyoff:=(dy div 2)*cTileWidth;
+ yhalfoff:=yhalf*cTileWidth;
+ yhalfoff2:=(yhalf+(dy div 2))*cTileWidth;
+ yhalfoff3:=yhalfoff*2 +cTileWidth;
+
+ if (yhalf>0) then begin //The first and last pixel has to be done "normal"
+  for x:=0 to dx-1 do begin
+   tempy[x]     := (wl[x] + wl[x+dyoff])*factor; //LOW-PASS
+   tempy[x+cTileWidth]:= (wl[x] - wl[x+dyoff])*factor; //HIGH-PASS
+
+   tempy[x +yhalfoff*2]:= (wl[x +yhalfoff] + wl[x +yhalfoff2])*factor; //LOW-PASS
+   tempy[x +yhalfoff3] := (wl[x +yhalfoff] - wl[x +yhalfoff2])*factor; //HIGH-PASS
+  end;
+ end else begin
+  for x:=0 to dx-1 do begin
+   tempy[x]     := (wl[x] + wl[x+dyoff])*factor; //LOW-PASS
+   tempy[x+cTileWidth]:= (wl[x] - wl[x+dyoff])*factor; //HIGH-PASS
+  end;
+ end;
+
+ //
+
+ dyoff:=(dy div 2)*cTileWidth;
+ yhalf:=(dy div 2)-2;
+
+ if (yhalf>=1) then begin                  //More then 2 pixels in the row?
+  //
+  if (dy>=4) then begin                    //DY must be greater then 4 to make the faked algo look good.. else it must be done "normal"
+  //
+   for x:=0 to dx-1 do begin               //Inverse Transform Colums (fake: if (high-pass coefficient=0.0) and (surrounding high-pass coefficients=0.0) then interpolate between surrounding low-pass coefficients)
+    offsetm1:=0;
+    offset:=cTileWidth;
+    offsetp1:=cTileWidth*2;
+
+    for y:=1 to yhalf do begin
+     if (wl[x +offset+dyoff]<>0.0) then begin //!UPDATED
+      tempy[x +offset*2]       := (wl[x +offset] + wl[x +offset+dyoff])*factor; //LOW-PASS
+      tempy[x +offset*2 +cTileWidth] := (wl[x +offset] - wl[x +offset+dyoff])*factor; //HIGH-PASS
+     end else begin //!UPDATED
+      if (wl[x +offsetm1 +dyoff]=0.0) and (wl[x +offsetp1]<>wl[x +offset]) and ((y=yhalf) or (wl[x +offsetp1]<>wl[x +offsetp1 +cTileWidth])) then tempy[x +offset*2]:=(wl[x +offset]*0.8 + wl[x +offsetm1]*0.2)*factor //LOW-PASS
+       else tempy[x +offset*2]:=wl[x +offset]*factor;
+      if (wl[x +offsetp1 +dyoff]=0.0) and (wl[x +offsetm1]<>wl[x +offset]) and ((y=1) or (wl[x +offsetm1]<>wl[x +offsetm1 -cTileWidth])) then tempy[x +offset*2 +cTileWidth]:=(wl[x +offset]*0.8 + wl[x +offsetp1]*0.2)*factor //HIGH-PASS
+       else tempy[x +offset*2 +cTileWidth]:=wl[x +offset]*factor;
+     end;
+
+     inc(offsetm1,cTileWidth);
+     inc(offset,cTileWidth);
+     inc(offsetp1,cTileWidth);
+    end;
+
+   end;
+  //
+  end else //DY<4
+  //
+   for x:=0 to dx-1 do begin
+    offset:=cTileWidth;
+    for y:=1 to yhalf do begin
+     tempy[x +offset*2]      := (wl[x +offset] + wl[x +offset +dyoff])*factor; //LOW-PASS
+     tempy[x +offset*2+cTileWidth] := (wl[x +offset] - wl[x +offset +dyoff])*factor; //HIGH-PASS
+
+     inc(offset,cTileWidth);
+    end;
+   end;
+  //
+ end;
+
+ ////
+
+ offset:=0;
+ yhalf:=(dx div 2)-1;
+ yhalfoff:=(yhalf+dx div 2);
+ yhalfoff2:=yhalf*2+1;
+
+ if (yhalf>0) then begin
+  for y:=0 to dy-1 do begin //The first and last pixel has to be done "normal"
+   tempx[offset]   :=(tempy[offset] + tempy[yhalf+1 +offset])*factor; //LOW-PASS
+   tempx[offset+1] :=(tempy[offset] - tempy[yhalf+1 +offset])*factor; //HIGH-PASS
+
+   tempx[yhalf*2 +offset]   :=(tempy[yhalf +offset] + tempy[yhalfoff +offset])*factor; //LOW-PASS
+   tempx[yhalfoff2 +offset] :=(tempy[yhalf +offset] - tempy[yhalfoff +offset])*factor; //HIGH-PASS
+
+   inc(offset,cTileWidth);
+  end;
+ end else begin
+  for y:=0 to dy-1 do begin //The first and last pixel has to be done "normal"
+   tempx[offset]   :=(tempy[offset] + tempy[yhalf+1 +offset])*factor; //LOW-PASS
+   tempx[offset+1] :=(tempy[offset] - tempy[yhalf+1 +offset])*factor; //HIGH-PASS
+
+   inc(offset,cTileWidth);
+  end;
+ end;
+
+ //
+
+ dyoff:=(dx div 2);
+ yhalf:=(dx div 2)-2;
+
+ if (yhalf>=1) then begin
+
+  if (dx>=4) then begin
+
+   offset:=0;
+   for y:=0 to dy-1 do begin               //Inverse Transform Rows (fake: if (high-pass coefficient=0.0) and (surrounding high-pass coefficients=0.0) then interpolate between surrounding low-pass coefficients)
+    for x:=1 to yhalf do
+     if (tempy[x +dyoff +offset]<>0.0) then begin //!UPDATED
+      tempx[x*2 +offset]   :=(tempy[x +offset] + tempy[x +dyoff +offset])*factor; //LOW-PASS
+      tempx[x*2+1 +offset] :=(tempy[x +offset] - tempy[x +dyoff +offset])*factor; //HIGH-PASS
+     end else begin //!UPDATED
+      if (tempy[x-1+dyoff +offset]=0.0) and (tempy[x+1 +offset]<>tempy[x +offset]) and ((x=yhalf) or (tempy[x+1 +offset]<>tempy[x+2 +offset])) then tempx[x*2 +offset]:=(tempy[x +offset]*0.8 + tempy[x-1 +offset]*0.2)*factor //LOW-PASS
+       else tempx[x*2 +offset]:=tempy[x +offset]*factor;
+      if (tempy[x+1+dyoff +offset]=0.0) and (tempy[x-1 +offset]<>tempy[x +offset]) and ((x=1) or (tempy[x-1 +offset]<>tempy[x-2 +offset])) then tempx[x*2+1 +offset]:=(tempy[x +offset]*0.8 + tempy[x+1 +offset]*0.2)*factor //HIGH-PASS
+       else tempx[x*2+1 +offset]:=tempy[x +offset]*factor;
+     end;
+    inc(offset,cTileWidth);
+   end;
+
+  end else begin //DX<4
+
+   offset:=0;
+   for y:=0 to dy-1 do begin               //Inverse Transform Rows (fake: if (high-pass coefficient=0.0) and (surrounding high-pass coefficients=0.0) then interpolate between surrounding low-pass coefficients)
+    for x:=1 to yhalf do begin
+     tempx[x*2 +offset]   := (tempy[x +offset] + tempy[x +dyoff +offset])*factor; //LOW-PASS
+     tempx[x*2+1 +offset] := (tempy[x +offset] - tempy[x +dyoff +offset])*factor; //HIGH-PASS
+    end;
+    inc(offset,cTileWidth);
+   end;
+
+  end;
+
+ end;
+
+ ////
+
+ for y:=0 to dy-1 do
+  move(tempx[y*cTileWidth],pic[y*cTileWidth],dx*sizeof(T)); //Copy to Pic
+END;
+
 procedure TTilingEncoder.RGBToHSV(col: Integer; out h, s, v: TFloat);
 var
   bh, bs, bv: Byte;
@@ -3287,7 +3482,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
+procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror,
   VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
 var
   u, v, x, y, xx, yy, cpn: Integer;
@@ -3344,26 +3539,37 @@ begin
       end;
   end;
 
-  for cpn := 0 to ColorCpns - 1 do
+  if Wavelets then
   begin
-    pDCT := @DCT[cpn];
-    pLut := @FDCTLut[0];
-    for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-      for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-      begin
-  		  z := specialize DCTInner<PSingle>(@CpnPixels[cpn, 0, 0], pLut, 1);
+   for cpn := 0 to ColorCpns - 1 do
+   begin
+     pDCT := @DCT[cpn * (cTileDCTSize div ColorCpns)];
+     specialize WaveletGS<Single, PSingle>(@CpnPixels[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
+   end;
+  end
+  else
+  begin
+    for cpn := 0 to ColorCpns - 1 do
+    begin
+      pDCT := @DCT[cpn * (cTileDCTSize div ColorCpns)];
+      pLut := @FDCTLut[0];
+      for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+        for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+        begin
+  		    z := specialize DCTInner<PSingle>(@CpnPixels[cpn, 0, 0], pLut, 1);
 
-        if QWeighting then
-           z *= cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
+          if QWeighting then
+             z *= cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
 
-        pDCT^ := z;
-        Inc(pDCT, ColorCpns);
-        Inc(pLut, Sqr(cTileWidth));
-      end;
+          pDCT^ := z;
+          Inc(pDCT);
+          Inc(pLut, Sqr(cTileWidth));
+        end;
+    end;
   end;
 end;
 
-procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; FromPal, UseLAB, QWeighting, HMirror,
+procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror,
   VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble);
 var
   u, v, x, y, xx, yy, cpn: Integer;
@@ -3420,26 +3626,37 @@ begin
       end;
   end;
 
-  for cpn := 0 to ColorCpns - 1 do
+  if Wavelets then
   begin
-    pDCT := @DCT[cpn];
-    pLut := @FDCTLutDouble[0];
-    for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-      for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-      begin
-  		  z := specialize DCTInner<PDouble>(@CpnPixels[cpn, 0, 0], pLut, 1);
+   for cpn := 0 to ColorCpns - 1 do
+   begin
+     pDCT := @DCT[cpn * (cTileDCTSize div ColorCpns)];
+     specialize WaveletGS<Double, PDouble>(@CpnPixels[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
+   end;
+  end
+  else
+  begin
+    for cpn := 0 to ColorCpns - 1 do
+    begin
+      pDCT := @DCT[cpn * (cTileDCTSize div ColorCpns)];
+      pLut := @FDCTLutDouble[0];
+      for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+        for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+        begin
+  		    z := specialize DCTInner<PDouble>(@CpnPixels[cpn, 0, 0], pLut, 1);
 
-        if QWeighting then
-           z *= cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
+          if QWeighting then
+             z *= cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
 
-        pDCT^ := z;
-        Inc(pDCT, ColorCpns);
-        Inc(pLut, Sqr(cTileWidth));
-      end;
+          pDCT^ := z;
+          Inc(pDCT);
+          Inc(pLut, Sqr(cTileWidth));
+        end;
+    end;
   end;
 end;
 
-procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
+procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Wavelets, UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
  var ATile: TTile);
 var
   u, v, x, y, cpn: Integer;
@@ -3463,9 +3680,9 @@ var
 
 begin
   pWDCT := GetMem(cTileDCTSize * SizeOf(Double));
+  pCur := @DCT[0];
   for cpn := 0 to ColorCpns - 1 do
   begin
-    pCur := @DCT[cpn];
     for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
       for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
       begin
@@ -3474,23 +3691,34 @@ begin
         else
           pWDCT^ := pCur^;
         Inc(pWDCT);
-        Inc(pCur, ColorCpns);
+        Inc(pCur);
       end;
   end;
   Dec(pWDCT, cTileDCTSize);
 
-  for cpn := 0 to ColorCpns - 1 do
+  if Wavelets then
   begin
-    pCpn := @CpnPixels[cpn, 0, 0];
-    pLut := @FInvDCTLutDouble[0];
+    for cpn := 0 to ColorCpns - 1 do
+    begin
+      pCpn := @CpnPixels[cpn, 0, 0];
+      specialize DeWaveletGS<Double, PDouble>(@pWDCT[cpn * (cTileDCTSize div ColorCpns)], pCpn, cTileWidth, cTileWidth, 2);
+    end;
+  end
+  else
+  begin
+    for cpn := 0 to ColorCpns - 1 do
+    begin
+      pCpn := @CpnPixels[cpn, 0, 0];
+      pLut := @FInvDCTLutDouble[0];
 
-    for y := 0 to cTileWidth - 1 do
-      for x := 0 to cTileWidth - 1 do
-      begin
-        pCpn^ := specialize DCTInner<PDouble>(@pWDCT[cpn * (cTileDCTSize div ColorCpns)], pLut, sqr(cDCTFeaturesMul));
-        Inc(pCpn);
-        Inc(pLut, Sqr(cTileWidth * cDCTFeaturesMul));
-      end;
+      for y := 0 to cTileWidth - 1 do
+        for x := 0 to cTileWidth - 1 do
+        begin
+          pCpn^ := specialize DCTInner<PDouble>(@pWDCT[cpn * (cTileDCTSize div ColorCpns)], pLut, sqr(cDCTFeaturesMul));
+          Inc(pCpn);
+          Inc(pLut, Sqr(cTileWidth * cDCTFeaturesMul));
+        end;
+    end;
   end;
 
   Freemem(pWDCT);
@@ -3971,7 +4199,7 @@ begin
               DrawTile(FOutputBitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
 
               if not (FRenderPlaying or AFast) then
-                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
+                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
             end;
           end;
       finally
@@ -4061,7 +4289,7 @@ begin
                 vmir := False;
               end;
 
-              ComputeTilePsyVisFeatures(tilePtr^, False, False, False, hmir, vmir, cColorCpns, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
+              ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, hmir, vmir, cColorCpns, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
               q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
               Inc(i);
             end;
@@ -4237,8 +4465,8 @@ begin
     for j := 0 to cTileWidth - 1 do
       T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
 
-  ComputeTilePsyVisFeatures(T^, False, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], False, False, cColorCpns, -1, T2^);
+  ComputeTilePsyVisFeatures(T^, False, False, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], False, False, False, cColorCpns, -1, T2^);
 
   //for i := 0 to 7 do
   //  for j := 0 to 7 do
@@ -4251,10 +4479,15 @@ begin
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'DCT/InvDCT mismatch');
 
-  ComputeTilePsyVisFeatures(T^, False, False, True, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], False, True, cColorCpns, -1, T2^);
+  ComputeTilePsyVisFeatures(T^, False, False, False, True, False, False, cColorCpns, -1, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], False, False, True, cColorCpns, -1, T2^);
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'QWeighted DCT/InvDCT mismatch');
+
+  ComputeTilePsyVisFeatures(T^, True, False, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], True, False, False, cColorCpns, -1, T2^);
+
+  Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'WL/InvWL mismatch');
 
   TTile.Dispose(T);
   TTile.Dispose(T2);
@@ -4539,7 +4772,7 @@ var
         begin
           Tile := Frame.FrameTiles[si];
 
-          ComputeTilePsyVisFeatures(Tile^, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCT[0]);
+          ComputeTilePsyVisFeatures(Tile^, cClusterWavelets, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCT[0]);
 
           ANNClusters[frameOffset + si] := ann_kdtree_search(ANN, @DCT[0], 0.0, @ANNErrors[frameOffset + si]);
 
@@ -4578,7 +4811,7 @@ var
     Tile := Tiles[AIndex];
 
     Move(ANNDataset[AIndex]^, DCT[0], featureCount * SizeOf(Double));
-    ComputeInvTilePsyVisFeatures(@DCT[0], False, cClusterQWeighting, AColorCpns, AGamma, Tile^);
+    ComputeInvTilePsyVisFeatures(@DCT[0], cClusterWavelets, False, cClusterQWeighting, AColorCpns, AGamma, Tile^);
 
     palIdx := ANNPalIdxs[TileLineIdxs[AIndex]];
     if AColorCpns = 1 then
@@ -4598,7 +4831,7 @@ var
       Exit;
 
     Frame := TFrame(AData);
-    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
+    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, cClusterWavelets, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
   end;
 
   procedure DoInsert(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);

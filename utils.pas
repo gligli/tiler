@@ -10,9 +10,13 @@ uses
 const
   // tweakable constants
 
-  cPalettizationQWeighting = True;
+  cPalettizationQWeighting = False;
   cClusterQWeighting = False;
   cReconstructQWeighting = False;
+  cPalettizationWavelets = True;
+  cClusterWavelets = True;
+  cReconstructWavelets = True;
+
   cSmoothingQWeighting = True;
   cYakmoMaxIterations = 300;
   cDCTFeaturesMul = 1;
