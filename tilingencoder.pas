@@ -5092,11 +5092,11 @@ end;
 
 procedure TTilingEncoder.OptimizeGlobalPalettes;
 var
-  FrameBests: TDoubleDynArray;
-  FrameBestColIdx1, FrameBestColIdx2: TIntegerDynArray;
+  KFBests: TDoubleDynArray;
+  KFBestColIdx1, KFBestColIdx2: TIntegerDynArray;
   GlobalPalette: TDoubleDynArray3;
 
-  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     i, j, colIdx1, colIdx2, tmp, bestColIdx1, bestColIdx2: Integer;
     InnerPerm: TByteDynArray;
@@ -5112,9 +5112,9 @@ var
     SetLength(InnerPalB, FPaletteSize);
     SetLength(InnerPerm, FPaletteSize);
 
-    // accumulate the whole palette except for the frame that will be permutated
+    // accumulate the whole palette except for the keyframe that will be permutated
 
-    for i := 0 to High(FFrames) do
+    for i := 0 to High(FKeyFrames) do
       for j := 0 to FPaletteSize - 1 do
         if i <> AIndex then
         begin
@@ -5123,7 +5123,7 @@ var
           PalB[j] += GlobalPalette[i, j, 2];
         end;
 
-    // try all permutations in the current frame
+    // try all permutations in the current keyframe
 
     best := 0;
     bestColIdx1 := -1;
@@ -5164,80 +5164,80 @@ var
         end;
       end;
 
-    FrameBests[AIndex] := best;
-    FrameBestColIdx1[AIndex] := bestColIdx1;
-    FrameBestColIdx2[AIndex] := bestColIdx2;
+    KFBests[AIndex] := best;
+    KFBestColIdx1[AIndex] := bestColIdx1;
+    KFBestColIdx2[AIndex] := bestColIdx2;
   end;
 
 
 var
-  i, frmIdx, palIdx, iteration, bestFrmIdx, bestColIdx1, bestColIdx2, uc, tmp: Integer;
+  i, kfIdx, palIdx, iteration, bestKFIdx, bestColIdx1, bestColIdx2, uc, tmp: Integer;
   r, g, b: byte;
   prevBest, best, v: Double;
   tmpArr: TDoubleDynArray;
 begin
-  SetLength(GlobalPalette, Length(FFrames), FPaletteSize, cColorCpns);
-  SetLength(FrameBests, Length(FFrames));
-  SetLength(FrameBestColIdx1, Length(FFrames));
-  SetLength(FrameBestColIdx2, Length(FFrames));
+  SetLength(GlobalPalette, Length(FKeyFrames), FPaletteSize, cColorCpns);
+  SetLength(KFBests, Length(FKeyFrames));
+  SetLength(KFBestColIdx1, Length(FKeyFrames));
+  SetLength(KFBestColIdx2, Length(FKeyFrames));
 
-  for frmIdx := 0 to High(FFrames) do
-    for palIdx := 0 to High(FFrames[frmIdx].PKeyFrame.Palettes) do
+  for kfIdx := 0 to High(FKeyFrames) do
+    for palIdx := 0 to High(FKeyFrames[kfIdx].Palettes) do
     begin
-      uc := FFrames[frmIdx].PKeyFrame.Palettes[palIdx].UseCount;
+      uc := FKeyFrames[kfIdx].Palettes[palIdx].UseCount;
       for i := 0 to FPaletteSize - 1 do
       begin
-        FromRGB(FFrames[frmIdx].PKeyFrame.Palettes[palIdx].PaletteRGB[i], r, g, b);
+        FromRGB(FKeyFrames[kfIdx].Palettes[palIdx].PaletteRGB[i], r, g, b);
 
-        GlobalPalette[frmIdx, i, 0] += r * uc;
-        GlobalPalette[frmIdx, i, 1] += g * uc;
-        GlobalPalette[frmIdx, i, 2] += b * uc;
+        GlobalPalette[kfIdx, i, 0] += r * uc;
+        GlobalPalette[kfIdx, i, 1] += g * uc;
+        GlobalPalette[kfIdx, i, 2] += b * uc;
       end;
     end;
 
-  // stepwise algorithm on palette colors permutations across frames
+  // stepwise algorithm on palette colors permutations across keyframes
 
   best := 0;
   iteration := 0;
   repeat
     prevBest := best;
 
-    ProcThreadPool.DoParallelLocalProc(@DoFrame, 0, High(FFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoKF, 0, High(FKeyFrames));
 
     best := 0;
-    bestFrmIdx := -1;
+    bestKFIdx := -1;
     bestColIdx1 := -1;
     bestColIdx2 := -1;
-    for frmIdx := 0 to High(FFrames) do
+    for kfIdx := 0 to High(FKeyFrames) do
     begin
-      v := FrameBests[frmIdx];
+      v := KFBests[kfIdx];
 
       if v > best then
       begin
         best := v;
-        bestFrmIdx := frmIdx;
-        bestColIdx1 := FrameBestColIdx1[frmIdx];
-        bestColIdx2 := FrameBestColIdx2[frmIdx];
+        bestKFIdx := kfIdx;
+        bestColIdx1 := KFBestColIdx1[kfIdx];
+        bestColIdx2 := KFBestColIdx2[kfIdx];
       end;
     end;
 
-    if (best > prevBest) and (bestFrmIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
+    if (best > prevBest) and (bestKFIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
     begin
-      tmpArr := GlobalPalette[bestFrmIdx, bestColIdx1];
-      GlobalPalette[bestFrmIdx, bestColIdx1] := GlobalPalette[bestFrmIdx, bestColIdx2];
-      GlobalPalette[bestFrmIdx, bestColIdx2] := tmpArr;
+      tmpArr := GlobalPalette[bestKFIdx, bestColIdx1];
+      GlobalPalette[bestKFIdx, bestColIdx1] := GlobalPalette[bestKFIdx, bestColIdx2];
+      GlobalPalette[bestKFIdx, bestColIdx2] := tmpArr;
 
-      for palIdx := 0 to High(FFrames[bestFrmIdx].PKeyFrame.Palettes) do
+      for palIdx := 0 to High(FKeyFrames[bestKFIdx].Palettes) do
       begin
-        tmp := FFrames[bestFrmIdx].PKeyFrame.Palettes[palIdx].PaletteRGB[bestColIdx1];
-        FFrames[bestFrmIdx].PKeyFrame.Palettes[palIdx].PaletteRGB[bestColIdx1] := FFrames[bestFrmIdx].PKeyFrame.Palettes[palIdx].PaletteRGB[bestColIdx2];
-        FFrames[bestFrmIdx].PKeyFrame.Palettes[palIdx].PaletteRGB[bestColIdx2] := tmp;
+        tmp := FKeyFrames[bestKFIdx].Palettes[palIdx].PaletteRGB[bestColIdx1];
+        FKeyFrames[bestKFIdx].Palettes[palIdx].PaletteRGB[bestColIdx1] := FKeyFrames[bestKFIdx].Palettes[palIdx].PaletteRGB[bestColIdx2];
+        FKeyFrames[bestKFIdx].Palettes[palIdx].PaletteRGB[bestColIdx2] := tmp;
       end;
     end;
 
     Inc(iteration);
 
-    //WriteLn(iteration:3, bestFrmIdx:3, bestColIdx1:3, bestColIdx2:3, best:16:0);
+    //WriteLn(iteration:3, bestKFIdx:3, bestColIdx1:3, bestColIdx2:3, best:16:0);
 
   until best <= prevBest;
 
