@@ -4973,8 +4973,8 @@ begin
   try
     if Assigned(BICO) then
     begin
-      bico_set_num_threads(Max(1, MaxThreadCount - 2));
-      bico_set_rebuild_properties(BICO, FTileMapSize, cPhi, cPhi);
+      bico_set_num_threads(IfThen(Assigned(BIRCH), Max(1, MaxThreadCount - 2), MaxThreadCount));
+      bico_set_rebuild_properties(BICO, FTileMapSize, NaN, cPhi);
     end;
 
     // insert frame tiles into BICO & BIRCH
