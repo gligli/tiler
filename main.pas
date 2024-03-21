@@ -17,6 +17,10 @@ type
     btnGTM: TButton;
     btnRunAll: TButton;
     btnPM: TButton;
+    cbxVisMode: TComboBox;
+    cbxGlobMode: TComboBox;
+    cbxDitheringMode: TComboBox;
+    cbxFTMode: TComboBox;
     chkGlobLumaOnly: TCheckBox;
     chkGlobGamma: TCheckBox;
     chkPosterize: TCheckBox;
@@ -53,6 +57,7 @@ type
     Label14: TLabel;
     Label15: TLabel;
     Label16: TLabel;
+    Label17: TLabel;
     Label2: TLabel;
     Label20: TLabel;
     Label21: TLabel;
@@ -609,6 +614,7 @@ begin
   FTilingEncoder.RenderSmoothed := chkSmoothed.Checked;
   FTilingEncoder.RenderDithered := chkDithered.Checked;
   FTilingEncoder.RenderUseGamma := chkGamma.Checked;
+  FTilingEncoder.RenderMode := TPsyVisMode(cbxVisMode.ItemIndex);
   FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;
   FTilingEncoder.RenderTilePage := sePage.Value;
   FTilingEncoder.RenderGammaValue := seVisGamma.Value;
@@ -618,16 +624,19 @@ begin
   FTilingEncoder.QuantizerPosterize := chkPosterize.Checked;
   FTilingEncoder.QuantizerPosterizeBitsPerComponent := StrToInt(cbxPosterizeBPC.Text);
   FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
+  FTilingEncoder.DitheringMode := TPsyVisMode(cbxDitheringMode.ItemIndex);
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
   FTilingEncoder.GlobalTilingUseGamma := chkGlobGamma.Checked;
+  FTilingEncoder.GlobalTilingMode := TPsyVisMode(cbxGlobMode.ItemIndex);
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
   FTilingEncoder.GlobalTilingLumaOnly := chkGlobLumaOnly.Checked;
   FTilingEncoder.GlobalTilingRatio := tbGlobRatio.Position / 100;
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
+  FTilingEncoder.FrameTilingMode := TPsyVisMode(cbxFTMode.ItemIndex);
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
 
@@ -686,10 +695,12 @@ begin
    chkPosterize.Checked := FTilingEncoder.QuantizerPosterize;
    cbxPosterizeBPC.Text := IntToStr(FTilingEncoder.QuantizerPosterizeBitsPerComponent);
    chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
+   cbxDitheringMode.ItemIndex := Ord(FTilingEncoder.DitheringMode);
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
    cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
    chkGlobGamma.Checked := FTilingEncoder.GlobalTilingUseGamma;
+   cbxGlobMode.ItemIndex := Ord(FTilingEncoder.GlobalTilingMode);
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
    chkGlobLumaOnly.Checked := FTilingEncoder.GlobalTilingLumaOnly;
@@ -697,12 +708,14 @@ begin
 
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
+   cbxFTMode.ItemIndex := Ord(FTilingEncoder.FrameTilingMode);
 
    seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
 
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
    seMaxCores.Value := FTilingEncoder.MaxThreadCount;
 
+   cbxVisMode.ItemIndex := Ord(FTilingEncoder.RenderMode);
    seShotTransMinSecondsPerKF.Value := FTilingEncoder.ShotTransMinSecondsPerKF;
    seShotTransMaxSecondsPerKF.Value := FTilingEncoder.ShotTransMaxSecondsPerKF;
    seShotTransCorrelLoThres.Value := FTilingEncoder.ShotTransCorrelLoThres;

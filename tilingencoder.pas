@@ -17,6 +17,7 @@ type
   TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esCluster, esReconstruct, esSmooth, esReindex, esSave);
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
+  TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets);
 
 const
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, -1, 6, -1, -1, 2, 1);
@@ -351,15 +352,18 @@ type
     FQuantizerPosterize: Boolean;
     FQuantizerPosterizeBitsPerComponent: Integer;
     FDitheringUseGamma: Boolean;
+    FDitheringMode: TPsyVisMode;
     FDitheringUseThomasKnoll: Boolean;
     FDitheringYliluoma2MixedColors: Integer;
     FGlobalTilingUseGamma: Boolean;
+    FGlobalTilingMode: TPsyVisMode;
     FGlobalTilingTileCount: Integer;
     FGlobalTilingQualityBasedTileCount: Double;
     FGlobalTilingLumaOnly: Boolean;
     FGlobalTilingRatio: Double;
     FFrameTilingFromPalette: Boolean;
     FFrameTilingUseGamma: Boolean;
+    FFrameTilingMode: TPsyVisMode;
     FSmoothingFactor: Double;
     FShotTransMaxSecondsPerKF: Double;
     FShotTransMinSecondsPerKF: Double;
@@ -374,6 +378,7 @@ type
     FRenderPsychoVisualQuality: Double;
     FRenderTitleText: String;
     FRenderUseGamma: Boolean;
+    FRenderMode: TPsyVisMode;
     FRenderMirrored: Boolean;
     FRenderPaletteIndex: Integer;
     FRenderPlaying: Boolean;
@@ -540,15 +545,18 @@ type
     property QuantizerPosterizeBitsPerComponent: Integer read FQuantizerPosterizeBitsPerComponent write SetQuantizerPosterizeBitsPerComponent;
     property QuantizerPosterize: Boolean read FQuantizerPosterize write FQuantizerPosterize;
     property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
+    property DitheringMode: TPsyVisMode read FDitheringMode write FDitheringMode;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
     property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
     property GlobalTilingUseGamma: Boolean read FGlobalTilingUseGamma write FGlobalTilingUseGamma;
+    property GlobalTilingMode: TPsyVisMode read FGlobalTilingMode write FGlobalTilingMode;
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
     property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
     property GlobalTilingLumaOnly: Boolean read FGlobalTilingLumaOnly write FGlobalTilingLumaOnly;
     property GlobalTilingRatio: Double read FGlobalTilingRatio write SetGlobalTilingRatio;
     property FrameTilingFromPalette: Boolean read FFrameTilingFromPalette write FFrameTilingFromPalette;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
+    property FrameTilingMode: TPsyVisMode read FFrameTilingMode write FFrameTilingMode;
     property SmoothingFactor: Double read FSmoothingFactor write SetSmoothingFactor;
     property MaxThreadCount: Integer read GetMaxThreadCount write SetMaxThreadCount;
     property ShotTransMaxSecondsPerKF: Double read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
@@ -564,6 +572,7 @@ type
     property RenderSmoothed: Boolean read FRenderSmoothed write FRenderSmoothed;
     property RenderDithered: Boolean read FRenderDithered write FRenderDithered;
     property RenderUseGamma: Boolean read FRenderUseGamma write FRenderUseGamma;
+    property RenderMode: TPsyVisMode read FRenderMode write FRenderMode;
     property RenderPaletteIndex: Integer read FRenderPaletteIndex write SetRenderPaletteIndex;
     property RenderTilePage: Integer read FRenderTilePage write SetRenderTilePage;
     property RenderGammaValue: Double read FRenderGammaValue write SetRenderGammaValue;
@@ -1117,7 +1126,7 @@ var
       begin
         Tile := Frame.FrameTiles[ftIdx];
 
-        Encoder.ComputeTilePsyVisFeatures(Tile^, cPalettizationWavelets, False, True, False, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cFeatureCount]);
+        Encoder.ComputeTilePsyVisFeatures(Tile^, Encoder.DitheringMode = pvsWavelets, False, True, Encoder.DitheringMode = pvsWeightedDCT, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cFeatureCount]);
 
         DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 3)] := 0.0;
         DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 2)] := 0.0;
@@ -1810,7 +1819,7 @@ var
       T := Encoder.Tiles[tidx];
 
       Assert(T^.Active);
-      Encoder.ComputeTilePsyVisFeatures(T^, cReconstructWavelets, True, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, PSingle(@DS^.Dataset[tidx, 0]));
+      Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode = pvsWavelets, True, False, Encoder.FrameTilingMode = pvsWeightedDCT, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, PSingle(@DS^.Dataset[tidx, 0]));
     end;
   end;
 
@@ -1882,7 +1891,7 @@ begin
         if Encoder.FFrameTilingFromPalette then
           Encoder.DitherTile(T^, Frame.PKeyframe.Palettes[TMI^.PalIdx].MixingPlan);
 
-        Encoder.ComputeTilePsyVisFeatures(T^, cReconstructWavelets, Encoder.FFrameTilingFromPalette, False, cReconstructQWeighting, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, @DCT[0]);
+        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, @DCT[0]);
 
         TMI^.HMirror := T^.HMirror_Initial;
         TMI^.VMirror := T^.VMirror_Initial;
@@ -4271,7 +4280,7 @@ begin
               DrawTile(FOutputBitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
 
               if not (FRenderPlaying or AFast) then
-                ComputeTilePsyVisFeatures(PsyTile^, False, False, False, False, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
+                ComputeTilePsyVisFeatures(PsyTile^, RenderMode = pvsWavelets, False, False, RenderMode = pvsWeightedDCT, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
             end;
           end;
       finally
@@ -4361,7 +4370,7 @@ begin
                 vmir := False;
               end;
 
-              ComputeTilePsyVisFeatures(tilePtr^, False, False, False, False, hmir, vmir, cColorCpns, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
+              ComputeTilePsyVisFeatures(tilePtr^, RenderMode = pvsWavelets, False, False, RenderMode = pvsWeightedDCT, hmir, vmir, cColorCpns, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
               q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
               Inc(i);
             end;
@@ -4399,10 +4408,12 @@ begin
     ini.WriteBool('Dither', 'QuantizerPosterize', QuantizerPosterize);
     ini.WriteInteger('Dither', 'QuantizerPosterizeBitsPerComponent', QuantizerPosterizeBitsPerComponent);
     ini.WriteBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
+    ini.WriteInteger('Dither', 'DitheringMode', Ord(DitheringMode));
     ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
     ini.WriteBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
+    ini.WriteInteger('GlobalTiling', 'GlobalTilingMode', Ord(GlobalTilingMode));
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
     ini.WriteBool('GlobalTiling', 'GlobalTilingLumaOnly', GlobalTilingLumaOnly);
@@ -4410,6 +4421,7 @@ begin
 
     ini.WriteBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
+    ini.WriteInteger('FrameTiling', 'FrameTilingMode', Ord(FrameTilingMode));
 
     ini.WriteFloat('Smoothing', 'SmoothingFactor', SmoothingFactor);
 
@@ -4446,10 +4458,12 @@ begin
     QuantizerPosterize := ini.ReadBool('Dither', 'QuantizerPosterize', QuantizerPosterize);
     QuantizerPosterizeBitsPerComponent := ini.ReadInteger('Dither', 'QuantizerPosterizeBitsPerComponent', QuantizerPosterizeBitsPerComponent);
     DitheringUseGamma := ini.ReadBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
+    DitheringMode := TPsyVisMode(EnsureRange(ini.ReadInteger('Dither', 'DitheringMode', Ord(DitheringMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
     DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
     GlobalTilingUseGamma := ini.ReadBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
+    GlobalTilingMode := TPsyVisMode(EnsureRange(ini.ReadInteger('GlobalTiling', 'GlobalTilingMode', Ord(GlobalTilingMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
     GlobalTilingLumaOnly := ini.ReadBool('GlobalTiling', 'FGlobalTilingLumaOnly', FGlobalTilingLumaOnly);
@@ -4457,6 +4471,7 @@ begin
 
     FrameTilingFromPalette := ini.ReadBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
+    FrameTilingMode := TPsyVisMode(EnsureRange(ini.ReadInteger('FrameTiling', 'FrameTilingMode', Ord(FrameTilingMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
 
     SmoothingFactor := ini.ReadFloat('Smoothing', 'SmoothingFactor', SmoothingFactor);
 
@@ -4487,10 +4502,12 @@ begin
   QuantizerPosterize := False;
   QuantizerPosterizeBitsPerComponent := 3;
   DitheringUseGamma := False;
+  DitheringMode := pvsWavelets;
   DitheringUseThomasKnoll := True;
   DitheringYliluoma2MixedColors := 4;
 
   GlobalTilingUseGamma := False;
+  GlobalTilingMode := pvsWavelets;
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
   GlobalTilingLumaOnly := False;
@@ -4498,14 +4515,15 @@ begin
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
+  FrameTilingMode := pvsWavelets;
 
   SmoothingFactor := 0.2;
 
   EncoderGammaValue := 2.0;
 
-  FShotTransMaxSecondsPerKF := 5.0;  // maximum seconds between keyframes
-  FShotTransMinSecondsPerKF := 0.0;  // minimum seconds between keyframes
-  FShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
+  ShotTransMaxSecondsPerKF := 5.0;  // maximum seconds between keyframes
+  ShotTransMinSecondsPerKF := 0.0;  // minimum seconds between keyframes
+  ShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
 end;
 
 procedure TTilingEncoder.Test;
@@ -4844,7 +4862,7 @@ var
         begin
           Tile := Frame.FrameTiles[si];
 
-          ComputeTilePsyVisFeatures(Tile^, cClusterWavelets, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCT[0]);
+          ComputeTilePsyVisFeatures(Tile^, GlobalTilingMode = pvsWavelets, False, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, nil, @DCT[0]);
 
           ANNClusters[frameOffset + si] := ann_kdtree_search(ANN, @DCT[0], 0.0, @ANNErrors[frameOffset + si]);
 
@@ -4883,7 +4901,7 @@ var
     Tile := Tiles[AIndex];
 
     Move(ANNDataset[AIndex]^, DCT[0], featureCount * SizeOf(Double));
-    ComputeInvTilePsyVisFeatures(@DCT[0], cClusterWavelets, False, cClusterQWeighting, AColorCpns, AGamma, Tile^);
+    ComputeInvTilePsyVisFeatures(@DCT[0], GlobalTilingMode = pvsWavelets, False, GlobalTilingMode = pvsWeightedDCT, AColorCpns, AGamma, Tile^);
 
     palIdx := ANNPalIdxs[TileLineIdxs[AIndex]];
     if AColorCpns = 1 then
@@ -4903,7 +4921,7 @@ var
       Exit;
 
     Frame := TFrame(AData);
-    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, cClusterWavelets, False, False, cClusterQWeighting, False, False, AColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
+    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, GlobalTilingMode = pvsWavelets, False, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
   end;
 
   procedure DoInsert(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -5888,6 +5906,7 @@ begin
   FPaletteBitmap := TBitmap.Create;
 
   FRenderPage := rpOutput;
+  FRenderMode := pvsDCT;
   ReframeUI(80, 45);
   FFramesPerSecond := 24.0;
 
