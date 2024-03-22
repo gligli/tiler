@@ -4889,6 +4889,7 @@ var
     frmIdx, palIdx: Integer;
     Frame: TFrame;
     Tile: PTile;
+    HMirror, VMirror: Boolean;
     DCT: array[0 .. cTileDCTSize - 1] of Double;
   begin
     if not InRange(AIndex, 0, clusterCount - 1) then
@@ -4908,6 +4909,10 @@ var
       DitherTile(Tile^, Frame.PKeyframe.Palettes[palIdx].BWMixingPlan)
     else
       DitherTile(Tile^, Frame.PKeyframe.Palettes[palIdx].MixingPlan);
+
+    GetTileHVMirrorHeuristics(Tile^, HMirror, VMirror);
+    if HMirror then HMirrorTile(Tile^);
+    if VMirror then VMirrorTile(Tile^);
 
     Tile^.Active := True;
   end;
