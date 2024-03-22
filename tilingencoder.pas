@@ -5442,7 +5442,7 @@ var
     if Length(Frame.PKeyframe.Palettes) <= palIdx then
     begin
       SetLength(Frame.PKeyframe.Palettes, palIdx + 1);
-      for i := 0 to FPaletteCount - 1 do
+      for i := 0 to palIdx do
         SetLength(Frame.PKeyframe.Palettes[i].PaletteRGB, FPaletteSize);
 
       FPaletteCount := Length(Frame.PKeyframe.Palettes);
