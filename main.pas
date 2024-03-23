@@ -21,6 +21,7 @@ type
     cbxGlobMode: TComboBox;
     cbxDitheringMode: TComboBox;
     cbxFTMode: TComboBox;
+    chkClusterFromPal: TCheckBox;
     chkGlobLumaOnly: TCheckBox;
     chkGlobGamma: TCheckBox;
     chkPosterize: TCheckBox;
@@ -628,6 +629,7 @@ begin
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
+  FTilingEncoder.GlobalTilingFromPalette := chkClusterFromPal.Checked;
   FTilingEncoder.GlobalTilingUseGamma := chkGlobGamma.Checked;
   FTilingEncoder.GlobalTilingMode := TPsyVisMode(cbxGlobMode.ItemIndex);
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
@@ -699,6 +701,7 @@ begin
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
    cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
+   chkClusterFromPal.Checked := FTilingEncoder.GlobalTilingFromPalette;
    chkGlobGamma.Checked := FTilingEncoder.GlobalTilingUseGamma;
    cbxGlobMode.ItemIndex := Ord(FTilingEncoder.GlobalTilingMode);
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;

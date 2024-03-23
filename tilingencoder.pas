@@ -355,6 +355,7 @@ type
     FDitheringMode: TPsyVisMode;
     FDitheringUseThomasKnoll: Boolean;
     FDitheringYliluoma2MixedColors: Integer;
+    FGlobalTilingFromPalette: Boolean;
     FGlobalTilingUseGamma: Boolean;
     FGlobalTilingMode: TPsyVisMode;
     FGlobalTilingTileCount: Integer;
@@ -548,6 +549,7 @@ type
     property DitheringMode: TPsyVisMode read FDitheringMode write FDitheringMode;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
     property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
+    property GlobalTilingFromPalette: Boolean read FGlobalTilingFromPalette write FGlobalTilingFromPalette;
     property GlobalTilingUseGamma: Boolean read FGlobalTilingUseGamma write FGlobalTilingUseGamma;
     property GlobalTilingMode: TPsyVisMode read FGlobalTilingMode write FGlobalTilingMode;
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
@@ -4393,6 +4395,7 @@ begin
     ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
+    ini.WriteBool('GlobalTiling', 'GlobalTilingFromPalette', GlobalTilingFromPalette);
     ini.WriteBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingMode', Ord(GlobalTilingMode));
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
@@ -4443,6 +4446,7 @@ begin
     DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
+    GlobalTilingFromPalette := ini.ReadBool('GlobalTiling', 'GlobalTilingFromPalette', GlobalTilingFromPalette);
     GlobalTilingUseGamma := ini.ReadBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     GlobalTilingMode := TPsyVisMode(EnsureRange(ini.ReadInteger('GlobalTiling', 'GlobalTilingMode', Ord(GlobalTilingMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
@@ -4487,6 +4491,7 @@ begin
   DitheringUseThomasKnoll := True;
   DitheringYliluoma2MixedColors := 4;
 
+  GlobalTilingFromPalette := True;
   GlobalTilingUseGamma := False;
   GlobalTilingMode := pvsWavelets;
   GlobalTilingQualityBasedTileCount := 7.0;
@@ -4902,12 +4907,21 @@ var
   procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     Frame: TFrame;
+    TMI: PTileMapItem;
+    sx, sy: Integer;
   begin
     if not InRange(AIndex, 0, FTileMapSize - 1) then
       Exit;
 
     Frame := TFrame(AData);
-    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, GlobalTilingMode = pvsWavelets, False, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
+
+    DivMod(AIndex, FTileMapWidth, sy, sx);
+    TMI := @Frame.TileMap[sy, sx];
+
+    if FGlobalTilingFromPalette then
+      DitherTile(Frame.FrameTiles[AIndex]^, Frame.PKeyFrame.Palettes[TMI^.PalIdx].MixingPlan);
+
+    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.PalIdx].PaletteRGB, @DCTs[AIndex, 0]);
   end;
 
   procedure DoInsert(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);

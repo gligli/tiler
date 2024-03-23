@@ -182,7 +182,7 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 10
         OnChange = UpdateGUI
-        TabOrder = 19
+        TabOrder = 20
       end
       object seStartFrame: TSpinEdit
         Left = 872
@@ -224,7 +224,7 @@ object MainForm: TMainForm
         Top = 414
         Width = 251
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
-        TabOrder = 26
+        TabOrder = 28
         OnChange = UpdateGUI
       end
       object Label13: TLabel
@@ -297,7 +297,7 @@ object MainForm: TMainForm
         Top = 396
         Width = 168
         Caption = 'Dithering gamma correction'
-        TabOrder = 29
+        TabOrder = 31
         OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
@@ -306,7 +306,7 @@ object MainForm: TMainForm
         Top = 432
         Width = 182
         Caption = 'Reconstruct gamma correction'
-        TabOrder = 31
+        TabOrder = 33
         OnChange = UpdateGUI
       end
       object Label10: TLabel
@@ -326,7 +326,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 20
+        TabOrder = 21
         Value = 2
       end
       object seVisGamma: TFloatSpinEdit
@@ -338,7 +338,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateVideo
-        TabOrder = 21
+        TabOrder = 22
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
@@ -474,7 +474,7 @@ object MainForm: TMainForm
         Top = 396
         Width = 292
         Caption = 'Use Yakmo KMeans as quantizer (not Dennis Lee v3)'
-        TabOrder = 25
+        TabOrder = 27
         OnChange = UpdateGUI
       end
       object chkPosterize: TCheckBox
@@ -507,12 +507,12 @@ object MainForm: TMainForm
         OnChange = UpdateGUI
       end
       object chkFTFromPal: TCheckBox
-        Left = 8
+        Left = 328
         Height = 19
-        Top = 451
-        Width = 203
-        Caption = 'Do reconstruct from palettized tiles'
-        TabOrder = 28
+        Top = 450
+        Width = 188
+        Caption = 'Reconstruct from palettized tiles'
+        TabOrder = 34
         OnChange = UpdateGUI
       end
       object Label16: TLabel
@@ -595,7 +595,7 @@ object MainForm: TMainForm
         Top = 414
         Width = 156
         Caption = 'Cluster gamma correction'
-        TabOrder = 30
+        TabOrder = 32
         OnChange = UpdateGUI
       end
       object chkGlobLumaOnly: TCheckBox
@@ -604,7 +604,7 @@ object MainForm: TMainForm
         Top = 432
         Width = 225
         Caption = 'Cluster from luma features only (faster)'
-        TabOrder = 27
+        TabOrder = 29
         OnChange = UpdateGUI
       end
       object tbGlobRatio: TTrackBar
@@ -617,7 +617,7 @@ object MainForm: TMainForm
         OnChange = UpdateGUI
         Position = 1
         ShowSelRange = False
-        TabOrder = 32
+        TabOrder = 19
       end
       object Label23: TLabel
         Left = 8
@@ -658,7 +658,7 @@ object MainForm: TMainForm
           'Haar wavelets'
         )
         Style = csDropDownList
-        TabOrder = 22
+        TabOrder = 23
         OnChange = UpdateGUI
       end
       object cbxGlobMode: TComboBox
@@ -674,7 +674,7 @@ object MainForm: TMainForm
           'Haar wavelets'
         )
         Style = csDropDownList
-        TabOrder = 23
+        TabOrder = 24
         OnChange = UpdateGUI
       end
       object cbxFTMode: TComboBox
@@ -690,7 +690,7 @@ object MainForm: TMainForm
           'Haar wavelets'
         )
         Style = csDropDownList
-        TabOrder = 24
+        TabOrder = 25
         OnChange = UpdateGUI
       end
       object cbxVisMode: TComboBox
@@ -706,8 +706,17 @@ object MainForm: TMainForm
           'Haar wavelets'
         )
         Style = csDropDownList
-        TabOrder = 33
+        TabOrder = 26
         OnChange = UpdateVideo
+      end
+      object chkClusterFromPal: TCheckBox
+        Left = 8
+        Height = 19
+        Top = 450
+        Width = 162
+        Caption = 'Cluster from palettized tiles'
+        TabOrder = 30
+        OnChange = UpdateGUI
       end
     end
     object tsInput: TTabSheet
