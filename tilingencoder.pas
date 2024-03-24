@@ -2063,6 +2063,10 @@ begin
         pPrevDCT := @GetDCT(prevFrame, prevTMI)^[0];
 
         T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
+
+        if Encoder.FFrameTilingFromPalette then
+          Encoder.DitherTile(T^, Frame.PKeyframe.Palettes[TMI^.Smoothed.PalIdx].MixingPlan);
+
         Encoder.ComputeTilePsyVisFeatures(T^,
             Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT,
             T^.HMirror_Initial, T^.VMirror_Initial, cColorCpns, AFTGamma,
