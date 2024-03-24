@@ -11,16 +11,16 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, IniFiles, Graphics,
-  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils;
+  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils, sle;
 
 type
-  TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esCluster, esReconstruct, esSmooth, esReindex, esSave);
+  TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esCluster, esReconstruct, esSmooth, esBlend, esReindex, esSave);
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
   TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets);
 
 const
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, -1, 6, -1, -1, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, -1, 6, -1, -1, -1, 2, 1);
 
 type
   // GliGli's TileMotion header structs and commands
@@ -180,31 +180,51 @@ type
 
   { TTileMapItem }
 
-  TTileMapItem = packed record
+  TBaseTileMapItem = packed record
     TileIdx: Integer;
-    ResidualErr: Single;
     PalIdx: SmallInt;
-    Flags: set of (tmfHMirror, tmfVMirror, tmfSmoothed);
+    Flags: set of (tmfHMirror, tmfVMirror);
+  end;
+
+  TTileMapItem = packed record
+    Base, Smoothed: TBaseTileMapItem;
+    ResidualErr: Single;
+    BlendPrev, BlendOffset: Byte;
+    BlendedX, BlendedY: ShortInt;
+    Flags: set of (tmfSmoothed, tmfBlended, tmfReverseBlended);
   end;
 
   PTileMapItem = ^TTileMapItem;
 
   TTileMapItems = array of TTileMapItem;
 
-  { TTileMapItemHelper }
+  { TBaseTileMapItemHelper }
 
-  TTileMapItemHelper = record helper for TTileMapItem
+  TBaseTileMapItemHelper = record helper for TBaseTileMapItem
   private
     function GetHMirror: Boolean;
     function GetVMirror: Boolean;
     procedure SetHMirror(AValue: Boolean);
     procedure SetVMirror(AValue: Boolean);
-    function GetSmoothed: Boolean;
-    procedure SetSmoothed(AValue: Boolean);
   public
     property HMirror: Boolean read GetHMirror write SetHMirror;
     property VMirror: Boolean read GetVMirror write SetVMirror;
-    property Smoothed: Boolean read GetSmoothed write SetSmoothed;
+  end;
+
+  { TTileMapItemHelper }
+
+  TTileMapItemHelper = record helper for TTileMapItem
+  private
+    function GetIsBlended: Boolean;
+    function GetIsReverseBlended: Boolean;
+    procedure SetIsBlended(AValue: Boolean);
+    function GetIsSmoothed: Boolean;
+    procedure SetIsReverseBlended(AValue: Boolean);
+    procedure SetIsSmoothed(AValue: Boolean);
+  public
+    property IsSmoothed: Boolean read GetIsSmoothed write SetIsSmoothed;
+    property IsBlended: Boolean read GetIsBlended write SetIsBlended;
+    property IsReverseBlended: Boolean read GetIsReverseBlended write SetIsReverseBlended;
   end;
 
   { TTilingDataset }
@@ -273,10 +293,12 @@ type
     FrameTilesRefCount: Integer;
     FrameTilesEvent: THandle;
 
+    Palettes: array of TPalette;
+
     TileDS: array of PTilingDataset;
     ReconstructErrCml: Double;
 
-    Palettes: array of TPalette;
+    BlendEvent: THandle;
 
     procedure LogResidualErr;
 
@@ -295,12 +317,14 @@ type
     procedure DoTiling(APalIdx: Integer; AFTGamma: Integer);
     procedure FinishTiling(APalIdx: Integer);
     procedure DoTemporalSmoothing(AFrame, APrevFrame: TFrame);
+    procedure DoBlending(AFTGamma: Integer; AFirstFrame: Boolean);
 
     // processes
 
     procedure PreparePalettes;
     procedure Reconstruct;
     procedure Smooth;
+    procedure Blend;
   end;
 
   TKeyFrameArray =  array of TKeyFrame;
@@ -365,6 +389,8 @@ type
     FFrameTilingFromPalette: Boolean;
     FFrameTilingUseGamma: Boolean;
     FFrameTilingMode: TPsyVisMode;
+    FTileBlendingMax: Integer;
+    FTileBlendingRadius: Integer;
     FSmoothingFactor: Double;
     FShotTransMaxSecondsPerKF: Double;
     FShotTransMinSecondsPerKF: Double;
@@ -373,6 +399,7 @@ type
     // GUI state variables
 
     FRenderPrevKeyFrame: TKeyFrame;
+    FRenderBlended: Boolean;
     FRenderFrameIndex: Integer;
     FRenderGammaValue: Double;
     FRenderPage: TRenderPage;
@@ -400,11 +427,14 @@ type
     function GetFrameCount: Integer;
     function GetKeyFrameCount: Integer;
     function GetMaxThreadCount: Integer;
+    function GetTileBlendingDepth: Integer;
     function GetTiles: PTileDynArray;
     procedure SetDitheringYliluoma2MixedColors(AValue: Integer);
     procedure SetEncoderGammaValue(AValue: Double);
     procedure SetFrameCountSetting(AValue: Integer);
     procedure SetFramesPerSecond(AValue: Double);
+    procedure SetTileBlendingRadius(AValue: Integer);
+    procedure SetTileBlendingDepth(AValue: Integer);
     procedure SetGlobalTilingQualityBasedTileCount(AValue: Double);
     procedure SetGlobalTilingRatio(AValue: Double);
     procedure SetMaxThreadCount(AValue: Integer);
@@ -479,6 +509,9 @@ type
     procedure OptimizeGlobalPalettes;
     procedure DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
 
+    procedure RenderTile(AFrame: TFrame; ASY, ASX: Integer; var outTile: TTile; AMirrors, ADithering, ASmoothing,
+      ABlending: Boolean);
+
     procedure ReindexTiles(KeepRGBPixels: Boolean);
 
     procedure LoadStream(AStream: TStream);
@@ -491,6 +524,7 @@ type
     procedure Cluster;
     procedure Reconstruct;
     procedure Smooth;
+    procedure Blend;
     procedure Reindex;
     procedure Save;
   public
@@ -559,6 +593,8 @@ type
     property FrameTilingFromPalette: Boolean read FFrameTilingFromPalette write FFrameTilingFromPalette;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingMode: TPsyVisMode read FFrameTilingMode write FFrameTilingMode;
+    property TileBlendingDepth: Integer read GetTileBlendingDepth write SetTileBlendingDepth;
+    property TileBlendingRadius: Integer read FTileBlendingRadius write SetTileBlendingRadius;
     property SmoothingFactor: Double read FSmoothingFactor write SetSmoothingFactor;
     property MaxThreadCount: Integer read GetMaxThreadCount write SetMaxThreadCount;
     property ShotTransMaxSecondsPerKF: Double read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
@@ -570,6 +606,7 @@ type
 
     property RenderPlaying: Boolean read FRenderPlaying write FRenderPlaying;
     property RenderFrameIndex: Integer read FRenderFrameIndex write SetRenderFrameIndex;
+    property RenderBlended: Boolean read FRenderBlended write FRenderBlended;
     property RenderMirrored: Boolean read FRenderMirrored write FRenderMirrored;
     property RenderSmoothed: Boolean read FRenderSmoothed write FRenderSmoothed;
     property RenderDithered: Boolean read FRenderDithered write FRenderDithered;
@@ -615,42 +652,40 @@ const
       Result := t1^.ComparePalPixelsTo(t2^);
   end;
 
-
-
 { TTileMapItemHelper }
 
-function TTileMapItemHelper.GetHMirror: Boolean;
+function TTileMapItemHelper.GetIsBlended: Boolean;
 begin
-  Result := tmfHMirror in Flags;
+  Result := tmfBlended in Flags;
 end;
 
-function TTileMapItemHelper.GetVMirror: Boolean;
+function TTileMapItemHelper.GetIsReverseBlended: Boolean;
 begin
-  Result := tmfVMirror in Flags;
+  Result := tmfReverseBlended in Flags;
 end;
 
-procedure TTileMapItemHelper.SetHMirror(AValue: Boolean);
-begin
-  if AValue then
-    Flags += [tmfHMirror]
-  else
-    Flags -= [tmfHMirror];
-end;
-
-procedure TTileMapItemHelper.SetVMirror(AValue: Boolean);
+procedure TTileMapItemHelper.SetIsBlended(AValue: Boolean);
 begin
   if AValue then
-    Flags += [tmfVMirror]
+    Flags += [tmfBlended]
   else
-    Flags -= [tmfVMirror];
+    Flags -= [tmfBlended];
 end;
 
-function TTileMapItemHelper.GetSmoothed: Boolean;
+function TTileMapItemHelper.GetIsSmoothed: Boolean;
 begin
   Result := tmfSmoothed in Flags;
 end;
 
-procedure TTileMapItemHelper.SetSmoothed(AValue: Boolean);
+procedure TTileMapItemHelper.SetIsReverseBlended(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfReverseBlended]
+  else
+    Flags -= [tmfReverseBlended];
+end;
+
+procedure TTileMapItemHelper.SetIsSmoothed(AValue: Boolean);
 begin
   if AValue then
     Flags += [tmfSmoothed]
@@ -961,6 +996,34 @@ begin
     CopyRGBPixels(ATile.GetRGBPixelsPtr^);
 end;
 
+{ TBaseTileMapItemHelper }
+
+function TBaseTileMapItemHelper.GetHMirror: Boolean;
+begin
+  Result := tmfHMirror in Flags;
+end;
+
+function TBaseTileMapItemHelper.GetVMirror: Boolean;
+begin
+  Result := tmfVMirror in Flags;
+end;
+
+procedure TBaseTileMapItemHelper.SetHMirror(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfHMirror]
+  else
+    Flags -= [tmfHMirror];
+end;
+
+procedure TBaseTileMapItemHelper.SetVMirror(AValue: Boolean);
+begin
+  if AValue then
+    Flags += [tmfVMirror]
+  else
+    Flags -= [tmfVMirror];
+end;
+
 { TKeyFrame }
 
 procedure TKeyFrame.LogResidualErr;
@@ -993,10 +1056,12 @@ begin
   FramesLeft := -1;
 
   FrameTilesEvent := CreateEvent(nil, True, False, nil);
+  BlendEvent := CreateEvent(nil, True, False, nil);
 end;
 
 destructor TKeyFrame.Destroy;
 begin
+  CloseHandle(BlendEvent);
   CloseHandle(FrameTilesEvent);
   inherited Destroy;
 end;
@@ -1250,7 +1315,7 @@ begin
     for sy := 0 to Encoder.FTileMapHeight - 1 do
       for sx := 0 to Encoder.FTileMapWidth - 1 do
       begin
-        Frame.TileMap[sy, sx].PalIdx := PalIdxLUT[YakmoClusters[ANNClusters[di]]];
+        Frame.TileMap[sy, sx].Base.PalIdx := PalIdxLUT[YakmoClusters[ANNClusters[di]]];
         Inc(di);
       end;
   end;
@@ -1284,7 +1349,7 @@ var
           for sx := 0 to Encoder.FTileMapWidth - 1 do
           begin
             Tile := Encoder.FFrames[i].FrameTiles[sy * Encoder.FTileMapWidth + sx];
-            if Tile^.Active and (Encoder.FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
+            if Tile^.Active and (Encoder.FFrames[i].TileMap[sy, sx].Base.PalIdx = APalIdx) then
               Inc(tileCnt);
           end;
 
@@ -1315,7 +1380,7 @@ var
           begin
             Tile := Encoder.FFrames[i].FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
-            if Tile^.Active and (Encoder.FFrames[i].TileMap[sy, sx].PalIdx = APalIdx) then
+            if Tile^.Active and (Encoder.FFrames[i].TileMap[sy, sx].Base.PalIdx = APalIdx) then
             begin
               j := ((dy * cTileWidth) * tileFx * cTileWidth + (dx * cTileWidth)) * 3;
               k := sy * Encoder.FTileMapWidth + sx;
@@ -1375,7 +1440,7 @@ var
     for frmIdx := StartFrame to EndFrame do
       for sy := 0 to Encoder.FTileMapHeight - 1 do
         for sx := 0 to Encoder.FTileMapWidth - 1 do
-          if Encoder.FFrames[frmIdx].TileMap[sy, sx].PalIdx = APalIdx then
+          if Encoder.FFrames[frmIdx].TileMap[sy, sx].Base.PalIdx = APalIdx then
             Inc(DSLen);
 
     SetLength(Dataset, DSLen * Sqr(cTileWidth), cFeatureCount);
@@ -1388,7 +1453,7 @@ var
     for frmIdx := StartFrame to EndFrame do
       for sy := 0 to Encoder.FTileMapHeight - 1 do
         for sx := 0 to Encoder.FTileMapWidth - 1 do
-          if Encoder.FFrames[frmIdx].TileMap[sy, sx].PalIdx = APalIdx then
+          if Encoder.FFrames[frmIdx].TileMap[sy, sx].Base.PalIdx = APalIdx then
           begin
             Tile := Encoder.FFrames[frmIdx].FrameTiles[sy * Encoder.FTileMapWidth + sx];
             for ty := 0 to cTileWidth - 1 do
@@ -1683,50 +1748,6 @@ begin
   WriteLn('KF: ', StartFrame:8, ' OptimizePalettes: ', iteration, ' iterations');
 end;
 
-procedure TKeyFrame.DoTemporalSmoothing(AFrame, APrevFrame: TFrame);
-var
-  sx, sy: Integer;
-  cmp: TFloat;
-  Tile, PrevTile: PTile;
-  TMI, PrevTMI: PTileMapItem;
-  CurDCT, PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
-begin
-  Assert(Assigned(AFrame));
-  Assert(AFrame.PKeyFrame = Self);
-  Assert(Assigned(APrevFrame));
-  Assert(APrevFrame.PKeyFrame = Self);
-
-  for sy := 0 to Encoder.FTileMapHeight - 1 do
-    for sx := 0 to Encoder.FTileMapWidth - 1 do
-    begin
-      TMI := @AFrame.TileMap[sy, sx];
-      PrevTMI := @APrevFrame.TileMap[sy, sx];
-
-      Tile := Encoder.FTiles[TMI^.TileIdx];
-      PrevTile := Encoder.FTiles[PrevTMI^.TileIdx];
-
-      Encoder.ComputeTilePsyVisFeatures(
-          Tile^, False, True, False,
-          TMI^.HMirror, TMI^.VMirror,
-          cSmoothingQWeighting, cColorCpns, -1,
-          AFrame.PKeyframe.Palettes[TMI^.PalIdx].PaletteRGB, PFloat(@CurDCT[0]));
-
-      Encoder.ComputeTilePsyVisFeatures(
-          PrevTile^, False, True, False,
-          PrevTMI^.HMirror, PrevTMI^.VMirror,
-          cSmoothingQWeighting, cColorCpns, -1,
-          APrevFrame.PKeyframe.Palettes[PrevTMI^.PalIdx].PaletteRGB, PFloat(@PrevDCT[0]));
-
-      // compare DCT of current tile with tile from prev frame tilemap
-
-      cmp := CompareEuclideanDCT(CurDCT, PrevDCT);
-      cmp := sqrt(cmp);
-
-      // if difference is low enough, mark the tile as smoothed for tilemap compression use
-
-      TMI^.Smoothed := cmp <= Encoder.FSmoothingFactor;
-    end;
-end;
 
 procedure TKeyFrame.PreparePalettes;
 
@@ -1780,10 +1801,33 @@ begin
     ReconstructErrCml := 0.0;
 
     ProcThreadPool.DoParallelLocalProc(@DoCluster, 0, Encoder.FPaletteCount - 1);
-
     LogResidualErr;
   finally
     SetLength(TileDS, 0);
+    ReleaseFrameTiles;
+  end;
+end;
+
+procedure TKeyFrame.Blend;
+var
+  gammaCor: Integer;
+begin
+  gammaCor := IfThen(Encoder.FFrameTilingUseGamma, 0, -1);
+
+  AcquireFrameTiles;
+  try
+    DoBlending(gammaCor, False);
+
+    if Index > 0 then
+    begin
+      WaitForSingleObject(Encoder.FKeyFrames[Index - 1].BlendEvent, INFINITE);
+      DoBlending(gammaCor, True);
+    end;
+
+    SetEvent(BlendEvent);
+
+    LogResidualErr;
+  finally
     ReleaseFrameTiles;
   end;
 end;
@@ -1864,7 +1908,7 @@ begin
       begin
         TMI := @Frame.TileMap[sy, sx];
 
-        if TMI^.PalIdx <> APalIdx then
+        if TMI^.Base.PalIdx <> APalIdx then
           Continue;
 
         // prepare KNN query
@@ -1872,12 +1916,12 @@ begin
         T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
         if Encoder.FFrameTilingFromPalette then
-          Encoder.DitherTile(T^, Frame.PKeyframe.Palettes[TMI^.PalIdx].MixingPlan);
+          Encoder.DitherTile(T^, Frame.PKeyframe.Palettes[TMI^.Base.PalIdx].MixingPlan);
 
         Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, @DCT[0]);
 
-        TMI^.HMirror := T^.HMirror_Initial;
-        TMI^.VMirror := T^.VMirror_Initial;
+        TMI^.Base.HMirror := T^.HMirror_Initial;
+        TMI^.Base.VMirror := T^.VMirror_Initial;
 
         // query KNN
 
@@ -1887,9 +1931,15 @@ begin
 
         if InRange(dsIdx, 0, DS^.KNNSize - 1) then
         begin
-          TMI^.TileIdx := dsIdx;
+          TMI^.Base.TileIdx := dsIdx;
           TMI^.ResidualErr := dsErr;
-          TMI^.Smoothed := False;
+          TMI^.BlendedX := High(ShortInt);
+          TMI^.BlendedY := High(ShortInt);
+          TMI^.BlendPrev := Encoder.FTileBlendingMax;
+          TMI^.BlendOffset := 0;
+          TMI^.Flags := [];
+
+          TMI^.Smoothed := TMI^.Base;
 
           errCml += TMI^.ResidualErr;
         end;
@@ -1897,6 +1947,235 @@ begin
   end;
 
   ReconstructErrCml += errCml;
+end;
+
+procedure TKeyFrame.DoBlending(AFTGamma: Integer; AFirstFrame: Boolean);
+var
+  sx, sy, ox, oy, frmIdx, radius: Integer;
+  errCml: Double;
+
+  T: PTile;
+  Frame, prevFrame: TFrame;
+  TMI, prevTMI, offsetTMI: PTileMapItem;
+
+  PlainDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  DCTs: TFloatDynArray3;
+  pPrevDCT, pOffsetDCT: PFloat;
+
+  Best: TKFTilingBest;
+
+  procedure TestBestErr(err: TFloat; bp, bo: Integer);
+  begin
+    if err < Best.ResidualErr then
+    begin
+      Best.ResidualErr := err;
+      Best.BlendPrev := bp;
+      Best.BlendOffset := bo;
+      Best.BlendedX := ox - sx;
+      Best.BlendedY := oy - sy;
+    end;
+  end;
+
+  procedure SearchBlending2P(Plain, Prev, Offset: PFloat);
+  var
+    i, term, bp, bo: Integer;
+    fcp: array[0 .. 1] of ArbFloat;
+    prevOff: array[0 .. cTileDCTSize * 2 - 1] of ArbFloat;
+    fp, fo, err: TFloat;
+  begin
+    for i := 0 to cTileDCTSize - 1 do
+    begin
+      prevOff[i * 2 + 0] := Prev[i];
+      prevOff[i * 2 + 1] := Offset[i];
+    end;
+
+    slegls(prevOff[0], cTileDCTSize, 2, 2, Plain[0], fcp[0], term);
+    if term = 1 then
+    begin
+      bp := EnsureRange(round(fcp[0] * Encoder.FTileBlendingMax), 1, Encoder.FTileBlendingMax);
+      fp := bp * (1.0 / Encoder.FTileBlendingMax);
+
+      // try to compensate for rounding to 16 levels by sending rounding error to other parameter
+
+      fo := fcp[1] + fcp[0] - fp;
+      bo := EnsureRange(round(fo * Encoder.FTileBlendingMax), 1, Encoder.FTileBlendingMax);
+      fo := bo * (1.0 / Encoder.FTileBlendingMax);
+
+      err := ComputeBlendingError_Asm(@Plain[0], @Prev[0], @Offset[0], fp, fo);
+      TestBestErr(err, bp, bo);
+    end;
+  end;
+
+  function GetDCT(AFrame: TFrame; ATMI: PTileMapItem): PFloatDynArray;
+  var
+    key: Integer;
+  begin
+    key := Ord(ATMI^.Smoothed.HMirror) or (Ord(ATMI^.Smoothed.VMirror) shl 1) or (Ord(AFrame.PKeyFrame <> Self) shl 2) or (ATMI^.Smoothed.PalIdx shl 3);
+
+    Result := @DCTs[ATMI^.Smoothed.TileIdx, key];
+
+    if not Assigned(Result^) then
+    begin
+      SetLength(Result^, cTileDCTSize);
+      Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[ATMI^.Smoothed.TileIdx]^,
+          Encoder.FrameTilingMode = pvsWavelets , True, False, Encoder.FrameTilingMode = pvsWeightedDCT,
+         ATMI^.Smoothed.HMirror, ATMI^.Smoothed.VMirror, cColorCpns, AFTGamma,
+         AFrame.PKeyFrame.Palettes[ATMI^.Smoothed.PalIdx].PaletteRGB, @Result^[0]);
+    end;
+  end;
+
+begin
+  errCml := 0.0;
+  radius := Encoder.FTileBlendingRadius;
+
+  SetLength(DCTs, Length(Encoder.FTiles), Encoder.FPaletteCount * 2 {prevKF?} * 4 {mirrors});
+
+  // try to blend a tile of the previous frame to improve likeliness
+
+  for frmIdx := IfThen(AFirstFrame, StartFrame, StartFrame + 1) to IfThen(AFirstFrame, StartFrame, EndFrame) do
+  begin
+    Frame := Encoder.FFrames[frmIdx];
+    if Frame.Index <= 0 then
+      Continue;
+
+    prevFrame := Encoder.FFrames[frmIdx - 1];
+
+    for sy := 0 to Encoder.FTileMapHeight - 1 do
+      for sx := 0 to Encoder.FTileMapWidth - 1 do
+      begin
+        Best.ResidualErr := Infinity;
+        Best.BlendedX := High(ShortInt);
+        Best.BlendedY := High(ShortInt);
+        Best.BlendPrev := Encoder.FTileBlendingMax;
+        Best.BlendOffset := 0;
+
+        TMI := @Frame.TileMap[sy, sx];
+
+        if TMI^.IsSmoothed or TMI^.IsReverseBlended then
+          Continue;
+
+        prevTMI := @prevFrame.TileMap[sy, sx];
+
+        if prevTMI^.IsSmoothed then
+          Continue;
+
+        Assert(Assigned(GetDCT(prevFrame, prevTMI)^));
+        pPrevDCT := @GetDCT(prevFrame, prevTMI)^[0];
+
+        T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
+        Encoder.ComputeTilePsyVisFeatures(T^,
+            Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT,
+            T^.HMirror_Initial, T^.VMirror_Initial, cColorCpns, AFTGamma,
+            Frame.PKeyFrame.Palettes[TMI^.Smoothed.PalIdx].PaletteRGB, @PlainDCT[0]);
+
+        for oy := sy - radius to sy + radius do
+        begin
+          if not InRange(oy, 0, Encoder.FTileMapHeight - 1) or (oy = sy) then
+            Continue;
+
+          for ox := sx - radius to sx + radius do
+          begin
+            if not InRange(ox, 0, Encoder.FTileMapWidth - 1) or (ox = sx) then
+              Continue;
+
+            offsetTMI := @prevFrame.TileMap[oy, ox];
+
+            if offsetTMI^.IsSmoothed then
+              Continue;
+
+            Assert(Assigned(GetDCT(prevFrame, offsetTMI)^));
+            pOffsetDCT := @GetDCT(prevFrame, offsetTMI)^[0];
+
+            SearchBlending2P(@PlainDCT[0], pPrevDCT, pOffsetDCT);
+          end;
+        end;
+
+        if Best.ResidualErr < TMI^.ResidualErr then
+        begin
+          errCml += Best.ResidualErr - TMI^.ResidualErr;
+
+          prevTMI^.IsReverseBlended := True;
+
+          offsetTMI := @prevFrame.TileMap[sy + Best.BlendedY, sx + Best.BlendedX];
+          offsetTMI^.IsReverseBlended := True;
+
+          TMI^.Smoothed := prevTMI^.Smoothed;
+
+          TMI^.ResidualErr := Best.ResidualErr;
+          TMI^.BlendedX := Best.BlendedX;
+          TMI^.BlendedY := Best.BlendedY;
+          TMI^.BlendPrev := Best.BlendPrev;
+          TMI^.BlendOffset := Best.BlendOffset;
+          TMI^.IsBlended := True;
+        end
+        else
+        begin
+          TMI^.IsBlended := False;
+        end;
+      end;
+  end;
+
+  ReconstructErrCml += errCml;
+end;
+
+procedure TKeyFrame.DoTemporalSmoothing(AFrame, APrevFrame: TFrame);
+var
+  sx, sy: Integer;
+  cmp, cmlUseCount, prevCmlUseCount: TFloat;
+  Tile, PrevTile: PTile;
+  TMI, PrevTMI: PTileMapItem;
+  CurDCT, PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+begin
+  Assert(Assigned(AFrame));
+  Assert(AFrame.PKeyFrame = Self);
+  Assert(Assigned(APrevFrame));
+  Assert(APrevFrame.PKeyFrame = Self);
+
+  Tile := TTile.New(True, False);
+  PrevTile := TTile.New(True, False);
+  try
+    for sy := 0 to Encoder.FTileMapHeight - 1 do
+      for sx := 0 to Encoder.FTileMapWidth - 1 do
+      begin
+        TMI := @AFrame.TileMap[sy, sx];
+        PrevTMI := @APrevFrame.TileMap[sy, sx];
+
+        if TMI^.IsBlended or PrevTMI^.IsBlended then
+          Continue;
+
+        Encoder.RenderTile(AFrame, sy, sx, Tile^, True, True, True, False);
+        Encoder.RenderTile(APrevFrame, sy, sx, PrevTile^, True, True, True, False);
+
+        Encoder.ComputeTilePsyVisFeatures(Tile^, False, False, False, cSmoothingQWeighting, False, False, cColorCpns, -1, nil, PFloat(@CurDCT[0]));
+        Encoder.ComputeTilePsyVisFeatures(PrevTile^, False, False, False, cSmoothingQWeighting, False, False, cColorCpns, -1, nil, PFloat(@PrevDCT[0]));
+
+        // compare DCT of current tile with tile from prev frame tilemap
+
+        cmp := CompareEuclideanDCT(CurDCT, PrevDCT);
+        cmp := sqrt(cmp);
+
+        // if difference is low enough, mark the tile as smoothed for tilemap compression use
+
+        if (cmp <= Encoder.FSmoothingFactor) then
+        begin
+          Assert(InRange(TMI^.Smoothed.TileIdx, 0, High(Encoder.Tiles)));
+          cmlUseCount := Encoder.Tiles[TMI^.Smoothed.TileIdx]^.UseCount;
+
+          Assert(InRange(PrevTMI^.Smoothed.TileIdx, 0, High(Encoder.Tiles)));
+          prevCmlUseCount := Encoder.Tiles[PrevTMI^.Smoothed.TileIdx]^.UseCount;
+
+          if cmlUseCount >= prevCmlUseCount then // a higher usecount means more compressibility
+            PrevTMI^.Smoothed := TMI^.Smoothed
+          else
+            TMI^.Smoothed := PrevTMI^.Smoothed;
+
+          TMI^.IsSmoothed := True;
+        end;
+      end;
+  finally
+    TTile.Dispose(Tile);
+    TTile.Dispose(PrevTile);
+  end;
 end;
 
 procedure TKeyFrame.Smooth;
@@ -1913,7 +2192,9 @@ begin
       begin
         TMI := @Encoder.FFrames[frmIdx].TileMap[sy, sx];
 
-        TMI^.Smoothed := False;
+        TMI^.IsSmoothed := False;
+
+        TMI^.Smoothed := TMI^.Base;
       end;
 
   // iteratively smooth frames
@@ -2213,6 +2494,37 @@ begin
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
 
+procedure TTilingEncoder.Blend;
+var
+  StepProgress: Integer;
+
+  procedure DoRun(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    keyFrame: TKeyFrame;
+  begin
+    if not InRange(AIndex, 0, High(FKeyFrames)) then
+      Exit;
+
+    keyFrame := FKeyFrames[AIndex];
+
+    keyFrame.Blend;
+
+    Inc(StepProgress, keyFrame.FrameCount);
+    ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esBlend, AItem.Thread);
+  end;
+
+begin
+  if (Length(FFrames) = 0) or (FTileBlendingRadius <= 0) then
+    Exit;
+
+  StepProgress := 0;
+  ProgressRedraw(0, '', esBlend);
+
+  FKeyFramesLeft := Length(FKeyFrames);
+
+  ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
+end;
+
 procedure TTilingEncoder.Reindex;
 
   procedure HandleTileIndex(ATileIndex: Integer);
@@ -2246,7 +2558,8 @@ begin
       begin
         TMI := @FFrames[frmIdx].TileMap[sy, sx];
 
-        HandleTileIndex(TMI^.TileIdx);
+        HandleTileIndex(TMI^.Base.TileIdx);
+        HandleTileIndex(TMI^.Smoothed.TileIdx);
       end;
 
   ProgressRedraw(1, 'UseCount');
@@ -2440,6 +2753,11 @@ end;
 function TTilingEncoder.GetMaxThreadCount: Integer;
 begin
  Result := ProcThreadPool.MaxThreadCount;
+end;
+
+function TTilingEncoder.GetTileBlendingDepth: Integer;
+begin
+  Result := FTileBlendingMax + 1;
 end;
 
 function TTilingEncoder.GetTiles: PTileDynArray;
@@ -2909,8 +3227,12 @@ begin
       begin
         TMI := @Frame.TileMap[sy, sx];
 
-        TMI^.TileIdx := -1;
-        TMI^.PalIdx := -1;
+        TMI^.Base.TileIdx := -1;
+        TMI^.Base.PalIdx := -1;
+        TMI^.BlendedX := High(ShortInt);
+        TMI^.BlendedY := High(ShortInt);
+
+        TMI^.Smoothed := TMI^.Base;
       end;
 
     FFrames[frmIdx] := Frame;
@@ -3326,6 +3648,18 @@ procedure TTilingEncoder.SetFramesPerSecond(AValue: Double);
 begin
   if FFramesPerSecond = AValue then Exit;
   FFramesPerSecond := Max(0.0, AValue);
+end;
+
+procedure TTilingEncoder.SetTileBlendingRadius(AValue: Integer);
+begin
+ if FTileBlendingRadius = AValue then Exit;
+ FTileBlendingRadius := EnsureRange(AValue, 0, 16);
+end;
+
+procedure TTilingEncoder.SetTileBlendingDepth(AValue: Integer);
+begin
+ if GetTileBlendingDepth = AValue then Exit;
+ FTileBlendingMax := EnsureRange(AValue, 2, 256) - 1;
 end;
 
 procedure TTilingEncoder.SetGlobalTilingQualityBasedTileCount(AValue: Double);
@@ -4078,9 +4412,9 @@ end;
 
 procedure TTilingEncoder.Render(AFast: Boolean);
 
-  procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; psyTile: PTile; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean);
+  procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; psyTile: PTile; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir: Boolean; prevtilePtr: PTile; prevPal: TIntegerDynArray; prevHmir, prevVmir: Boolean; blendPrev, blendOffset: Integer); overload;
   var
-    r, g, b, tx, ty, txm, tym, col: Integer;
+    r, g, b, pr, pg, pb, tx, ty, txm, tym, ptxm, ptym, col: Integer;
     psl: PInteger;
   begin
     for ty := 0 to cTileWidth - 1 do
@@ -4090,11 +4424,15 @@ procedure TTilingEncoder.Render(AFast: Boolean);
 
       tym := ty;
       if vmir then tym := cTileWidth - 1 - tym;
+      ptym := ty;
+      if prevVmir then ptym := cTileWidth - 1 - ptym;
 
       for tx := 0 to cTileWidth - 1 do
       begin
         txm := tx;
         if hmir then txm := cTileWidth - 1 - txm;
+        ptxm := tx;
+        if prevHmir then ptxm := cTileWidth - 1 - ptxm;
 
         r := 255; g := 0; b := 255;
         if tilePtr^.Active then
@@ -4110,6 +4448,25 @@ procedure TTilingEncoder.Render(AFast: Boolean);
               FromRGB(tilePtr^.RGBPixels[tym, txm], r, g, b);
           end;
         end;
+
+        pr := 0; pg := 255; pb := 255;
+        if Assigned(prevtilePtr) and prevtilePtr^.Active then
+        begin
+          if Assigned(prevPal) then
+          begin
+            if prevtilePtr^.HasPalPixels then
+              FromRGB(prevPal[prevtilePtr^.PalPixels[ptym, ptxm]], pr, pg, pb)
+          end
+          else
+          begin
+            if prevtilePtr^.HasRGBPixels then
+              FromRGB(prevtilePtr^.RGBPixels[ptym, ptxm], pr, pg, pb);
+          end;
+        end;
+
+        r := EnsureRange((r * blendPrev + pr * blendOffset) div FTileBlendingMax, 0, 255);
+        g := EnsureRange((g * blendPrev + pg * blendOffset) div FTileBlendingMax, 0, 255);
+        b := EnsureRange((b * blendPrev + pb * blendOffset) div FTileBlendingMax, 0, 255);
 
         if FRenderUseGamma then
         begin
@@ -4130,15 +4487,15 @@ procedure TTilingEncoder.Render(AFast: Boolean);
   end;
 
 var
-  i, j, sx, sy, frmIdx, globalTileCount: Integer;
+  i, j, sx, sy, prevFrmIdx, offsetFrmIdx, frmIdx, globalTileCount: Integer;
   hmir, vmir: Boolean;
   tidx: Int64;
   p: PInteger;
-  tilePtr: PTile;
+  prevTilePtr, offsetTilePtr, tilePtr: PTile;
   PsyTile: PTile;
-  TMItem: TTileMapItem;
+  prevTMItem, offsetTMItem, TMItem: TTileMapItem;
   Frame: TFrame;
-  pal: TIntegerDynArray;
+  prevPal, offsetPal, pal: TIntegerDynArray;
   chgDCT: TFloatDynArray3;
   DCT: array[0 .. cTileDCTSize - 1] of TFloat;
   q: Double;
@@ -4183,7 +4540,7 @@ begin
           for sx := 0 to FTileMapWidth - 1 do
           begin
             tilePtr :=  Frame.FrameTiles[sy * FTileMapWidth + sx];
-            if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
+            if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].Base.PalIdx = FRenderPaletteIndex) then
             begin
               hmir := tilePtr^.HMirror_Initial;
               vmir := tilePtr^.VMirror_Initial;
@@ -4194,7 +4551,7 @@ begin
                 vmir := False;
               end;
 
-              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, nil, hmir, vmir);
+              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, pal, hmir, vmir, nil, nil, False, False, FTileBlendingMax, 0);
             end;
           end;
       finally
@@ -4223,7 +4580,7 @@ begin
             TMItem := FFrames[frmIdx].TileMap[sy, sx];
             if FRenderSmoothed then
             begin
-              while TMItem.Smoothed do
+              while TMItem.IsSmoothed do
               begin
                 Dec(frmIdx);
                 TMItem := FFrames[frmIdx].TileMap[sy, sx];
@@ -4231,36 +4588,86 @@ begin
             end
             else
             begin
-              if TMItem.Smoothed then
+              if TMItem.IsSmoothed then
                 Continue;
             end;
 
-            if InRange(TMItem.TileIdx, 0, High(Tiles)) then
+            prevTMItem.Smoothed.TileIdx := -1;
+            offsetTMItem.Smoothed.TileIdx := -1;
+            if (frmIdx > 0) and TMItem.IsBlended then
+            begin
+              prevFrmIdx := frmIdx - 1;
+              prevTMItem := FFrames[prevFrmIdx].TileMap[sy, sx];
+              while (prevFrmIdx > 0) and prevTMItem.IsSmoothed do
+              begin
+                Dec(prevFrmIdx);
+                prevTMItem := FFrames[prevFrmIdx].TileMap[sy, sx];
+              end;
+
+              offsetFrmIdx := frmIdx - 1;
+              offsetTMItem := FFrames[offsetFrmIdx].TileMap[sy + TMItem.BlendedY, sx + TMItem.BlendedX];
+              while (offsetFrmIdx > 0) and offsetTMItem.IsSmoothed do
+              begin
+                Dec(offsetFrmIdx);
+                offsetTMItem := FFrames[offsetFrmIdx].TileMap[sy + TMItem.BlendedY, sx + TMItem.BlendedX];
+              end;
+            end;
+
+            if InRange(TMItem.Smoothed.TileIdx, 0, High(Tiles)) then
             begin
               pal := nil;
               if FRenderDithered then
                 if FRenderPaletteIndex < 0 then
                 begin
-                  if not InRange(TMItem.PalIdx, 0, High(FFrames[frmIdx].PKeyFrame.Palettes)) then
+                  if not InRange(TMItem.Smoothed.PalIdx, 0, High(Frame.PKeyFrame.Palettes)) then
                     Continue;
-                  pal := FFrames[frmIdx].PKeyFrame.Palettes[TMItem.PalIdx].PaletteRGB;
+                  pal := Frame.PKeyFrame.Palettes[TMItem.Smoothed.PalIdx].PaletteRGB;
                 end
                 else
                 begin
-                  if FRenderPaletteIndex <> TMItem.PalIdx then
+                  if FRenderPaletteIndex <> TMItem.Smoothed.PalIdx then
                     Continue;
-                  pal := FFrames[frmIdx].PKeyFrame.Palettes[FRenderPaletteIndex].PaletteRGB;
+                  pal := Frame.PKeyFrame.Palettes[FRenderPaletteIndex].PaletteRGB;
                 end;
 
-              tilePtr := Tiles[TMItem.TileIdx];
+              tilePtr := Tiles[TMItem.Smoothed.TileIdx];
+
+              prevTilePtr := nil;
+              if InRange(prevTMItem.Smoothed.TileIdx, 0, High(Tiles)) then
+                prevTilePtr := Tiles[prevTMItem.Smoothed.TileIdx];
+
+              offsetTilePtr := nil;
+              if InRange(offsetTMItem.Smoothed.TileIdx, 0, High(Tiles)) then
+                offsetTilePtr := Tiles[offsetTMItem.Smoothed.TileIdx];
 
               if not FRenderMirrored then
               begin
-                TMItem.HMirror := False;
-                TMItem.VMirror := False;
+                TMItem.Smoothed.HMirror := False;
+                TMItem.Smoothed.VMirror := False;
               end;
 
-              DrawTile(FOutputBitmap, sx, sy, PsyTile, tilePtr, pal, TMItem.HMirror, TMItem.VMirror);
+              if FRenderBlended and TMItem.IsBlended then
+              begin
+                prevPal := nil;
+                if FRenderDithered then
+                  prevPal := FFrames[prevFrmIdx].PKeyFrame.Palettes[prevTMItem.Smoothed.PalIdx].PaletteRGB;
+
+                offsetPal := nil;
+                if FRenderDithered then
+                  offsetPal := FFrames[offsetFrmIdx].PKeyFrame.Palettes[offsetTMItem.Smoothed.PalIdx].PaletteRGB;
+
+                DrawTile(FOutputBitmap, sx, sy, PsyTile,
+                    offsetTilePtr, offsetPal, offsetTMItem.Smoothed.HMirror, offsetTMItem.Smoothed.VMirror,
+                    prevTilePtr, prevPal, prevTMItem.Smoothed.HMirror, prevTMItem.Smoothed.VMirror,
+                    TMItem.BlendOffset, TMItem.BlendPrev);
+              end
+              else
+              begin
+                DrawTile(FOutputBitmap, sx, sy, PsyTile,
+                    tilePtr, pal, TMItem.Smoothed.HMirror, TMItem.Smoothed.VMirror,
+                    nil, nil, False, False,
+                    FTileBlendingMax, 0);
+              end;
 
               if not (FRenderPlaying or AFast) then
                 ComputeTilePsyVisFeatures(PsyTile^, RenderMode = pvsWavelets, False, False, RenderMode = pvsWeightedDCT, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
@@ -4321,7 +4728,7 @@ begin
                 vmir := False;
               end;
 
-              DrawTile(FTilesBitmap, sx, sy, nil, tilePtr, pal, hmir, vmir);
+              DrawTile(FTilesBitmap, sx, sy, nil, tilePtr, pal, hmir, vmir, nil, nil, False, False, FTileBlendingMax, 0);
             end;
           end;
       finally
@@ -4342,7 +4749,7 @@ begin
           for sx := 0 to FTileMapWidth - 1 do
           begin
             tilePtr := Frame.FrameTiles[sy * FTileMapWidth + sx];
-            if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].PalIdx = FRenderPaletteIndex) then
+            if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].Base.PalIdx = FRenderPaletteIndex) then
             begin
               hmir := tilePtr^.HMirror_Initial;
               vmir := tilePtr^.VMirror_Initial;
@@ -4407,6 +4814,9 @@ begin
     ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
     ini.WriteInteger('FrameTiling', 'FrameTilingMode', Ord(FrameTilingMode));
 
+    ini.WriteInteger('Blending', 'BlendingDepth', TileBlendingDepth);
+    ini.WriteInteger('Blending', 'BlendingRadius', TileBlendingRadius);
+
     ini.WriteFloat('Smoothing', 'SmoothingFactor', SmoothingFactor);
 
     ini.WriteFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
@@ -4458,6 +4868,9 @@ begin
     FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
     FrameTilingMode := TPsyVisMode(EnsureRange(ini.ReadInteger('FrameTiling', 'FrameTilingMode', Ord(FrameTilingMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
 
+    TileBlendingDepth := ini.ReadInteger('Blending', 'BlendingDepth', TileBlendingDepth);
+    TileBlendingRadius := ini.ReadInteger('Blending', 'BlendingRadius', TileBlendingRadius);
+
     SmoothingFactor := ini.ReadFloat('Smoothing', 'SmoothingFactor', SmoothingFactor);
 
     EncoderGammaValue := ini.ReadFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
@@ -4502,6 +4915,9 @@ begin
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
   FrameTilingMode := pvsWavelets;
+
+  TileBlendingDepth := 16;
+  TileBlendingRadius := 4;
 
   SmoothingFactor := 0.2;
 
@@ -4756,8 +5172,8 @@ begin
     for sx := 0 to FTileMapWidth - 1 do
     begin
       TMI := @AFrame.TileMap[sy, sx];
-      if TMI^.TileIdx >= 0 then
-        Used[TMI^.TileIdx] := 1;
+      if TMI^.Base.TileIdx >= 0 then
+        Used[TMI^.Base.TileIdx] := 1;
     end;
 
   for sx := 0 to High(Used) do
@@ -4806,11 +5222,11 @@ var
 
           Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-          DitherTile(Tile^, Frame.PKeyframe.Palettes[TMI^.PalIdx].MixingPlan);
+          DitherTile(Tile^, Frame.PKeyframe.Palettes[TMI^.Base.PalIdx].MixingPlan);
 
-          TMI^.HMirror := Tile^.HMirror_Initial;
-          TMI^.VMirror := Tile^.VMirror_Initial;
-          TMI^.TileIdx := frameOffset + si;
+          TMI^.Base.HMirror := Tile^.HMirror_Initial;
+          TMI^.Base.VMirror := Tile^.VMirror_Initial;
+          TMI^.Base.TileIdx := frameOffset + si;
 
           Inc(si);
         end;
@@ -4855,11 +5271,11 @@ var
           Tile := Frame.FrameTiles[si];
           TMI := @Frame.TileMap[sy, sx];
 
-          TMI^.HMirror := Tile^.HMirror_Initial;
-          TMI^.VMirror := Tile^.VMirror_Initial;
-          TMI^.TileIdx := ANNClusters[frameOffset + si];
+          TMI^.Base.HMirror := Tile^.HMirror_Initial;
+          TMI^.Base.VMirror := Tile^.VMirror_Initial;
+          TMI^.Base.TileIdx := ANNClusters[frameOffset + si];
 
-          ANNPalIdxs[frameOffset + si] := TMI^.PalIdx;
+          ANNPalIdxs[frameOffset + si] := TMI^.Base.PalIdx;
 
           Inc(si);
         end;
@@ -4919,9 +5335,9 @@ var
     TMI := @Frame.TileMap[sy, sx];
 
     if FGlobalTilingFromPalette then
-      DitherTile(Frame.FrameTiles[AIndex]^, Frame.PKeyFrame.Palettes[TMI^.PalIdx].MixingPlan);
+      DitherTile(Frame.FrameTiles[AIndex]^, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].MixingPlan);
 
-    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.PalIdx].PaletteRGB, @DCTs[AIndex, 0]);
+    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @DCTs[AIndex, 0]);
   end;
 
   procedure DoInsert(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -5262,6 +5678,110 @@ begin
   WriteLn('OptimizeGlobalPalettes: ', iteration, ' iterations');
 end;
 
+procedure TTilingEncoder.RenderTile(AFrame: TFrame; ASY, ASX: Integer; var outTile: TTile; AMirrors, ADithering, ASmoothing, ABlending: Boolean);
+
+  function Prepare(AFrame_: TFrame; ABaseTMI: PTileMapItem; out ATMI: PTileMapItem; out ATile: PTile; out APal: TIntegerDynArray): TFrame;
+  var
+    frm: TFrame;
+  begin
+    ATile := nil;
+    APal := nil;
+    ATMI := nil;
+
+    frm := AFrame_;
+    repeat
+      if Assigned(ABaseTMI) and ABaseTMI^.IsBlended then
+        ATMI := @frm.TileMap[ASY + ABaseTMI^.BlendedY, ASX + ABaseTMI^.BlendedX]
+      else
+        ATMI := @frm.TileMap[ASY, ASX];
+
+      Result := frm;
+
+      if frm.Index > 0 then
+        frm := FFrames[frm.Index - 1]
+      else
+        frm := nil;
+    until not Assigned(frm) or not ATMI^.IsSmoothed or not ASmoothing;
+
+    if InRange(ATMI^.Smoothed.TileIdx, 0, High(FTiles)) then
+      ATile := FTiles[ATMI^.Smoothed.TileIdx];
+
+    if InRange(ATMI^.Smoothed.PalIdx, 0, FPaletteCount - 1) then
+      APal := Result.PKeyFrame.Palettes[ATMI^.Smoothed.PalIdx].PaletteRGB;
+  end;
+
+
+  procedure GetRGB(ATMI: PTileMapItem; ATile: PTile; const APal: TIntegerDynArray; ATY, ATX: Integer; var AR, AG, AB: Integer);
+  var
+    txm, tym: Integer;
+  begin
+    if Assigned(ATile) and ATile^.Active then
+    begin
+      tym := ATY;
+      if ATMI^.Smoothed.VMirror and AMirrors then tym := cTileWidth - 1 - tym;
+      txm := ATX;
+      if ATMI^.Smoothed.HMirror and AMirrors then txm := cTileWidth - 1 - txm;
+
+      if Assigned(APal) and ATile^.HasPalPixels and ADithering then
+        FromRGB(APal[ATile^.PalPixels[tym, txm]], AR, AG, AB)
+      else if ATile^.HasRGBPixels then
+        FromRGB(ATile^.RGBPixels[tym, txm], AR, AG, AB);
+    end;
+  end;
+
+var
+  r, g, b, pr, pg, pb, br, bg, bb, tx, ty, col: Integer;
+  Frame: TFrame;
+  TMI, PrevTMI, BlendTMI: PTileMapItem;
+  Pal, PrevPal, BlendPal: TIntegerDynArray;
+  Tile, PrevTile, BlendTile: PTile;
+begin
+  TMI := nil;
+  PrevTMI := nil;
+  BlendTMI := nil;
+  Tile := nil;
+  PrevTile := nil;
+  BlendTile := nil;
+  Pal := nil;
+  PrevPal := nil;
+  BlendPal := nil;
+
+  Frame := Prepare(AFrame, nil, TMI, Tile, Pal);
+
+  if (Frame.Index > 0) and TMI^.IsBlended then
+  begin
+    Prepare(Frame, nil, PrevTMI, PrevTile, PrevPal);
+    Prepare(Frame, TMI, BlendTMI, BlendTile, BlendPal);
+  end;
+
+  for ty := 0 to cTileWidth - 1 do
+    for tx := 0 to cTileWidth - 1 do
+    begin
+      r := 255; g := 0; b := 255;
+      GetRGB(TMI, Tile, Pal, ty, tx, r, g, b);
+
+      if (Frame.Index > 0) and TMI^.IsBlended then
+      begin
+        pr := 0; pg := 255; pb := 255;
+        br := 255; bg := 255; bb := 0;
+
+        if ABlending then
+        begin
+          GetRGB(PrevTMI, PrevTile, PrevPal, ty, tx, pr, pg, pb);
+          GetRGB(BlendTMI, BlendTile, BlendPal, ty, tx, br, bg, bb);
+        end;
+
+        r := EnsureRange((pr * TMI^.BlendPrev + br * TMI^.BlendOffset) div FTileBlendingMax, 0, 255);
+        g := EnsureRange((pg * TMI^.BlendPrev + bg * TMI^.BlendOffset) div FTileBlendingMax, 0, 255);
+        b := EnsureRange((pb * TMI^.BlendPrev + bb * TMI^.BlendOffset) div FTileBlendingMax, 0, 255);
+      end;
+
+      col := ToRGB(r, g, b);
+
+      outTile.RGBPixels[ty, tx] := col;
+    end;
+end;
+
 procedure TTilingEncoder.ReindexTiles(KeepRGBPixels: Boolean);
 var
   IdxMap: TInt64DynArray;
@@ -5332,7 +5852,8 @@ begin
       begin
         TMI := @Frame.TileMap[sy, sx];
 
-        Remap(TMI^.TileIdx);
+        Remap(TMI^.Base.TileIdx);
+        Remap(TMI^.Smoothed.TileIdx);
       end;
   end;
 
@@ -5449,13 +5970,30 @@ var
 
   procedure SetTMI(tileIdx: Integer; attrs: Integer; var TMI: TTileMapItem);
   begin
-    TMI.TileIdx := tileIdx;
-    TMI.HMirror := attrs and 1 <> 0;
-    TMI.VMirror := attrs and 2 <> 0;
-    TMI.PalIdx := attrs shr 2;
+    TMI.Base.TileIdx := tileIdx;
+    TMI.Base.HMirror := attrs and 1 <> 0;
+    TMI.Base.VMirror := attrs and 2 <> 0;
+    TMI.Base.PalIdx := attrs shr 2;
 
-    TMI.Smoothed := False;
+    TMI.IsBlended := False;
+    TMI.IsSmoothed := False;
+    TMI.Smoothed := TMI.Base;
   end;
+
+  procedure SetPrevBlendedTMI(offsets, blend: Integer; const PrevTMI: TTileMapItem; var TMI: TTileMapItem);
+  begin
+    TMI.Base := PrevTMI.Base;
+
+    TMI.BlendPrev := blend and $ff;
+    TMI.BlendOffset := (blend shr 8) and $ff;
+    TMI.BlendedX := (offsets and $f) - (offsets and $10);
+    TMI.BlendedY := ((offsets shr 5) and $f) - ((offsets shr 5) and $10);
+
+    TMI.IsBlended := True;
+    TMI.IsSmoothed := False;
+    TMI.Smoothed := TMI.Base;
+  end;
+
 
   function AddFrame(KF: TKeyFrame): TFrame;
   begin
@@ -5476,8 +6014,8 @@ var
     for i := tmPos to tmPos + SkipCount - 1 do
     begin
       DivMod(i, FTileMapWidth, sy, sx);
-      frm.TileMap[sy, sx] := FFrames[frm.Index - 1].TileMap[sy, sx];
-      frm.TileMap[sy, sx].Smoothed := True;
+      frm.TileMap[sy, sx].Base := FFrames[frm.Index - 1].TileMap[sy, sx].Base;
+      frm.TileMap[sy, sx].IsSmoothed := True;
     end;
     tmPos += SkipCount;
   end;
@@ -5488,6 +6026,7 @@ var
   CommandData: Word;
   frmCount, tmPos: Integer;
   tileIdx: Cardinal;
+  blend_: Integer;
   frm: TFrame;
   kf: TKeyFrame;
   compat: String;
@@ -5515,6 +6054,7 @@ begin
   end;
 
   ClearAll;
+  FTileBlendingMax := high(Byte);
 
   frm := nil;
   frmCount := 0;
@@ -5606,14 +6146,17 @@ begin
           end;
           gtPrevFrameBlend:
           begin
-            // unused (not compatible anymore)
-            ReadWord;
+            blend_ := ReadWord;
 
             // create frame if needed
             if frm = nil then
               frm := AddFrame(kf);
 
-            SkipBlock(frm, 1, tmPos);
+            Assert(frm.Index > 0);
+            SetPrevBlendedTMI(CommandData, blend_,
+                FFrames[frm.Index - 1].TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth],
+                frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth]);
+            Inc(tmPos);
           end
 
           else
@@ -5663,22 +6206,32 @@ var
     DoWord((Data shl CGTMCommandCodeBits) or Ord(Cmd));
   end;
 
-  function ExtractTMIAttributes(const TMI: TTileMapItem; out attrs: Word): Integer;
+  function ExtractTMIAttributes(const TMI: TTileMapItem; out attrs, offsets, blend: Word; out isBlend: Boolean): Integer;
   begin
-    attrs := (TMI.PalIdx shl 2) or (Ord(TMI.VMirror) shl 1) or Ord(TMI.HMirror);
-    Result := TMI.TileIdx;
+    attrs := (TMI.Smoothed.PalIdx shl 2) or (Ord(TMI.Smoothed.VMirror) shl 1) or Ord(TMI.Smoothed.HMirror);
+    offsets := (Word(TMI.BlendedY and $1f) shl 5) or Word(TMI.BlendedX and $1f);
+    blend := (((Word(TMI.BlendOffset) * High(Byte)) div FTileBlendingMax) shl 8) or
+        ((Word(TMI.BlendPrev) * High(Byte)) div FTileBlendingMax);
+    isBlend := TMI.IsBlended;
+    Result := TMI.Smoothed.TileIdx;
   end;
 
   procedure DoTMI(const TMI: TTileMapItem);
   var
     tileIdx: Integer;
-    attrs: Word;
+    attrs, offsets, blend: Word;
+    isBlend: Boolean;
   begin
-    Assert((TMI.PalIdx >= 0) and (TMI.PalIdx < FPaletteCount));
+    Assert((TMI.Smoothed.PalIdx >= 0) and (TMI.Smoothed.PalIdx < FPaletteCount));
 
-    tileIdx := ExtractTMIAttributes(TMI, attrs);
+    tileIdx := ExtractTMIAttributes(TMI, attrs, offsets, blend, isBlend);
 
-    if tileIdx < (1 shl 16) then
+    if isBlend then
+    begin
+      DoCmd(gtPrevFrameBlend, offsets);
+      DoWord(blend);
+    end
+    else if tileIdx < (1 shl 16) then
     begin
       DoCmd(gtShortTileIdx, attrs);
       DoWord(tileIdx);
@@ -5812,7 +6365,7 @@ begin
             for yxs := yx to FTileMapSize - 1 do
             begin
               DivMod(yxs, FTileMapWidth, sy, sx);
-              if not Frame.TileMap[sy, sx].Smoothed then
+              if not Frame.TileMap[sy, sx].IsSmoothed then
                 Break;
               Inc(BlkSkipCount);
             end;
@@ -5905,6 +6458,11 @@ begin
   FTilesBitmap := TBitmap.Create;
   FPaletteBitmap := TBitmap.Create;
 
+  FRenderBlended := True;
+  FRenderMirrored := True;
+  FRenderSmoothed := True;
+  FRenderDithered := True;
+
   FRenderPage := rpOutput;
   FRenderMode := pvsDCT;
   ReframeUI(80, 45);
@@ -5943,6 +6501,8 @@ begin
       Reconstruct;
     esSmooth:
       Smooth;
+    esBlend:
+      Blend;
     esReindex:
       Reindex;
     esSave:
