@@ -2697,9 +2697,9 @@ begin
 
             RGBToYUV(r, g, b, -1, yf, uf, vf);
 
-            py^ := Round(yf * High(Byte)); Inc(py);
-            pu^ := Round((uf + 0.5) * High(Byte)); Inc(pu);
-            pv^ := Round((vf + 0.5) * High(Byte)); Inc(pv);
+            py^ := EnsureRange(Round(yf * High(Byte)), 0, High(Byte)); Inc(py);
+            pu^ := EnsureRange(Round((uf + 0.5) * High(Byte)), 0, High(Byte)); Inc(pu);
+            pv^ := EnsureRange(Round((vf + 0.5) * High(Byte)), 0, High(Byte)); Inc(pv);
           end;
         end;
       finally
