@@ -287,7 +287,6 @@ type
   TKeyFrame = class
     Encoder: TTilingEncoder;
     Index, StartFrame, EndFrame, FrameCount: Integer;
-    FramesLeft: Integer;
     Reason: TKeyFrameReason;
 
     FrameTilesRefCount: Integer;
@@ -297,6 +296,7 @@ type
 
     TileDS: array of PTilingDataset;
     ReconstructErrCml: Double;
+    ReconstructLock: TSpinlock;
 
     BlendEvent: THandle;
 
@@ -314,7 +314,7 @@ type
     procedure DoQuantization(APalIdx: Integer; UseYakmo: Boolean; DLv3BPC: Integer; ADitheringGamma: Integer);
     procedure OptimizePalettes;
     procedure PrepareTiling(APalIdx, AFTGamma: Integer);
-    procedure DoTiling(APalIdx: Integer; AFTGamma: Integer);
+    procedure DoTiling(AFrmIdx, APalIdx: Integer; AFTGamma: Integer);
     procedure FinishTiling(APalIdx: Integer);
     procedure DoTemporalSmoothing(AFrame, APrevFrame: TFrame);
     procedure DoBlending(AFTGamma: Integer; AFirstFrame: Boolean);
@@ -1053,8 +1053,8 @@ begin
   StartFrame := AStartFrame;
   EndFrame := AEndFrame;
   FrameCount := AEndFrame - AStartFrame + 1;
-  FramesLeft := -1;
 
+  SpinLeave(@ReconstructLock);
   FrameTilesEvent := CreateEvent(nil, True, False, nil);
   BlendEvent := CreateEvent(nil, True, False, nil);
 end;
@@ -1783,13 +1783,25 @@ var
   gammaCor: Integer;
 
   procedure DoCluster(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    palIdx: Integer;
+
+    procedure DoFramePal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    begin
+      if not InRange(AIndex, StartFrame, EndFrame) then
+        Exit;
+
+      DoTiling(AIndex, palIdx, gammaCor);
+    end;
+
   begin
     if not InRange(AIndex, 0, Encoder.FPaletteCount - 1) then
       Exit;
 
-    PrepareTiling(AIndex, gammaCor);
-    DoTiling(AIndex, gammaCor);
-    FinishTiling(AIndex);
+    palIdx := AIndex;
+    PrepareTiling(palIdx, gammaCor);
+    ProcThreadPool.DoParallelLocalProc(@DoFramePal, StartFrame, EndFrame);
+    FinishTiling(palIdx);
   end;
 
 begin
@@ -1881,9 +1893,9 @@ begin
   TileDS[APalIdx] := nil;
 end;
 
-procedure TKeyFrame.DoTiling(APalIdx: Integer; AFTGamma: Integer);
+procedure TKeyFrame.DoTiling(AFrmIdx, APalIdx: Integer; AFTGamma: Integer);
 var
-  sx, sy, frmIdx, dsIdx: Integer;
+  sx, sy, dsIdx: Integer;
   errCml: Double;
   dsErr: Single;
 
@@ -1900,53 +1912,52 @@ begin
 
   errCml := 0.0;
 
-  for frmIdx := StartFrame to EndFrame do
-  begin
-    Frame := Encoder.FFrames[frmIdx];
-    for sy := 0 to Encoder.FTileMapHeight - 1 do
-      for sx := 0 to Encoder.FTileMapWidth - 1 do
+  Frame := Encoder.FFrames[AFrmIdx];
+  for sy := 0 to Encoder.FTileMapHeight - 1 do
+    for sx := 0 to Encoder.FTileMapWidth - 1 do
+    begin
+      TMI := @Frame.TileMap[sy, sx];
+
+      if TMI^.Base.PalIdx <> APalIdx then
+        Continue;
+
+      // prepare KNN query
+
+      T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
+
+      if Encoder.FFrameTilingFromPalette then
+        Encoder.DitherTile(T^, Frame.PKeyframe.Palettes[TMI^.Base.PalIdx].MixingPlan);
+
+      Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, @DCT[0]);
+
+      TMI^.Base.HMirror := T^.HMirror_Initial;
+      TMI^.Base.VMirror := T^.VMirror_Initial;
+
+      // query KNN
+
+      dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
+
+      // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
+
+      if InRange(dsIdx, 0, DS^.KNNSize - 1) then
       begin
-        TMI := @Frame.TileMap[sy, sx];
+        TMI^.Base.TileIdx := dsIdx;
+        TMI^.ResidualErr := dsErr;
+        TMI^.BlendedX := High(ShortInt);
+        TMI^.BlendedY := High(ShortInt);
+        TMI^.BlendPrev := Encoder.FTileBlendingMax;
+        TMI^.BlendOffset := 0;
+        TMI^.Flags := [];
 
-        if TMI^.Base.PalIdx <> APalIdx then
-          Continue;
+        TMI^.Smoothed := TMI^.Base;
 
-        // prepare KNN query
-
-        T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
-
-        if Encoder.FFrameTilingFromPalette then
-          Encoder.DitherTile(T^, Frame.PKeyframe.Palettes[TMI^.Base.PalIdx].MixingPlan);
-
-        Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, @DCT[0]);
-
-        TMI^.Base.HMirror := T^.HMirror_Initial;
-        TMI^.Base.VMirror := T^.VMirror_Initial;
-
-        // query KNN
-
-        dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
-
-        // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
-
-        if InRange(dsIdx, 0, DS^.KNNSize - 1) then
-        begin
-          TMI^.Base.TileIdx := dsIdx;
-          TMI^.ResidualErr := dsErr;
-          TMI^.BlendedX := High(ShortInt);
-          TMI^.BlendedY := High(ShortInt);
-          TMI^.BlendPrev := Encoder.FTileBlendingMax;
-          TMI^.BlendOffset := 0;
-          TMI^.Flags := [];
-
-          TMI^.Smoothed := TMI^.Base;
-
-          errCml += TMI^.ResidualErr;
-        end;
+        errCml += TMI^.ResidualErr;
       end;
-  end;
+    end;
 
+  SpinEnter(@ReconstructLock);
   ReconstructErrCml += errCml;
+  SpinLeave(@ReconstructLock);
 end;
 
 procedure TKeyFrame.DoBlending(AFTGamma: Integer; AFirstFrame: Boolean);
