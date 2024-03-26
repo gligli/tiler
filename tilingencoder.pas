@@ -2000,7 +2000,7 @@ var
     begin
       SetLength(Result^, cTileDCTSize);
       Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[ATMI^.Smoothed.TileIdx]^,
-          Encoder.FrameTilingMode = pvsWavelets , True, False, Encoder.FrameTilingMode = pvsWeightedDCT,
+          Encoder.FrameTilingMode = pvsWavelets, True, False, Encoder.FrameTilingMode = pvsWeightedDCT,
          ATMI^.Smoothed.HMirror, ATMI^.Smoothed.VMirror, cColorCpns, AFTGamma,
          AFrame.PKeyFrame.Palettes[ATMI^.Smoothed.PalIdx].PaletteRGB, @Result^[0]);
     end;
@@ -2669,6 +2669,8 @@ procedure TTilingEncoder.Cluster;
 begin
   if FrameCount = 0 then
     Exit;
+
+  ProgressRedraw(0, '', esCluster);
 
   // cleanup any prior tile set
   TTile.Array1DDispose(FTiles);
@@ -5358,13 +5360,13 @@ var
         for sx := 0 to FTileMapWidth - 1 do
         begin
           Tile := Frame.FrameTiles[si];
+          TMI := @Frame.TileMap[sy, sx];
 
-          ComputeTilePsyVisFeatures(Tile^, GlobalTilingMode = pvsWavelets, False, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, nil, @DCT[0]);
+          ComputeTilePsyVisFeatures(Tile^,
+            GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT,
+            False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @DCT[0]);
 
           ANNClusters[frameOffset + si] := ann_kdtree_search(ANN, @DCT[0], 0.0, @ANNErrors[frameOffset + si]);
-
-          Tile := Frame.FrameTiles[si];
-          TMI := @Frame.TileMap[sy, sx];
 
           TMI^.Base.HMirror := Tile^.HMirror_Initial;
           TMI^.Base.VMirror := Tile^.VMirror_Initial;
@@ -5401,7 +5403,8 @@ var
     Tile := Tiles[AIndex];
 
     Move(ANNDataset[AIndex]^, DCT[0], featureCount * SizeOf(Double));
-    ComputeInvTilePsyVisFeatures(@DCT[0], GlobalTilingMode = pvsWavelets, False, GlobalTilingMode = pvsWeightedDCT, AColorCpns, AGamma, Tile^);
+    ComputeInvTilePsyVisFeatures(@DCT[0],
+        GlobalTilingMode = pvsWavelets, False, GlobalTilingMode = pvsWeightedDCT, AColorCpns, AGamma, Tile^);
 
     palIdx := ANNPalIdxs[TileLineIdxs[AIndex]];
     if AColorCpns = 1 then
@@ -5431,7 +5434,9 @@ var
     DivMod(AIndex, FTileMapWidth, sy, sx);
     TMI := @Frame.TileMap[sy, sx];
 
-    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @DCTs[AIndex, 0]);
+    ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^,
+        GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT,
+        False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @DCTs[AIndex, 0]);
   end;
 
   procedure DoInsert(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
