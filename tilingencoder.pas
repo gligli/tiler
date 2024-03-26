@@ -20,7 +20,7 @@ type
   TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets);
 
 const
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 2, -1, 6, -1, -1, -1, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 6, -1, -1, -1, 2, 1);
 
 type
   // GliGli's TileMotion header structs and commands
@@ -274,8 +274,14 @@ type
     PKeyFrame: TKeyFrame;
     Index: Integer;
 
+    InterframeCorrelationData: TFloatDynArray;
+    InterframeCorrelation: TFloat; // with previous frame
+
     FrameTiles: array of PTile;
     TileMap: array of array of TTileMapItem;
+
+    function PrepareInterFrameCorrelation: TFloatDynArray;
+    procedure SequentialLoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
 
     constructor Create(AParent: TTilingEncoder; AIndex: Integer);
   end;
@@ -455,7 +461,6 @@ type
     procedure SetStartFrame(AValue: Integer);
 
     function PearsonCorrelation(const x: TFloatDynArray; const y: TFloatDynArray): TFloat;
-    function PrepareInterFrameCorrelation(AFrame: TFrame): TFloatDynArray;
 
     function GetSettings: String;
     procedure ProgressRedraw(ASubStepIdx: Integer; AReason: String; AProgressStep: TEncoderStep = esAll; AThread: TThread = nil);
@@ -503,7 +508,7 @@ type
     procedure ClearAll;
     procedure ReframeUI(AWidth, AHeight: Integer);
     procedure InitFrames(AFrameCount: Integer);
-    procedure LoadFrameTilesFromImage(var AFrame: TFrame; AImageWidth, AImageHeight: Integer; AImage: PInteger);
+    procedure LoadInputVideo;
     procedure FindKeyFrames(AManualMode: Boolean);
 
     procedure OptimizeGlobalPalettes;
@@ -1066,49 +1071,11 @@ begin
   inherited Destroy;
 end;
 
-procedure DoLoadFFMPEGFrame(AIndex, AWidth, AHeight:Integer; AFrameData: PInteger; AUserParameter: Pointer);
-var
-  Encoder: TTilingEncoder;
-  frmIdx: Integer;
-begin
-  Encoder := TTilingEncoder(AUserParameter);
-  frmIdx := AIndex - Encoder.FStartFrame;
-
-  Encoder.LoadFrameTilesFromImage(Encoder.FFrames[frmIdx], AWidth, AHeight, AFrameData);
-end;
-
 procedure TKeyFrame.AcquireFrameTiles;
-var
-  FFMPEG: TFFMPEG;
-  PNG: TPortableNetworkGraphic;
-  frmIdx: Integer;
 begin
   if InterLockedIncrement(FrameTilesRefCount) = 1 then
   begin
-
-    if FileExists(Encoder.FLoadedInputPath) then
-    begin
-      FFMPEG := FFMPEG_Open(Encoder.FLoadedInputPath, Encoder.FScaling, True);
-      try
-        FFMPEG_LoadFrames(FFMPEG, StartFrame + Encoder.FStartFrame, FrameCount, @DoLoadFFMPEGFrame, Encoder);
-      finally
-        FFMPEG_Close(FFMPEG);
-      end;
-    end
-    else
-    begin
-      PNG := TPortableNetworkGraphic.Create;
-      try
-        PNG.PixelFormat:=pf32bit;
-        for frmIdx := StartFrame to EndFrame do
-        begin
-          PNG.LoadFromFile(Format(Encoder.FLoadedInputPath, [frmIdx + Encoder.FStartFrame]));
-          Encoder.LoadFrameTilesFromImage(Encoder.FFrames[frmIdx], PNG.RawImage.Description.Width, PNG.RawImage.Description.Height, PInteger(PNG.RawImage.Data));
-        end;
-      finally
-        PNG.Free;
-      end;
-    end;
+    //TODO
 
     // signal other threads decompression is done
     SetEvent(FrameTilesEvent);
@@ -1121,15 +1088,15 @@ end;
 
 procedure TKeyFrame.ReleaseFrameTiles;
 var
-  frmIdx, ftrc: Integer;
+  ftrc: Integer;
 begin
   ftrc := InterLockedDecrement(FrameTilesRefCount);
   if ftrc <= 0 then
   begin
     Assert(ftrc = 0);
     ResetEvent(FrameTilesEvent);
-    for frmIdx := StartFrame to EndFrame do
-      TTile.Array1DDispose(Encoder.FFrames[frmIdx].FrameTiles);
+
+    // TODO
   end;
 end;
 
@@ -2226,6 +2193,110 @@ begin
   Index := AIndex;
 end;
 
+
+procedure TFrame.SequentialLoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
+var
+  i, j, col, ti, tx, ty: Integer;
+  HMirror, VMirror: Boolean;
+  pcol: PInteger;
+  Tile: PTile;
+begin
+  // create frame tiles from image data
+
+  FrameTiles := TTile.Array1DNew(Encoder.FTileMapSize, True, True);
+
+  pcol := PInteger(AImage);
+  for j := 0 to AImageHeight - 1 do
+  begin
+    for i := 0 to AImageWidth - 1 do
+      begin
+        col := pcol^;
+        Inc(pcol);
+
+        if (j < Encoder.FScreenHeight) and (i < Encoder.FScreenWidth) then
+        begin
+          ti := Encoder.FTileMapWidth * (j shr cTileWidthBits) + (i shr cTileWidthBits);
+          tx := i and (cTileWidth - 1);
+          ty := j and (cTileWidth - 1);
+          col := SwapRB(col);
+
+          FrameTiles[ti]^.RGBPixels[ty, tx] := col;
+        end;
+      end;
+  end;
+
+  for i := 0 to Encoder.FTileMapSize - 1 do
+  begin
+    Tile := FrameTiles[i];
+
+    Encoder.GetTileHVMirrorHeuristics(Tile^, HMirror, VMirror);
+
+    Tile^.Active := True;
+    Tile^.UseCount := 1;
+    Tile^.TmpIndex := -1;
+    Tile^.HMirror_Initial := HMirror;
+    Tile^.VMirror_Initial := VMirror;
+
+    if HMirror then
+      Encoder.HMirrorTile(Tile^);
+
+    if VMirror then
+      Encoder.VMirrorTile(Tile^);
+  end;
+
+  // also compute inter-frame correlations
+
+  InterframeCorrelationData := PrepareInterFrameCorrelation;
+
+  if Index > 0 then
+  begin
+    Assert(Assigned(Encoder.FFrames[Index - 1].InterframeCorrelationData), 'load frames sequentially!');
+    InterframeCorrelation := Encoder.PearsonCorrelation(Encoder.FFrames[Index - 1].InterframeCorrelationData, InterframeCorrelationData);
+    SetLength(Encoder.FFrames[Index - 1].InterframeCorrelationData, 0);
+  end;
+
+  Write(Index + 1:8, ' / ', Length(Encoder.FFrames):8, #13);
+end;
+
+function TFrame.PrepareInterFrameCorrelation: TFloatDynArray;
+var
+  i, sy, sx, ty, tx, sz, di: Integer;
+  rr, gg, bb: Integer;
+  lll, aaa, bbb: TFloat;
+  Dataset: TDoubleDynArray2;
+  pat: PInteger;
+begin
+  Result := nil;
+  sz := Encoder.FTileMapSize;
+
+  SetLength(Dataset, sz, cColorCpns);
+  di := 0;
+  for sy := 0 to Encoder.FTileMapHeight - 1 do
+    for sx := 0 to Encoder.FTileMapWidth - 1 do
+    begin
+      i := sy * Encoder.FTileMapWidth + sx;
+      pat := PInteger(@FrameTiles[i]^.GetRGBPixelsPtr^[0, 0]);
+
+      for ty := 0 to cTileWidth - 1 do
+        for tx := 0 to cTileWidth - 1 do
+        begin
+          FromRGB(pat^, rr, gg, bb);
+          Inc(pat);
+          Encoder.RGBToLAB(rr, gg, bb, -1, lll, aaa, bbb);
+          Dataset[di, 0] += lll;
+          Dataset[di, 1] += aaa;
+          Dataset[di, 2] += bbb;
+        end;
+
+      Inc(di);
+    end;
+  Assert(di = sz);
+
+  SetLength(Result, sz * cColorCpns);
+  for i := 0 to High(Result) do
+    Result[i] := Dataset[i mod sz, i div sz];
+end;
+
 { TTilingEncoder }
 
 procedure TTilingEncoder.InitLuts;
@@ -2363,13 +2434,16 @@ begin
     end;
   end;
 
-  InitFrames(frmCnt);
+  ProgressRedraw(1, 'ProbeInputVideo');
 
-  ProgressRedraw(1, 'LoadFrames');
+  InitFrames(frmCnt);
+  LoadInputVideo;
+
+  ProgressRedraw(2, 'LoadInputVideo');
 
   FindKeyFrames(manualKeyFrames);
 
-  ProgressRedraw(2, 'FindKeyFrames');
+  ProgressRedraw(3, 'FindKeyFrames');
 
   if wasAutoQ or (FGlobalTilingTileCount <= 0) then
   begin
@@ -2775,55 +2849,6 @@ end;
 function TTilingEncoder.GetFrameCount: Integer;
 begin
   Result := Length(FFrames);
-end;
-
-function TTilingEncoder.PrepareInterFrameCorrelation(AFrame: TFrame): TFloatDynArray;
-var
-  i, sy, sx, ty, tx, sz, di: Integer;
-  rr, gg, bb: Integer;
-  lll, aaa, bbb: TFloat;
-  Dataset: TDoubleDynArray2;
-  pat: PInteger;
-begin
-  Result := nil;
-  sz := FTileMapSize;
-
-  SetLength(Result, sz * cColorCpns);
-  if not Assigned(AFrame) then
-    Exit;
-
-  SetLength(Dataset, sz, cColorCpns);
-
-  AFrame.PKeyFrame.AcquireFrameTiles;
-  try
-    di := 0;
-    for sy := 0 to FTileMapHeight - 1 do
-      for sx := 0 to FTileMapWidth - 1 do
-      begin
-        i := sy * FTileMapWidth + sx;
-        pat := PInteger(@AFrame.FrameTiles[i]^.GetRGBPixelsPtr^[0, 0]);
-
-        for ty := 0 to cTileWidth - 1 do
-          for tx := 0 to cTileWidth - 1 do
-          begin
-            FromRGB(pat^, rr, gg, bb);
-            Inc(pat);
-            RGBToLAB(rr, gg, bb, -1, lll, aaa, bbb);
-            Dataset[di, 0] += lll;
-            Dataset[di, 1] += aaa;
-            Dataset[di, 2] += bbb;
-          end;
-
-        Inc(di);
-      end;
-    Assert(di = sz);
-
-    for i := 0 to High(Result) do
-      Result[i] := Dataset[i mod sz, i div sz];
-
-  finally
-    AFrame.PKeyFrame.ReleaseFrameTiles;
-  end;
 end;
 
 function TTilingEncoder.GetSettings: String;
@@ -4189,150 +4214,55 @@ begin
     end;
 end;
 
-procedure TTilingEncoder.LoadFrameTilesFromImage(var AFrame: TFrame; AImageWidth, AImageHeight: Integer; AImage: PInteger);
+procedure DoLoadFFMPEGFrame(AIndex, AWidth, AHeight:Integer; AFrameData: PInteger; AUserParameter: Pointer);
 var
-  i, j, col, ti, tx, ty: Integer;
-  HMirror, VMirror: Boolean;
-  pcol: PInteger;
-  Tile: PTile;
+  Encoder: TTilingEncoder;
+  frmIdx: Integer;
 begin
-  // create frame tiles from image data
+  Encoder := TTilingEncoder(AUserParameter);
+  frmIdx := AIndex - Encoder.FStartFrame;
 
-  AFrame.FrameTiles := TTile.Array1DNew(FTileMapSize, True, True);
+  Encoder.FFrames[frmIdx].SequentialLoadFromImage(AWidth, AHeight, AFrameData);
+end;
 
-  pcol := PInteger(AImage);
-  for j := 0 to AImageHeight - 1 do
+procedure TTilingEncoder.LoadInputVideo;
+var
+  FFMPEG: TFFMPEG;
+  PNG: TPortableNetworkGraphic;
+  frmIdx: Integer;
+begin
+  if FileExists(FLoadedInputPath) then
   begin
-    for i := 0 to AImageWidth - 1 do
+    FFMPEG := FFMPEG_Open(FLoadedInputPath, FScaling, True);
+    try
+      FFMPEG_LoadFrames(FFMPEG, FStartFrame, FStartFrame + Length(FFrames), @DoLoadFFMPEGFrame, Self);
+    finally
+      FFMPEG_Close(FFMPEG);
+    end;
+  end
+  else
+  begin
+    PNG := TPortableNetworkGraphic.Create;
+    try
+      PNG.PixelFormat:=pf32bit;
+      for frmIdx := 0 to High(FFrames) do
       begin
-        col := pcol^;
-        Inc(pcol);
-
-        if (j < FScreenHeight) and (i < FScreenWidth) then
-        begin
-          ti := FTileMapWidth * (j shr cTileWidthBits) + (i shr cTileWidthBits);
-          tx := i and (cTileWidth - 1);
-          ty := j and (cTileWidth - 1);
-          col := SwapRB(col);
-
-          AFrame.FrameTiles[ti]^.RGBPixels[ty, tx] := col;
-        end;
+        PNG.LoadFromFile(Format(FLoadedInputPath, [frmIdx + FStartFrame]));
+        FFrames[frmIdx].SequentialLoadFromImage(PNG.RawImage.Description.Width, PNG.RawImage.Description.Height, PInteger(PNG.RawImage.Data));
       end;
-  end;
-
-  for i := 0 to FTileMapSize - 1 do
-  begin
-    Tile := AFrame.FrameTiles[i];
-
-    GetTileHVMirrorHeuristics(Tile^, HMirror, VMirror);
-
-    Tile^.Active := True;
-    Tile^.UseCount := 1;
-    Tile^.TmpIndex := -1;
-    Tile^.HMirror_Initial := HMirror;
-    Tile^.VMirror_Initial := VMirror;
-
-    if HMirror then
-      HMirrorTile(Tile^);
-
-    if VMirror then
-      VMirrorTile(Tile^);
+    finally
+      PNG.Free;
+    end;
   end;
 end;
 
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
 var
-  Correlations: TFloatDynArray;
-  doneFrameCount: Integer;
-  dummyKeyFrames: array of TKeyFrame;
-  dummyKFEndFrames: TFloatDynArray2;
-
-  procedure DoCorrel(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    frmIdx: Integer;
-    KeyFrame: TKeyFrame;
-    FrameData: TFloatDynArray2;
-    prevFrameData: TFloatDynArray;
-  begin
-    if not InRange(AIndex, 0, High(dummyKeyFrames)) then
-      Exit;
-
-    KeyFrame := dummyKeyFrames[AIndex];
-
-    KeyFrame.AcquireFrameTiles;
-    try
-      SetLength(FrameData, KeyFrame.FrameCount);
-
-      // reverse order to make end Frame ready for next frame asap
-      for frmIdx := KeyFrame.EndFrame downto KeyFrame.StartFrame do
-      begin
-        FrameData[frmIdx - KeyFrame.StartFrame] := PrepareInterFrameCorrelation(FFrames[frmIdx]);
-        if frmIdx = KeyFrame.EndFrame then
-          dummyKFEndFrames[AIndex] := FrameData[frmIdx - KeyFrame.StartFrame];
-      end;
-
-      for frmIdx := Max(1, KeyFrame.StartFrame) to KeyFrame.EndFrame do
-      begin
-        if frmIdx > KeyFrame.StartFrame then
-        begin
-          prevFrameData := FrameData[frmIdx - 1 - KeyFrame.StartFrame];
-        end
-        else
-        begin
-          // wait for prev KeyFrame to compute end Frame
-          while not Assigned(dummyKFEndFrames[AIndex - 1]) do
-            Sleep(10);
-
-          prevFrameData := dummyKFEndFrames[AIndex - 1];
-          dummyKFEndFrames[AIndex - 1] := nil;
-        end;
-
-        Correlations[frmIdx] := PearsonCorrelation(prevFrameData, FrameData[frmIdx - KeyFrame.StartFrame]);
-      end;
-    finally
-      KeyFrame.ReleaseFrameTiles;
-
-      Write(InterLockedExchangeAdd(doneFrameCount, KeyFrame.FrameCount) + KeyFrame.FrameCount:8, ' / ', Length(FFrames):8, #13);
-    end;
-  end;
-
-var
-  frmIdx, kfIdx, lastKFIdx, dummyKFLen: Integer;
+  frmIdx, kfIdx, lastKFIdx: Integer;
   correl: TFloat;
   kfReason: TKeyFrameReason;
   sfr, efr: Integer;
 begin
-  // compute interframe correlations
-
-  doneFrameCount := 0;
-  SetLength(Correlations, Length(FFrames));
-  if not AManualMode then
-  begin
-    // needs dummy KeyFrames to be able to do AcquireFrameTiles / ReleaseFrameTiles
-
-    dummyKFLen := Round(FFramesPerSecond * FShotTransMaxSecondsPerKF);
-
-    SetLength(dummyKeyFrames, (Length(FFrames) - 1) div dummyKFLen + 1);
-    SetLength(dummyKFEndFrames, Length(dummyKeyFrames));
-    for kfIdx := 0 to High(dummyKeyFrames) do
-    begin
-      dummyKeyFrames[kfIdx] := TKeyFrame.Create(Self, kfIdx, kfIdx * dummyKFLen, min(High(FFrames), (kfIdx + 1) * dummyKFLen - 1));
-      for frmIdx := dummyKeyFrames[kfIdx].StartFrame to dummyKeyFrames[kfIdx].EndFrame do
-        FFrames[frmIdx].PKeyFrame := dummyKeyFrames[kfIdx];
-    end;
-    try
-      ProcThreadPool.DoParallelLocalProc(@DoCorrel, 0, High(dummyKeyFrames));
-    finally
-      for frmIdx := 0 to High(FFrames) do
-        FFrames[frmIdx].PKeyFrame := nil;
-
-      for kfIdx := 0 to High(dummyKeyFrames) do
-        FreeAndNil(dummyKeyFrames[kfIdx]);
-
-      SetLength(dummyKeyFrames, 0);
-    end;
-  end;
-
   // find keyframes
 
   SetLength(FKeyFrames, Length(FFrames));
@@ -4340,7 +4270,7 @@ begin
   lastKFIdx := Low(Integer);
   for frmIdx := 0 to High(FFrames) do
   begin
-    correl := Correlations[frmIdx];
+    correl := FFrames[frmIdx].InterframeCorrelation;
 
     kfReason := kfrNone;
     if AManualMode then
