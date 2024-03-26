@@ -76,6 +76,7 @@ type
     lblPct: TLabel;
     llPalTileDesc: TPanel;
     MenuItem7: TMenuItem;
+    MenuItem8: TMenuItem;
     miGenerateY4M: TMenuItem;
     miReload: TMenuItem;
     miLoadSettings: TMenuItem;
@@ -129,6 +130,7 @@ type
 
     // processes
     procedure btnBlendClick(Sender: TObject);
+    procedure btnDitherClick(Sender: TObject);
     procedure btnGlobalLoadClick(Sender: TObject);
     procedure btnPreparePalettesClick(Sender: TObject);
     procedure btnClusterClick(Sender: TObject);
@@ -238,6 +240,12 @@ end;
 procedure TMainForm.btnBlendClick(Sender: TObject);
 begin
   FTilingEncoder.Run(esBlend);
+  UpdateVideo(nil);
+end;
+
+procedure TMainForm.btnDitherClick(Sender: TObject);
+begin
+  FTilingEncoder.Run(esDither);
   UpdateVideo(nil);
 end;
 
@@ -387,6 +395,9 @@ begin
 
   if OkStep(esPreparePalettes) then
     btnPreparePalettesClick(nil);
+
+  if OkStep(esDither) then
+    btnDitherClick(nil);
 
   if OkStep(esCluster) then
     btnClusterClick(nil);

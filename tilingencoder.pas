@@ -14,13 +14,13 @@ uses
   IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils, sle;
 
 type
-  TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esCluster, esReconstruct, esSmooth, esBlend, esReindex, esSave);
+  TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esDither, esCluster, esReconstruct, esSmooth, esBlend, esReindex, esSave);
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
   TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets);
 
 const
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 6, -1, -1, -1, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 3, 4, -1, -1, -1, 2, 1);
 
 type
   // GliGli's TileMotion header structs and commands
@@ -535,6 +535,7 @@ type
 
     procedure Load;
     procedure PreparePalettes;
+    procedure Dither;
     procedure Cluster;
     procedure Reconstruct;
     procedure Smooth;
@@ -1898,9 +1899,6 @@ begin
 
       T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
-      if Encoder.FFrameTilingFromPalette then
-        Encoder.DitherTile(T^, Frame.PKeyframe.Palettes[TMI^.Base.PalIdx].MixingPlan);
-
       Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, @DCT[0]);
 
       TMI^.Base.HMirror := T^.HMirror_Initial;
@@ -2047,9 +2045,6 @@ begin
         pPrevDCT := @GetDCT(prevFrame, prevTMI)^[0];
 
         T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
-
-        if Encoder.FFrameTilingFromPalette then
-          Encoder.DitherTile(T^, Frame.PKeyframe.Palettes[TMI^.Smoothed.PalIdx].MixingPlan);
 
         Encoder.ComputeTilePsyVisFeatures(T^,
             Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT,
@@ -2593,7 +2588,49 @@ begin
   ProcThreadPool.DoParallelLocalProc(@DoRun, 0, High(FKeyFrames));
 end;
 
-procedure TTilingEncoder.Cluster;
+procedure TTilingEncoder.Dither;
+var
+  doneFrameCount: Integer;
+
+  procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    sx, sy, si: Integer;
+    Frame: TFrame;
+    Tile: PTile;
+    TMI: PTileMapItem;
+  begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
+    Frame := FFrames[AIndex];
+
+    Frame.AcquireFrameTiles;
+    try
+      si := 0;
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          Tile := Frame.FrameTiles[si];
+          TMI := @Frame.TileMap[sy, sx];
+
+          DitherTile(Tile^, Frame.PKeyframe.Palettes[TMI^.Base.PalIdx].MixingPlan);
+
+          TMI^.Base.HMirror := Tile^.HMirror_Initial;
+          TMI^.Base.VMirror := Tile^.VMirror_Initial;
+
+          TMI^.Smoothed := TMI^.Base;
+          Inc(si);
+        end;
+
+      Frame.CompressFrameTiles; // we have changed FrameTiles
+
+      Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+
+    finally
+      Frame.ReleaseFrameTiles;
+    end;
+  end;
+
 var
   kfIdx, palIdx, colIdx: Integer;
   BWPal, pal: TIntegerDynArray;
@@ -2601,7 +2638,7 @@ begin
   if FrameCount = 0 then
     Exit;
 
-  ProgressRedraw(0, '', esCluster);
+  ProgressRedraw(0, '', esDither);
 
   OptimizeGlobalPalettes;
 
@@ -2621,6 +2658,17 @@ begin
     end;
 
   ProgressRedraw(2, 'BuildDitherers');
+
+  doneFrameCount := 0;
+  ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
+
+  ProgressRedraw(3, 'Dither');
+end;
+
+procedure TTilingEncoder.Cluster;
+begin
+  if FrameCount = 0 then
+    Exit;
 
   // cleanup any prior tile set
   TTile.Array1DDispose(FTiles);
@@ -4590,6 +4638,10 @@ begin
             tilePtr :=  Frame.FrameTiles[sy * FTileMapWidth + sx];
             if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].Base.PalIdx = FRenderPaletteIndex) then
             begin
+             pal := nil;
+             if FRenderDithered then
+               pal := Frame.PKeyframe.Palettes[frame.TileMap[sy, sx].Base.PalIdx].PaletteRGB;
+
               hmir := tilePtr^.HMirror_Initial;
               vmir := tilePtr^.VMirror_Initial;
 
@@ -5242,7 +5294,7 @@ var
   ANNDataset: array of PDouble;
   TileLineIdxs: TInt64DynArray;
 
-  procedure DoDither(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoTransfer(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     frameOffset: Int64;
     sx, sy, si: Integer;
@@ -5253,26 +5305,26 @@ var
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
+    Frame := FFrames[AIndex];
+
     Frame.AcquireFrameTiles;
     try
-      Frame := FFrames[AIndex];
       frameOffset := AIndex * FTileMapSize;
 
       si := 0;
       for sy := 0 to FTileMapHeight - 1 do
         for sx := 0 to FTileMapWidth - 1 do
         begin
-          Tile := Tiles[AIndex * FTileMapSize + si];
+          Tile := Tiles[frameOffset + si];
           TMI := @Frame.TileMap[sy, sx];
 
           Tile^.CopyFrom(Frame.FrameTiles[si]^);
-
-          DitherTile(Tile^, Frame.PKeyframe.Palettes[TMI^.Base.PalIdx].MixingPlan);
 
           TMI^.Base.HMirror := Tile^.HMirror_Initial;
           TMI^.Base.VMirror := Tile^.VMirror_Initial;
           TMI^.Base.TileIdx := frameOffset + si;
 
+          TMI^.Smoothed := TMI^.Base;
           Inc(si);
         end;
 
@@ -5317,6 +5369,8 @@ var
           TMI^.Base.HMirror := Tile^.HMirror_Initial;
           TMI^.Base.VMirror := Tile^.VMirror_Initial;
           TMI^.Base.TileIdx := ANNClusters[frameOffset + si];
+
+          TMI^.Smoothed := TMI^.Base;
 
           ANNPalIdxs[frameOffset + si] := TMI^.Base.PalIdx;
 
@@ -5377,9 +5431,6 @@ var
     DivMod(AIndex, FTileMapWidth, sy, sx);
     TMI := @Frame.TileMap[sy, sx];
 
-    if FGlobalTilingFromPalette then
-      DitherTile(Frame.FrameTiles[AIndex]^, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].MixingPlan);
-
     ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^, GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT, False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @DCTs[AIndex, 0]);
   end;
 
@@ -5414,9 +5465,9 @@ begin
     FTiles := TTile.Array1DNew(DSLen, True, True);
 
     doneFrameCount := 0;
-    ProcThreadPool.DoParallelLocalProc(@DoDither, 0, High(FFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoTransfer, 0, High(FFrames));
 
-    ProgressRedraw(6, 'DitherTiles');
+    ProgressRedraw(4, 'TransferTiles');
     Exit;
   end;
 
@@ -5513,7 +5564,7 @@ begin
 
   WriteLn('KF: ', StartFrame:8, ' DatasetSize: ', DSLen:8, ' BICOClusterCount: ', BICOClusterCount:6, ' BIRCHClusterCount: ', BIRCHClusterCount:6);
 
-  ProgressRedraw(3, 'Clustering');
+  ProgressRedraw(1, 'Clustering');
 
   if clusterCount <= 0 then
     Exit;
@@ -5532,7 +5583,7 @@ begin
     ann_kdtree_destroy(ANN);
   end;
 
-  ProgressRedraw(4, 'ANNReconstruct');
+  ProgressRedraw(2, 'ANNReconstruct');
 
   // allocate tile set
 
@@ -5558,13 +5609,13 @@ begin
     end;
   end;
 
-  ProgressRedraw(5, 'PrepareTiles');
+  ProgressRedraw(3, 'PrepareTiles');
 
   // dither final tiles
 
   ProcThreadPool.DoParallelLocalProc(@DoClusterDither, 0, clusterCount - 1);
 
-  ProgressRedraw(6, 'DitherTiles');
+  ProgressRedraw(4, 'DitherTiles');
 end;
 
 procedure TTilingEncoder.OptimizeGlobalPalettes;
@@ -6540,6 +6591,8 @@ begin
       Load;
     esPreparePalettes:
       PreparePalettes;
+    esDither:
+      Dither;
     esCluster:
       Cluster;
     esReconstruct:

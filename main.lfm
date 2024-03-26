@@ -893,6 +893,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 8
     Width = 96
+    DropDownCount = 20
     ItemHeight = 15
     Style = csDropDownList
     TabOrder = 3
@@ -920,6 +921,7 @@ object MainForm: TMainForm
     Height = 23
     Top = 8
     Width = 96
+    DropDownCount = 20
     ItemHeight = 15
     Style = csDropDownList
     TabOrder = 2
@@ -1016,6 +1018,10 @@ object MainForm: TMainForm
       Caption = 'Prepare palettes'
       ShortCut = 115
       OnClick = btnPreparePalettesClick
+    end
+    object MenuItem8: TMenuItem
+      Caption = 'Dither'
+      OnClick = btnDitherClick
     end
     object MenuItem2: TMenuItem
       Caption = 'Cluster'
