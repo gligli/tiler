@@ -2328,6 +2328,10 @@ begin
       Encoder.VMirrorTile(Tile^);
   end;
 
+  // moderate the number of threads
+  if Index >= Encoder.MaxThreadCount then
+    WaitForSingleObject(Encoder.FFrames[Index - Encoder.MaxThreadCount].InterframeCorrelationEvent, INFINITE);
+
   TThread.ExecuteInThread(@DoAsyncComputeInterFrameCorrelationAndCompress, Self);
 end;
 
