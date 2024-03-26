@@ -274,16 +274,25 @@ type
     PKeyFrame: TKeyFrame;
     Index: Integer;
 
+    TileMap: array of array of TTileMapItem;
+
     InterframeCorrelationData: TFloatDynArray;
     InterframeCorrelation: TFloat; // with previous frame
 
     FrameTiles: array of PTile;
-    TileMap: array of array of TTileMapItem;
+    FrameTilesRefCount: Integer;
+    FrameTilesEvent: THandle;
+    CompressedFrameTiles: TMemoryStream;
 
     function PrepareInterFrameCorrelation: TFloatDynArray;
     procedure SequentialLoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
 
     constructor Create(AParent: TTilingEncoder; AIndex: Integer);
+    destructor Destroy; override;
+
+    procedure CompressFrameTiles;
+    procedure AcquireFrameTiles;
+    procedure ReleaseFrameTiles;
   end;
 
   TFrameArray =  array of TFrame;
@@ -294,9 +303,6 @@ type
     Encoder: TTilingEncoder;
     Index, StartFrame, EndFrame, FrameCount: Integer;
     Reason: TKeyFrameReason;
-
-    FrameTilesRefCount: Integer;
-    FrameTilesEvent: THandle;
 
     Palettes: array of TPalette;
 
@@ -1060,44 +1066,41 @@ begin
   FrameCount := AEndFrame - AStartFrame + 1;
 
   SpinLeave(@ReconstructLock);
-  FrameTilesEvent := CreateEvent(nil, True, False, nil);
   BlendEvent := CreateEvent(nil, True, False, nil);
 end;
 
 destructor TKeyFrame.Destroy;
 begin
   CloseHandle(BlendEvent);
-  CloseHandle(FrameTilesEvent);
   inherited Destroy;
 end;
 
 procedure TKeyFrame.AcquireFrameTiles;
-begin
-  if InterLockedIncrement(FrameTilesRefCount) = 1 then
-  begin
-    //TODO
 
-    // signal other threads decompression is done
-    SetEvent(FrameTilesEvent);
-  end
-  else
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
-    WaitForSingleObject(FrameTilesEvent, INFINITE);
+    if not InRange(AIndex, StartFrame, EndFrame) then
+      Exit;
+
+    Encoder.Frames[AIndex].AcquireFrameTiles;
   end;
+
+begin
+  ProcThreadPool.DoParallelLocalProc(@DoFrame, StartFrame, EndFrame);
 end;
 
 procedure TKeyFrame.ReleaseFrameTiles;
-var
-  ftrc: Integer;
-begin
-  ftrc := InterLockedDecrement(FrameTilesRefCount);
-  if ftrc <= 0 then
-  begin
-    Assert(ftrc = 0);
-    ResetEvent(FrameTilesEvent);
 
-    // TODO
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  begin
+    if not InRange(AIndex, StartFrame, EndFrame) then
+      Exit;
+
+    Encoder.Frames[AIndex].ReleaseFrameTiles;
   end;
+
+begin
+  ProcThreadPool.DoParallelLocalProc(@DoFrame, StartFrame, EndFrame);
 end;
 
 procedure TKeyFrame.DoPalettization(ADitheringGamma: Integer);
@@ -2191,8 +2194,75 @@ constructor TFrame.Create(AParent: TTilingEncoder; AIndex: Integer);
 begin
   Encoder := AParent;
   Index := AIndex;
+
+  FrameTilesEvent := CreateEvent(nil, True, False, nil);
+  CompressedFrameTiles := TMemoryStream.Create;
 end;
 
+destructor TFrame.Destroy;
+begin
+  CompressedFrameTiles.Free;
+  CloseHandle(FrameTilesEvent);
+  inherited Destroy;
+end;
+
+procedure TFrame.CompressFrameTiles;
+var
+  CompStream: Tcompressionstream;
+begin
+  CompressedFrameTiles.Clear;
+  CompStream := Tcompressionstream.create(Tcompressionlevel.cldefault, CompressedFrameTiles, True);
+  try
+    CompStream.WriteBuffer(FrameTiles[0]^, Length(TileMap) * Length(TileMap[0]) * (SizeOf(TTile) + SizeOf(TRGBPixels) + SizeOf(TPalPixels)));
+    CompStream.flush;
+  finally
+    CompStream.Free;
+  end;
+
+  // now that FrameTiles are compressed, dispose them
+
+  TTile.Array1DDispose(FrameTiles);
+end;
+
+procedure TFrame.AcquireFrameTiles;
+var
+  CompStream: Tdecompressionstream;
+begin
+  if InterLockedIncrement(FrameTilesRefCount) = 1 then
+  begin
+    Assert(CompressedFrameTiles.Size > 0);
+
+    CompressedFrameTiles.Position := 0;
+    FrameTiles := TTile.Array1DNew(Length(TileMap) * Length(TileMap[0]), True, True);
+
+    CompStream := Tdecompressionstream.create(CompressedFrameTiles, True);
+    try
+      CompStream.ReadBuffer(FrameTiles[0]^, Length(TileMap) * Length(TileMap[0]) * (SizeOf(TTile) + SizeOf(TRGBPixels) + SizeOf(TPalPixels)));
+    finally
+      CompStream.Free;
+    end;
+
+    // signal other threads decompression is done
+    SetEvent(FrameTilesEvent);
+  end
+  else
+  begin
+    WaitForSingleObject(FrameTilesEvent, INFINITE);
+  end;
+end;
+
+procedure TFrame.ReleaseFrameTiles;
+var
+  ftrc: Integer;
+begin
+  ftrc := InterLockedDecrement(FrameTilesRefCount);
+  if ftrc <= 0 then
+  begin
+    ResetEvent(FrameTilesEvent);
+    TTile.Array1DDispose(FrameTiles);
+    Assert(ftrc = 0);
+  end;
+end;
 
 procedure TFrame.SequentialLoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
 var
@@ -2254,6 +2324,10 @@ begin
     InterframeCorrelation := Encoder.PearsonCorrelation(Encoder.FFrames[Index - 1].InterframeCorrelationData, InterframeCorrelationData);
     SetLength(Encoder.FFrames[Index - 1].InterframeCorrelationData, 0);
   end;
+
+  // also compress frame tiles to save memory
+
+  CompressFrameTiles;
 
   Write(Index + 1:8, ' / ', Length(Encoder.FFrames):8, #13);
 end;
@@ -5135,7 +5209,6 @@ var
   var
     frameOffset: Int64;
     sx, sy, si: Integer;
-    KeyFrame: TKeyFrame;
     Frame: TFrame;
     Tile: PTile;
     TMI: PTileMapItem;
@@ -5143,9 +5216,7 @@ var
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
 
-    KeyFrame := FFrames[AIndex].PKeyFrame;
-
-    KeyFrame.AcquireFrameTiles;
+    Frame.AcquireFrameTiles;
     try
       Frame := FFrames[AIndex];
       frameOffset := AIndex * FTileMapSize;
@@ -5171,7 +5242,7 @@ var
       Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
 
     finally
-      KeyFrame.ReleaseFrameTiles;
+      Frame.ReleaseFrameTiles;
     end;
   end;
 
@@ -5179,7 +5250,6 @@ var
   var
     frameOffset: Int64;
     sx, sy, si: Integer;
-    KeyFrame: TKeyFrame;
     Frame: TFrame;
     Tile: PTile;
     TMI: PTileMapItem;
@@ -5189,9 +5259,8 @@ var
       Exit;
 
     Frame := FFrames[AIndex];
-    KeyFrame := Frame.PKeyFrame;
 
-    KeyFrame.AcquireFrameTiles;
+    Frame.AcquireFrameTiles;
     try
       frameOffset := AIndex * FTileMapSize;
 
@@ -5219,7 +5288,7 @@ var
 
       Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
     finally
-      KeyFrame.ReleaseFrameTiles;
+      Frame.ReleaseFrameTiles;
     end;
   end;
 
