@@ -278,6 +278,7 @@ type
 
     InterframeCorrelationData: TFloatDynArray;
     InterframeCorrelation: TFloat; // with previous frame
+    InterframeCorrelationEvent: THandle;
 
     FrameTiles: array of PTile;
     FrameTilesRefCount: Integer;
@@ -285,7 +286,8 @@ type
     CompressedFrameTiles: TMemoryStream;
 
     function PrepareInterFrameCorrelation: TFloatDynArray;
-    procedure SequentialLoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
+    procedure ComputeInterFrameCorrelationAndCompress;
+    procedure LoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
 
     constructor Create(AParent: TTilingEncoder; AIndex: Integer);
     destructor Destroy; override;
@@ -350,6 +352,7 @@ type
     // encoder state variables
 
     FCS: TRTLCriticalSection;
+    LoadFromImageFinishedEvent: THandle;
     FKeyFramesLeft: Integer;
 
     FGamma: array[0..1] of TFloat;
@@ -2197,10 +2200,12 @@ begin
 
   FrameTilesEvent := CreateEvent(nil, True, False, nil);
   CompressedFrameTiles := TMemoryStream.Create;
+  InterframeCorrelationEvent := CreateEvent(nil, True, False, nil);
 end;
 
 destructor TFrame.Destroy;
 begin
+  CloseHandle(InterframeCorrelationEvent);
   CompressedFrameTiles.Free;
   CloseHandle(FrameTilesEvent);
   inherited Destroy;
@@ -2264,7 +2269,16 @@ begin
   end;
 end;
 
-procedure TFrame.SequentialLoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
+procedure DoAsyncComputeInterFrameCorrelationAndCompress(AData : Pointer);
+var
+  Frame: TFrame;
+begin
+  Frame := TFrame(AData);
+
+  Frame.ComputeInterFrameCorrelationAndCompress;
+end;
+
+procedure TFrame.LoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
 var
   i, j, col, ti, tx, ty: Integer;
   HMirror, VMirror: Boolean;
@@ -2314,22 +2328,7 @@ begin
       Encoder.VMirrorTile(Tile^);
   end;
 
-  // also compute inter-frame correlations
-
-  InterframeCorrelationData := PrepareInterFrameCorrelation;
-
-  if Index > 0 then
-  begin
-    Assert(Assigned(Encoder.FFrames[Index - 1].InterframeCorrelationData), 'load frames sequentially!');
-    InterframeCorrelation := Encoder.PearsonCorrelation(Encoder.FFrames[Index - 1].InterframeCorrelationData, InterframeCorrelationData);
-    SetLength(Encoder.FFrames[Index - 1].InterframeCorrelationData, 0);
-  end;
-
-  // also compress frame tiles to save memory
-
-  CompressFrameTiles;
-
-  Write(Index + 1:8, ' / ', Length(Encoder.FFrames):8, #13);
+  TThread.ExecuteInThread(@DoAsyncComputeInterFrameCorrelationAndCompress, Self);
 end;
 
 function TFrame.PrepareInterFrameCorrelation: TFloatDynArray;
@@ -2369,6 +2368,35 @@ begin
   SetLength(Result, sz * cColorCpns);
   for i := 0 to High(Result) do
     Result[i] := Dataset[i mod sz, i div sz];
+end;
+
+procedure TFrame.ComputeInterFrameCorrelationAndCompress;
+begin
+  // also compute inter-frame correlations
+
+  InterframeCorrelationData := PrepareInterFrameCorrelation;
+  SetEvent(InterframeCorrelationEvent);
+
+  if Index > 0 then
+  begin
+    // wait prev frame InterframeCorrelationData
+    WaitForSingleObject(Encoder.FFrames[Index - 1].InterframeCorrelationEvent, INFINITE);
+
+    InterframeCorrelation := Encoder.PearsonCorrelation(Encoder.FFrames[Index - 1].InterframeCorrelationData, InterframeCorrelationData);
+    SetLength(Encoder.FFrames[Index - 1].InterframeCorrelationData, 0);
+  end;
+
+  // also compress frame tiles to save memory
+
+  CompressFrameTiles;
+
+  Write(Index + 1:8, ' / ', Length(Encoder.FFrames):8, #13);
+
+  if Index = High(Encoder.FFrames) then
+  begin
+    // signal the encoder we finished loading frames
+    SetEvent(Encoder.LoadFromImageFinishedEvent);
+  end;
 end;
 
 { TTilingEncoder }
@@ -4296,7 +4324,7 @@ begin
   Encoder := TTilingEncoder(AUserParameter);
   frmIdx := AIndex - Encoder.FStartFrame;
 
-  Encoder.FFrames[frmIdx].SequentialLoadFromImage(AWidth, AHeight, AFrameData);
+  Encoder.FFrames[frmIdx].LoadFromImage(AWidth, AHeight, AFrameData);
 end;
 
 procedure TTilingEncoder.LoadInputVideo;
@@ -4322,12 +4350,15 @@ begin
       for frmIdx := 0 to High(FFrames) do
       begin
         PNG.LoadFromFile(Format(FLoadedInputPath, [frmIdx + FStartFrame]));
-        FFrames[frmIdx].SequentialLoadFromImage(PNG.RawImage.Description.Width, PNG.RawImage.Description.Height, PInteger(PNG.RawImage.Data));
+        FFrames[frmIdx].LoadFromImage(PNG.RawImage.Description.Width, PNG.RawImage.Description.Height, PInteger(PNG.RawImage.Data));
       end;
     finally
       PNG.Free;
     end;
   end;
+
+  // wait LoadFromImageFinishedEvent (ensures all frames processed)
+  WaitForSingleObject(LoadFromImageFinishedEvent, INFINITE);
 end;
 
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
@@ -4419,6 +4450,8 @@ begin
   TTile.Array1DDispose(FTiles);
 
   FRenderPrevKeyFrame := nil;
+
+  ResetEvent(LoadFromImageFinishedEvent);
 end;
 
 procedure TTilingEncoder.Render(AFast: Boolean);
@@ -6449,6 +6482,7 @@ constructor TTilingEncoder.Create;
 begin
   FormatSettings.DecimalSeparator := '.';
   InitializeCriticalSection(FCS);
+  LoadFromImageFinishedEvent := CreateEvent(nil, True, False, nil);
 
 {$ifdef DEBUG}
   ProcThreadPool.MaxThreadCount := 1;
@@ -6482,6 +6516,7 @@ begin
   ClearAll;
 
   DeleteCriticalSection(FCS);
+  CloseHandle(LoadFromImageFinishedEvent);
 
   FInputBitmap.Free;
   FOutputBitmap.Free;
