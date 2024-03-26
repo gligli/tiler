@@ -2451,23 +2451,9 @@ end;
 
 procedure TTilingEncoder.Reconstruct;
 var
+  kfIdx: Integer;
+  KF: TKeyFrame;
   StepProgress: Integer;
-
-  procedure DoRunKF(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    KF: TKeyFrame;
-  begin
-    if not InRange(AIndex, 0, High(FKeyFrames)) then
-      Exit;
-
-    KF := FKeyFrames[AIndex];
-
-    KF.Reconstruct;
-
-    Inc(StepProgress, KF.FrameCount);
-    ProgressRedraw(StepProgress, 'KF: ' + IntToStr(KF.StartFrame), esReconstruct, AItem.Thread);
-  end;
-
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -2477,7 +2463,13 @@ begin
 
   FKeyFramesLeft := Length(FKeyFrames);
 
-  ProcThreadPool.DoParallelLocalProc(@DoRunKF, 0, High(FKeyFrames));
+  for kfIdx := 0 to High(FKeyFrames) do
+  begin
+    KF := FKeyFrames[kfIdx];
+    KF.Reconstruct;
+    Inc(StepProgress, KF.FrameCount);
+    ProgressRedraw(StepProgress, 'KF: ' + IntToStr(KF.StartFrame), esReconstruct);
+  end;
 end;
 
 procedure TTilingEncoder.Smooth;
