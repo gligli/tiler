@@ -4425,13 +4425,12 @@ var
   FFMPEG: TFFMPEG;
   PNG: TPortableNetworkGraphic;
   frmIdx: Integer;
-  Events: array of THandle;
 begin
   if FileExists(FLoadedInputPath) then
   begin
     FFMPEG := FFMPEG_Open(FLoadedInputPath, FScaling, True);
     try
-      FFMPEG_LoadFrames(FFMPEG, FStartFrame, FStartFrame + Length(FFrames), @DoLoadFFMPEGFrame, Self);
+      FFMPEG_LoadFrames(FFMPEG, FStartFrame, Length(FFrames), @DoLoadFFMPEGFrame, Self);
     finally
       FFMPEG_Close(FFMPEG);
     end;
