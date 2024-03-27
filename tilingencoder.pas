@@ -1109,6 +1109,8 @@ begin
 end;
 
 procedure TKeyFrame.DoPalettization(ADitheringGamma: Integer);
+const
+  cFeatureCount = cTileDCTSize;
 var
   DSLen: Integer;
   BIRCH: PBIRCH;
@@ -1146,13 +1148,15 @@ var
 
   procedure DoDataset(ACluster: Boolean);
   var
-    i, frmIdx, ftIdx, di: Integer;
+    i, frmIdx, ftIdx, ty, tx, di: Integer;
+    rr, gg, bb: Byte;
+    l, a, b: TFloat;
     Frame: TFrame;
     Tile: PTile;
     DCTs: TDoubleDynArray;
     ANNErrors: TDoubleDynArray;
   begin
-    SetLength(DCTs, Encoder.FTileMapSize * cTileDCTSize);
+    SetLength(DCTs, Encoder.FTileMapSize * cFeatureCount);
     SetLength(ANNErrors, Encoder.FTileMapSize);
 
     di := 0;
@@ -1164,7 +1168,22 @@ var
       begin
         Tile := Frame.FrameTiles[ftIdx];
 
-        Encoder.ComputeTilePsyVisFeatures(Tile^, Encoder.DitheringMode = pvsWavelets, False, True, Encoder.DitheringMode = pvsWeightedDCT, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cTileDCTSize]);
+        Encoder.ComputeTilePsyVisFeatures(Tile^, Encoder.DitheringMode = pvsWavelets, False, True, Encoder.DitheringMode = pvsWeightedDCT, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cFeatureCount]);
+
+        DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 3)] := 0.0;
+        DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 2)] := 0.0;
+        DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 1)] := 0.0;
+        for ty := 0 to cTileWidth - 1 do
+          for tx := 0 to cTileWidth - 1 do
+          begin
+            FromRGB(Tile^.RGBPixels[ty, tx], rr, gg, bb);
+
+            Encoder.RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
+
+            DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 3)] += l;
+            DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 2)] += a;
+            DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 1)] += b;
+          end;
 
         Inc(di);
       end;
@@ -1172,12 +1191,12 @@ var
       if ACluster then
       begin
         for i := 0 to Encoder.FTileMapSize - 1 do
-          ANNClusters[(frmIdx - StartFrame) * Encoder.FTileMapSize + i] := ann_kdtree_search(ANN, @DCTs[i * cTileDCTSize], 0.0, @ANNErrors[i]);
+          ANNClusters[(frmIdx - StartFrame) * Encoder.FTileMapSize + i] := ann_kdtree_search(ANN, @DCTs[i * cFeatureCount], 0.0, @ANNErrors[i]);
       end
       else
       begin
         for i := 0 to Encoder.FTileMapSize - 1 do
-          birch_insert_line(BIRCH, @DCTs[i * cTileDCTSize]);
+          birch_insert_line(BIRCH, @DCTs[i * cFeatureCount]);
       end;
     end;
     Assert(di = DSLen);
@@ -1209,7 +1228,7 @@ begin
 
       BIRCHClusterCount := birch_compute(BIRCH, False, False);
 
-      SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize);
+      SetLength(BIRCHCentroids, BIRCHClusterCount * cFeatureCount);
       birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
 
       WriteLn('KF: ', StartFrame:8, ' Palettization BIRCHClusterCount: ', BIRCHClusterCount:6);
@@ -1220,7 +1239,7 @@ begin
   else
   begin
     BIRCHClusterCount := 1;
-    SetLength(BIRCHCentroids, BIRCHClusterCount * cTileDCTSize);
+    SetLength(BIRCHCentroids, BIRCHClusterCount * cFeatureCount);
 
     WriteLn('KF: ', StartFrame:8, ' Empty KeyFrame!');
   end;
@@ -1229,11 +1248,11 @@ begin
 
   SetLength(ANNDataset, BIRCHClusterCount);
   for di := 0 to High(ANNDataset) do
-    ANNDataset[di] := @BIRCHCentroids[di * cTileDCTSize];
+    ANNDataset[di] := @BIRCHCentroids[di * cFeatureCount];
 
   SetLength(ANNClusters, DSLen);
 
-  ANN := ann_kdtree_create(@ANNDataset[0], BIRCHClusterCount, cTileDCTSize, 32, ANN_KD_SUGGEST);
+  ANN := ann_kdtree_create(@ANNDataset[0], BIRCHClusterCount, cFeatureCount, 32, ANN_KD_SUGGEST);
   try
     DoDataset(True);
   finally
@@ -1249,7 +1268,7 @@ begin
       SetLength(YakmoClusters, BIRCHClusterCount);
 
       Yakmo := yakmo_create(Encoder.FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-      yakmo_load_train_data(Yakmo, Length(ANNDataset), cTileDCTSize, PPDouble(@ANNDataset[0]));
+      yakmo_load_train_data(Yakmo, Length(ANNDataset), cFeatureCount, PPDouble(@ANNDataset[0]));
       SetLength(ANNDataset, 0); // free up some memmory
       yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
       yakmo_destroy(Yakmo);
