@@ -279,6 +279,7 @@ type
     InterframeCorrelationData: TFloatDynArray;
     InterframeCorrelation: TFloat; // with previous frame
     InterframeCorrelationEvent: THandle;
+    LoadFromImageFinishedEvent: THandle;
 
     FrameTiles: array of PTile;
     FrameTilesRefCount: Integer;
@@ -352,7 +353,6 @@ type
     // encoder state variables
 
     FCS: TRTLCriticalSection;
-    LoadFromImageFinishedEvent: THandle;
     FKeyFramesLeft: Integer;
 
     FGamma: array[0..1] of TFloat;
@@ -413,7 +413,6 @@ type
 
     // GUI state variables
 
-    FRenderPrevKeyFrame: TKeyFrame;
     FRenderBlended: Boolean;
     FRenderFrameIndex: Integer;
     FRenderGammaValue: Double;
@@ -2196,10 +2195,12 @@ begin
   FrameTilesEvent := CreateEvent(nil, True, False, nil);
   CompressedFrameTiles := TMemoryStream.Create;
   InterframeCorrelationEvent := CreateEvent(nil, True, False, nil);
+  LoadFromImageFinishedEvent := CreateEvent(nil, True, False, nil);
 end;
 
 destructor TFrame.Destroy;
 begin
+  CloseHandle(LoadFromImageFinishedEvent);
   CloseHandle(InterframeCorrelationEvent);
   CompressedFrameTiles.Free;
   CloseHandle(FrameTilesEvent);
@@ -2260,9 +2261,10 @@ begin
   ftrc := InterLockedDecrement(FrameTilesRefCount);
   if ftrc <= 0 then
   begin
-    ResetEvent(FrameTilesEvent);
-    TTile.Array1DDispose(FrameTiles);
     Assert(ftrc = 0);
+    TTile.Array1DDispose(FrameTiles);
+
+    ResetEvent(FrameTilesEvent);
   end;
 end;
 
@@ -2384,7 +2386,6 @@ begin
     WaitForSingleObject(Encoder.FFrames[Index - 1].InterframeCorrelationEvent, INFINITE);
 
     InterframeCorrelation := Encoder.PearsonCorrelation(Encoder.FFrames[Index - 1].InterframeCorrelationData, InterframeCorrelationData);
-    SetLength(Encoder.FFrames[Index - 1].InterframeCorrelationData, 0);
   end;
 
   // compress frame tiles to save memory
@@ -2393,11 +2394,12 @@ begin
 
   Write(Index + 1:8, ' / ', Length(Encoder.FFrames):8, #13);
 
-  if Index = High(Encoder.FFrames) then
-  begin
-    // signal the encoder we finished loading frames
-    SetEvent(Encoder.LoadFromImageFinishedEvent);
-  end;
+  // wait until the next frame has finished
+  if Index < High(Encoder.FFrames) then
+    WaitForSingleObject(Encoder.FFrames[Index + 1].LoadFromImageFinishedEvent, INFINITE);
+  SetLength(InterframeCorrelationData, 0);
+
+  SetEvent(LoadFromImageFinishedEvent);
 end;
 
 { TTilingEncoder }
@@ -4388,6 +4390,7 @@ var
   FFMPEG: TFFMPEG;
   PNG: TPortableNetworkGraphic;
   frmIdx: Integer;
+  Events: array of THandle;
 begin
   if FileExists(FLoadedInputPath) then
   begin
@@ -4413,8 +4416,13 @@ begin
     end;
   end;
 
-  // wait LoadFromImageFinishedEvent (ensures all frames processed)
-  WaitForSingleObject(LoadFromImageFinishedEvent, INFINITE);
+  // wait all LoadFromImageFinishedEvent (ensures all frames processed)
+
+  SetLength(Events, Length(FFrames));
+  for frmIdx := 0 to High(FFrames) do
+    Events[frmIdx] := FFrames[frmIdx].LoadFromImageFinishedEvent;
+
+  WaitForMultipleObjects(Length(FFrames), PWOHandleArray(@Events[0]), True, INFINITE);
 end;
 
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
@@ -4504,10 +4512,6 @@ begin
   SetLength(FKeyFrames, 0);
 
   TTile.Array1DDispose(FTiles);
-
-  FRenderPrevKeyFrame := nil;
-
-  ResetEvent(LoadFromImageFinishedEvent);
 end;
 
 procedure TTilingEncoder.Render(AFast: Boolean);
@@ -4631,11 +4635,8 @@ begin
       FInputBitmap.Canvas.FillRect(FInputBitmap.Canvas.ClipRect);
 
       FInputBitmap.BeginUpdate;
-      Frame.PKeyFrame.AcquireFrameTiles;
+      Frame.AcquireFrameTiles;
       try
-        if Assigned(FRenderPrevKeyFrame) then
-          FRenderPrevKeyFrame.ReleaseFrameTiles;
-
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
           begin
@@ -4656,7 +4657,7 @@ begin
           end;
       finally
         FInputBitmap.EndUpdate;
-        FRenderPrevKeyFrame := Frame.PKeyFrame;
+        Frame.ReleaseFrameTiles;
       end;
     end;
 
@@ -4838,11 +4839,8 @@ begin
 
     if not (FRenderPlaying or AFast) then
     begin
-      Frame.PKeyFrame.AcquireFrameTiles;
+      Frame.AcquireFrameTiles;
       try
-        if Assigned(FRenderPrevKeyFrame) then
-          FRenderPrevKeyFrame.ReleaseFrameTiles;
-
         q := 0.0;
         i := 0;
         for sy := 0 to FTileMapHeight - 1 do
@@ -4870,7 +4868,7 @@ begin
 
         FRenderPsychoVisualQuality := Sqrt(q);
       finally
-        FRenderPrevKeyFrame := Frame.PKeyFrame;
+        Frame.ReleaseFrameTiles;
       end;
     end;
   finally
@@ -6540,7 +6538,6 @@ constructor TTilingEncoder.Create;
 begin
   FormatSettings.DecimalSeparator := '.';
   InitializeCriticalSection(FCS);
-  LoadFromImageFinishedEvent := CreateEvent(nil, True, False, nil);
 
 {$ifdef DEBUG}
   ProcThreadPool.MaxThreadCount := 1;
@@ -6574,7 +6571,6 @@ begin
   ClearAll;
 
   DeleteCriticalSection(FCS);
-  CloseHandle(LoadFromImageFinishedEvent);
 
   FInputBitmap.Free;
   FOutputBitmap.Free;
