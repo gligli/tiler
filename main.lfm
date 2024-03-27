@@ -977,7 +977,7 @@ object MainForm: TMainForm
     OnClick = btnPMClick
   end
   object chkDithered: TCheckBox
-    Left = 248
+    Left = 312
     Height = 19
     Top = 575
     Width = 63
@@ -985,11 +985,11 @@ object MainForm: TMainForm
     Caption = 'Dithered'
     Checked = True
     State = cbChecked
-    TabOrder = 10
+    TabOrder = 11
     OnChange = UpdateVideo
   end
   object chkBlended: TCheckBox
-    Left = 328
+    Left = 240
     Height = 19
     Top = 575
     Width = 61
@@ -997,7 +997,7 @@ object MainForm: TMainForm
     Caption = 'Blended'
     Checked = True
     State = cbChecked
-    TabOrder = 11
+    TabOrder = 10
     OnChange = UpdateVideo
   end
   object IdleTimer: TIdleTimer
