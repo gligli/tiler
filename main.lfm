@@ -65,14 +65,14 @@ object MainForm: TMainForm
     OnChange = UpdateVideo
   end
   object chkGamma: TCheckBox
-    Left = 552
+    Left = 688
     Height = 19
     Top = 575
     Width = 62
     Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = 'Gamma'
-    TabOrder = 13
+    TabOrder = 14
     OnChange = UpdateVideo
   end
   object chkSmoothed: TCheckBox
@@ -90,8 +90,8 @@ object MainForm: TMainForm
   end
   object lblCorrel: TLabel
     Left = 880
-    Height = 13
-    Top = 579
+    Height = 15
+    Top = 577
     Width = 75
     Alignment = taRightJustify
     Anchors = [akRight, akBottom]
@@ -102,14 +102,14 @@ object MainForm: TMainForm
   object Label5: TLabel
     Left = 770
     Height = 15
-    Top = 579
+    Top = 577
     Width = 108
     Anchors = [akRight, akBottom]
     Caption = 'PsyV (residual error):'
     ParentColor = False
   end
   object sedPalIdx: TSpinEdit
-    Left = 480
+    Left = 616
     Height = 23
     Top = 573
     Width = 48
@@ -117,11 +117,11 @@ object MainForm: TMainForm
     AutoSize = False
     MinValue = -1
     OnChange = UpdateVideo
-    TabOrder = 12
+    TabOrder = 13
     Value = -1
   end
   object Label8: TLabel
-    Left = 432
+    Left = 568
     Height = 15
     Top = 577
     Width = 36
@@ -962,7 +962,7 @@ object MainForm: TMainForm
     Anchors = [akTop, akLeft, akRight]
     BevelInner = bvLowered
     BevelOuter = bvNone
-    TabOrder = 14
+    TabOrder = 15
   end
   object btnPM: TButton
     Left = 80
@@ -976,13 +976,13 @@ object MainForm: TMainForm
     TabOrder = 1
     OnClick = btnPMClick
   end
-  object chkDithered: TCheckBox
+  object chkDitheredO: TCheckBox
     Left = 312
     Height = 19
     Top = 575
-    Width = 63
+    Width = 110
     Anchors = [akLeft, akBottom]
-    Caption = 'Dithered'
+    Caption = 'Dithered (output)'
     Checked = True
     State = cbChecked
     TabOrder = 11
@@ -998,6 +998,16 @@ object MainForm: TMainForm
     Checked = True
     State = cbChecked
     TabOrder = 10
+    OnChange = UpdateVideo
+  end
+  object chkDitheredI: TCheckBox
+    Left = 436
+    Height = 19
+    Top = 575
+    Width = 102
+    Anchors = [akLeft, akBottom]
+    Caption = 'Dithered (input)'
+    TabOrder = 12
     OnChange = UpdateVideo
   end
   object IdleTimer: TIdleTimer
@@ -1070,11 +1080,25 @@ object MainForm: TMainForm
     end
     object miGeneratePNGs: TMenuItem
       Caption = 'Generate PNGs'
-      OnClick = btnGeneratePNGsClick
+      object miGeneratePNGsInput: TMenuItem
+        Caption = 'Input'
+        OnClick = btnGeneratePNGsInputClick
+      end
+      object miGeneratePNGsOutput: TMenuItem
+        Caption = 'Output'
+        OnClick = miGeneratePNGsOutputClick
+      end
     end
     object miGenerateY4M: TMenuItem
       Caption = 'Generate Y4M video'
-      OnClick = miGenerateY4MClick
+      object miGenerateY4MInput: TMenuItem
+        Caption = 'Input'
+        OnClick = miGenerateY4MInputClick
+      end
+      object miGenerateY4MOutput: TMenuItem
+        Caption = 'Output'
+        OnClick = miGenerateY4MOutputClick
+      end
     end
     object miReload: TMenuItem
       Caption = 'Reload GTM file... (needs loaded video)'

@@ -25,6 +25,7 @@ type
     cbxFTMode: TComboBox;
     chkClusterFromPal: TCheckBox;
     chkBlended: TCheckBox;
+    chkDitheredI: TCheckBox;
     chkGlobLumaOnly: TCheckBox;
     chkGlobGamma: TCheckBox;
     chkPosterize: TCheckBox;
@@ -36,7 +37,7 @@ type
     cbxYilMix: TComboBox;
     cbxPalSize: TComboBox;
     cbxDLBPC: TComboBox;
-    chkDithered: TCheckBox;
+    chkDitheredO: TCheckBox;
     chkFTGamma: TCheckBox;
     chkUseKMQuant: TCheckBox;
     chkGamma: TCheckBox;
@@ -75,8 +76,12 @@ type
     Label9: TLabel;
     lblPct: TLabel;
     llPalTileDesc: TPanel;
+    miGeneratePNGsOutput: TMenuItem;
+    miGeneratePNGsInput: TMenuItem;
+    miGenerateY4MOutput: TMenuItem;
     MenuItem7: TMenuItem;
     MenuItem8: TMenuItem;
+    miGenerateY4MInput: TMenuItem;
     miGenerateY4M: TMenuItem;
     miReload: TMenuItem;
     miLoadSettings: TMenuItem;
@@ -153,11 +158,13 @@ type
     procedure imgClick(Sender: TObject);
     procedure imgContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
     procedure imgPaletteClick(Sender: TObject);
-    procedure btnGeneratePNGsClick(Sender: TObject);
+    procedure btnGeneratePNGsInputClick(Sender: TObject);
     procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
     procedure imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure imgTilesMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
-    procedure miGenerateY4MClick(Sender: TObject);
+    procedure miGeneratePNGsOutputClick(Sender: TObject);
+    procedure miGenerateY4MInputClick(Sender: TObject);
+    procedure miGenerateY4MOutputClick(Sender: TObject);
     procedure miLoadSettingsClick(Sender: TObject);
     procedure miReloadClick(Sender: TObject);
     procedure miSaveSettingsClick(Sender: TObject);
@@ -267,9 +274,9 @@ begin
   UpdateVideo(nil);
 end;
 
-procedure TMainForm.btnGeneratePNGsClick(Sender: TObject);
+procedure TMainForm.btnGeneratePNGsInputClick(Sender: TObject);
 begin
-  FTilingEncoder.GeneratePNGs;
+  FTilingEncoder.GeneratePNGs(True);
   UpdateVideo(nil);
 end;
 
@@ -331,9 +338,21 @@ begin
     llPalTileDesc.Caption := 'Invalid tile!';
 end;
 
-procedure TMainForm.miGenerateY4MClick(Sender: TObject);
+procedure TMainForm.miGeneratePNGsOutputClick(Sender: TObject);
 begin
-  FTilingEncoder.GenerateY4M(FTilingEncoder.OutputFileName + '.y4m');
+  FTilingEncoder.GeneratePNGs(False);
+  UpdateVideo(nil);
+end;
+
+procedure TMainForm.miGenerateY4MInputClick(Sender: TObject);
+begin
+  FTilingEncoder.GenerateY4M(FTilingEncoder.OutputFileName + '.input.y4m', True);
+  UpdateVideo(nil);
+end;
+
+procedure TMainForm.miGenerateY4MOutputClick(Sender: TObject);
+begin
+  FTilingEncoder.GenerateY4M(FTilingEncoder.OutputFileName + '.y4m', False);
   UpdateVideo(nil);
 end;
 
@@ -640,7 +659,8 @@ begin
   FTilingEncoder.RenderBlended := chkBlended.Checked;
   FTilingEncoder.RenderMirrored := chkMirrored.Checked;
   FTilingEncoder.RenderSmoothed := chkSmoothed.Checked;
-  FTilingEncoder.RenderDithered := chkDithered.Checked;
+  FTilingEncoder.RenderOutputDithered := chkDitheredO.Checked;
+  FTilingEncoder.RenderInputDithered := chkDitheredI.Checked;
   FTilingEncoder.RenderUseGamma := chkGamma.Checked;
   FTilingEncoder.RenderMode := TPsyVisMode(cbxVisMode.ItemIndex);
   FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;

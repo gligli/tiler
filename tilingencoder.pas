@@ -425,7 +425,8 @@ type
     FRenderPaletteIndex: Integer;
     FRenderPlaying: Boolean;
     FRenderSmoothed: Boolean;
-    FRenderDithered: Boolean;
+    FRenderOutputDithered: Boolean;
+    FRenderInputDithered: Boolean;
     FRenderTilePage: Integer;
     FOutputBitmap: TBitmap;
     FInputBitmap: TBitmap;
@@ -552,8 +553,8 @@ type
     procedure Run(AStep: TEncoderStep = esAll);
 
     procedure Render(AFast: Boolean);
-    procedure GeneratePNGs;
-    procedure GenerateY4M(AFileName: String);
+    procedure GeneratePNGs(AInput: Boolean);
+    procedure GenerateY4M(AFileName: String; AInput: Boolean);
     procedure SaveSettings(ASettingsFileName: String);
     procedure LoadSettings(ASettingsFileName: String);
     procedure LoadDefaultSettings;
@@ -623,7 +624,8 @@ type
     property RenderBlended: Boolean read FRenderBlended write FRenderBlended;
     property RenderMirrored: Boolean read FRenderMirrored write FRenderMirrored;
     property RenderSmoothed: Boolean read FRenderSmoothed write FRenderSmoothed;
-    property RenderDithered: Boolean read FRenderDithered write FRenderDithered;
+    property RenderOutputDithered: Boolean read FRenderOutputDithered write FRenderOutputDithered;
+    property RenderInputDithered: Boolean read FRenderInputDithered write FRenderInputDithered;
     property RenderUseGamma: Boolean read FRenderUseGamma write FRenderUseGamma;
     property RenderMode: TPsyVisMode read FRenderMode write FRenderMode;
     property RenderPaletteIndex: Integer read FRenderPaletteIndex write SetRenderPaletteIndex;
@@ -2845,12 +2847,13 @@ begin
   ProgressRedraw(2, '');
 end;
 
-procedure TTilingEncoder.GeneratePNGs;
+procedure TTilingEncoder.GeneratePNGs(AInput: Boolean);
 var
   palPict: TPortableNetworkGraphic;
   i, palIdx, colIdx, oldRenderFrameIndex : Integer;
   oldRenderPage: TRenderPage;
   palData: TStringList;
+  BMP: TBitmap;
 begin
   palPict := TFastPortableNetworkGraphic.Create;
 
@@ -2863,13 +2866,19 @@ begin
   oldRenderPage := RenderPage;
   try
     RenderPage := rpOutput;
+    BMP := FOutputBitmap;
+    if AInput then
+    begin
+      RenderPage := rpInput;
+      BMP := FInputBitmap;
+    end;
 
     for i := 0 to High(FFrames) do
     begin
       RenderFrameIndex := i;
       Render(True);
 
-      palPict.Canvas.Draw(0, 0, FOutputBitmap);
+      palPict.Canvas.Draw(0, 0, BMP);
       palPict.SaveToFile(Format('%s_%.4d.png', [ChangeFileExt(FOutputFileName, ''), i]));
 
       palData.Clear;
@@ -2889,7 +2898,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.GenerateY4M(AFileName: String);
+procedure TTilingEncoder.GenerateY4M(AFileName: String; AInput: Boolean);
 var
   fx, fy, i, oldRenderFrameIndex : Integer;
   oldRenderPage: TRenderPage;
@@ -2900,6 +2909,7 @@ var
   r, g, b: Byte;
   py, pu, pv: PByte;
   FrameData: TByteDynArray;
+  BMP: TBitmap;
 begin
   oldRenderFrameIndex := RenderFrameIndex;
   oldRenderPage := RenderPage;
@@ -2911,6 +2921,12 @@ begin
     SetLength(FrameData, FTileMapWidth * cTileWidth * FTileMapHeight * cTileWidth * cColorCpns);
 
     RenderPage := rpOutput;
+    BMP := FOutputBitmap;
+    if AInput then
+    begin
+      RenderPage := rpInput;
+      BMP := FInputBitmap;
+    end;
 
     for i := 0 to High(FFrames) do
     begin
@@ -2924,12 +2940,12 @@ begin
       pu := @FrameData[1 * Length(FrameData) div cColorCpns];
       pv := @FrameData[2 * Length(FrameData) div cColorCpns];
 
-      FOutputBitmap.BeginUpdate;
+      BMP.BeginUpdate;
       try
-        for fy := 0 to FOutputBitmap.Height - 1 do
+        for fy := 0 to BMP.Height - 1 do
         begin
-          ptr := PByte(FOutputBitmap.ScanLine[fy]);
-          for fx := 0 to FOutputBitmap.Width - 1 do
+          ptr := PByte(BMP.ScanLine[fy]);
+          for fx := 0 to BMP.Width - 1 do
           begin
             b := ptr^; Inc(ptr);
             g := ptr^; Inc(ptr);
@@ -2944,7 +2960,7 @@ begin
           end;
         end;
       finally
-        FOutputBitmap.EndUpdate;
+        BMP.EndUpdate;
       end;
 
       fs.Write(FrameData[0], Length(FrameData));
@@ -4639,6 +4655,10 @@ begin
             tilePtr :=  Frame.FrameTiles[sy * FTileMapWidth + sx];
             if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].Base.PalIdx = FRenderPaletteIndex) then
             begin
+              pal := nil;
+              if FRenderInputDithered and Assigned(Frame.PKeyFrame.Palettes) then
+                pal := Frame.PKeyFrame.Palettes[frame.TileMap[sy, sx].Base.PalIdx].PaletteRGB;
+
               hmir := tilePtr^.HMirror_Initial;
               vmir := tilePtr^.VMirror_Initial;
 
@@ -4648,7 +4668,7 @@ begin
                 vmir := False;
               end;
 
-              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, nil, hmir, vmir, nil, nil, False, False, FTileBlendingMax, 0);
+              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, pal, hmir, vmir, nil, nil, False, False, FTileBlendingMax, 0);
             end;
           end;
       finally
@@ -4713,7 +4733,7 @@ begin
             if InRange(TMItem.Smoothed.TileIdx, 0, High(Tiles)) then
             begin
               pal := nil;
-              if FRenderDithered then
+              if FRenderOutputDithered then
                 if FRenderPaletteIndex < 0 then
                 begin
                   if not InRange(TMItem.Smoothed.PalIdx, 0, High(Frame.PKeyFrame.Palettes)) then
@@ -4746,11 +4766,11 @@ begin
               if FRenderBlended and TMItem.IsBlended then
               begin
                 prevPal := nil;
-                if FRenderDithered then
+                if FRenderOutputDithered then
                   prevPal := FFrames[prevFrmIdx].PKeyFrame.Palettes[prevTMItem.Smoothed.PalIdx].PaletteRGB;
 
                 offsetPal := nil;
-                if FRenderDithered then
+                if FRenderOutputDithered then
                   offsetPal := FFrames[offsetFrmIdx].PKeyFrame.Palettes[offsetTMItem.Smoothed.PalIdx].PaletteRGB;
 
                 DrawTile(FOutputBitmap, sx, sy, PsyTile,
@@ -4813,7 +4833,7 @@ begin
             begin
               tilePtr := Tiles[tidx];
               pal := nil;
-              if FRenderDithered then
+              if FRenderOutputDithered then
                 pal := Frame.PKeyframe.Palettes[Max(0, FRenderPaletteIndex)].PaletteRGB;
 
               hmir := tilePtr^.HMirror_Initial;
@@ -6552,7 +6572,7 @@ begin
   FRenderBlended := True;
   FRenderMirrored := True;
   FRenderSmoothed := True;
-  FRenderDithered := True;
+  FRenderOutputDithered := True;
 
   FRenderPage := rpOutput;
   FRenderMode := pvsDCT;
