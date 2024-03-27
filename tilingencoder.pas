@@ -3016,7 +3016,7 @@ begin
   deny := sqrt(deny);
   den := denx * deny;
 
-  Result := 0.0;
+  Result := 1.0;
   if den <> 0.0 then
     Result := num / den;
 end;
