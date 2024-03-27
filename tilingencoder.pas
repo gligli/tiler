@@ -1202,7 +1202,7 @@ begin
 
   if not IsEmptyKF then
   begin
-    BIRCH := birch_create(1.0 / High(Byte), Encoder.FTileMapSize, Encoder.FTileMapSize);
+    BIRCH := birch_create(1.0, Encoder.FTileMapSize, Encoder.FTileMapSize);
     try
       DoDataset(False);
 
@@ -5012,7 +5012,7 @@ begin
   GlobalTilingLumaOnly := False;
   GlobalTilingRatio := 0.6;
 
-  FrameTilingFromPalette := False;
+  FrameTilingFromPalette := True;
   FrameTilingUseGamma := False;
   FrameTilingMode := pvsWavelets;
 
