@@ -5513,7 +5513,7 @@ begin
   BIRCH := nil;
   BICO := nil;
   if ABIRCHRatio > 0.0 then
-    BIRCH := birch_create(1.0 / High(Byte), Round(AClusterCount * ABIRCHRatio), FTileMapSize);
+    BIRCH := birch_create(1.0, Round(AClusterCount * ABIRCHRatio), FTileMapSize);
   if ABICORatio > 0.0 then
     BICO := bico_create(featureCount, DSLen, Round(AClusterCount * ABICORatio), 32, Round(AClusterCount * ABICORatio), CRandomSeed);
   try
