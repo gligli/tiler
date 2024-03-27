@@ -4416,13 +4416,9 @@ begin
     end;
   end;
 
-  // wait all LoadFromImageFinishedEvent (ensures all frames processed)
+  // wait last frame LoadFromImageFinishedEvent (ensures all frames processed)
 
-  SetLength(Events, Length(FFrames));
-  for frmIdx := 0 to High(FFrames) do
-    Events[frmIdx] := FFrames[frmIdx].LoadFromImageFinishedEvent;
-
-  WaitForMultipleObjects(Length(FFrames), PWOHandleArray(@Events[0]), True, INFINITE);
+  WaitForSingleObject(FFrames[High(FFrames)].LoadFromImageFinishedEvent, INFINITE);
 end;
 
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
