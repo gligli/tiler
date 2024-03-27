@@ -2219,6 +2219,8 @@ begin
     CompStream.Free;
   end;
 
+  Assert(CompressedFrameTiles.Size > 0);
+
   // now that FrameTiles are compressed, dispose them
 
   TTile.Array1DDispose(FrameTiles);
@@ -2371,7 +2373,7 @@ end;
 
 procedure TFrame.ComputeInterFrameCorrelationAndCompress;
 begin
-  // also compute inter-frame correlations
+  // compute inter-frame correlations
 
   InterframeCorrelationData := PrepareInterFrameCorrelation;
   SetEvent(InterframeCorrelationEvent);
@@ -2385,7 +2387,7 @@ begin
     SetLength(Encoder.FFrames[Index - 1].InterframeCorrelationData, 0);
   end;
 
-  // also compress frame tiles to save memory
+  // compress frame tiles to save memory
 
   CompressFrameTiles;
 
@@ -4640,10 +4642,6 @@ begin
             tilePtr :=  Frame.FrameTiles[sy * FTileMapWidth + sx];
             if (FRenderPaletteIndex < 0) or (frame.TileMap[sy, sx].Base.PalIdx = FRenderPaletteIndex) then
             begin
-             pal := nil;
-             if FRenderDithered then
-               pal := Frame.PKeyframe.Palettes[frame.TileMap[sy, sx].Base.PalIdx].PaletteRGB;
-
               hmir := tilePtr^.HMirror_Initial;
               vmir := tilePtr^.VMirror_Initial;
 
@@ -4653,7 +4651,7 @@ begin
                 vmir := False;
               end;
 
-              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, pal, hmir, vmir, nil, nil, False, False, FTileBlendingMax, 0);
+              DrawTile(FInputBitmap, sx, sy, nil, tilePtr, nil, hmir, vmir, nil, nil, False, False, FTileBlendingMax, 0);
             end;
           end;
       finally
