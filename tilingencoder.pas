@@ -1820,22 +1820,21 @@ var
 begin
   gammaCor := IfThen(Encoder.FFrameTilingUseGamma, 0, -1);
 
-  AcquireFrameTiles;
-  try
-    DoBlending(gammaCor, False);
+  DoBlending(gammaCor, False);
 
-    if Index > 0 then
-    begin
-      WaitForSingleObject(Encoder.FKeyFrames[Index - 1].BlendEvent, INFINITE);
-      DoBlending(gammaCor, True);
-    end;
+  if FrameCount > 1 then
+    SetEvent(BlendEvent); // next keyframe blending does not depend on first frame
 
-    SetEvent(BlendEvent);
-
-    LogResidualErr;
-  finally
-    ReleaseFrameTiles;
+  if Index > 0 then
+  begin
+    WaitForSingleObject(Encoder.FKeyFrames[Index - 1].BlendEvent, INFINITE);
+    DoBlending(gammaCor, True);
   end;
+
+  if FrameCount <= 1 then
+    SetEvent(BlendEvent); // next keyframe blending depends on first frame
+
+  LogResidualErr;
 end;
 
 procedure TKeyFrame.PrepareTiling(APalIdx, AFTGamma: Integer);
@@ -2040,82 +2039,87 @@ begin
     if Frame.Index <= 0 then
       Continue;
 
-    prevFrame := Encoder.FFrames[frmIdx - 1];
+    Frame.AcquireFrameTiles;
+    try
+      prevFrame := Encoder.FFrames[frmIdx - 1];
 
-    for sy := 0 to Encoder.FTileMapHeight - 1 do
-      for sx := 0 to Encoder.FTileMapWidth - 1 do
-      begin
-        Best.ResidualErr := Infinity;
-        Best.BlendedX := High(ShortInt);
-        Best.BlendedY := High(ShortInt);
-        Best.BlendPrev := Encoder.FTileBlendingMax;
-        Best.BlendOffset := 0;
-
-        TMI := @Frame.TileMap[sy, sx];
-
-        if TMI^.IsSmoothed or TMI^.IsReverseBlended then
-          Continue;
-
-        prevTMI := @prevFrame.TileMap[sy, sx];
-
-        if prevTMI^.IsSmoothed then
-          Continue;
-
-        Assert(Assigned(GetDCT(prevFrame, prevTMI)^));
-        pPrevDCT := @GetDCT(prevFrame, prevTMI)^[0];
-
-        T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
-
-        Encoder.ComputeTilePsyVisFeatures(T^,
-            Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT,
-            T^.HMirror_Initial, T^.VMirror_Initial, cColorCpns, AFTGamma,
-            Frame.PKeyFrame.Palettes[TMI^.Smoothed.PalIdx].PaletteRGB, @PlainDCT[0]);
-
-        for oy := sy - radius to sy + radius do
+      for sy := 0 to Encoder.FTileMapHeight - 1 do
+        for sx := 0 to Encoder.FTileMapWidth - 1 do
         begin
-          if not InRange(oy, 0, Encoder.FTileMapHeight - 1) or (oy = sy) then
+          Best.ResidualErr := Infinity;
+          Best.BlendedX := High(ShortInt);
+          Best.BlendedY := High(ShortInt);
+          Best.BlendPrev := Encoder.FTileBlendingMax;
+          Best.BlendOffset := 0;
+
+          TMI := @Frame.TileMap[sy, sx];
+
+          if TMI^.IsSmoothed or TMI^.IsReverseBlended then
             Continue;
 
-          for ox := sx - radius to sx + radius do
+          prevTMI := @prevFrame.TileMap[sy, sx];
+
+          if prevTMI^.IsSmoothed then
+            Continue;
+
+          Assert(Assigned(GetDCT(prevFrame, prevTMI)^));
+          pPrevDCT := @GetDCT(prevFrame, prevTMI)^[0];
+
+          T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
+
+          Encoder.ComputeTilePsyVisFeatures(T^,
+              Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT,
+              T^.HMirror_Initial, T^.VMirror_Initial, cColorCpns, AFTGamma,
+              Frame.PKeyFrame.Palettes[TMI^.Smoothed.PalIdx].PaletteRGB, @PlainDCT[0]);
+
+          for oy := sy - radius to sy + radius do
           begin
-            if not InRange(ox, 0, Encoder.FTileMapWidth - 1) or (ox = sx) then
+            if not InRange(oy, 0, Encoder.FTileMapHeight - 1) or (oy = sy) then
               Continue;
 
-            offsetTMI := @prevFrame.TileMap[oy, ox];
+            for ox := sx - radius to sx + radius do
+            begin
+              if not InRange(ox, 0, Encoder.FTileMapWidth - 1) or (ox = sx) then
+                Continue;
 
-            if offsetTMI^.IsSmoothed then
-              Continue;
+              offsetTMI := @prevFrame.TileMap[oy, ox];
 
-            Assert(Assigned(GetDCT(prevFrame, offsetTMI)^));
-            pOffsetDCT := @GetDCT(prevFrame, offsetTMI)^[0];
+              if offsetTMI^.IsSmoothed then
+                Continue;
 
-            SearchBlending2P(@PlainDCT[0], pPrevDCT, pOffsetDCT);
+              Assert(Assigned(GetDCT(prevFrame, offsetTMI)^));
+              pOffsetDCT := @GetDCT(prevFrame, offsetTMI)^[0];
+
+              SearchBlending2P(@PlainDCT[0], pPrevDCT, pOffsetDCT);
+            end;
+          end;
+
+          if Best.ResidualErr < TMI^.ResidualErr then
+          begin
+            errCml += Best.ResidualErr - TMI^.ResidualErr;
+
+            prevTMI^.IsReverseBlended := True;
+
+            offsetTMI := @prevFrame.TileMap[sy + Best.BlendedY, sx + Best.BlendedX];
+            offsetTMI^.IsReverseBlended := True;
+
+            TMI^.Smoothed := prevTMI^.Smoothed;
+
+            TMI^.ResidualErr := Best.ResidualErr;
+            TMI^.BlendedX := Best.BlendedX;
+            TMI^.BlendedY := Best.BlendedY;
+            TMI^.BlendPrev := Best.BlendPrev;
+            TMI^.BlendOffset := Best.BlendOffset;
+            TMI^.IsBlended := True;
+          end
+          else
+          begin
+            TMI^.IsBlended := False;
           end;
         end;
-
-        if Best.ResidualErr < TMI^.ResidualErr then
-        begin
-          errCml += Best.ResidualErr - TMI^.ResidualErr;
-
-          prevTMI^.IsReverseBlended := True;
-
-          offsetTMI := @prevFrame.TileMap[sy + Best.BlendedY, sx + Best.BlendedX];
-          offsetTMI^.IsReverseBlended := True;
-
-          TMI^.Smoothed := prevTMI^.Smoothed;
-
-          TMI^.ResidualErr := Best.ResidualErr;
-          TMI^.BlendedX := Best.BlendedX;
-          TMI^.BlendedY := Best.BlendedY;
-          TMI^.BlendPrev := Best.BlendPrev;
-          TMI^.BlendOffset := Best.BlendOffset;
-          TMI^.IsBlended := True;
-        end
-        else
-        begin
-          TMI^.IsBlended := False;
-        end;
-      end;
+    finally
+      Frame.ReleaseFrameTiles;
+    end;
   end;
 
   ReconstructErrCml += errCml;
@@ -5042,7 +5046,7 @@ begin
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
   GlobalTilingLumaOnly := False;
-  GlobalTilingRatio := 0.6;
+  GlobalTilingRatio := 0.0;
 
   FrameTilingFromPalette := True;
   FrameTilingUseGamma := False;
