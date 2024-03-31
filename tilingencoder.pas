@@ -4114,10 +4114,11 @@ end;
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror,
   VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
 var
-  u, v, x, y, xx, yy, cpn: Integer;
+  i, u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
   CpnPixels: TCpnPixels;
   pDCT, pLut: PFloat;
+  LocalDCT: array[0..cTileDCTSize - 1] of TFloat;
 
   procedure ToCpn(col, x, y: Integer); inline;
   var
@@ -4172,7 +4173,7 @@ begin
   begin
    for cpn := 0 to ColorCpns - 1 do
    begin
-     pDCT := @DCT[cpn * (cTileDCTSize div ColorCpns)];
+     pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
      specialize WaveletGS<Single, PSingle>(@CpnPixels[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
    end;
   end
@@ -4180,7 +4181,7 @@ begin
   begin
     for cpn := 0 to ColorCpns - 1 do
     begin
-      pDCT := @DCT[cpn * (cTileDCTSize div ColorCpns)];
+      pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
       pLut := @FDCTLut[0];
       for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
         for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
@@ -4196,15 +4197,20 @@ begin
         end;
     end;
   end;
+
+  for i := 0 to cTileDCTSize div cColorCpns - 1 do
+    for cpn := 0 to ColorCpns - 1 do
+      DCT[cDCTSnake[i] * cColorCpns + cpn] := LocalDCT[i + cpn * (cTileDCTSize div ColorCpns)];
 end;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror,
   VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble);
 var
-  u, v, x, y, xx, yy, cpn: Integer;
+  i, u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
   CpnPixels: TCpnPixelsDouble;
   pDCT, pLut: PDouble;
+  LocalDCT: array[0..cTileDCTSize - 1] of Double;
 
   procedure ToCpn(col, x, y: Integer); inline;
   var
@@ -4259,7 +4265,7 @@ begin
   begin
    for cpn := 0 to ColorCpns - 1 do
    begin
-     pDCT := @DCT[cpn * (cTileDCTSize div ColorCpns)];
+     pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
      specialize WaveletGS<Double, PDouble>(@CpnPixels[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
    end;
   end
@@ -4267,7 +4273,7 @@ begin
   begin
     for cpn := 0 to ColorCpns - 1 do
     begin
-      pDCT := @DCT[cpn * (cTileDCTSize div ColorCpns)];
+      pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
       pLut := @FDCTLutDouble[0];
       for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
         for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
@@ -4283,14 +4289,20 @@ begin
         end;
     end;
   end;
+
+  for i := 0 to cTileDCTSize div cColorCpns - 1 do
+    for cpn := 0 to ColorCpns - 1 do
+      DCT[cDCTSnake[i] * cColorCpns + cpn] := LocalDCT[i + cpn * (cTileDCTSize div ColorCpns)];
 end;
 
 procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Wavelets, UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
  var ATile: TTile);
 var
-  u, v, x, y, cpn: Integer;
+  i, u, v, x, y, cpn: Integer;
   CpnPixels: TCpnPixelsDouble;
-  pCpn, pLut, pCur, pWDCT: PDouble;
+  pCpn, pLut, pCur, pDCT: PDouble;
+  LocalDCT: array[0..cTileDCTSize - 1] of Double;
+  d: Double;
 
 
   function FromCpn(x, y: Integer): Integer; inline;
@@ -4308,29 +4320,29 @@ var
   end;
 
 begin
-  pWDCT := GetMem(cTileDCTSize * SizeOf(Double));
-  pCur := @DCT[0];
+  pDCT := @LocalDCT[0];
   for cpn := 0 to ColorCpns - 1 do
   begin
+    i := 0;
     for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
       for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
       begin
+        d := DCT[cDCTSnake[i] * cColorCpns + cpn];
         if QWeighting then
-          pWDCT^ := pCur^ / cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul]
+          pDCT^ := d / cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul]
         else
-          pWDCT^ := pCur^;
-        Inc(pWDCT);
-        Inc(pCur);
+          pDCT^ := d;
+        Inc(pDCT);
+        Inc(i);
       end;
   end;
-  Dec(pWDCT, cTileDCTSize);
 
   if Wavelets then
   begin
     for cpn := 0 to ColorCpns - 1 do
     begin
       pCpn := @CpnPixels[cpn, 0, 0];
-      specialize DeWaveletGS<Double, PDouble>(@pWDCT[cpn * (cTileDCTSize div ColorCpns)], pCpn, cTileWidth, cTileWidth, 2);
+      specialize DeWaveletGS<Double, PDouble>(@LocalDCT[cpn * (cTileDCTSize div ColorCpns)], pCpn, cTileWidth, cTileWidth, 2);
     end;
   end
   else
@@ -4343,14 +4355,12 @@ begin
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
         begin
-          pCpn^ := specialize DCTInner<PDouble>(@pWDCT[cpn * (cTileDCTSize div ColorCpns)], pLut, sqr(cDCTFeaturesMul));
+          pCpn^ := specialize DCTInner<PDouble>(@LocalDCT[cpn * (cTileDCTSize div ColorCpns)], pLut, sqr(cDCTFeaturesMul));
           Inc(pCpn);
           Inc(pLut, Sqr(cTileWidth * cDCTFeaturesMul));
         end;
     end;
   end;
-
-  Freemem(pWDCT);
 
   for y := 0 to (cTileWidth - 1) do
     for x := 0 to (cTileWidth - 1) do
