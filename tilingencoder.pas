@@ -2070,7 +2070,7 @@ begin
           Encoder.ComputeTilePsyVisFeatures(T^,
               Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT,
               T^.HMirror_Initial, T^.VMirror_Initial, cColorCpns, AFTGamma,
-              Frame.PKeyFrame.Palettes[TMI^.Smoothed.PalIdx].PaletteRGB, @PlainDCT[0]);
+              Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @PlainDCT[0]);
 
           for oy := sy - radius to sy + radius do
           begin
