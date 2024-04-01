@@ -514,7 +514,7 @@ type
     class procedure VMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
 
     procedure InitLuts;
-    procedure ClearAll;
+    procedure ClearAll(AKeepFrames: Boolean);
     procedure ReframeUI(AWidth, AHeight: Integer);
     procedure InitFrames(AFrameCount: Integer);
     procedure LoadInputVideo;
@@ -2500,7 +2500,7 @@ begin
   ProgressRedraw(-1, '', esAll);
 
   FLoadedInputPath := '';
-  ClearAll;
+  ClearAll(False);
 
   ProgressRedraw(0, '', esLoad);
 
@@ -2868,6 +2868,8 @@ begin
   end;
 
   ProgressRedraw(2, '');
+
+  Reindex;
 end;
 
 procedure TTilingEncoder.GeneratePNGs(AInput: Boolean);
@@ -4541,14 +4543,17 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.ClearAll;
+procedure TTilingEncoder.ClearAll(AKeepFrames: Boolean);
 var
   i: Integer;
 begin
-  for i := 0 to High(FFrames) do
-    if Assigned(FFrames[i]) then
-      FreeAndNil(FFrames[i]);
-  SetLength(FFrames, 0);
+  if not AKeepFrames then
+  begin
+    for i := 0 to High(FFrames) do
+      if Assigned(FFrames[i]) then
+        FreeAndNil(FFrames[i]);
+    SetLength(FFrames, 0);
+  end;
 
   for i := 0 to High(FKeyFrames) do
     if Assigned(FKeyFrames[i]) then
@@ -6035,6 +6040,7 @@ end;
 procedure TTilingEncoder.LoadStream(AStream: TStream);
 var
   KFStream: TMemoryStream;
+  frmIdx: Integer;
 
   function ReadDWord: Cardinal;
   begin
@@ -6138,14 +6144,11 @@ var
   end;
 
 
-  function AddFrame(KF: TKeyFrame): TFrame;
+  function NextFrame(KF: TKeyFrame): TFrame;
   begin
-    SetLength(FFrames, Length(FFrames) + 1);
-    Result := TFrame.Create(Self, High(FFrames));
+    Inc(frmIdx);
+    Result := FFrames[frmIdx];
     Result.PKeyFrame := kf;
-    FFrames[High(FFrames)] := Result;
-
-    SetLength(Result.TileMap, FTileMapHeight, FTileMapWidth);
   end;
 
   procedure SkipBlock(frm: TFrame; SkipCount: Integer; var tmPos: Integer);
@@ -6167,7 +6170,7 @@ var
   Header: TGTMHeader;
   Command: TGTMCommand;
   CommandData: Word;
-  frmCount, tmPos: Integer;
+  loadedFrmCount, tmPos: Integer;
   tileIdx: Cardinal;
   blend_: Integer;
   frm: TFrame;
@@ -6196,11 +6199,12 @@ begin
       raise ETilingEncoderGTMReloadError.Create('Mismatch between GTM and loaded video!' + sLineBreak + compat);
   end;
 
-  ClearAll;
+  ClearAll(True);
   FTileBlendingMax := high(Byte);
 
   frm := nil;
-  frmCount := 0;
+  frmIdx := -1;
+  loadedFrmCount := 0;
   KFStream := TMemoryStream.Create;
   try
     repeat
@@ -6210,7 +6214,7 @@ begin
 
       // add a keyframe
       SetLength(FKeyFrames, Length(FKeyFrames) + 1);
-      kf := TKeyFrame.Create(Self, High(FKeyFrames), frmCount, -1);
+      kf := TKeyFrame.Create(Self, High(FKeyFrames), loadedFrmCount, -1);
       FKeyFrames[High(FKeyFrames)] := kf;
 
       tmPos := 0;
@@ -6232,9 +6236,9 @@ begin
           end;
           gtLoadPalette:
           begin
-            // create frame if needed
+            // next frame if needed
             if frm = nil then
-              frm := AddFrame(kf);
+              frm := NextFrame(kf);
 
             ReadPalette(frm);
           end;
@@ -6242,19 +6246,19 @@ begin
           begin
             Assert(tmPos = FTileMapSize, 'Incomplete tilemap');
 
-            // will have to create a new frame
+            // will load to create a new frame
             frm := nil;
             tmPos := 0;
-            Inc(frmCount);
+            Inc(loadedFrmCount);
 
             if (CommandData and 1) <> 0 then // keyframe end?
               Break;
           end;
           gtSkipBlock:
           begin
-            // create frame if needed
+            // next frame if needed
             if frm = nil then
-              frm := AddFrame(kf);
+              frm := NextFrame(kf);
 
             SkipBlock(frm, CommandData + 1, tmPos);
           end;
@@ -6280,9 +6284,9 @@ begin
             else if Command in [gtShortAddlBlendTileIdx, gtLongAddlBlendTileIdx] then
               ReadWord;
 
-            // create frame if needed
+            // next frame if needed
             if frm = nil then
-              frm := AddFrame(kf);
+              frm := NextFrame(kf);
 
             SetTMI(tileIdx, CommandData, frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth]);
             Inc(tmPos);
@@ -6291,9 +6295,9 @@ begin
           begin
             blend_ := ReadWord;
 
-            // create frame if needed
+            // next frame if needed
             if frm = nil then
-              frm := AddFrame(kf);
+              frm := NextFrame(kf);
 
             Assert(frm.Index > 0);
             SetPrevBlendedTMI(CommandData, blend_,
@@ -6307,7 +6311,7 @@ begin
         end;
       until False;
 
-      kf.EndFrame := frmCount - 1;
+      kf.EndFrame := loadedFrmCount - 1;
       kf.FrameCount := kf.EndFrame - kf.StartFrame + 1;
 
     until AStream.Position >= AStream.Size;
@@ -6616,7 +6620,7 @@ end;
 
 destructor TTilingEncoder.Destroy;
 begin
-  ClearAll;
+  ClearAll(False);
 
   DeleteCriticalSection(FCS);
 
