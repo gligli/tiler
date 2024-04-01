@@ -18,6 +18,7 @@ type
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
   TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets, pvsSpeDCT, pvsWeightedSpeDCT);
+  TClusteringMethod = (cmBIRCH, cmBICO, cmYakmo);
 
 const
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 3, 4, -1, -1, -1, 2, 1);
@@ -400,7 +401,7 @@ type
     FGlobalTilingTileCount: Integer;
     FGlobalTilingQualityBasedTileCount: Double;
     FGlobalTilingLumaOnly: Boolean;
-    FGlobalTilingRatio: Double;
+    FGlobalTilingMethod: TClusteringMethod;
     FFrameTilingFromPalette: Boolean;
     FFrameTilingUseGamma: Boolean;
     FFrameTilingMode: TPsyVisMode;
@@ -451,7 +452,6 @@ type
     procedure SetTileBlendingRadius(AValue: Integer);
     procedure SetTileBlendingDepth(AValue: Integer);
     procedure SetGlobalTilingQualityBasedTileCount(AValue: Double);
-    procedure SetGlobalTilingRatio(AValue: Double);
     procedure SetMaxThreadCount(AValue: Integer);
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
@@ -521,7 +521,8 @@ type
     procedure FindKeyFrames(AManualMode: Boolean);
 
     procedure OptimizeGlobalPalettes;
-    procedure DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
+    procedure ClusterUsingCoreSets(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
+    procedure ClusterUsingKMeans(AClusterCount, AGamma: Integer);
 
     procedure RenderTile(AFrame: TFrame; ASY, ASX: Integer; var outTile: TTile; AMirrors, ADithering, ASmoothing,
       ABlending: Boolean);
@@ -604,7 +605,7 @@ type
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
     property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
     property GlobalTilingLumaOnly: Boolean read FGlobalTilingLumaOnly write FGlobalTilingLumaOnly;
-    property GlobalTilingRatio: Double read FGlobalTilingRatio write SetGlobalTilingRatio;
+    property GlobalTilingMethod: TClusteringMethod read FGlobalTilingMethod write FGlobalTilingMethod;
     property FrameTilingFromPalette: Boolean read FFrameTilingFromPalette write FFrameTilingFromPalette;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingMode: TPsyVisMode read FFrameTilingMode write FFrameTilingMode;
@@ -2707,7 +2708,14 @@ begin
   TTile.Array1DDispose(FTiles);
 
   // run the clustering algorithm, which will group similar tiles until it reaches a fixed amount of groups
-  DoGlobalKMeans(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1), IfThen(FGlobalTilingLumaOnly, 1, 3), FGlobalTilingRatio, 1.0 - FGlobalTilingRatio);
+  case FGlobalTilingMethod of
+    cmBICO:
+      ClusterUsingCoreSets(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1), IfThen(FGlobalTilingLumaOnly, 1, 3), 0.0, 1.0);
+    cmBIRCH:
+      ClusterUsingCoreSets(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1), IfThen(FGlobalTilingLumaOnly, 1, 3), 1.0, 0.0);
+    cmYakmo:
+      ClusterUsingKMeans(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1));
+  end;
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -3910,12 +3918,6 @@ begin
   FGlobalTilingTileCount := min(round(AValue * eqtc), RawTileCount);
 end;
 
-procedure TTilingEncoder.SetGlobalTilingRatio(AValue: Double);
-begin
- if FGlobalTilingRatio = AValue then Exit;
- FGlobalTilingRatio := EnsureRange(AValue, 0.0, 1.0);
-end;
-
 procedure TTilingEncoder.SetMaxThreadCount(AValue: Integer);
 begin
  if ProcThreadPool.MaxThreadCount = AValue then Exit;
@@ -4963,7 +4965,7 @@ begin
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
     ini.WriteBool('GlobalTiling', 'GlobalTilingLumaOnly', GlobalTilingLumaOnly);
-    ini.WriteFloat('GlobalTiling', 'GlobalTilingRatio', GlobalTilingRatio);
+    ini.WriteInteger('GlobalTiling', 'GlobalTilingMethod', Ord(GlobalTilingMethod));
 
     ini.WriteBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
@@ -5017,7 +5019,7 @@ begin
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
     GlobalTilingLumaOnly := ini.ReadBool('GlobalTiling', 'FGlobalTilingLumaOnly', FGlobalTilingLumaOnly);
-    GlobalTilingRatio := ini.ReadFloat('GlobalTiling', 'GlobalTilingRatio', GlobalTilingRatio);
+    GlobalTilingMethod := TClusteringMethod(EnsureRange(ini.ReadInteger('GlobalTiling', 'GlobalTilingMethod', Ord(GlobalTilingMethod)), Ord(Low(TClusteringMethod)), Ord(High(TClusteringMethod))));
 
     FrameTilingFromPalette := ini.ReadBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
@@ -5065,7 +5067,7 @@ begin
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
   GlobalTilingLumaOnly := False;
-  GlobalTilingRatio := 0.0;
+  GlobalTilingMethod := cmYakmo;
 
   FrameTilingFromPalette := True;
   FrameTilingUseGamma := False;
@@ -5335,7 +5337,7 @@ begin
     Inc(Result, Used[sx]);
 end;
 
-procedure TTilingEncoder.DoGlobalKMeans(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
+procedure TTilingEncoder.ClusterUsingCoreSets(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
 var
   DSLen: Int64;
   featureCount, clusterCount, doneFrameCount: Integer;
@@ -5727,6 +5729,186 @@ begin
 
     ProgressRedraw(4, 'DitherTiles');
   end;
+end;
+
+procedure TTilingEncoder.ClusterUsingKMeans(AClusterCount, AGamma: Integer);
+var
+  KFPalTileCount: TIntegerDynArray2;
+  KFPalTileOffset: TIntegerDynArray2;
+  doneKFPalCount: Integer;
+
+  procedure DoYakmo(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    kfIdx, frmIdx, palIdx, clusIdx, dsIdx, tileIdx, sx, sy, di, kfPalClusterCount: Integer;
+    KeyFrame: TKeyFrame;
+    Frame: TFrame;
+    Tile: PTile;
+    TMI: PTileMapItem;
+    Dataset, Centroids: TDoubleDynArray2;
+    PalPixels: array of TPalPixels;
+    Clusters: TIntegerDynArray;
+    CentroidDSIdx: TIntegerDynArray;
+    CentroidDSBest: TDoubleDynArray;
+    inf, d: Double;
+    Yakmo: PYakmo;
+  begin
+    DivMod(AIndex, FPaletteCount, kfIdx, palIdx);
+
+    kfPalClusterCount := KFPalTileCount[kfIdx, palIdx];
+
+    KeyFrame := FKeyFrames[kfIdx];
+
+    //WriteLn(KeyFrame.StartFrame:8,palIdx:4,kfPalClusterCount:8,KeyFrame.Palettes[palIdx].UseCount:8);
+
+    SetLength(Dataset, KeyFrame.Palettes[palIdx].UseCount, cTileDCTSize);
+    SetLength(PalPixels, KeyFrame.Palettes[palIdx].UseCount);
+    di := 0;
+    for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
+    begin
+      Frame := FFrames[frmIdx];
+
+      Frame.AcquireFrameTiles;
+      try
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            TMI := @Frame.TileMap[sy, sx];
+
+            if TMI^.Base.PalIdx <> palIdx then
+              Continue;
+
+            ComputeTilePsyVisFeatures(Frame.FrameTiles[sy * FTileMapWidth + sx]^,
+                GlobalTilingMode, FGlobalTilingFromPalette, False,
+                False, False, cColorCpns, AGamma, KeyFrame.Palettes[palIdx].PaletteRGB, @Dataset[di, 0]);
+
+            Move(Frame.FrameTiles[sy * FTileMapWidth + sx]^.GetPalPixelsPtr^, PalPixels[di], SizeOf(TPalPixels));
+
+            Inc(di);
+          end;
+
+      finally
+        Frame.ReleaseFrameTiles;
+      end;
+    end;
+    Assert(di = KeyFrame.Palettes[palIdx].UseCount);
+
+    SetLength(Clusters, di);
+
+    if kfPalClusterCount < di then
+    begin
+      SetLength(Centroids, kfPalClusterCount, cTileDCTSize);
+      Yakmo := yakmo_create(kfPalClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
+      try
+        yakmo_load_train_data(Yakmo, di, cTileDCTSize, PPDouble(@Dataset[0]));
+        yakmo_train_on_data(Yakmo, @Clusters[0]);
+        yakmo_get_centroids(Yakmo, PPDouble(@Centroids[0]));
+      finally
+        yakmo_destroy(Yakmo);
+      end;
+    end
+    else if kfPalClusterCount = di then
+    begin
+      Centroids := Dataset;
+      for clusIdx := 0 to kfPalClusterCount - 1 do
+        Clusters[clusIdx] := clusIdx;
+    end
+    else
+    begin
+      Assert(False);
+    end;
+
+    inf := Infinity;
+    SetLength(CentroidDSIdx, kfPalClusterCount);
+    SetLength(CentroidDSBest, kfPalClusterCount);
+    FillDWord(CentroidDSIdx[0], kfPalClusterCount, DWORD(-1));
+    FillQWord(CentroidDSBest[0], kfPalClusterCount, PQWord(@inf)^);
+
+    for dsIdx := 0 to di - 1 do
+    begin
+      clusIdx := Clusters[dsIdx];
+
+      d := CompareEuclidean(@Centroids[clusIdx, 0], @Dataset[dsIdx, 0], cTileDCTSize);
+
+      if d < CentroidDSBest[clusIdx] then
+      begin
+        CentroidDSBest[clusIdx] := d;
+        CentroidDSIdx[clusIdx] := dsIdx;
+      end;
+    end;
+
+    for clusIdx := 0 to kfPalClusterCount - 1 do
+    begin
+      tileIdx := KFPalTileOffset[kfIdx, palIdx] + clusIdx;
+      Tile := FTiles[tileIdx];
+
+      if IsInfinite(CentroidDSBest[clusIdx]) then
+      begin
+        Tile^.Active := False;
+      end
+      else
+      begin
+        Tile^.CopyPalPixels(PalPixels[CentroidDSIdx[clusIdx]]);
+        Tile^.Active := True;
+        Tile^.UseCount := 1; // TODO
+      end;
+    end;
+
+    Write(InterLockedIncrement(doneKFPalCount):8, ' / ', (Length(FKeyFrames) * FPaletteCount):8, #13);
+  end;
+
+var
+  kfIdx, palIdx: Integer;
+  tc, tcSum: Integer;
+  tcRatio: Double;
+begin
+
+  // share AClusterCount across KF / Palettes
+
+  tcSum := 0;
+  SetLength(KFPalTileCount, Length(FKeyFrames), FPaletteCount);
+  for kfIdx := 0 to High(FKeyFrames) do
+    for palIdx := 0 to FPaletteCount - 1 do
+    begin
+      tc := EqualQualityTileCount(FKeyFrames[kfIdx].Palettes[palIdx].UseCount);
+
+      KFPalTileCount[kfIdx, palIdx] := tc;
+
+      tcSum += tc;
+    end;
+
+  tcRatio := AClusterCount / tcSum;
+
+  tcSum := 0;
+  SetLength(KFPalTileOffset, Length(FKeyFrames), FPaletteCount);
+  for kfIdx := 0 to High(FKeyFrames) do
+    for palIdx := 0 to FPaletteCount - 1 do
+    begin
+      tc := Min(FKeyFrames[kfIdx].Palettes[palIdx].UseCount, Ceil(KFPalTileCount[kfIdx, palIdx] * tcRatio));
+
+      KFPalTileCount[kfIdx, palIdx] := tc;
+      KFPalTileOffset[kfIdx, palIdx] := tcSum;
+
+      tcSum += tc;
+    end;
+
+  // create tiles
+
+  FTiles := TTile.Array1DNew(tcSum, False, True);
+
+  ProgressRedraw(1, 'PrepareKFPal');
+
+  // one KMeans per KF / Palette
+
+  doneKFPalCount := 0;
+  ProcThreadPool.DoParallelLocalProc(@DoYakmo, 0, Length(FKeyFrames) * FPaletteCount - 1);
+
+  ProgressRedraw(3, 'ClusterKFPal');
+
+  // remove inactive tiles
+
+  ReindexTiles(False);
+
+  ProgressRedraw(4, 'ReindexTiles');
 end;
 
 procedure TTilingEncoder.OptimizeGlobalPalettes;

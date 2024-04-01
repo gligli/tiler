@@ -19,6 +19,7 @@ type
     btnPM: TButton;
     cbxBLDepth: TComboBox;
     cbxBLRadius: TComboBox;
+    cbxClusMethod: TComboBox;
     cbxVisMode: TComboBox;
     cbxGlobMode: TComboBox;
     cbxDitheringMode: TComboBox;
@@ -69,7 +70,6 @@ type
     Label21: TLabel;
     Label22: TLabel;
     Label23: TLabel;
-    lblGlobRatio: TLabel;
     Label3: TLabel;
     Label4: TLabel;
     Label6: TLabel;
@@ -111,7 +111,6 @@ type
     seTempoSmoo: TFloatSpinEdit;
     seEncGamma: TFloatSpinEdit;
     seShotTransMinSecondsPerKF: TFloatSpinEdit;
-    tbGlobRatio: TTrackBar;
     tsTilesPal: TTabSheet;
     To1: TLabel;
     tsSettings: TTabSheet;
@@ -681,7 +680,7 @@ begin
   FTilingEncoder.GlobalTilingMode := TPsyVisMode(cbxGlobMode.ItemIndex);
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
   FTilingEncoder.GlobalTilingLumaOnly := chkGlobLumaOnly.Checked;
-  FTilingEncoder.GlobalTilingRatio := tbGlobRatio.Position / 100;
+  FTilingEncoder.GlobalTilingMethod := TClusteringMethod(cbxClusMethod.ItemIndex);
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
@@ -711,7 +710,6 @@ begin
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
-  lblGlobRatio.Caption := IntToStr(Round(FTilingEncoder.GlobalTilingRatio * 100));
   miReload.Enabled := FTilingEncoder.FrameCount > 0;
 end;
 
@@ -757,7 +755,7 @@ begin
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
    chkGlobLumaOnly.Checked := FTilingEncoder.GlobalTilingLumaOnly;
-   tbGlobRatio.Position := Round(FTilingEncoder.GlobalTilingRatio * 100);
+   cbxClusMethod.ItemIndex := Ord(FTilingEncoder.GlobalTilingMethod);
 
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;

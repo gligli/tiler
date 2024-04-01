@@ -607,34 +607,12 @@ object MainForm: TMainForm
         TabOrder = 31
         OnChange = UpdateGUI
       end
-      object tbGlobRatio: TTrackBar
-        Left = 328
-        Height = 18
-        Top = 237
-        Width = 144
-        Frequency = 10
-        Max = 100
-        OnChange = UpdateGUI
-        Position = 1
-        ShowSelRange = False
-        TabOrder = 19
-      end
       object Label23: TLabel
         Left = 8
         Height = 15
         Top = 238
-        Width = 182
-        Caption = 'Global tiling BICO <-> BIRCH ratio'
-        ParentColor = False
-      end
-      object lblGlobRatio: TLabel
-        Left = 476
-        Height = 15
-        Top = 238
-        Width = 28
-        Alignment = taRightJustify
-        AutoSize = False
-        Caption = '0'
+        Width = 99
+        Caption = 'Clustering method'
         ParentColor = False
       end
       object Label17: TLabel
@@ -782,6 +760,22 @@ object MainForm: TMainForm
         )
         Style = csDropDownList
         TabOrder = 22
+        OnChange = UpdateGUI
+      end
+      object cbxClusMethod: TComboBox
+        Left = 328
+        Height = 23
+        Top = 235
+        Width = 104
+        DropDownCount = 20
+        ItemHeight = 15
+        Items.Strings = (
+          'BIRCH'
+          'BICO'
+          'Yakmo'
+        )
+        Style = csDropDownList
+        TabOrder = 19
         OnChange = UpdateGUI
       end
     end
