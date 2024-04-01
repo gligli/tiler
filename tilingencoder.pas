@@ -17,7 +17,7 @@ type
   TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esDither, esCluster, esReconstruct, esSmooth, esBlend, esReindex, esSave);
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
-  TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets);
+  TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets, pvsSpeDCT, pvsWeightedSpeDCT);
 
 const
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 3, 4, -1, -1, -1, 2, 1);
@@ -358,8 +358,8 @@ type
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
     FVecInv: array[0..256 * 4 - 1] of Cardinal;
-    FDCTLut:array[0..cUnrolledDCTSize - 1] of TFloat;
-    FDCTLutDouble:array[0..cUnrolledDCTSize - 1] of Double;
+    FDCTLut:array[Boolean {Special?}, 0..cUnrolledDCTSize - 1] of TFloat;
+    FDCTLutDouble:array[Boolean {Special?}, 0..cUnrolledDCTSize - 1] of Double;
     FInvDCTLutDouble:array[0..cUnrolledDCTSize - 1] of Double;
 
     FTiles: PTileDynArray;
@@ -490,11 +490,11 @@ type
 
     generic procedure WaveletGS<T, PT>(Data: PT; Output: PT; dx, dy, depth: cardinal);
     generic procedure DeWaveletGS<T, PT>(wl: PT; pic: PT; dx, dy, depth: longint);
-    procedure ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
+    procedure ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror, VMirror: Boolean;
      ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
-    procedure ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror, VMirror: Boolean;
+    procedure ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror, VMirror: Boolean;
      ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
-    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; Wavelets, UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
+    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns, GammaCor: Integer;
       var ATile: TTile);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
@@ -1168,7 +1168,7 @@ var
       begin
         Tile := Frame.FrameTiles[ftIdx];
 
-        Encoder.ComputeTilePsyVisFeatures(Tile^, Encoder.DitheringMode = pvsWavelets, False, True, Encoder.DitheringMode = pvsWeightedDCT, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cFeatureCount]);
+        Encoder.ComputeTilePsyVisFeatures(Tile^, Encoder.DitheringMode, False, True, False, False, cColorCpns, ADitheringGamma, nil, @DCTs[ftIdx * cFeatureCount]);
 
         DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 3)] := 0.0;
         DCTs[ftIdx * cFeatureCount + (cTileDCTSize - 2)] := 0.0;
@@ -1851,7 +1851,7 @@ var
       T := Encoder.Tiles[tidx];
 
       Assert(T^.Active);
-      Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode = pvsWavelets, True, False, Encoder.FrameTilingMode = pvsWeightedDCT, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, PSingle(@DS^.Dataset[tidx, 0]));
+      Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, PSingle(@DS^.Dataset[tidx, 0]));
     end;
   end;
 
@@ -1918,7 +1918,7 @@ begin
 
       T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
-      Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, @DCT[0]);
+      Encoder.ComputeTilePsyVisFeatures(T^, Encoder.FrameTilingMode, Encoder.FFrameTilingFromPalette, False, False, False, cColorCpns, AFTGamma, Palettes[APalIdx].PaletteRGB, @DCT[0]);
 
       TMI^.Base.HMirror := T^.HMirror_Initial;
       TMI^.Base.VMirror := T^.VMirror_Initial;
@@ -2019,9 +2019,9 @@ var
     begin
       SetLength(Result^, cTileDCTSize);
       Encoder.ComputeTilePsyVisFeatures(Encoder.Tiles[ATMI^.Smoothed.TileIdx]^,
-          Encoder.FrameTilingMode = pvsWavelets, True, False, Encoder.FrameTilingMode = pvsWeightedDCT,
-         ATMI^.Smoothed.HMirror, ATMI^.Smoothed.VMirror, cColorCpns, AFTGamma,
-         AFrame.PKeyFrame.Palettes[ATMI^.Smoothed.PalIdx].PaletteRGB, @Result^[0]);
+          Encoder.FrameTilingMode, True, False,
+          ATMI^.Smoothed.HMirror, ATMI^.Smoothed.VMirror, cColorCpns, AFTGamma,
+          AFrame.PKeyFrame.Palettes[ATMI^.Smoothed.PalIdx].PaletteRGB, @Result^[0]);
     end;
   end;
 
@@ -2068,7 +2068,7 @@ begin
           T := Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx];
 
           Encoder.ComputeTilePsyVisFeatures(T^,
-              Encoder.FrameTilingMode = pvsWavelets, Encoder.FFrameTilingFromPalette, False, Encoder.FrameTilingMode = pvsWeightedDCT,
+              Encoder.FrameTilingMode, Encoder.FFrameTilingFromPalette, False,
               T^.HMirror_Initial, T^.VMirror_Initial, cColorCpns, AFTGamma,
               Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @PlainDCT[0]);
 
@@ -2153,8 +2153,8 @@ begin
         Encoder.RenderTile(AFrame, sy, sx, Tile^, True, True, True, False);
         Encoder.RenderTile(APrevFrame, sy, sx, PrevTile^, True, True, True, False);
 
-        Encoder.ComputeTilePsyVisFeatures(Tile^, False, False, False, cSmoothingQWeighting, False, False, cColorCpns, -1, nil, PFloat(@CurDCT[0]));
-        Encoder.ComputeTilePsyVisFeatures(PrevTile^, False, False, False, cSmoothingQWeighting, False, False, cColorCpns, -1, nil, PFloat(@PrevDCT[0]));
+        Encoder.ComputeTilePsyVisFeatures(Tile^, pvsWeightedDCT, False, False, False, False, cColorCpns, -1, nil, PFloat(@CurDCT[0]));
+        Encoder.ComputeTilePsyVisFeatures(PrevTile^, pvsWeightedDCT, False, False, False, False, cColorCpns, -1, nil, PFloat(@PrevDCT[0]));
 
         // compare DCT of current tile with tile from prev frame tilemap
 
@@ -2450,13 +2450,15 @@ begin
   // DCT
 
   i := 0;
-  for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-    for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+  for v := 0 to cTileWidth - 1 do
+    for u := 0 to cTileWidth - 1 do
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
         begin
-          FDCTLutDouble[i] := cos((x + 0.5) * u * PI / (cTileWidth * cDCTFeaturesMul)) * cos((y + 0.5) * v * PI / (cTileWidth * cDCTFeaturesMul)) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
-          FDCTLut[i] := FDCTLutDouble[i];
+          FDCTLutDouble[False, i] := cos((x + 0.5) * u * PI / (cTileWidth)) * cos((y + 0.5) * v * PI / (cTileWidth)) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
+          FDCTLutDouble[True, i] := cos((x + 0.5) * u * PI / (cTileWidth * 2)) * cos((y + 0.5) * v * PI / (cTileWidth * 2)) * cDCTUVRatio[Min(v, 7), Min(u, 7)];
+          FDCTLut[False, i] := FDCTLutDouble[False, i];
+          FDCTLut[True, i] := FDCTLutDouble[True, i];
           Inc(i);
         end;
 
@@ -2465,10 +2467,10 @@ begin
   i := 0;
   for v := 0 to cTileWidth - 1 do
     for u := 0 to cTileWidth - 1 do
-      for y := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-        for x := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+      for y := 0 to cTileWidth - 1 do
+        for x := 0 to cTileWidth - 1 do
         begin
-          FInvDCTLutDouble[i] := cos((u + 0.5) * x * PI / (cTileWidth * cDCTFeaturesMul)) * cos((v + 0.5) * y * PI / (cTileWidth * cDCTFeaturesMul)) * cDCTUVRatio[Min(y, 7), Min(x, 7)] * 2 / (cTileWidth * cDCTFeaturesMul) * 2 / (cTileWidth * cDCTFeaturesMul);
+          FInvDCTLutDouble[i] := cos((u + 0.5) * x * PI / (cTileWidth)) * cos((v + 0.5) * y * PI / (cTileWidth)) * cDCTUVRatio[Min(y, 7), Min(x, 7)] * 2 / (cTileWidth) * 2 / (cTileWidth);
           Inc(i);
         end;
 end;
@@ -4113,7 +4115,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror,
+procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
   VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
 var
   i, u, v, x, y, xx, yy, cpn: Integer;
@@ -4171,7 +4173,7 @@ begin
       end;
   end;
 
-  if Wavelets then
+  if Mode = pvsWavelets then
   begin
    for cpn := 0 to ColorCpns - 1 do
    begin
@@ -4184,14 +4186,14 @@ begin
     for cpn := 0 to ColorCpns - 1 do
     begin
       pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
-      pLut := @FDCTLut[0];
-      for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-        for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+      pLut := @FDCTLut[Mode in [pvsSpeDCT, pvsWeightedSpeDCT], 0];
+      for v := 0 to cTileWidth - 1 do
+        for u := 0 to cTileWidth - 1 do
         begin
   		    z := specialize DCTInner<PSingle>(@CpnPixels[cpn, 0, 0], pLut, 1);
 
-          if QWeighting then
-             z *= cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
+          if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
+             z *= cDCTQuantization[cpn, v, u];
 
           pDCT^ := z;
           Inc(pDCT);
@@ -4205,7 +4207,7 @@ begin
       DCT[cDCTSnake[i] * cColorCpns + cpn] := LocalDCT[i + cpn * (cTileDCTSize div ColorCpns)];
 end;
 
-procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Wavelets, FromPal, UseLAB, QWeighting, HMirror,
+procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
   VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble);
 var
   i, u, v, x, y, xx, yy, cpn: Integer;
@@ -4263,7 +4265,7 @@ begin
       end;
   end;
 
-  if Wavelets then
+  if Mode = pvsWavelets then
   begin
    for cpn := 0 to ColorCpns - 1 do
    begin
@@ -4276,14 +4278,14 @@ begin
     for cpn := 0 to ColorCpns - 1 do
     begin
       pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
-      pLut := @FDCTLutDouble[0];
-      for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-        for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+      pLut := @FDCTLutDouble[Mode in [pvsSpeDCT, pvsWeightedSpeDCT], 0];
+      for v := 0 to cTileWidth - 1 do
+        for u := 0 to cTileWidth - 1 do
         begin
   		    z := specialize DCTInner<PDouble>(@CpnPixels[cpn, 0, 0], pLut, 1);
 
-          if QWeighting then
-             z *= cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul];
+          if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
+             z *= cDCTQuantization[cpn, v, u];
 
           pDCT^ := z;
           Inc(pDCT);
@@ -4297,7 +4299,7 @@ begin
       DCT[cDCTSnake[i] * cColorCpns + cpn] := LocalDCT[i + cpn * (cTileDCTSize div ColorCpns)];
 end;
 
-procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Wavelets, UseLAB, QWeighting: Boolean; ColorCpns, GammaCor: Integer;
+procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns, GammaCor: Integer;
  var ATile: TTile);
 var
   i, u, v, x, y, cpn: Integer;
@@ -4322,16 +4324,18 @@ var
   end;
 
 begin
+  Assert(not (Mode in [pvsSpeDCT, pvsWeightedSpeDCT]), 'Special DCT is non-inversible');
+
   pDCT := @LocalDCT[0];
   for cpn := 0 to ColorCpns - 1 do
   begin
     i := 0;
-    for v := 0 to cTileWidth * cDCTFeaturesMul - 1 do
-      for u := 0 to cTileWidth * cDCTFeaturesMul - 1 do
+    for v := 0 to cTileWidth - 1 do
+      for u := 0 to cTileWidth - 1 do
       begin
         d := DCT[cDCTSnake[i] * cColorCpns + cpn];
-        if QWeighting then
-          pDCT^ := d / cDCTQuantization[cpn, v div cDCTFeaturesMul, u div cDCTFeaturesMul]
+        if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
+          pDCT^ := d / cDCTQuantization[cpn, v, u]
         else
           pDCT^ := d;
         Inc(pDCT);
@@ -4339,7 +4343,7 @@ begin
       end;
   end;
 
-  if Wavelets then
+  if Mode = pvsWavelets then
   begin
     for cpn := 0 to ColorCpns - 1 do
     begin
@@ -4357,9 +4361,9 @@ begin
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
         begin
-          pCpn^ := specialize DCTInner<PDouble>(@LocalDCT[cpn * (cTileDCTSize div ColorCpns)], pLut, sqr(cDCTFeaturesMul));
+          pCpn^ := specialize DCTInner<PDouble>(@LocalDCT[cpn * (cTileDCTSize div ColorCpns)], pLut, 1);
           Inc(pCpn);
-          Inc(pLut, Sqr(cTileWidth * cDCTFeaturesMul));
+          Inc(pLut, Sqr(cTileWidth));
         end;
     end;
   end;
@@ -4824,7 +4828,7 @@ begin
               end;
 
               if not (FRenderPlaying or AFast) then
-                ComputeTilePsyVisFeatures(PsyTile^, RenderMode = pvsWavelets, False, False, RenderMode = pvsWeightedDCT, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
+                ComputeTilePsyVisFeatures(PsyTile^, RenderMode, False, False, False, False, cColorCpns, -1, nil, PFloat(@chgDCT[sy, sx, 0]));
             end;
           end;
       finally
@@ -4911,7 +4915,7 @@ begin
                 vmir := False;
               end;
 
-              ComputeTilePsyVisFeatures(tilePtr^, RenderMode = pvsWavelets, False, False, RenderMode = pvsWeightedDCT, hmir, vmir, cColorCpns, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
+              ComputeTilePsyVisFeatures(tilePtr^, RenderMode, False, False, hmir, vmir, cColorCpns, Ord(FRenderUseGamma) * 2 - 1, nil, PFloat(@DCT[0]));
               q += CompareEuclideanDCT(DCT, chgDCT[sy, sx]);
               Inc(i);
             end;
@@ -5051,13 +5055,13 @@ begin
   QuantizerPosterize := False;
   QuantizerPosterizeBitsPerComponent := 3;
   DitheringUseGamma := False;
-  DitheringMode := pvsWavelets;
+  DitheringMode := pvsWeightedSpeDCT;
   DitheringUseThomasKnoll := True;
   DitheringYliluoma2MixedColors := 4;
 
   GlobalTilingFromPalette := True;
   GlobalTilingUseGamma := False;
-  GlobalTilingMode := pvsWavelets;
+  GlobalTilingMode := pvsSpeDCT;
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
   GlobalTilingLumaOnly := False;
@@ -5065,7 +5069,7 @@ begin
 
   FrameTilingFromPalette := True;
   FrameTilingUseGamma := False;
-  FrameTilingMode := pvsWavelets;
+  FrameTilingMode := pvsSpeDCT;
 
   TileBlendingDepth := 16;
   TileBlendingRadius := 4;
@@ -5108,8 +5112,8 @@ begin
     for j := 0 to cTileWidth - 1 do
       T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
 
-  ComputeTilePsyVisFeatures(T^, False, False, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], False, False, False, cColorCpns, -1, T2^);
+  ComputeTilePsyVisFeatures(T^, pvsDCT, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], pvsDCT, False, cColorCpns, -1, T2^);
 
   //for i := 0 to 7 do
   //  for j := 0 to 7 do
@@ -5122,13 +5126,13 @@ begin
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'DCT/InvDCT mismatch');
 
-  ComputeTilePsyVisFeatures(T^, False, False, False, True, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], False, False, True, cColorCpns, -1, T2^);
+  ComputeTilePsyVisFeatures(T^, pvsWeightedDCT, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], pvsWeightedDCT, False, cColorCpns, -1, T2^);
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'QWeighted DCT/InvDCT mismatch');
 
-  ComputeTilePsyVisFeatures(T^, True, False, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], True, False, False, cColorCpns, -1, T2^);
+  ComputeTilePsyVisFeatures(T^, pvsWavelets, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], pvsWavelets, False, cColorCpns, -1, T2^);
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'WL/InvWL mismatch');
 
@@ -5412,7 +5416,7 @@ var
           TMI := @Frame.TileMap[sy, sx];
 
           ComputeTilePsyVisFeatures(Tile^,
-            GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT,
+            GlobalTilingMode, FGlobalTilingFromPalette, False,
             False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @DCT[0]);
 
           ANNClusters[frameOffset + si] := ann_kdtree_search(ANN, @DCT[0], 0.0, @ANNErrors[frameOffset + si]);
@@ -5452,8 +5456,7 @@ var
     Tile := Tiles[AIndex];
 
     Move(ANNDataset[AIndex]^, DCT[0], featureCount * SizeOf(Double));
-    ComputeInvTilePsyVisFeatures(@DCT[0],
-        GlobalTilingMode = pvsWavelets, False, GlobalTilingMode = pvsWeightedDCT, AColorCpns, AGamma, Tile^);
+    ComputeInvTilePsyVisFeatures(@DCT[0], GlobalTilingMode, False, AColorCpns, AGamma, Tile^);
 
     palIdx := ANNPalIdxs[TileLineIdxs[AIndex]];
     if AColorCpns = 1 then
@@ -5468,6 +5471,50 @@ var
     Tile^.Active := True;
   end;
 
+  procedure DoClusterSelect(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    i, frmIdx, si: Integer;
+    hasFrame: Boolean;
+    Frame: TFrame;
+    Tile: PTile;
+  begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
+    Frame := FFrames[AIndex];
+
+    hasFrame := False;
+    for i := 0 to clusterCount - 1 do
+    begin
+      DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
+      if (frmIdx = Frame.Index) and (TileLineIdxs[i] >= 0) then
+      begin
+        hasFrame := True;
+        Break;
+      end;
+    end;
+
+    if hasFrame then
+    begin
+      Frame.AcquireFrameTiles;
+      try
+        for i := 0 to clusterCount - 1 do
+        begin
+          DivMod(TileLineIdxs[i], FTileMapSize, frmIdx, si);
+          if (frmIdx = Frame.Index) and (TileLineIdxs[i] >= 0) then
+          begin
+            Tile := Tiles[i];
+
+            Tile^.CopyFrom(Frame.FrameTiles[si]^);
+          end;
+        end;
+      finally
+        Frame.ReleaseFrameTiles;
+      end;
+    end;
+
+    Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
+  end;
 
   procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
@@ -5484,7 +5531,7 @@ var
     TMI := @Frame.TileMap[sy, sx];
 
     ComputeTilePsyVisFeatures(Frame.FrameTiles[AIndex]^,
-        GlobalTilingMode = pvsWavelets, FGlobalTilingFromPalette, False, GlobalTilingMode = pvsWeightedDCT,
+        GlobalTilingMode, FGlobalTilingFromPalette, False,
         False, False, AColorCpns, AGamma, Frame.PKeyFrame.Palettes[TMI^.Base.PalIdx].PaletteRGB, @DCTs[AIndex, 0]);
   end;
 
@@ -5665,11 +5712,21 @@ begin
 
   ProgressRedraw(3, 'PrepareTiles');
 
-  // dither final tiles
 
-  ProcThreadPool.DoParallelLocalProc(@DoClusterDither, 0, clusterCount - 1);
+  if GlobalTilingMode in [pvsSpeDCT, pvsWeightedSpeDCT] then
+  begin
+    doneFrameCount := 0;
+    ProcThreadPool.DoParallelLocalProc(@DoClusterSelect, 0, high(FFrames));
 
-  ProgressRedraw(4, 'DitherTiles');
+    ProgressRedraw(4, 'SelectTiles');
+  end
+  else
+  begin
+    // dither final tiles
+    ProcThreadPool.DoParallelLocalProc(@DoClusterDither, 0, clusterCount - 1);
+
+    ProgressRedraw(4, 'DitherTiles');
+  end;
 end;
 
 procedure TTilingEncoder.OptimizeGlobalPalettes;

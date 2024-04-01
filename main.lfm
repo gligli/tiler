@@ -656,6 +656,8 @@ object MainForm: TMainForm
           'DCT'
           'Weighted DCT'
           'Haar wavelets'
+          'Special DCT'
+          'Spe. Wgt. DCT'
         )
         Style = csDropDownList
         TabOrder = 23
@@ -672,6 +674,8 @@ object MainForm: TMainForm
           'DCT'
           'Weighted DCT'
           'Haar wavelets'
+          'Special DCT'
+          'Spe. Wgt. DCT'
         )
         Style = csDropDownList
         TabOrder = 24
@@ -688,6 +692,8 @@ object MainForm: TMainForm
           'DCT'
           'Weighted DCT'
           'Haar wavelets'
+          'Special DCT'
+          'Spe. Wgt. DCT'
         )
         Style = csDropDownList
         TabOrder = 25
@@ -704,6 +710,8 @@ object MainForm: TMainForm
           'DCT'
           'Weighted DCT'
           'Haar wavelets'
+          'Special DCT'
+          'Spe. Wgt. DCT'
         )
         Style = csDropDownList
         TabOrder = 28

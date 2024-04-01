@@ -10,10 +10,7 @@ uses
 const
   // tweakable constants
 
-  cSmoothingQWeighting = True;
-
   cYakmoMaxIterations = 300;
-  cDCTFeaturesMul = 1;
 
   {$if false}
     cRedMul = 2126;
@@ -36,8 +33,8 @@ const
   cTileWidthBits = 3;
   cTileWidth = 1 shl cTileWidthBits;
   cColorCpns = 3;
-  cTileDCTSize = cColorCpns * sqr(cTileWidth * cDCTFeaturesMul);
-  cUnrolledDCTSize = sqr(sqr(cTileWidth * cDCTFeaturesMul));
+  cTileDCTSize = cColorCpns * sqr(cTileWidth);
+  cUnrolledDCTSize = sqr(sqr(cTileWidth));
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
 
