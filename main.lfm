@@ -766,13 +766,13 @@ object MainForm: TMainForm
         Left = 328
         Height = 23
         Top = 235
-        Width = 104
+        Width = 143
         DropDownCount = 20
         ItemHeight = 15
         Items.Strings = (
-          'BIRCH'
-          'BICO'
-          'Yakmo'
+          'CoreSets (BIRCH)'
+          'CoreSets (BICO)'
+          'KMeans (Yakmo)'
         )
         Style = csDropDownList
         TabOrder = 19
