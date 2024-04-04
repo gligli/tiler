@@ -4520,7 +4520,7 @@ begin
     correl := FFrames[frmIdx].InterframeCorrelation;
     dist := FFrames[frmIdx].InterframeDistance;
 
-    writeln(frmIdx:8,correl:8:3,dist:12:3);
+    //writeln(frmIdx:8,correl:8:3,dist:12:3);
 
     kfReason := kfrNone;
     if AManualMode then
