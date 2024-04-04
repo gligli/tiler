@@ -15,7 +15,7 @@ uses
 
 type
   TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esDither, esCluster, esReconstruct, esSmooth, esBlend, esReindex, esSave);
-  TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation);
+  TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation, kfrEuclidean);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
   TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets, pvsSpeDCT, pvsWeightedSpeDCT);
   TClusteringMethod = (cmBIRCH, cmBICO, cmYakmo);
@@ -279,6 +279,7 @@ type
 
     InterframeCorrelationData: TFloatDynArray;
     InterframeCorrelation: TFloat; // with previous frame
+    InterframeDistance: TFloat; // with previous frame
     InterframeCorrelationEvent: THandle;
     LoadFromImageFinishedEvent: THandle;
 
@@ -287,8 +288,8 @@ type
     FrameTilesEvent: THandle;
     CompressedFrameTiles: TMemoryStream;
 
-    function PrepareInterFrameCorrelation: TFloatDynArray;
-    procedure ComputeInterFrameCorrelationAndCompress;
+    function PrepareInterFrameData: TFloatDynArray;
+    procedure ComputeInterFrameAndCompress;
     procedure LoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
 
     constructor Create(AParent: TTilingEncoder; AIndex: Integer);
@@ -411,6 +412,7 @@ type
     FShotTransMaxSecondsPerKF: Double;
     FShotTransMinSecondsPerKF: Double;
     FShotTransCorrelLoThres: Double;
+    FShotTransDistHiThres: Double;
 
     // GUI state variables
 
@@ -464,6 +466,7 @@ type
     procedure SetGlobalTilingTileCount(AValue: Integer);
     procedure SetScaling(AValue: Double);
     procedure SetShotTransCorrelLoThres(AValue: Double);
+    procedure SetShotTransDistHiThres(AValue: Double);
     procedure SetShotTransMaxSecondsPerKF(AValue: Double);
     procedure SetShotTransMinSecondsPerKF(AValue: Double);
     procedure SetSmoothingFactor(AValue: Double);
@@ -616,7 +619,7 @@ type
     property ShotTransMaxSecondsPerKF: Double read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
     property ShotTransMinSecondsPerKF: Double read FShotTransMinSecondsPerKF write SetShotTransMinSecondsPerKF;
     property ShotTransCorrelLoThres: Double read FShotTransCorrelLoThres write SetShotTransCorrelLoThres;
-
+    property ShotTransDistHiThres: Double read FShotTransDistHiThres write SetShotTransDistHiThres;
 
     // GUI state variables
 
@@ -2300,7 +2303,7 @@ var
 begin
   Frame := TFrame(AData);
 
-  Frame.ComputeInterFrameCorrelationAndCompress;
+  Frame.ComputeInterFrameAndCompress;
 end;
 
 procedure TFrame.LoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
@@ -2360,18 +2363,19 @@ begin
   TThread.ExecuteInThread(@DoAsyncComputeInterFrameCorrelationAndCompress, Self);
 end;
 
-function TFrame.PrepareInterFrameCorrelation: TFloatDynArray;
+function TFrame.PrepareInterFrameData: TFloatDynArray;
 var
   i, sy, sx, ty, tx, sz, di: Integer;
   rr, gg, bb: Integer;
-  lll, aaa, bbb: TFloat;
-  Dataset: TDoubleDynArray2;
+  lll, aaa, bbb, invSize: TFloat;
   pat: PInteger;
 begin
   Result := nil;
   sz := Encoder.FTileMapSize;
 
-  SetLength(Dataset, sz, cColorCpns);
+  SetLength(Result, sz * cColorCpns);
+
+  invSize := 1 / Sqr(cTileWidth);
   di := 0;
   for sy := 0 to Encoder.FTileMapHeight - 1 do
     for sx := 0 to Encoder.FTileMapWidth - 1 do
@@ -2385,25 +2389,29 @@ begin
           FromRGB(pat^, rr, gg, bb);
           Inc(pat);
           Encoder.RGBToLAB(rr, gg, bb, -1, lll, aaa, bbb);
-          Dataset[di, 0] += lll;
-          Dataset[di, 1] += aaa;
-          Dataset[di, 2] += bbb;
+          Result[di + 0] += lll;
+          Result[di + 1] += aaa;
+          Result[di + 2] += bbb;
         end;
 
-      Inc(di);
-    end;
-  Assert(di = sz);
+      Result[di + 0] *= invSize;
+      Result[di + 1] *= invSize;
+      Result[di + 2] *= invSize;
 
-  SetLength(Result, sz * cColorCpns);
-  for i := 0 to High(Result) do
-    Result[i] := Dataset[i mod sz, i div sz];
+      Inc(di, 3);
+    end;
+  Assert(di = sz * cColorCpns);
 end;
 
-procedure TFrame.ComputeInterFrameCorrelationAndCompress;
+procedure TFrame.ComputeInterFrameAndCompress;
+var
+  i, j: Integer;
+  prevLSum, curLSum: TFloat;
+  prevFrameICD: TFloatDynArray;
 begin
   // compute inter-frame correlations
 
-  InterframeCorrelationData := PrepareInterFrameCorrelation;
+  InterframeCorrelationData := PrepareInterFrameData;
   SetEvent(InterframeCorrelationEvent);
 
   if Index > 0 then
@@ -2411,7 +2419,19 @@ begin
     // wait prev frame InterframeCorrelationData
     WaitForSingleObject(Encoder.FFrames[Index - 1].InterframeCorrelationEvent, INFINITE);
 
-    InterframeCorrelation := Encoder.PearsonCorrelation(Encoder.FFrames[Index - 1].InterframeCorrelationData, InterframeCorrelationData);
+    prevFrameICD := Encoder.FFrames[Index - 1].InterframeCorrelationData;
+    InterframeCorrelation := Encoder.PearsonCorrelation(prevFrameICD, InterframeCorrelationData);
+
+    prevLSum := 0;
+    curLSum := 0;
+    j := 0;
+    for i := 0 to Encoder.FTileMapSize - 1 do
+    begin
+      prevLSum += prevFrameICD[j];
+      curLSum += InterframeCorrelationData[j];
+      Inc(j, cColorCpns);
+    end;
+    InterframeDistance := Abs(prevLSum - curLSum) / Encoder.FTileMapSize;
   end;
 
   // compress frame tiles to save memory
@@ -3962,6 +3982,12 @@ begin
  FShotTransCorrelLoThres := EnsureRange(AValue, -1.0, 1.0);
 end;
 
+procedure TTilingEncoder.SetShotTransDistHiThres(AValue: Double);
+begin
+ if FShotTransDistHiThres = AValue then Exit;
+ FShotTransDistHiThres := max(0.0, AValue);
+end;
+
 procedure TTilingEncoder.SetShotTransMaxSecondsPerKF(AValue: Double);
 begin
  if FShotTransMaxSecondsPerKF = AValue then Exit;
@@ -4480,7 +4506,7 @@ end;
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
 var
   frmIdx, kfIdx, lastKFIdx: Integer;
-  correl: TFloat;
+  correl, dist: TFloat;
   kfReason: TKeyFrameReason;
   sfr, efr: Integer;
 begin
@@ -4492,6 +4518,9 @@ begin
   for frmIdx := 0 to High(FFrames) do
   begin
     correl := FFrames[frmIdx].InterframeCorrelation;
+    dist := FFrames[frmIdx].InterframeDistance;
+
+    writeln(frmIdx:8,correl:8:3,dist:12:3);
 
     kfReason := kfrNone;
     if AManualMode then
@@ -4506,6 +4535,9 @@ begin
 
       if (kfReason = kfrNone) and (correl < FShotTransCorrelLoThres) then
         kfReason := kfrDecorrelation;
+
+      if (kfReason = kfrNone) and (dist >= FShotTransDistHiThres) then
+        kfReason := kfrEuclidean;
 
       if (kfReason = kfrNone) and ((frmIdx - lastKFIdx) >= (FShotTransMaxSecondsPerKF * FFramesPerSecond)) then
         kfReason := kfrLength;
@@ -4982,6 +5014,7 @@ begin
     ini.WriteFloat('Load', 'ShotTransMaxSecondsPerKF', ShotTransMaxSecondsPerKF);
     ini.WriteFloat('Load', 'ShotTransMinSecondsPerKF', ShotTransMinSecondsPerKF);
     ini.WriteFloat('Load', 'ShotTransCorrelLoThres', ShotTransCorrelLoThres);
+    ini.WriteFloat('Load', 'ShotTransDistHiThres', ShotTransDistHiThres);
 
   finally
     ini.Free;
@@ -5036,6 +5069,7 @@ begin
     ShotTransMaxSecondsPerKF := ini.ReadFloat('Load', 'ShotTransMaxSecondsPerKF', ShotTransMaxSecondsPerKF);
     ShotTransMinSecondsPerKF := ini.ReadFloat('Load', 'ShotTransMinSecondsPerKF', ShotTransMinSecondsPerKF);
     ShotTransCorrelLoThres := ini.ReadFloat('Load', 'ShotTransCorrelLoThres', ShotTransCorrelLoThres);
+    ShotTransDistHiThres := ini.ReadFloat('Load', 'ShotTransDistHiThres', ShotTransDistHiThres);
 
   finally
     ini.Free;
@@ -5083,6 +5117,7 @@ begin
   ShotTransMaxSecondsPerKF := 5.0;  // maximum seconds between keyframes
   ShotTransMinSecondsPerKF := 0.0;  // minimum seconds between keyframes
   ShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
+  ShotTransDistHiThres := 3.0;   // interframe distance high limit
 end;
 
 procedure TTilingEncoder.Test;
@@ -5739,7 +5774,7 @@ var
 
   procedure DoYakmo(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    kfIdx, frmIdx, palIdx, clusIdx, dsIdx, tileIdx, sx, sy, di, kfPalClusterCount: Integer;
+    kfIdx, frmIdx, palIdx, clusIdx, dsIdx, tileIdx, sx, sy, di, kfPalClusterCount, i: Integer;
     KeyFrame: TKeyFrame;
     Frame: TFrame;
     Tile: PTile;
@@ -5753,10 +5788,11 @@ var
     Yakmo: PYakmo;
   begin
     DivMod(AIndex, FPaletteCount, kfIdx, palIdx);
-
     kfPalClusterCount := KFPalTileCount[kfIdx, palIdx];
-
     KeyFrame := FKeyFrames[kfIdx];
+
+    if (kfPalClusterCount <= 0) or (KeyFrame.Palettes[palIdx].UseCount <= 0) then
+      Exit;
 
     //WriteLn(KeyFrame.StartFrame:8,palIdx:4,kfPalClusterCount:8,KeyFrame.Palettes[palIdx].UseCount:8);
 
@@ -5804,13 +5840,25 @@ var
       if kfPalClusterCount < di then
       begin
         SetLength(Centroids, kfPalClusterCount, cTileDCTSize);
-        Yakmo := yakmo_create(kfPalClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-        try
-          yakmo_load_train_data(Yakmo, di, cTileDCTSize, PPDouble(@Dataset[0]));
-          yakmo_train_on_data(Yakmo, @Clusters[0]);
-          yakmo_get_centroids(Yakmo, PPDouble(@Centroids[0]));
-        finally
-          yakmo_destroy(Yakmo);
+
+        if kfPalClusterCount > 1 then
+        begin
+          Yakmo := yakmo_create(kfPalClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
+          try
+            yakmo_load_train_data(Yakmo, di, cTileDCTSize, PPDouble(@Dataset[0]));
+            yakmo_train_on_data(Yakmo, @Clusters[0]);
+            yakmo_get_centroids(Yakmo, PPDouble(@Centroids[0]));
+          finally
+            yakmo_destroy(Yakmo);
+          end;
+        end
+        else
+        begin
+          for dsIdx := 0 to di - 1 do
+            for i := 0 to cTileDCTSize - 1 do
+              Centroids[0, i] += Dataset[dsIdx, i];
+          for i := 0 to cTileDCTSize - 1 do
+            Centroids[0, i] /= di;
         end;
       end
       else if kfPalClusterCount = di then

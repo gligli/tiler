@@ -70,6 +70,7 @@ type
     Label21: TLabel;
     Label22: TLabel;
     Label23: TLabel;
+    Label24: TLabel;
     Label3: TLabel;
     Label4: TLabel;
     Label6: TLabel;
@@ -99,6 +100,7 @@ type
     sdSettings: TSaveDialog;
     Separator1: TMenuItem;
     Separator3: TMenuItem;
+    seShotTransDistHiThres: TFloatSpinEdit;
     seShotTransMaxSecondsPerKF: TFloatSpinEdit;
     seShotTransCorrelLoThres: TFloatSpinEdit;
     seMaxCores: TSpinEdit;
@@ -694,7 +696,7 @@ begin
   FTilingEncoder.ShotTransMinSecondsPerKF := seShotTransMinSecondsPerKF.Value;
   FTilingEncoder.ShotTransMaxSecondsPerKF := seShotTransMaxSecondsPerKF.Value;
   FTilingEncoder.ShotTransCorrelLoThres := seShotTransCorrelLoThres.Value;
-
+  FTilingEncoder.ShotTransDistHiThres := seShotTransDistHiThres.Value;
 
   if pcPages.ActivePage = tsInput then
     FTilingEncoder.RenderPage := rpInput
@@ -773,6 +775,7 @@ begin
    seShotTransMinSecondsPerKF.Value := FTilingEncoder.ShotTransMinSecondsPerKF;
    seShotTransMaxSecondsPerKF.Value := FTilingEncoder.ShotTransMaxSecondsPerKF;
    seShotTransCorrelLoThres.Value := FTilingEncoder.ShotTransCorrelLoThres;
+   seShotTransDistHiThres.Value := FTilingEncoder.ShotTransDistHiThres;
   finally
     FLockChanges := False;
   end;

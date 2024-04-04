@@ -162,7 +162,7 @@ object MainForm: TMainForm
         MaxValue = 1000000000
         OnChange = seMaxTilesEditingDone
         OnEditingDone = seMaxTilesEditingDone
-        TabOrder = 13
+        TabOrder = 14
       end
       object btnInput: TButton
         Left = 592
@@ -182,7 +182,7 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 10
         OnChange = UpdateGUI
-        TabOrder = 20
+        TabOrder = 21
       end
       object seStartFrame: TSpinEdit
         Left = 872
@@ -206,7 +206,7 @@ object MainForm: TMainForm
           '8'
           '16'
         )
-        TabOrder = 18
+        TabOrder = 19
         OnChange = UpdateGUI
       end
       object seFrameCount: TSpinEdit
@@ -224,7 +224,7 @@ object MainForm: TMainForm
         Top = 414
         Width = 251
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
-        TabOrder = 30
+        TabOrder = 31
         OnChange = UpdateGUI
       end
       object Label13: TLabel
@@ -297,7 +297,7 @@ object MainForm: TMainForm
         Top = 396
         Width = 168
         Caption = 'Dithering gamma correction'
-        TabOrder = 33
+        TabOrder = 34
         OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
@@ -306,7 +306,7 @@ object MainForm: TMainForm
         Top = 432
         Width = 182
         Caption = 'Reconstruct gamma correction'
-        TabOrder = 35
+        TabOrder = 36
         OnChange = UpdateGUI
       end
       object Label10: TLabel
@@ -326,7 +326,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 26
+        TabOrder = 27
         Value = 2
       end
       object seVisGamma: TFloatSpinEdit
@@ -338,7 +338,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateVideo
-        TabOrder = 27
+        TabOrder = 28
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
@@ -351,7 +351,7 @@ object MainForm: TMainForm
         MinValue = 0.1
         OnChange = seQbTilesEditingDone
         OnEditingDone = seQbTilesEditingDone
-        TabOrder = 14
+        TabOrder = 15
         Value = 2
       end
       object btnGTM: TButton
@@ -386,7 +386,7 @@ object MainForm: TMainForm
           '32'
           '64'
         )
-        TabOrder = 12
+        TabOrder = 13
         OnChange = UpdateGUI
       end
       object cbxPalCount: TComboBox
@@ -407,7 +407,7 @@ object MainForm: TMainForm
           '128'
           '256'
         )
-        TabOrder = 11
+        TabOrder = 12
         OnChange = UpdateGUI
       end
       object Label14: TLabel
@@ -435,7 +435,7 @@ object MainForm: TMainForm
           '8'
         )
         Style = csDropDownList
-        TabOrder = 15
+        TabOrder = 16
         OnChange = UpdateGUI
       end
       object cbxScaling: TComboBox
@@ -474,7 +474,7 @@ object MainForm: TMainForm
         Top = 396
         Width = 292
         Caption = 'Use Yakmo KMeans as quantizer (not Dennis Lee v3)'
-        TabOrder = 29
+        TabOrder = 30
         OnChange = UpdateGUI
       end
       object chkPosterize: TCheckBox
@@ -483,7 +483,7 @@ object MainForm: TMainForm
         Top = 181
         Width = 276
         Caption = 'Posterize palettes to selected bits per component'
-        TabOrder = 16
+        TabOrder = 17
       end
       object cbxPosterizeBPC: TComboBox
         Left = 328
@@ -503,7 +503,7 @@ object MainForm: TMainForm
           '8'
         )
         Style = csDropDownList
-        TabOrder = 17
+        TabOrder = 18
         OnChange = UpdateGUI
       end
       object chkFTFromPal: TCheckBox
@@ -512,7 +512,7 @@ object MainForm: TMainForm
         Top = 450
         Width = 188
         Caption = 'Reconstruct from palettized tiles'
-        TabOrder = 36
+        TabOrder = 37
         OnChange = UpdateGUI
       end
       object Label16: TLabel
@@ -531,7 +531,7 @@ object MainForm: TMainForm
         MaxValue = 1000000
         MinValue = 1
         OnChange = UpdateGUI
-        TabOrder = 10
+        TabOrder = 11
         Value = 1
       end
       object Label20: TLabel
@@ -573,7 +573,7 @@ object MainForm: TMainForm
       object Label22: TLabel
         Left = 656
         Height = 15
-        Top = 140
+        Top = 141
         Width = 176
         Caption = 'Keyframes threshold (correlation)'
         ParentColor = False
@@ -595,7 +595,7 @@ object MainForm: TMainForm
         Top = 414
         Width = 156
         Caption = 'Cluster gamma correction'
-        TabOrder = 34
+        TabOrder = 35
         OnChange = UpdateGUI
       end
       object chkGlobLumaOnly: TCheckBox
@@ -604,7 +604,7 @@ object MainForm: TMainForm
         Top = 432
         Width = 225
         Caption = 'Cluster from luma features only (faster)'
-        TabOrder = 31
+        TabOrder = 32
         OnChange = UpdateGUI
       end
       object Label23: TLabel
@@ -638,7 +638,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 23
+        TabOrder = 24
         OnChange = UpdateGUI
       end
       object cbxGlobMode: TComboBox
@@ -656,7 +656,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 24
+        TabOrder = 25
         OnChange = UpdateGUI
       end
       object cbxFTMode: TComboBox
@@ -674,7 +674,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 25
+        TabOrder = 26
         OnChange = UpdateGUI
       end
       object cbxVisMode: TComboBox
@@ -692,7 +692,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 28
+        TabOrder = 29
         OnChange = UpdateVideo
       end
       object chkClusterFromPal: TCheckBox
@@ -701,7 +701,7 @@ object MainForm: TMainForm
         Top = 450
         Width = 162
         Caption = 'Cluster from palettized tiles'
-        TabOrder = 32
+        TabOrder = 33
         OnChange = UpdateGUI
       end
       object Label18: TLabel
@@ -738,7 +738,7 @@ object MainForm: TMainForm
           '15'
         )
         Style = csDropDownList
-        TabOrder = 21
+        TabOrder = 22
         OnChange = UpdateGUI
       end
       object cbxBLDepth: TComboBox
@@ -759,7 +759,7 @@ object MainForm: TMainForm
           '256'
         )
         Style = csDropDownList
-        TabOrder = 22
+        TabOrder = 23
         OnChange = UpdateGUI
       end
       object cbxClusMethod: TComboBox
@@ -775,8 +775,26 @@ object MainForm: TMainForm
           'KMeans (Yakmo)'
         )
         Style = csDropDownList
-        TabOrder = 19
+        TabOrder = 20
         OnChange = UpdateGUI
+      end
+      object Label24: TLabel
+        Left = 656
+        Height = 15
+        Top = 165
+        Width = 170
+        Caption = 'Keyframes threshold (euclidean)'
+        ParentColor = False
+      end
+      object seShotTransDistHiThres: TFloatSpinEdit
+        Left = 872
+        Height = 23
+        Top = 161
+        Width = 71
+        Increment = 0.05
+        MaxValue = 1000
+        OnChange = UpdateGUI
+        TabOrder = 10
       end
     end
     object tsInput: TTabSheet
