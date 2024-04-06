@@ -286,6 +286,7 @@ type
     FrameTiles: array of PTile;
     FrameTilesRefCount: Integer;
     FrameTilesEvent: THandle;
+    FrameTilesLock: TSpinlock;
     CompressedFrameTiles: TMemoryStream;
 
     function PrepareInterFrameData: TFloatDynArray;
@@ -2225,6 +2226,7 @@ begin
   CompressedFrameTiles := TMemoryStream.Create;
   InterframeCorrelationEvent := CreateEvent(nil, True, False, nil);
   LoadFromImageFinishedEvent := CreateEvent(nil, True, False, nil);
+  SpinLeave(@FrameTilesLock);
 end;
 
 destructor TFrame.Destroy;
@@ -2259,8 +2261,17 @@ end;
 procedure TFrame.AcquireFrameTiles;
 var
   CompStream: Tdecompressionstream;
+  ftrc: Integer;
 begin
-  if InterLockedIncrement(FrameTilesRefCount) = 1 then
+  SpinEnter(@FrameTilesLock);
+  try
+    Inc(FrameTilesRefCount);
+    ftrc := FrameTilesRefCount;
+  finally
+    SpinLeave(@FrameTilesLock);
+  end;
+
+  if ftrc = 1 then
   begin
     Assert(CompressedFrameTiles.Size > 0);
 
@@ -2284,16 +2295,19 @@ begin
 end;
 
 procedure TFrame.ReleaseFrameTiles;
-var
-  ftrc: Integer;
 begin
-  ftrc := InterLockedDecrement(FrameTilesRefCount);
-  if ftrc <= 0 then
-  begin
-    Assert(ftrc = 0);
-    TTile.Array1DDispose(FrameTiles);
+  SpinEnter(@FrameTilesLock);
+  try
+    Dec(FrameTilesRefCount);
+    if FrameTilesRefCount <= 0 then
+    begin
+      Assert(FrameTilesRefCount = 0);
+      TTile.Array1DDispose(FrameTiles);
 
-    ResetEvent(FrameTilesEvent);
+      ResetEvent(FrameTilesEvent);
+    end;
+  finally
+    SpinLeave(@FrameTilesLock);
   end;
 end;
 
@@ -5084,8 +5098,8 @@ begin
   FrameCountSetting := 0;
   Scaling := 1.0;
 
-  PaletteSize := 32;
-  PaletteCount := 64;
+  PaletteSize := 16;
+  PaletteCount := 128;
   QuantizerUseYakmo := True;
   QuantizerDennisLeeBitsPerComponent := 7;
   QuantizerPosterize := False;
