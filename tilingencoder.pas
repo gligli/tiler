@@ -264,6 +264,7 @@ type
     PalIdx_Initial: Integer;
     PaletteRGB: TIntegerDynArray;
     MixingPlan, BWMixingPlan: TMixingPlan;
+    TileCount, TileOffset: Integer;
   end;
 
   PPalette = ^TPalette;
@@ -357,6 +358,7 @@ type
 
     FCS: TRTLCriticalSection;
     FKeyFramesLeft: Integer;
+    FKFPalDone: Integer;
 
     FGamma: array[0..1] of TFloat;
     FGammaCorLut: array[-1..1, 0..High(Byte)] of TFloat;
@@ -526,7 +528,8 @@ type
 
     procedure OptimizeGlobalPalettes;
     procedure ClusterUsingCoreSets(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
-    procedure ClusterUsingKMeans(AClusterCount, AGamma: Integer);
+    procedure ClusterOnKFPal(AClusterCount: Integer; AKFPalCallBack: TMTMethod);
+    procedure KFPalDoYakmo(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 
     procedure RenderTile(AFrame: TFrame; ASY, ASX: Integer; var outTile: TTile; AMirrors, ADithering, ASmoothing,
       ABlending: Boolean);
@@ -2748,7 +2751,7 @@ begin
     cmBIRCH:
       ClusterUsingCoreSets(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1), IfThen(FGlobalTilingLumaOnly, 1, 3), 1.0, 0.0);
     cmYakmo:
-      ClusterUsingKMeans(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1));
+      ClusterOnKFPal(FGlobalTilingTileCount, @KFPalDoYakmo);
   end;
 end;
 
@@ -5097,6 +5100,7 @@ begin
   StartFrame := 0;
   FrameCountSetting := 0;
   Scaling := 1.0;
+  MaxThreadCount := MaxInt;
 
   PaletteSize := 16;
   PaletteCount := 128;
@@ -5780,159 +5784,42 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.ClusterUsingKMeans(AClusterCount, AGamma: Integer);
+procedure TTilingEncoder.KFPalDoYakmo(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 var
-  KFPalTileCount: TIntegerDynArray2;
-  KFPalTileOffset: TIntegerDynArray2;
-  doneKFPalCount: Integer;
+  kfIdx, frmIdx, palIdx, clusIdx, dsIdx, tileIdx, sx, sy, di, kfPalClusterCount, i: Integer;
+  KeyFrame: TKeyFrame;
+  Frame: TFrame;
+  Tile: PTile;
+  TMI: PTileMapItem;
+  Dataset, Centroids: TDoubleDynArray2;
+  LocTiles: PTileDynArray;
+  Clusters: TIntegerDynArray;
+  CentroidDSIdx: TIntegerDynArray;
+  CentroidDSBest: TDoubleDynArray;
+  inf, d: Double;
+  Yakmo: PYakmo;
+begin
+  DivMod(AIndex, FPaletteCount, kfIdx, palIdx);
+  KeyFrame := FKeyFrames[kfIdx];
+  kfPalClusterCount := KeyFrame.Palettes[palIdx].TileCount;
 
-  procedure DoYakmo(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    kfIdx, frmIdx, palIdx, clusIdx, dsIdx, tileIdx, sx, sy, di, kfPalClusterCount, i: Integer;
-    KeyFrame: TKeyFrame;
-    Frame: TFrame;
-    Tile: PTile;
-    TMI: PTileMapItem;
-    Dataset, Centroids: TDoubleDynArray2;
-    Tiles: PTileDynArray;
-    Clusters: TIntegerDynArray;
-    CentroidDSIdx: TIntegerDynArray;
-    CentroidDSBest: TDoubleDynArray;
-    inf, d: Double;
-    Yakmo: PYakmo;
-  begin
-    DivMod(AIndex, FPaletteCount, kfIdx, palIdx);
-    kfPalClusterCount := KFPalTileCount[kfIdx, palIdx];
-    KeyFrame := FKeyFrames[kfIdx];
+  if (kfPalClusterCount <= 0) or (KeyFrame.Palettes[palIdx].UseCount <= 0) then
+    Exit;
 
-    if (kfPalClusterCount <= 0) or (KeyFrame.Palettes[palIdx].UseCount <= 0) then
-      Exit;
+  //WriteLn(KeyFrame.StartFrame:8,palIdx:4,kfPalClusterCount:8,KeyFrame.Palettes[palIdx].UseCount:8);
 
-    //WriteLn(KeyFrame.StartFrame:8,palIdx:4,kfPalClusterCount:8,KeyFrame.Palettes[palIdx].UseCount:8);
+  SetLength(Dataset, KeyFrame.Palettes[palIdx].UseCount, cTileDCTSize);
+  LocTiles := TTile.Array1DNew(KeyFrame.Palettes[palIdx].UseCount, True, True);
+  try
+    // build the dataset
 
-    SetLength(Dataset, KeyFrame.Palettes[palIdx].UseCount, cTileDCTSize);
-    Tiles := TTile.Array1DNew(KeyFrame.Palettes[palIdx].UseCount, True, True);
-    try
-      // build the dataset
+    di := 0;
+    for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
+    begin
+      Frame := FFrames[frmIdx];
 
-      di := 0;
-      for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
-      begin
-        Frame := FFrames[frmIdx];
-
-        Frame.AcquireFrameTiles;
-        try
-          for sy := 0 to FTileMapHeight - 1 do
-            for sx := 0 to FTileMapWidth - 1 do
-            begin
-              TMI := @Frame.TileMap[sy, sx];
-
-              if TMI^.Base.PalIdx <> palIdx then
-                Continue;
-
-              Tile := Frame.FrameTiles[sy * FTileMapWidth + sx];
-
-              ComputeTilePsyVisFeatures(Tile^,
-                  GlobalTilingMode, FGlobalTilingFromPalette, False,
-                  False, False, cColorCpns, AGamma, KeyFrame.Palettes[palIdx].PaletteRGB, @Dataset[di, 0]);
-
-              Tiles[di]^.CopyFrom(Tile^);
-
-              Inc(di);
-            end;
-
-        finally
-          Frame.ReleaseFrameTiles;
-        end;
-      end;
-      Assert(di = KeyFrame.Palettes[palIdx].UseCount);
-
-      // KMeans clustering using Yakmo if necessary (k < dataset length)
-
-      SetLength(Clusters, di);
-
-      if kfPalClusterCount < di then
-      begin
-        SetLength(Centroids, kfPalClusterCount, cTileDCTSize);
-
-        if kfPalClusterCount > 1 then
-        begin
-          Yakmo := yakmo_create(kfPalClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-          try
-            yakmo_load_train_data(Yakmo, di, cTileDCTSize, PPDouble(@Dataset[0]));
-            yakmo_train_on_data(Yakmo, @Clusters[0]);
-            yakmo_get_centroids(Yakmo, PPDouble(@Centroids[0]));
-          finally
-            yakmo_destroy(Yakmo);
-          end;
-        end
-        else
-        begin
-          for dsIdx := 0 to di - 1 do
-            for i := 0 to cTileDCTSize - 1 do
-              Centroids[0, i] += Dataset[dsIdx, i];
-          for i := 0 to cTileDCTSize - 1 do
-            Centroids[0, i] /= di;
-        end;
-      end
-      else if kfPalClusterCount = di then
-      begin
-        Centroids := Dataset;
-        for clusIdx := 0 to kfPalClusterCount - 1 do
-          Clusters[clusIdx] := clusIdx;
-      end
-      else
-      begin
-        Assert(False);
-      end;
-
-      // find most fitting tile for a centroid
-
-      inf := Infinity;
-      SetLength(CentroidDSIdx, kfPalClusterCount);
-      SetLength(CentroidDSBest, kfPalClusterCount);
-      FillDWord(CentroidDSIdx[0], kfPalClusterCount, DWORD(-1));
-      FillQWord(CentroidDSBest[0], kfPalClusterCount, PQWord(@inf)^);
-
-      for dsIdx := 0 to di - 1 do
-      begin
-        clusIdx := Clusters[dsIdx];
-
-        d := CompareEuclidean(@Centroids[clusIdx, 0], @Dataset[dsIdx, 0], cTileDCTSize);
-
-        if d < CentroidDSBest[clusIdx] then
-        begin
-          CentroidDSBest[clusIdx] := d;
-          CentroidDSIdx[clusIdx] := dsIdx;
-        end;
-      end;
-
-      // copy most fitting tile to global tiles
-
-      for clusIdx := 0 to kfPalClusterCount - 1 do
-      begin
-        tileIdx := KFPalTileOffset[kfIdx, palIdx] + clusIdx;
-        Tile := FTiles[tileIdx];
-
-        if IsInfinite(CentroidDSBest[clusIdx]) then
-        begin
-          Tile^.Active := False;
-        end
-        else
-        begin
-          Tile^.CopyFrom(Tiles[CentroidDSIdx[clusIdx]]^);
-          Tile^.Active := True;
-          Tile^.UseCount := 0;
-        end;
-      end;
-
-      // reconstruct
-
-      dsIdx := 0;
-      for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
-      begin
-        Frame := FFrames[frmIdx];
-
+      Frame.AcquireFrameTiles;
+      try
         for sy := 0 to FTileMapHeight - 1 do
           for sx := 0 to FTileMapWidth - 1 do
           begin
@@ -5941,27 +5828,139 @@ var
             if TMI^.Base.PalIdx <> palIdx then
               Continue;
 
-            tileIdx := KFPalTileOffset[kfIdx, palIdx] + Clusters[dsIdx];
-            Inc(FTiles[tileIdx]^.UseCount);
+            Tile := Frame.FrameTiles[sy * FTileMapWidth + sx];
 
-            Tile := Tiles[dsIdx];
+            ComputeTilePsyVisFeatures(Tile^,
+                GlobalTilingMode, FGlobalTilingFromPalette, False,
+                False, False, cColorCpns, IfThen(FGlobalTilingUseGamma, 0, -1), KeyFrame.Palettes[palIdx].PaletteRGB, @Dataset[di, 0]);
 
-            TMI^.Base.TileIdx := tileIdx;
-            TMI^.Base.HMirror := Tile^.HMirror_Initial;
-            TMI^.Base.VMirror := Tile^.VMirror_Initial;
+            LocTiles[di]^.CopyFrom(Tile^);
 
-            TMI^.Smoothed := TMI^.Base;
-
-            Inc(dsIdx);
+            Inc(di);
           end;
+
+      finally
+        Frame.ReleaseFrameTiles;
       end;
-    finally
-      TTile.Array1DDispose(Tiles);
+    end;
+    Assert(di = KeyFrame.Palettes[palIdx].UseCount);
+
+    // KMeans clustering using Yakmo if necessary (k < dataset length)
+
+    SetLength(Clusters, di);
+
+    if kfPalClusterCount < di then
+    begin
+      SetLength(Centroids, kfPalClusterCount, cTileDCTSize);
+
+      if kfPalClusterCount > 1 then
+      begin
+        Yakmo := yakmo_create(kfPalClusterCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
+        try
+          yakmo_load_train_data(Yakmo, di, cTileDCTSize, PPDouble(@Dataset[0]));
+          yakmo_train_on_data(Yakmo, @Clusters[0]);
+          yakmo_get_centroids(Yakmo, PPDouble(@Centroids[0]));
+        finally
+          yakmo_destroy(Yakmo);
+        end;
+      end
+      else
+      begin
+        for dsIdx := 0 to di - 1 do
+          for i := 0 to cTileDCTSize - 1 do
+            Centroids[0, i] += Dataset[dsIdx, i];
+        for i := 0 to cTileDCTSize - 1 do
+          Centroids[0, i] /= di;
+      end;
+    end
+    else if kfPalClusterCount = di then
+    begin
+      Centroids := Dataset;
+      for clusIdx := 0 to kfPalClusterCount - 1 do
+        Clusters[clusIdx] := clusIdx;
+    end
+    else
+    begin
+      Assert(False);
     end;
 
-    Write(InterLockedIncrement(doneKFPalCount):8, ' / ', (Length(FKeyFrames) * FPaletteCount):8, #13);
+    // find most fitting tile for a centroid
+
+    inf := Infinity;
+    SetLength(CentroidDSIdx, kfPalClusterCount);
+    SetLength(CentroidDSBest, kfPalClusterCount);
+    FillDWord(CentroidDSIdx[0], kfPalClusterCount, DWORD(-1));
+    FillQWord(CentroidDSBest[0], kfPalClusterCount, PQWord(@inf)^);
+
+    for dsIdx := 0 to di - 1 do
+    begin
+      clusIdx := Clusters[dsIdx];
+
+      d := CompareEuclidean(@Centroids[clusIdx, 0], @Dataset[dsIdx, 0], cTileDCTSize);
+
+      if d < CentroidDSBest[clusIdx] then
+      begin
+        CentroidDSBest[clusIdx] := d;
+        CentroidDSIdx[clusIdx] := dsIdx;
+      end;
+    end;
+
+    // copy most fitting tile to global LocTiles
+
+    for clusIdx := 0 to kfPalClusterCount - 1 do
+    begin
+      tileIdx := FKeyFrames[kfIdx].Palettes[palIdx].TileOffset + clusIdx;
+      Tile := FTiles[tileIdx];
+
+      if IsInfinite(CentroidDSBest[clusIdx]) then
+      begin
+        Tile^.Active := False;
+      end
+      else
+      begin
+        Tile^.CopyFrom(LocTiles[CentroidDSIdx[clusIdx]]^);
+        Tile^.Active := True;
+        Tile^.UseCount := 0;
+      end;
+    end;
+
+    // reconstruct
+
+    dsIdx := 0;
+    for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
+    begin
+      Frame := FFrames[frmIdx];
+
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          TMI := @Frame.TileMap[sy, sx];
+
+          if TMI^.Base.PalIdx <> palIdx then
+            Continue;
+
+          tileIdx := FKeyFrames[kfIdx].Palettes[palIdx].TileOffset + Clusters[dsIdx];
+          Inc(FTiles[tileIdx]^.UseCount);
+
+          Tile := LocTiles[dsIdx];
+
+          TMI^.Base.TileIdx := tileIdx;
+          TMI^.Base.HMirror := Tile^.HMirror_Initial;
+          TMI^.Base.VMirror := Tile^.VMirror_Initial;
+
+          TMI^.Smoothed := TMI^.Base;
+
+          Inc(dsIdx);
+        end;
+    end;
+  finally
+    TTile.Array1DDispose(LocTiles);
   end;
 
+  Write(InterLockedIncrement(FKFPalDone):8, ' / ', (Length(FKeyFrames) * FPaletteCount):8, #13);
+end;
+
+procedure TTilingEncoder.ClusterOnKFPal(AClusterCount: Integer; AKFPalCallBack: TMTMethod);
 var
   kfIdx, palIdx: Integer;
   tc, tcSum: Integer;
@@ -5971,13 +5970,12 @@ begin
   // share AClusterCount across KF / Palettes
 
   tcSum := 0;
-  SetLength(KFPalTileCount, Length(FKeyFrames), FPaletteCount);
   for kfIdx := 0 to High(FKeyFrames) do
     for palIdx := 0 to FPaletteCount - 1 do
     begin
       tc := EqualQualityTileCount(FKeyFrames[kfIdx].Palettes[palIdx].UseCount);
 
-      KFPalTileCount[kfIdx, palIdx] := tc;
+      FKeyFrames[kfIdx].Palettes[palIdx].TileCount := tc;
 
       tcSum += tc;
     end;
@@ -5985,14 +5983,13 @@ begin
   tcRatio := AClusterCount / tcSum;
 
   tcSum := 0;
-  SetLength(KFPalTileOffset, Length(FKeyFrames), FPaletteCount);
   for kfIdx := 0 to High(FKeyFrames) do
     for palIdx := 0 to FPaletteCount - 1 do
     begin
-      tc := Min(FKeyFrames[kfIdx].Palettes[palIdx].UseCount, Max(1, Round(KFPalTileCount[kfIdx, palIdx] * tcRatio)));
+      tc := Min(FKeyFrames[kfIdx].Palettes[palIdx].UseCount, Max(1, Round(FKeyFrames[kfIdx].Palettes[palIdx].TileCount * tcRatio)));
 
-      KFPalTileCount[kfIdx, palIdx] := tc;
-      KFPalTileOffset[kfIdx, palIdx] := tcSum;
+      FKeyFrames[kfIdx].Palettes[palIdx].TileCount := tc;
+      FKeyFrames[kfIdx].Palettes[palIdx].TileOffset := tcSum;
 
       tcSum += tc;
     end;
@@ -6005,8 +6002,8 @@ begin
 
   // one KMeans per KF / Palette
 
-  doneKFPalCount := 0;
-  ProcThreadPool.DoParallelLocalProc(@DoYakmo, 0, Length(FKeyFrames) * FPaletteCount - 1);
+  FKFPalDone := 0;
+  ProcThreadPool.DoParallel(AKFPalCallBack, 0, Length(FKeyFrames) * FPaletteCount - 1);
 
   ProgressRedraw(3, 'ClusterKFPal');
 
