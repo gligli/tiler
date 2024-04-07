@@ -773,6 +773,7 @@ object MainForm: TMainForm
           'CoreSets (BIRCH)'
           'CoreSets (BICO)'
           'KMeans (Yakmo)'
+          'KModes'
         )
         Style = csDropDownList
         TabOrder = 20

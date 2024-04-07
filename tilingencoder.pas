@@ -11,14 +11,14 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, IniFiles, Graphics,
-  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils, sle;
+  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils, sle, kmodes;
 
 type
   TEncoderStep = (esAll = -1, esLoad = 0, esPreparePalettes, esDither, esCluster, esReconstruct, esSmooth, esBlend, esReindex, esSave);
   TKeyFrameReason = (kfrNone, kfrManual, kfrLength, kfrDecorrelation, kfrEuclidean);
   TRenderPage = (rpNone, rpInput, rpOutput, rpTilesPalette);
   TPsyVisMode = (pvsDCT, pvsWeightedDCT, pvsWavelets, pvsSpeDCT, pvsWeightedSpeDCT);
-  TClusteringMethod = (cmBIRCH, cmBICO, cmYakmo);
+  TClusteringMethod = (cmBIRCH, cmBICO, cmYakmo, cmKModes);
 
 const
   cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 3, 4, -1, -1, -1, 2, 1);
@@ -530,6 +530,7 @@ type
     procedure ClusterUsingCoreSets(AClusterCount, AGamma, AColorCpns: Integer; ABIRCHRatio, ABICORatio: Double);
     procedure ClusterOnKFPal(AClusterCount: Integer; AKFPalCallBack: TMTMethod);
     procedure KFPalDoYakmo(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+    procedure KFPalDoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
 
     procedure RenderTile(AFrame: TFrame; ASY, ASX: Integer; var outTile: TTile; AMirrors, ADithering, ASmoothing,
       ABlending: Boolean);
@@ -2752,6 +2753,8 @@ begin
       ClusterUsingCoreSets(FGlobalTilingTileCount, IfThen(FGlobalTilingUseGamma, 0, -1), IfThen(FGlobalTilingLumaOnly, 1, 3), 1.0, 0.0);
     cmYakmo:
       ClusterOnKFPal(FGlobalTilingTileCount, @KFPalDoYakmo);
+    cmKModes:
+      ClusterOnKFPal(FGlobalTilingTileCount, @KFPalDoKModes);
   end;
 end;
 
@@ -5123,7 +5126,7 @@ begin
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
-  FrameTilingMode := pvsWavelets;
+  FrameTilingMode := pvsSpeDCT;
 
   TileBlendingDepth := 16;
   TileBlendingRadius := 4;
@@ -5905,11 +5908,11 @@ begin
       end;
     end;
 
-    // copy most fitting tile to global LocTiles
+    // copy most fitting tile to global Tiles
 
     for clusIdx := 0 to kfPalClusterCount - 1 do
     begin
-      tileIdx := FKeyFrames[kfIdx].Palettes[palIdx].TileOffset + clusIdx;
+      tileIdx := KeyFrame.Palettes[palIdx].TileOffset + clusIdx;
       Tile := FTiles[tileIdx];
 
       if IsInfinite(CentroidDSBest[clusIdx]) then
@@ -5939,15 +5942,10 @@ begin
           if TMI^.Base.PalIdx <> palIdx then
             Continue;
 
-          tileIdx := FKeyFrames[kfIdx].Palettes[palIdx].TileOffset + Clusters[dsIdx];
+          tileIdx := KeyFrame.Palettes[palIdx].TileOffset + Clusters[dsIdx];
           Inc(FTiles[tileIdx]^.UseCount);
 
-          Tile := LocTiles[dsIdx];
-
           TMI^.Base.TileIdx := tileIdx;
-          TMI^.Base.HMirror := Tile^.HMirror_Initial;
-          TMI^.Base.VMirror := Tile^.VMirror_Initial;
-
           TMI^.Smoothed := TMI^.Base;
 
           Inc(dsIdx);
@@ -5955,6 +5953,108 @@ begin
     end;
   finally
     TTile.Array1DDispose(LocTiles);
+  end;
+
+  Write(InterLockedIncrement(FKFPalDone):8, ' / ', (Length(FKeyFrames) * FPaletteCount):8, #13);
+end;
+
+procedure TTilingEncoder.KFPalDoKModes(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+var
+  kfIdx, frmIdx, palIdx, clusIdx, tileIdx, sx, sy, di, kfPalClusterCount: Integer;
+  KeyFrame: TKeyFrame;
+  Frame: TFrame;
+  Tile: PTile;
+  TMI: PTileMapItem;
+  Dataset, Centroids: TByteDynArray2;
+  Clusters: TIntegerDynArray;
+  KModes: TKModes;
+begin
+  DivMod(AIndex, FPaletteCount, kfIdx, palIdx);
+  KeyFrame := FKeyFrames[kfIdx];
+  kfPalClusterCount := KeyFrame.Palettes[palIdx].TileCount;
+
+  if (kfPalClusterCount <= 0) or (KeyFrame.Palettes[palIdx].UseCount <= 0) then
+    Exit;
+
+  //WriteLn(KeyFrame.StartFrame:8,palIdx:4,kfPalClusterCount:8,KeyFrame.Palettes[palIdx].UseCount:8);
+
+  SetLength(Dataset, KeyFrame.Palettes[palIdx].UseCount, cKModesFeatureCount);
+
+  KModes := TKModes.Create(1, -1, 0);
+  try
+    // build the dataset
+
+    di := 0;
+    for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
+    begin
+      Frame := FFrames[frmIdx];
+
+      Frame.AcquireFrameTiles;
+      try
+        for sy := 0 to FTileMapHeight - 1 do
+          for sx := 0 to FTileMapWidth - 1 do
+          begin
+            TMI := @Frame.TileMap[sy, sx];
+
+            if TMI^.Base.PalIdx <> palIdx then
+              Continue;
+
+            Tile := Frame.FrameTiles[sy * FTileMapWidth + sx];
+
+            Move(Tile^.GetPalPixelsPtr^, Dataset[di, 0], sqr(cTileWidth));
+
+            Inc(di);
+          end;
+
+      finally
+        Frame.ReleaseFrameTiles;
+      end;
+    end;
+    Assert(di = KeyFrame.Palettes[palIdx].UseCount);
+
+    // KModes
+
+    KModes.ComputeKModes(Dataset, kfPalClusterCount, 1, FPaletteSize, Clusters, Centroids);
+
+    // create tiles from centroids
+
+    for clusIdx := 0 to kfPalClusterCount - 1 do
+    begin
+      tileIdx := KeyFrame.Palettes[palIdx].TileOffset + clusIdx;
+      Tile := FTiles[tileIdx];
+
+      Tile^.CopyPalPixels(Centroids[clusIdx]);
+      Tile^.Active := True;
+      Tile^.UseCount := 1;
+    end;
+
+    // reconstruct
+
+    di := 0;
+    for frmIdx := KeyFrame.StartFrame to KeyFrame.EndFrame do
+    begin
+      Frame := FFrames[frmIdx];
+
+      for sy := 0 to FTileMapHeight - 1 do
+        for sx := 0 to FTileMapWidth - 1 do
+        begin
+          TMI := @Frame.TileMap[sy, sx];
+
+          if TMI^.Base.PalIdx <> palIdx then
+            Continue;
+
+          tileIdx := KeyFrame.Palettes[palIdx].TileOffset + Clusters[di];
+          Inc(FTiles[tileIdx]^.UseCount);
+
+          TMI^.Base.TileIdx := tileIdx;
+          TMI^.Smoothed := TMI^.Base;
+
+          Inc(di);
+        end;
+    end;
+
+  finally
+    KModes.Free;
   end;
 
   Write(InterLockedIncrement(FKFPalDone):8, ' / ', (Length(FKeyFrames) * FPaletteCount):8, #13);
