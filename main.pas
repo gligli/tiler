@@ -30,7 +30,7 @@ type
     chkGlobLumaOnly: TCheckBox;
     chkGlobGamma: TCheckBox;
     chkPosterize: TCheckBox;
-    cbxPosterizeBPC: TComboBox;
+    cbxPosterize: TComboBox;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
@@ -671,7 +671,7 @@ begin
   FTilingEncoder.QuantizerUseYakmo := chkUseKMQuant.Checked;
   FTilingEncoder.QuantizerDennisLeeBitsPerComponent := StrToInt(cbxDLBPC.Text);
   FTilingEncoder.QuantizerPosterize := chkPosterize.Checked;
-  FTilingEncoder.QuantizerPosterizeBitsPerComponent := StrToInt(cbxPosterizeBPC.Text);
+  FTilingEncoder.QuantizerPosterizeColorCount := StrToInt(cbxPosterize.Text);
   FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
   FTilingEncoder.DitheringMode := TPsyVisMode(cbxDitheringMode.ItemIndex);
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
@@ -745,7 +745,7 @@ begin
    chkUseKMQuant.Checked := FTilingEncoder.QuantizerUseYakmo;
    cbxDLBPC.Text := IntToStr(FTilingEncoder.QuantizerDennisLeeBitsPerComponent);
    chkPosterize.Checked := FTilingEncoder.QuantizerPosterize;
-   cbxPosterizeBPC.Text := IntToStr(FTilingEncoder.QuantizerPosterizeBitsPerComponent);
+   cbxPosterize.Text := IntToStr(FTilingEncoder.QuantizerPosterizeColorCount);
    chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
    cbxDitheringMode.ItemIndex := Ord(FTilingEncoder.DitheringMode);
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;

@@ -144,7 +144,8 @@ function CompareIntegers(const Item1, Item2: Integer): Integer;
 function lerp(x, y, alpha: TFloat): TFloat; inline;
 function ilerp(x, y, alpha, maxAlpha: Integer): Integer; inline;
 function revlerp(x, r, alpha: TFloat): TFloat; inline;
-function Posterize(v, bpc: Byte): Byte; inline;
+function Posterize(v: Byte; cvt: Integer): Byte; inline;
+function PosterizeBpc(v, bpc: Byte): Byte; inline;
 function CompareEuclideanDCTPtr(pa, pb: PFloat): TFloat; overload;
 function CompareEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat): TFloat; register; assembler;
 function CompareEuclideanDCT(const a, b: TFloatDynArray): TFloat; inline; overload;
@@ -284,13 +285,14 @@ begin
   Result := x + (r - x) / alpha;
 end;
 
-function Posterize(v, bpc: Byte): Byte; inline;
-var
-  cvt: Integer;
+function Posterize(v: Byte; cvt: Integer): Byte; inline;
 begin
-  cvt := (1 shl bpc) - 1;
-
   Result := min(255, Round(Round((v * cvt) / 255.0) * 255.0 / cvt));
+end;
+
+function PosterizeBpc(v, bpc: Byte): Byte; inline;
+begin
+  Result := Posterize(v, (1 shl bpc) - 1);
 end;
 
 function CompareEuclideanDCTPtr(pa, pb: PFloat): TFloat; overload;

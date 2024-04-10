@@ -394,7 +394,7 @@ type
     FQuantizerUseYakmo: Boolean;
     FQuantizerDennisLeeBitsPerComponent: Integer;
     FQuantizerPosterize: Boolean;
-    FQuantizerPosterizeBitsPerComponent: Integer;
+    FQuantizerPosterizeColorCount: Integer;
     FDitheringUseGamma: Boolean;
     FDitheringMode: TPsyVisMode;
     FDitheringUseThomasKnoll: Boolean;
@@ -461,7 +461,7 @@ type
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
     procedure SetQuantizerDennisLeeBitsPerComponent(AValue: Integer);
-    procedure SetQuantizerPosterizeBitsPerComponent(AValue: Integer);
+    procedure SetQuantizerPosterizeColorCount(AValue: Integer);
     procedure SetRenderFrameIndex(AValue: Integer);
     procedure SetRenderGammaValue(AValue: Double);
     procedure SetRenderPaletteIndex(AValue: Integer);
@@ -607,7 +607,7 @@ type
     property PaletteCount: Integer read FPaletteCount write SetPaletteCount;
     property QuantizerUseYakmo: Boolean read FQuantizerUseYakmo write FQuantizerUseYakmo;
     property QuantizerDennisLeeBitsPerComponent: Integer read FQuantizerDennisLeeBitsPerComponent write SetQuantizerDennisLeeBitsPerComponent;
-    property QuantizerPosterizeBitsPerComponent: Integer read FQuantizerPosterizeBitsPerComponent write SetQuantizerPosterizeBitsPerComponent;
+    property QuantizerPosterizeColorCount: Integer read FQuantizerPosterizeColorCount write SetQuantizerPosterizeColorCount;
     property QuantizerPosterize: Boolean read FQuantizerPosterize write FQuantizerPosterize;
     property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
     property DitheringMode: TPsyVisMode read FDitheringMode write FDitheringMode;
@@ -1335,7 +1335,7 @@ procedure TKeyFrame.DoQuantization(APalIdx: Integer; UseYakmo: Boolean; DLv3BPC:
 var
   CMPal: TCountIndexList;
 
-  procedure DoDennisLeeV3(AColorCount, APosterizeBpc: Integer);
+  procedure DoDennisLeeV3(AColorCount, APosterize: Integer);
   var
     dlCnt: Integer;
     dlInput: PByte;
@@ -1426,14 +1426,14 @@ var
     begin
       New(CMItem);
       CMItem^.Count := 0;
-      CMItem^.R := Posterize(dlPal[0][i], APosterizeBpc); CMItem^.G := Posterize(dlPal[1][i], APosterizeBpc); CMItem^.B := Posterize(dlPal[2][i], APosterizeBpc);
+      CMItem^.R := Posterize(dlPal[0][i], APosterize); CMItem^.G := Posterize(dlPal[1][i], APosterize); CMItem^.B := Posterize(dlPal[2][i], APosterize);
       Encoder.RGBToHSV(ToRGB(CMItem^.R, CMItem^.G, CMItem^.B), CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
       CMPal.Add(CMItem);
     end;
   end;
 
 
-  procedure DoYakmo(AColorCount, APosterizeBpc: Integer);
+  procedure DoYakmo(AColorCount, APosterize: Integer);
   const
     cFeatureCount = 3;
   var
@@ -1504,9 +1504,9 @@ var
         CMItem^.B := 0;
         if not IsNan(Centroids[i, 0]) and not IsNan(Centroids[i, 1]) and  not IsNan(Centroids[i, 2]) then
         begin
-          CMItem^.R := Posterize(EnsureRange(Round(Centroids[i, 0]), 0, 255), APosterizeBpc);
-          CMItem^.G := Posterize(EnsureRange(Round(Centroids[i, 1]), 0, 255), APosterizeBpc);
-          CMItem^.B := Posterize(EnsureRange(Round(Centroids[i, 2]), 0, 255), APosterizeBpc);
+          CMItem^.R := Posterize(EnsureRange(Round(Centroids[i, 0]), 0, 255), APosterize);
+          CMItem^.G := Posterize(EnsureRange(Round(Centroids[i, 1]), 0, 255), APosterize);
+          CMItem^.B := Posterize(EnsureRange(Round(Centroids[i, 2]), 0, 255), APosterize);
         end;
       end;
 
@@ -1525,7 +1525,7 @@ var
         Exit(True);
   end;
 
-  procedure DoPosterizerBased(APosterizeBpc: Integer);
+  procedure DoPosterizerBased(APosterize: Integer);
   const
     cAddlColors : array[0..1] of Integer = ($ffffff, $000000);
   var
@@ -1540,9 +1540,9 @@ var
       // call appropriate method
 
       if UseYakmo then
-        DoYakmo(pbColCount, APosterizeBpc)
+        DoYakmo(pbColCount, APosterize)
       else
-        DoDennisLeeV3(pbColCount, APosterizeBpc);
+        DoDennisLeeV3(pbColCount, APosterize);
 
       // count unique colors
 
@@ -1580,9 +1580,9 @@ var
     // call appropriate method
 
     if UseYakmo then
-      DoYakmo(bestPbColCount, APosterizeBpc)
+      DoYakmo(bestPbColCount, APosterize)
     else
-      DoDennisLeeV3(bestPbColCount, APosterizeBpc);
+      DoDennisLeeV3(bestPbColCount, APosterize);
 
     // prune duplicate colors
 
@@ -1629,14 +1629,14 @@ begin
 
     if Encoder.QuantizerPosterize then
     begin
-      DoPosterizerBased(Encoder.QuantizerPosterizeBitsPerComponent);
+      DoPosterizerBased(Encoder.QuantizerPosterizeColorCount);
     end
     else
     begin
       if UseYakmo then
-        DoYakmo(Encoder.FPaletteSize, cBitsPerComp)
+        DoYakmo(Encoder.FPaletteSize, 1 shl cBitsPerComp)
       else
-        DoDennisLeeV3(Encoder.FPaletteSize, cBitsPerComp);
+        DoDennisLeeV3(Encoder.FPaletteSize, 1 shl cBitsPerComp);
     end;
 
     // split most used colors into tile palettes
@@ -4081,10 +4081,10 @@ begin
   FQuantizerDennisLeeBitsPerComponent := EnsureRange(AValue, 2, 8);
 end;
 
-procedure TTilingEncoder.SetQuantizerPosterizeBitsPerComponent(AValue: Integer);
+procedure TTilingEncoder.SetQuantizerPosterizeColorCount(AValue: Integer);
 begin
- if FQuantizerPosterizeBitsPerComponent = AValue then Exit;
- FQuantizerPosterizeBitsPerComponent := EnsureRange(AValue, 1, 8);
+ if FQuantizerPosterizeColorCount = AValue then Exit;
+ FQuantizerPosterizeColorCount := EnsureRange(AValue, 1, 256);
 end;
 
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
@@ -5021,7 +5021,7 @@ begin
     ini.WriteBool('Dither', 'QuantizerUseYakmo', QuantizerUseYakmo);
     ini.WriteInteger('Dither', 'QuantizerDennisLeeBitsPerComponent', QuantizerDennisLeeBitsPerComponent);
     ini.WriteBool('Dither', 'QuantizerPosterize', QuantizerPosterize);
-    ini.WriteInteger('Dither', 'QuantizerPosterizeBitsPerComponent', QuantizerPosterizeBitsPerComponent);
+    ini.WriteInteger('Dither', 'QuantizerPosterizeColorCount', QuantizerPosterizeColorCount);
     ini.WriteBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
     ini.WriteInteger('Dither', 'DitheringMode', Ord(DitheringMode));
     ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
@@ -5076,7 +5076,7 @@ begin
     QuantizerUseYakmo := ini.ReadBool('Dither', 'QuantizerUseYakmo', QuantizerUseYakmo);
     QuantizerDennisLeeBitsPerComponent := ini.ReadInteger('Dither', 'QuantizerDennisLeeBitsPerComponent', QuantizerDennisLeeBitsPerComponent);
     QuantizerPosterize := ini.ReadBool('Dither', 'QuantizerPosterize', QuantizerPosterize);
-    QuantizerPosterizeBitsPerComponent := ini.ReadInteger('Dither', 'QuantizerPosterizeBitsPerComponent', QuantizerPosterizeBitsPerComponent);
+    QuantizerPosterizeColorCount := ini.ReadInteger('Dither', 'QuantizerPosterizeColorCount', QuantizerPosterizeColorCount);
     DitheringUseGamma := ini.ReadBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
     DitheringMode := TPsyVisMode(EnsureRange(ini.ReadInteger('Dither', 'DitheringMode', Ord(DitheringMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
     DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
@@ -5126,7 +5126,7 @@ begin
   QuantizerUseYakmo := True;
   QuantizerDennisLeeBitsPerComponent := 7;
   QuantizerPosterize := False;
-  QuantizerPosterizeBitsPerComponent := 3;
+  QuantizerPosterizeColorCount := 8;
   DitheringUseGamma := False;
   DitheringMode := pvsWeightedSpeDCT;
   DitheringUseThomasKnoll := True;
