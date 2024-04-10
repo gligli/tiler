@@ -774,6 +774,7 @@ object MainForm: TMainForm
           'CoreSets (BICO)'
           'KMeans (Yakmo)'
           'KModes'
+          'Transfer tiles only'
         )
         Style = csDropDownList
         TabOrder = 20
