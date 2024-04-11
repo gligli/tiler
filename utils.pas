@@ -38,6 +38,7 @@ const
   cPhi = (1 + sqrt(5)) / 2;
   cInvPhi = 1 / cPhi;
 
+  cDitheringNullColor = Integer($ffff00ff);
   cDitheringListLen = 256;
   cDitheringMap : array[0..8*8 - 1] of Byte = (
      0, 48, 12, 60,  3, 51, 15, 63,
@@ -126,6 +127,8 @@ type
   PCountIndex = ^TCountIndex;
   TCountIndexList = specialize TFPGList<PCountIndex>;
 
+  TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
+
 procedure SpinEnter(Lock: PSpinLock); assembler;
 procedure SpinLeave(Lock: PSpinLock); assembler;
 procedure Exchange(var a, b: Integer);
@@ -155,7 +158,8 @@ function CompareCMULHS(const Item1,Item2:PCountIndex):Integer;
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
 function ComputeBlendingError_Asm(PPlain_rcx, PPrev_rdx, POff_r8: PFloat; bp_xmm3, bo_stack: TFloat): TFloat; register; assembler;
 function EqualQualityTileCount(tileCount: TFloat): Integer;
-
+function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
+  Epsilon: TFloat; Data: Pointer): TFloat;
 
 implementation
 
@@ -615,6 +619,38 @@ begin
   Result := round(sqrt(tileCount) * log2(1 + tileCount));
 end;
 
+
+function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
+  Epsilon: TFloat; Data: Pointer): TFloat;
+var
+  x, y: TFloat;
+begin
+  if SameValue(Mini, Maxi) then
+  begin
+    Result := Mini;
+    Exit;
+  end;
+
+  if Mini < Maxi then
+    x := lerp(Mini, Maxi, 1.0 - cInvPhi)
+  else
+    x := lerp(Mini, Maxi, cInvPhi);
+
+  y := Func(x, Data);
+
+  //EnterCriticalSection(FCS);
+  //WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
+  //LeaveCriticalSection(FCS);
+
+  case CompareValue(y, ObjectiveY, Epsilon) of
+    LessThanValue:
+      Result := GoldenRatioSearch(Func, Mini, x, ObjectiveY, Epsilon, Data);
+    GreaterThanValue:
+      Result := GoldenRatioSearch(Func, x, Maxi, ObjectiveY, Epsilon, Data);
+  else
+      Result := x;
+  end;
+end;
 
 end.
 

@@ -27,20 +27,16 @@ type
     chkClusterFromPal: TCheckBox;
     chkBlended: TCheckBox;
     chkDitheredI: TCheckBox;
-    chkGlobLumaOnly: TCheckBox;
     chkGlobGamma: TCheckBox;
-    chkPosterize: TCheckBox;
-    cbxPosterize: TComboBox;
+    chkQuantize: TCheckBox;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
     cbxStartStep: TComboBox;
     cbxYilMix: TComboBox;
     cbxPalSize: TComboBox;
-    cbxDLBPC: TComboBox;
     chkDitheredO: TCheckBox;
     chkFTGamma: TCheckBox;
-    chkUseKMQuant: TCheckBox;
     chkGamma: TCheckBox;
     chkDitheringGamma: TCheckBox;
     chkSmoothed: TCheckBox;
@@ -61,6 +57,7 @@ type
     Label12: TLabel;
     Label13: TLabel;
     Label14: TLabel;
+    lblQuantizer: TLabel;
     Label15: TLabel;
     Label16: TLabel;
     Label17: TLabel;
@@ -105,6 +102,7 @@ type
     seShotTransCorrelLoThres: TFloatSpinEdit;
     seMaxCores: TSpinEdit;
     seQbTiles: TFloatSpinEdit;
+    seBLError: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -113,6 +111,7 @@ type
     seTempoSmoo: TFloatSpinEdit;
     seEncGamma: TFloatSpinEdit;
     seShotTransMinSecondsPerKF: TFloatSpinEdit;
+    tbQuantizer: TTrackBar;
     tsTilesPal: TTabSheet;
     To1: TLabel;
     tsSettings: TTabSheet;
@@ -668,10 +667,8 @@ begin
   FTilingEncoder.RenderTilePage := sePage.Value;
   FTilingEncoder.RenderGammaValue := seVisGamma.Value;
 
-  FTilingEncoder.QuantizerUseYakmo := chkUseKMQuant.Checked;
-  FTilingEncoder.QuantizerDennisLeeBitsPerComponent := StrToInt(cbxDLBPC.Text);
-  FTilingEncoder.QuantizerPosterize := chkPosterize.Checked;
-  FTilingEncoder.QuantizerPosterizeColorCount := StrToInt(cbxPosterize.Text);
+  FTilingEncoder.UseQuantizer := chkQuantize.Checked;
+  FTilingEncoder.Quantizer := tbQuantizer.Position / 4;
   FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
   FTilingEncoder.DitheringMode := TPsyVisMode(cbxDitheringMode.ItemIndex);
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
@@ -681,7 +678,6 @@ begin
   FTilingEncoder.GlobalTilingUseGamma := chkGlobGamma.Checked;
   FTilingEncoder.GlobalTilingMode := TPsyVisMode(cbxGlobMode.ItemIndex);
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
-  FTilingEncoder.GlobalTilingLumaOnly := chkGlobLumaOnly.Checked;
   FTilingEncoder.GlobalTilingMethod := TClusteringMethod(cbxClusMethod.ItemIndex);
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
@@ -690,6 +686,7 @@ begin
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
 
+  FTilingEncoder.TileBlendingError := seBLError.Value;
   FTilingEncoder.TileBlendingRadius := StrToIntDef(cbxBLRadius.Text, 0);
   FTilingEncoder.TileBlendingDepth := StrToIntDef(cbxBLDepth.Text, 2);
 
@@ -711,6 +708,7 @@ begin
 
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
+  lblQuantizer.Caption := FormatFloat('##0.00', FTilingEncoder.Quantizer);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
   miReload.Enabled := FTilingEncoder.FrameCount > 0;
 end;
@@ -742,10 +740,8 @@ begin
 
    cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
    cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
-   chkUseKMQuant.Checked := FTilingEncoder.QuantizerUseYakmo;
-   cbxDLBPC.Text := IntToStr(FTilingEncoder.QuantizerDennisLeeBitsPerComponent);
-   chkPosterize.Checked := FTilingEncoder.QuantizerPosterize;
-   cbxPosterize.Text := IntToStr(FTilingEncoder.QuantizerPosterizeColorCount);
+   chkQuantize.Checked := FTilingEncoder.UseQuantizer;
+   tbQuantizer.Position := round(FTilingEncoder.Quantizer * 4);
    chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
    cbxDitheringMode.ItemIndex := Ord(FTilingEncoder.DitheringMode);
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
@@ -756,7 +752,6 @@ begin
    cbxGlobMode.ItemIndex := Ord(FTilingEncoder.GlobalTilingMode);
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
-   chkGlobLumaOnly.Checked := FTilingEncoder.GlobalTilingLumaOnly;
    cbxClusMethod.ItemIndex := Ord(FTilingEncoder.GlobalTilingMethod);
 
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
@@ -768,6 +763,7 @@ begin
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
    seMaxCores.Value := FTilingEncoder.MaxThreadCount;
 
+   seBLError.Value := FTilingEncoder.TileBlendingError;
    cbxBLRadius.Text := IntToStr(FTilingEncoder.TileBlendingRadius);
    cbxBLDepth.Text := IntToStr(FTilingEncoder.TileBlendingDepth);
 
