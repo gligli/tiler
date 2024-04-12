@@ -159,7 +159,7 @@ function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
 function ComputeBlendingError_Asm(PPlain_rcx, PPrev_rdx, POff_r8: PFloat; bp_xmm3, bo_stack: TFloat): TFloat; register; assembler;
 function EqualQualityTileCount(tileCount: TFloat): Integer;
 function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
-  Epsilon: TFloat; Data: Pointer): TFloat;
+  EpsilonX, EpsilonY: TFloat; Data: Pointer): TFloat;
 
 implementation
 
@@ -621,11 +621,11 @@ end;
 
 
 function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
-  Epsilon: TFloat; Data: Pointer): TFloat;
+  EpsilonX, EpsilonY: TFloat; Data: Pointer): TFloat;
 var
   x, y: TFloat;
 begin
-  if SameValue(Mini, Maxi) then
+  if SameValue(Mini, Maxi, EpsilonX) then
   begin
     Result := Mini;
     Exit;
@@ -642,11 +642,11 @@ begin
   //WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
   //LeaveCriticalSection(FCS);
 
-  case CompareValue(y, ObjectiveY, Epsilon) of
+  case CompareValue(y, ObjectiveY, EpsilonY) of
     LessThanValue:
-      Result := GoldenRatioSearch(Func, Mini, x, ObjectiveY, Epsilon, Data);
+      Result := GoldenRatioSearch(Func, Mini, x, ObjectiveY, EpsilonX, EpsilonY, Data);
     GreaterThanValue:
-      Result := GoldenRatioSearch(Func, x, Maxi, ObjectiveY, Epsilon, Data);
+      Result := GoldenRatioSearch(Func, x, Maxi, ObjectiveY, EpsilonX, EpsilonY, Data);
   else
       Result := x;
   end;

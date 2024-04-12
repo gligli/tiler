@@ -1124,11 +1124,23 @@ begin
   ProcThreadPool.DoParallelLocalProc(@DoFrame, StartFrame, EndFrame);
 end;
 
+function CompareDSPixel(Item1,Item2,UserParameter:Pointer):Integer;
+var
+  a1: ^TDoubleDynArray absolute Item1;
+  a2: ^TDoubleDynArray absolute Item2;
+begin
+  Result := CompareValue(a1^[1], a2^[1]); // G
+  if Result = 0 then
+    Result := CompareValue(a1^[0], a2^[0]); // R
+  if Result = 0 then
+    Result := CompareValue(a1^[2], a2^[2]); // B
+end;
+
 function TKeyFrame.QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer): Double;
 const
   cFeatureCount = 3;
 var
-  i, j, di, ty, tx, sy, sx, frmIdx, DSLen: Integer;
+  i, j, di, ty, tx, sy, sx, frmIdx, DSLen, uniqueColCnt: Integer;
   rr, gg, bb: Byte;
   Tile: PTile;
   Dataset, Centroids: TDoubleDynArray2;
@@ -1177,6 +1189,8 @@ begin
         end;
   Assert(di = Length(Dataset));
 
+  QuickSort(Dataset[0], 0, di - 1, SizeOf(Pointer), @CompareDSPixel);
+
   // use KMeans to quantize to AColorCount elements
 
   if AColorCount > 1 then
@@ -1222,14 +1236,17 @@ begin
   end;
 
   Result := 0.0;
+  uniqueColCnt := 0;
   for i := 0 to High(Clusters) do
-  begin
-    j := Clusters[i];
-    Result += sqr(Dataset[i, 0] - CMPal[j]^.R) * cRedMul;
-    Result += sqr(Dataset[i, 1] - CMPal[j]^.G) * cGreenMul;
-    Result += sqr(Dataset[i, 2] - CMPal[j]^.B) * cBlueMul;
-  end;
-  Result := Sqrt(Div0(Result, Length(Clusters) * cLumaDiv));
+    if (i <= 0) or (CompareDSPixel(@Dataset[i], @Dataset[i - 1], nil) <> 0) then
+    begin
+      j := Clusters[i];
+      Result += sqr(Dataset[i, 0] - CMPal[j]^.R) * cRedMul;
+      Result += sqr(Dataset[i, 1] - CMPal[j]^.G) * cGreenMul;
+      Result += sqr(Dataset[i, 2] - CMPal[j]^.B) * cBlueMul;
+      Inc(uniqueColCnt);
+    end;
+  Result := Sqrt(Div0(Result, uniqueColCnt * cLumaDiv));
 end;
 
 procedure TKeyFrame.DoPalettization(ADitheringGamma: Integer);
@@ -1460,7 +1477,7 @@ begin
 
     if Encoder.UseQuantizer then
     begin
-      x := GoldenRatioSearch(@GRYakmoQuant, 1, Encoder.FPaletteSize, Encoder.Quantizer, 1.0, Pointer(PtrInt(APalIdx)));
+      x := GoldenRatioSearch(@GRYakmoQuant, 1, Encoder.FPaletteSize, Encoder.Quantizer, 1.0, 0.01, Pointer(PtrInt(APalIdx)));
 
       if Round(x) <> CMPal.Count then
         GRYakmoQuant(x, Pointer(PtrInt(APalIdx)));
@@ -4960,10 +4977,10 @@ begin
   Scaling := 1.0;
   MaxThreadCount := MaxInt;
 
-  PaletteSize := 16;
-  PaletteCount := 128;
+  PaletteSize := 32;
+  PaletteCount := 64;
   UseQuantizer := True;
-  Quantizer := 4;
+  Quantizer := 7.0;
   DitheringUseGamma := False;
   DitheringMode := pvsWeightedSpeDCT;
   DitheringUseThomasKnoll := True;
@@ -4988,7 +5005,7 @@ begin
 
   EncoderGammaValue := 2.0;
 
-  ShotTransMaxSecondsPerKF := 5.0;  // maximum seconds between keyframes
+  ShotTransMaxSecondsPerKF := 2.0;  // maximum seconds between keyframes
   ShotTransMinSecondsPerKF := 0.0;  // minimum seconds between keyframes
   ShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
   ShotTransDistHiThres := 3.0;   // interframe distance high limit
