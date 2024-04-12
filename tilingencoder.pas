@@ -226,6 +226,8 @@ type
     property IsSmoothed: Boolean read GetIsSmoothed write SetIsSmoothed;
     property IsBlended: Boolean read GetIsBlended write SetIsBlended;
     property IsReverseBlended: Boolean read GetIsReverseBlended write SetIsReverseBlended;
+
+    procedure ResetSmoothed;
   end;
 
   { TTilingDataset }
@@ -723,6 +725,17 @@ begin
     Flags += [tmfSmoothed]
   else
     Flags -= [tmfSmoothed];
+end;
+
+procedure TTileMapItemHelper.ResetSmoothed;
+begin
+  BlendedX := High(ShortInt);
+  BlendedY := High(ShortInt);
+  BlendPrev := High(Byte);
+  BlendOffset := 0;
+  Flags := [];
+
+  Smoothed := Base;
 end;
 
 { TFastPortableNetworkGraphic }
@@ -1804,13 +1817,8 @@ begin
       begin
         TMI^.Base.TileIdx := dsIdx;
         TMI^.ResidualErr := dsErr;
-        TMI^.BlendedX := High(ShortInt);
-        TMI^.BlendedY := High(ShortInt);
-        TMI^.BlendPrev := Encoder.FTileBlendingMax;
-        TMI^.BlendOffset := 0;
-        TMI^.Flags := [];
 
-        TMI^.Smoothed := TMI^.Base;
+        TMI^.ResetSmoothed;
 
         errCml += TMI^.ResidualErr;
       end;
@@ -2058,9 +2066,7 @@ begin
       begin
         TMI := @Encoder.FFrames[frmIdx].TileMap[sy, sx];
 
-        TMI^.IsSmoothed := False;
-
-        TMI^.Smoothed := TMI^.Base;
+        TMI^.ResetSmoothed;
       end;
 
   // iteratively smooth frames
@@ -2547,7 +2553,7 @@ var
           TMI^.Base.HMirror := Tile^.HMirror_Initial;
           TMI^.Base.VMirror := Tile^.VMirror_Initial;
 
-          TMI^.Smoothed := TMI^.Base;
+          TMI^.ResetSmoothed;
           Inc(si);
         end;
 
@@ -3388,10 +3394,8 @@ begin
 
         TMI^.Base.TileIdx := -1;
         TMI^.Base.PalIdx := -1;
-        TMI^.BlendedX := High(ShortInt);
-        TMI^.BlendedY := High(ShortInt);
 
-        TMI^.Smoothed := TMI^.Base;
+        TMI^.ResetSmoothed;
       end;
 
     FFrames[frmIdx] := Frame;
@@ -5311,7 +5315,7 @@ var
           TMI^.Base.TileIdx := frameOffset + si;
           TMI^.ResidualErr := CompareEuclideanDCTPtr_asm(PlainDCT, DitheredDCT);
 
-          TMI^.Smoothed := TMI^.Base;
+          TMI^.ResetSmoothed;
           Inc(si);
         end;
 
@@ -5380,7 +5384,7 @@ var
           TMI^.Base.VMirror := Tile^.VMirror_Initial;
           TMI^.Base.TileIdx := ANNClusters[frameOffset + si];
 
-          TMI^.Smoothed := TMI^.Base;
+          TMI^.ResetSmoothed;
 
           ANNPalIdxs[frameOffset + si] := TMI^.Base.PalIdx;
 
@@ -5827,7 +5831,7 @@ begin
           Inc(FTiles[tileIdx]^.UseCount);
 
           TMI^.Base.TileIdx := tileIdx;
-          TMI^.Smoothed := TMI^.Base;
+          TMI^.ResetSmoothed;
 
           Inc(dsIdx);
         end;
@@ -5928,7 +5932,7 @@ begin
           Inc(FTiles[tileIdx]^.UseCount);
 
           TMI^.Base.TileIdx := tileIdx;
-          TMI^.Smoothed := TMI^.Base;
+          TMI^.ResetSmoothed;
 
           Inc(di);
         end;
