@@ -1961,7 +1961,7 @@ begin
 
           errCml += TMI^.ResidualErr;
 
-          if (Best.ResidualErr <= TMI^.ResidualErr) or (Best.ResidualErr <= Encoder.TileBlendingError) then
+          if (Best.ResidualErr <= TMI^.ResidualErr) or (sqrt(Best.ResidualErr) <= Encoder.TileBlendingError) then
           begin
             errCml += Best.ResidualErr - TMI^.ResidualErr;
 
@@ -4981,8 +4981,8 @@ begin
   Scaling := 1.0;
   MaxThreadCount := MaxInt;
 
-  PaletteSize := 32;
-  PaletteCount := 64;
+  PaletteSize := 16;
+  PaletteCount := 128;
   UseQuantizer := True;
   Quantizer := 7.0;
   DitheringUseGamma := False;
@@ -5001,11 +5001,11 @@ begin
   FrameTilingUseGamma := False;
   FrameTilingMode := pvsSpeDCT;
 
-  TileBlendingError := 0.25;
+  TileBlendingError := 0.1;
   TileBlendingDepth := 16;
   TileBlendingRadius := 4;
 
-  SmoothingFactor := 0.25;
+  SmoothingFactor := 0.1;
 
   EncoderGammaValue := 2.0;
 
@@ -6824,34 +6824,37 @@ var
 
     tileIdx := ExtractTMIAttributes(TMI, attrs, offsets, blend, isBlend);
 
-    if Tiles[tileIdx]^.UseCount <= 1 then
+    if isBlend then
     begin
-      DoCmd(gtIntraTile, attrs);
-      ZStream.Write(Tiles[tileIdx]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
+      DoCmd(gtPrevFrameBlend, offsets);
+      DoWord(blend);
     end
     else
     begin
-      if isBlend then
+      if Tiles[tileIdx]^.UseCount <= 1 then
       begin
-        DoCmd(gtPrevFrameBlend, offsets);
-        DoWord(blend);
-      end
-      else if tileIdx < (1 shl 16) then
-      begin
-        DoCmd(gtShortTileIdx, attrs);
-        DoWord(tileIdx);
+        DoCmd(gtIntraTile, attrs);
+        ZStream.Write(Tiles[tileIdx]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
       end
       else
       begin
-        DoCmd(gtLongTileIdx, attrs);
-        DoDWord(tileIdx);
+        if tileIdx < (1 shl 16) then
+        begin
+          DoCmd(gtShortTileIdx, attrs);
+          DoWord(tileIdx);
+        end
+        else
+        begin
+          DoCmd(gtLongTileIdx, attrs);
+          DoDWord(tileIdx);
+        end;
       end;
     end;
   end;
 
   procedure WriteKFAttributes(KF: TKeyFrame);
   var
-    i, j: Integer;
+    i, j, col: Integer;
   begin
     for j := 0 to FPaletteCount - 1 do
     begin
@@ -6859,7 +6862,14 @@ var
       DoByte(j);
       DoByte(0);
       for i := 0 to FPaletteSize - 1 do
-        DoDWord(KF.Palettes[j].PaletteRGB[i] or $ff000000);
+      begin
+        col := KF.Palettes[j].PaletteRGB[i];
+
+        if col = cDitheringNullColor then
+          col := $ffffff;
+
+        DoDWord(col or $ff000000);
+      end;
     end;
   end;
 
