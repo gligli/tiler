@@ -50,6 +50,7 @@ const GTMCommand = {
 	'PrevFrameBlend' : 8,
     'ShortAdditionalTileIdx' : 9,
     'LongAdditionalTileIdx' : 10,
+    'IntraTile' : 11,
 	
 	'FrameEnd' : 28,
 	'TileSet' : 29,
@@ -71,7 +72,6 @@ let gtmCanvasId = '';
 let gtmInBuffer = null;
 let gtmOutStream = null;
 let gtmHeader = null;
-let gtmLzmaBytesPerSecond = 1024 * 1024;
 let gtmTiles = null;
 let gtmTMImageData = null;
 let gtmPaletteR = new Array(512);
@@ -96,6 +96,7 @@ let gtmWidth = 0;
 let gtmHeight = 0;
 let gtmFrameLength = 0;
 let gtmTileCount = 0;
+let gtmCurIntraTile = 0;
 let gtmPalSize = 0;
 let gtmTMPos = 0;
 let gtmTMDblBuff = 0;
@@ -162,7 +163,6 @@ function resetDecoding() {
 	gtmInBuffer = null;
 	gtmOutStream = null;
 	gtmHeader = null;
-	gtmLzmaBytesPerSecond = 1024 * 1024;
 	gtmTiles = null;
 	
 	gtmReady = false;
@@ -172,6 +172,7 @@ function resetDecoding() {
 	gtmDataBufGlobalPos = 0;
 	gtmFrameLength = 0;
 	gtmTileCount = 0;
+	gtmCurIntraTile = 0;
 	gtmPalSize = 0;
 	gtmTMPos = 0;
 	gtmTMDblBuff = 0;
@@ -230,7 +231,6 @@ function parseHeader(buffer) {
 		
 		gtmWidth = (gtmHeader[GTMHeader.FramePixelWidth] / CTileWidth) >>> 0;
 		gtmHeight = (gtmHeader[GTMHeader.FramePixelHeight] / CTileWidth) >>> 0;
-		gtmLzmaBytesPerSecond = gtmHeader[GTMHeader.KFMaxBytesPerSec];
 		console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',',
 			Math.round(gtmHeader[GTMHeader.AverageBytesPerSec] * 8 / 1024), 'KBps (average)', ',',
 			Math.round(gtmHeader[GTMHeader.KFMaxBytesPerSec] * 8 / 1024), 'KBps (max)');
@@ -531,6 +531,9 @@ function decodeFrame() {
 				gtmTileCount = readDWord();
 				console.log('TileCount:', gtmTileCount);
 				
+				gtmCurIntraTile = gtmTileCount;
+				gtmTileCount += gtmWidth * gtmHeight * 2 // for intra tiles (at most 2 entire tilemaps)
+				
 				if (gtmLoopCount <= 0) {
 					gtmFrameInterval = setInterval(decodeFrame, gtmFrameLength);
 					gtmTiles = new Uint8Array(gtmTileCount * CTileSize * 4);
@@ -653,6 +656,29 @@ function decodeFrame() {
 			case GTMCommand.PrevFrameBlend:
 				let blend = readWord();
 				drawPrevFrameBlended(cmd[1], blend);
+				break;
+				
+			case GTMCommand.IntraTile:
+				let ioff = gtmCurIntraTile * CTileSize + gtmTileCount * CTileSize * 0;
+				let ioffh = gtmCurIntraTile * CTileSize + gtmTileCount * CTileSize * 1;
+				let ioffv = gtmCurIntraTile * CTileSize + gtmTileCount * CTileSize * 2;
+				let ioffhv = gtmCurIntraTile * CTileSize + gtmTileCount * CTileSize * 3;
+
+				for (let ty = 0; ty < CTileWidth; ty++) {
+					for (let tx = 0; tx < CTileWidth; tx++) {
+						let b = readByte();
+						gtmTiles[ioff + ty * CTileWidth + tx] = b;
+						gtmTiles[ioffh + ty * CTileWidth + (CTileWidth - 1 - tx)] = b;
+						gtmTiles[ioffv + (CTileWidth - 1 - ty) * CTileWidth + tx] = b;
+						gtmTiles[ioffhv + (CTileWidth - 1 - ty) * CTileWidth + (CTileWidth - 1 - tx)] = b;
+					}
+				}
+				
+				drawTilemapItem(gtmCurIntraTile, cmd[1]);
+				
+				if((++gtmCurIntraTile) >= gtmTileCount) {
+					gtmCurIntraTile = gtmTileCount - gtmWidth * gtmHeight * 2;
+				}
 				break;
 				
 			case GTMCommand.ExtendedCommand:
