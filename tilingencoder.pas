@@ -1376,7 +1376,7 @@ begin
 
   if not IsEmptyKF then
   begin
-    BIRCH := birch_create(1.0, Ceil(Sqrt(FrameCount)) * Encoder.FTileMapSize, Encoder.FTileMapSize);
+    BIRCH := birch_create(1.0, Encoder.FTileMapSize, Encoder.FTileMapSize);
     try
       DoDataset(False);
 
@@ -4981,8 +4981,8 @@ begin
   Scaling := 1.0;
   MaxThreadCount := MaxInt;
 
-  PaletteSize := 16;
-  PaletteCount := 128;
+  PaletteSize := 32;
+  PaletteCount := 64;
   UseQuantizer := True;
   Quantizer := 7.0;
   DitheringUseGamma := False;
@@ -5001,7 +5001,7 @@ begin
   FrameTilingUseGamma := False;
   FrameTilingMode := pvsSpeDCT;
 
-  TileBlendingError := 0.1;
+  TileBlendingError := 0.5;
   TileBlendingDepth := 16;
   TileBlendingRadius := 4;
 
@@ -6886,14 +6886,17 @@ var
         Break;
     end;
 
-    DoCmd(gtTileSet, FPaletteSize);
-    DoDWord(0); // start tile
-    DoDWord(reusedTileCount - 1); // end tile
-
-    for i := 0 to reusedTileCount - 1 do
+    if reusedTileCount > 0 then
     begin
-      Assert(Tiles[i]^.Active);
-      ZStream.Write(Tiles[i]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
+      DoCmd(gtTileSet, FPaletteSize);
+      DoDWord(0); // start tile
+      DoDWord(reusedTileCount - 1); // end tile
+
+      for i := 0 to reusedTileCount - 1 do
+      begin
+        Assert(Tiles[i]^.Active);
+        ZStream.Write(Tiles[i]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
+      end;
     end;
   end;
 
