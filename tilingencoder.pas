@@ -4983,8 +4983,8 @@ begin
 
   PaletteSize := 32;
   PaletteCount := 64;
-  UseQuantizer := True;
-  Quantizer := 7.0;
+  UseQuantizer := False;
+  Quantizer := 3.0;
   DitheringUseGamma := False;
   DitheringMode := pvsWeightedSpeDCT;
   DitheringUseThomasKnoll := True;
@@ -4995,15 +4995,15 @@ begin
   GlobalTilingMode := pvsSpeDCT;
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
-  GlobalTilingMethod := cmTransferTiles;
+  GlobalTilingMethod := cmBIRCH;
 
-  FrameTilingFromPalette := False;
+  FrameTilingFromPalette := True;
   FrameTilingUseGamma := False;
   FrameTilingMode := pvsSpeDCT;
 
-  TileBlendingError := 0.5;
-  TileBlendingDepth := 16;
-  TileBlendingRadius := 4;
+  TileBlendingError := 0.0;
+  TileBlendingDepth := 8;
+  TileBlendingRadius := 8;
 
   SmoothingFactor := 0.1;
 
