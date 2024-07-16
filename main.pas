@@ -17,15 +17,13 @@ type
     btnGTM: TButton;
     btnRunAll: TButton;
     btnPM: TButton;
-    cbxBLDepth: TComboBox;
-    cbxBLRadius: TComboBox;
     cbxClusMethod: TComboBox;
     cbxVisMode: TComboBox;
     cbxGlobMode: TComboBox;
     cbxDitheringMode: TComboBox;
     cbxFTMode: TComboBox;
     chkClusterFromPal: TCheckBox;
-    chkBlended: TCheckBox;
+    chkPredicted: TCheckBox;
     chkDitheredI: TCheckBox;
     chkGlobGamma: TCheckBox;
     chkQuantize: TCheckBox;
@@ -56,12 +54,10 @@ type
     Label11: TLabel;
     Label12: TLabel;
     Label13: TLabel;
-    Label14: TLabel;
     lblQuantizer: TLabel;
     Label15: TLabel;
     Label16: TLabel;
     Label17: TLabel;
-    Label18: TLabel;
     Label2: TLabel;
     Label20: TLabel;
     Label21: TLabel;
@@ -102,7 +98,6 @@ type
     seShotTransCorrelLoThres: TFloatSpinEdit;
     seMaxCores: TSpinEdit;
     seQbTiles: TFloatSpinEdit;
-    seBLError: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
     seMaxTiles: TSpinEdit;
@@ -134,7 +129,7 @@ type
     tbFrame: TTrackBar;
 
     // processes
-    procedure btnBlendClick(Sender: TObject);
+    procedure btnPredictMotionClick(Sender: TObject);
     procedure btnDitherClick(Sender: TObject);
     procedure btnGlobalLoadClick(Sender: TObject);
     procedure btnPreparePalettesClick(Sender: TObject);
@@ -244,9 +239,9 @@ begin
   UpdateVideo(nil);
 end;
 
-procedure TMainForm.btnBlendClick(Sender: TObject);
+procedure TMainForm.btnPredictMotionClick(Sender: TObject);
 begin
-  FTilingEncoder.Run(esBlend);
+  FTilingEncoder.Run(esPredictMotion);
   UpdateVideo(nil);
 end;
 
@@ -412,6 +407,9 @@ begin
   if OkStep(esLoad) then
     btnGlobalLoadClick(nil);
 
+  if OkStep(esPredictMotion) then
+    btnPredictMotionClick(nil);
+
   if OkStep(esPreparePalettes) then
     btnPreparePalettesClick(nil);
 
@@ -426,9 +424,6 @@ begin
 
   if OkStep(esSmooth) then
     btnSmoothClick(nil);
-
-  if OkStep(esBlend) then
-    btnBlendClick(nil);
 
   if OkStep(esReindex) then
     btnReindexClick(nil);
@@ -656,7 +651,7 @@ begin
   FTilingEncoder.EncoderGammaValue := seEncGamma.Value;
   FTilingEncoder.RenderPlaying := chkPlay.Checked;
   FTilingEncoder.RenderFrameIndex := Max(0, tbFrame.Position);
-  FTilingEncoder.RenderBlended := chkBlended.Checked;
+  FTilingEncoder.RenderPredicted := chkPredicted.Checked;
   FTilingEncoder.RenderMirrored := chkMirrored.Checked;
   FTilingEncoder.RenderSmoothed := chkSmoothed.Checked;
   FTilingEncoder.RenderOutputDithered := chkDitheredO.Checked;
@@ -685,10 +680,6 @@ begin
   FTilingEncoder.FrameTilingMode := TPsyVisMode(cbxFTMode.ItemIndex);
 
   FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
-
-  FTilingEncoder.TileBlendingError := seBLError.Value;
-  FTilingEncoder.TileBlendingRadius := StrToIntDef(cbxBLRadius.Text, 0);
-  FTilingEncoder.TileBlendingDepth := StrToIntDef(cbxBLDepth.Text, 2);
 
   FTilingEncoder.ShotTransMinSecondsPerKF := seShotTransMinSecondsPerKF.Value;
   FTilingEncoder.ShotTransMaxSecondsPerKF := seShotTransMaxSecondsPerKF.Value;
@@ -762,10 +753,6 @@ begin
 
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
    seMaxCores.Value := FTilingEncoder.MaxThreadCount;
-
-   seBLError.Value := FTilingEncoder.TileBlendingError;
-   cbxBLRadius.Text := IntToStr(FTilingEncoder.TileBlendingRadius);
-   cbxBLDepth.Text := IntToStr(FTilingEncoder.TileBlendingDepth);
 
    cbxVisMode.ItemIndex := Ord(FTilingEncoder.RenderMode);
    seShotTransMinSecondsPerKF.Value := FTilingEncoder.ShotTransMinSecondsPerKF;
