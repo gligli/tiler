@@ -1145,28 +1145,39 @@ const
 var
   Tile, FrameTile: PTile;
   BackBuffer: array[Boolean] of TIntegerDynArray2;
-  frmIdx, sy, sx, oy, ox, ty, bestX, bestY: Integer;
+  DCTs: array of array of array[0 .. cTileDCTSize - 1] of TFloat;
+
+  frmIdx, x, y, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY: Integer;
   err, bestErr: TFloat;
   curBuffer: Boolean;
   Frame: TFrame;
   TMI: PTileMapItem;
 
-  CurDCT, PrevDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  CurDCT: array[0 .. cTileDCTSize - 1] of TFloat;
 begin
   curBuffer := False;
   SetLength(BackBuffer[False], Encoder.FScreenHeight, Encoder.FScreenWidth);
   SetLength(BackBuffer[True], Encoder.FScreenHeight, Encoder.FScreenWidth);
+  SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
 
   Tile := TTile.New(True, False);
   FrameTile := TTile.New(True, False);
   try
-
     for frmIdx := StartFrame to EndFrame do
     begin
       Frame := Encoder.FFrames[frmIdx];
 
       Frame.AcquireFrameTiles;
       try
+        if frmIdx > StartFrame then
+          for y := 0 to Encoder.FScreenHeight - cTileWidth do
+            for x := 0 to Encoder.FScreenWidth - cTileWidth do
+            begin
+              for ty := 0 to cTileWidth - 1 do
+                Move(BackBuffer[curBuffer, y + ty, x], Tile^.GetRGBPixelsPtr^[ty, 0], cTileWidth * SizeOf(Integer));
+              Encoder.ComputeTilePsyVisFeatures(Tile^, pvsSpeDCT, False, False, False, False, cColorCpns, -1, nil, DCTs[y, x]);
+            end;
+
         for sy := 0 to Encoder.FTileMapHeight - 1 do
           for sx := 0 to Encoder.FTileMapWidth - 1 do
           begin
@@ -1182,24 +1193,16 @@ begin
             bestErr := Encoder.FQuantizer;
 
             if frmIdx > StartFrame then
-              for oy := (sy shl cTileWidthBits) - CRadius - 1 to (sy shl cTileWidthBits) + CRadius do
-              begin
-                if not InRange(oy, 0, Encoder.FScreenHeight - cTileWidth) then
-                  Continue;
+            begin
+              oymn := Max(0, (sy shl cTileWidthBits) - CRadius - 1);
+              oymx := Min(Encoder.FScreenHeight - cTileWidth, (sy shl cTileWidthBits) + CRadius);
+              oxmn := Max(0, (sx shl cTileWidthBits) - CRadius - 1);
+              oxmx := Min(Encoder.FScreenWidth - cTileWidth, (sx shl cTileWidthBits) + CRadius);
 
-                for ox := (sx shl cTileWidthBits) - CRadius - 1 to (sx shl cTileWidthBits) + CRadius do
+              for oy := oymn to oymx do
+                for ox := oxmn to oxmx do
                 begin
-                  if not InRange(ox, 0, Encoder.FScreenWidth - cTileWidth) then
-                    Continue;
-
-                  for ty := 0 to cTileWidth - 1 do
-                    Move(BackBuffer[curBuffer, oy + ty, ox], Tile^.GetRGBPixelsPtr^[ty, 0], cTileWidth * SizeOf(Integer));
-
-                  //err := FrameTile^.CompareRGBColorsTo(Tile^);
-
-                  Encoder.ComputeTilePsyVisFeatures(Tile^, pvsSpeDCT, False, False, False, False, cColorCpns, -1, nil, PrevDCT);
-
-                  err := sqrt(CompareEuclideanDCTPtr_asm(CurDCT, PrevDCT));
+                  err := sqrt(CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]));
 
                   if err < bestErr then
                   begin
@@ -1208,7 +1211,7 @@ begin
                     bestY := oy;
                   end;
                 end;
-              end;
+            end;
 
             if (bestX < MaxInt) and (bestY < MaxInt) then
             begin
@@ -3139,7 +3142,7 @@ end;
 procedure TTilingEncoder.SetQuantizer(AValue: Double);
 begin
  if FQuantizer = AValue then Exit;
- FQuantizer := EnsureRange(AValue, 1.0, 64.0);
+ FQuantizer := EnsureRange(AValue, 0.0, 64.0);
 end;
 
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
@@ -3944,7 +3947,7 @@ begin
               tilePtr := Tiles[tidx];
               pal := nil;
               if FRenderOutputDithered and (Length(FPalettes) > 0) then
-                pal := FPalettes[Max(0, FRenderPaletteIndex)].PaletteRGB;
+                pal := FPalettes[IfThen(FRenderPaletteIndex < 0, tilePtr^.PalIdx, FRenderPaletteIndex)].PaletteRGB;
 
               hmir := tilePtr^.HMirror_Initial;
               vmir := tilePtr^.VMirror_Initial;
@@ -4110,7 +4113,7 @@ begin
   PaletteSize := 16;
   PaletteCount := 1024;
   UseQuantizer := False;
-  Quantizer := 3.0;
+  Quantizer := 1.0;
   DitheringUseGamma := False;
   DitheringMode := pvsWeightedSpeDCT;
   DitheringUseThomasKnoll := True;
