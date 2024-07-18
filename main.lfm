@@ -53,7 +53,7 @@ object MainForm: TMainForm
     OnChange = UpdateVideo
   end
   object chkMirrored: TCheckBox
-    Left = 168
+    Left = 96
     Height = 19
     Top = 575
     Width = 64
@@ -61,7 +61,7 @@ object MainForm: TMainForm
     Caption = 'Mirrored'
     Checked = True
     State = cbChecked
-    TabOrder = 9
+    TabOrder = 8
     OnChange = UpdateVideo
   end
   object chkGamma: TCheckBox
@@ -72,20 +72,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = 'Gamma'
-    TabOrder = 13
-    OnChange = UpdateVideo
-  end
-  object chkSmoothed: TCheckBox
-    Left = 88
-    Height = 19
-    Top = 575
-    Width = 72
-    Anchors = [akLeft, akBottom]
-    AutoSize = False
-    Caption = 'Smoothed'
-    Checked = True
-    State = cbChecked
-    TabOrder = 8
+    TabOrder = 12
     OnChange = UpdateVideo
   end
   object lblCorrel: TLabel
@@ -117,7 +104,7 @@ object MainForm: TMainForm
     AutoSize = False
     MinValue = -1
     OnChange = UpdateVideo
-    TabOrder = 12
+    TabOrder = 11
     Value = -1
   end
   object Label8: TLabel
@@ -173,17 +160,6 @@ object MainForm: TMainForm
         TabOrder = 1
         OnClick = btnInputClick
       end
-      object seTempoSmoo: TFloatSpinEdit
-        Left = 328
-        Height = 23
-        Top = 257
-        Width = 71
-        DecimalPlaces = 4
-        Increment = 0.05
-        MaxValue = 10
-        OnChange = UpdateGUI
-        TabOrder = 19
-      end
       object seStartFrame: TSpinEdit
         Left = 872
         Height = 23
@@ -221,10 +197,10 @@ object MainForm: TMainForm
       object chkUseTK: TCheckBox
         Left = 8
         Height = 19
-        Top = 360
+        Top = 320
         Width = 251
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
-        TabOrder = 26
+        TabOrder = 25
         OnChange = UpdateGUI
       end
       object Label13: TLabel
@@ -241,14 +217,6 @@ object MainForm: TMainForm
         Top = 186
         Width = 161
         Caption = 'Yliluoma 2 mixed colors count'
-        ParentColor = False
-      end
-      object Label9: TLabel
-        Left = 8
-        Height = 15
-        Top = 261
-        Width = 227
-        Caption = 'Temporal smoothing strength (PsyV based)'
         ParentColor = False
       end
       object Label1: TLabel
@@ -294,25 +262,25 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 360
+        Top = 320
         Width = 168
         Caption = 'Dithering gamma correction'
-        TabOrder = 28
+        TabOrder = 27
         OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 396
+        Top = 356
         Width = 182
         Caption = 'Reconstruct gamma correction'
-        TabOrder = 30
+        TabOrder = 29
         OnChange = UpdateGUI
       end
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 330
+        Top = 290
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -320,25 +288,25 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 327
+        Top = 287
         Width = 71
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 23
+        TabOrder = 22
         Value = 2
       end
       object seVisGamma: TFloatSpinEdit
         Left = 400
         Height = 23
-        Top = 327
+        Top = 287
         Width = 71
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateVideo
-        TabOrder = 24
+        TabOrder = 23
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
@@ -451,10 +419,10 @@ object MainForm: TMainForm
       object chkFTFromPal: TCheckBox
         Left = 8
         Height = 19
-        Top = 396
+        Top = 356
         Width = 188
         Caption = 'Reconstruct from palettized tiles'
-        TabOrder = 27
+        TabOrder = 26
         OnChange = UpdateGUI
       end
       object Label16: TLabel
@@ -534,10 +502,10 @@ object MainForm: TMainForm
       object chkGlobGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 378
+        Top = 338
         Width = 156
         Caption = 'Cluster gamma correction'
-        TabOrder = 29
+        TabOrder = 28
         OnChange = UpdateGUI
       end
       object Label23: TLabel
@@ -551,7 +519,7 @@ object MainForm: TMainForm
       object Label17: TLabel
         Left = 8
         Height = 15
-        Top = 299
+        Top = 259
         Width = 296
         Caption = 'Psychovisual modes (dithering; cluster; reconstruct; vis.)'
         ParentColor = False
@@ -559,7 +527,25 @@ object MainForm: TMainForm
       object cbxDitheringMode: TComboBox
         Left = 328
         Height = 23
-        Top = 295
+        Top = 255
+        Width = 104
+        DropDownCount = 20
+        ItemHeight = 15
+        Items.Strings = (
+          'DCT'
+          'Weighted DCT'
+          'Haar wavelets'
+          'Special DCT'
+          'Spe. Wgt. DCT'
+        )
+        Style = csDropDownList
+        TabOrder = 19
+        OnChange = UpdateGUI
+      end
+      object cbxGlobMode: TComboBox
+        Left = 433
+        Height = 23
+        Top = 255
         Width = 104
         DropDownCount = 20
         ItemHeight = 15
@@ -574,10 +560,10 @@ object MainForm: TMainForm
         TabOrder = 20
         OnChange = UpdateGUI
       end
-      object cbxGlobMode: TComboBox
-        Left = 433
+      object cbxFTMode: TComboBox
+        Left = 538
         Height = 23
-        Top = 295
+        Top = 255
         Width = 104
         DropDownCount = 20
         ItemHeight = 15
@@ -592,28 +578,10 @@ object MainForm: TMainForm
         TabOrder = 21
         OnChange = UpdateGUI
       end
-      object cbxFTMode: TComboBox
-        Left = 538
-        Height = 23
-        Top = 295
-        Width = 104
-        DropDownCount = 20
-        ItemHeight = 15
-        Items.Strings = (
-          'DCT'
-          'Weighted DCT'
-          'Haar wavelets'
-          'Special DCT'
-          'Spe. Wgt. DCT'
-        )
-        Style = csDropDownList
-        TabOrder = 22
-        OnChange = UpdateGUI
-      end
       object cbxVisMode: TComboBox
         Left = 643
         Height = 23
-        Top = 295
+        Top = 255
         Width = 101
         DropDownCount = 20
         ItemHeight = 15
@@ -625,7 +593,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 25
+        TabOrder = 24
         OnChange = UpdateVideo
       end
       object cbxClusMethod: TComboBox
@@ -879,7 +847,7 @@ object MainForm: TMainForm
     Anchors = [akTop, akLeft, akRight]
     BevelInner = bvLowered
     BevelOuter = bvNone
-    TabOrder = 14
+    TabOrder = 13
   end
   object btnPM: TButton
     Left = 80
@@ -894,7 +862,7 @@ object MainForm: TMainForm
     OnClick = btnPMClick
   end
   object chkDitheredO: TCheckBox
-    Left = 312
+    Left = 272
     Height = 19
     Top = 575
     Width = 63
@@ -902,11 +870,11 @@ object MainForm: TMainForm
     Caption = 'Dithered'
     Checked = True
     State = cbChecked
-    TabOrder = 11
+    TabOrder = 10
     OnChange = UpdateVideo
   end
   object chkPredicted: TCheckBox
-    Left = 240
+    Left = 184
     Height = 19
     Top = 575
     Width = 68
@@ -914,7 +882,7 @@ object MainForm: TMainForm
     Caption = 'Predicted'
     Checked = True
     State = cbChecked
-    TabOrder = 10
+    TabOrder = 9
     OnChange = UpdateVideo
   end
   object IdleTimer: TIdleTimer
@@ -928,7 +896,6 @@ object MainForm: TMainForm
     Top = 416
     object miLoad: TMenuItem
       Caption = 'Load'
-      ShortCut = 114
       OnClick = btnGlobalLoadClick
     end
     object MenuItem7: TMenuItem
@@ -937,12 +904,10 @@ object MainForm: TMainForm
     end
     object MenuItem2: TMenuItem
       Caption = 'Cluster'
-      ShortCut = 116
       OnClick = btnClusterClick
     end
     object MenuItem1: TMenuItem
       Caption = 'Prepare palettes'
-      ShortCut = 115
       OnClick = btnPreparePalettesClick
     end
     object MenuItem8: TMenuItem
@@ -951,22 +916,14 @@ object MainForm: TMainForm
     end
     object MenuItem3: TMenuItem
       Caption = 'Reconstruct'
-      ShortCut = 117
       OnClick = btnReconstructClick
-    end
-    object MenuItem5: TMenuItem
-      Caption = 'Smooth'
-      ShortCut = 118
-      OnClick = btnSmoothClick
     end
     object MenuItem4: TMenuItem
       Caption = 'Reindex'
-      ShortCut = 119
       OnClick = btnReindexClick
     end
     object MenuItem6: TMenuItem
       Caption = 'Save'
-      ShortCut = 120
       OnClick = btnSaveClick
     end
     object Separator1: TMenuItem

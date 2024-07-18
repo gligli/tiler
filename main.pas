@@ -34,7 +34,6 @@ type
     chkFTGamma: TCheckBox;
     chkGamma: TCheckBox;
     chkDitheringGamma: TCheckBox;
-    chkSmoothed: TCheckBox;
     chkMirrored: TCheckBox;
     chkPlay: TCheckBox;
     chkFTFromPal: TCheckBox;
@@ -65,7 +64,6 @@ type
     Label3: TLabel;
     Label4: TLabel;
     Label6: TLabel;
-    Label9: TLabel;
     lblPct: TLabel;
     llPalTileDesc: TPanel;
     miGeneratePNGsOutput: TMenuItem;
@@ -101,7 +99,6 @@ type
     seMaxTiles: TSpinEdit;
     sePage: TSpinEdit;
     seStartFrame: TSpinEdit;
-    seTempoSmoo: TFloatSpinEdit;
     seEncGamma: TFloatSpinEdit;
     seShotTransMinSecondsPerKF: TFloatSpinEdit;
     tbQuantizer: TTrackBar;
@@ -116,7 +113,6 @@ type
     MenuItem2: TMenuItem;
     MenuItem3: TMenuItem;
     MenuItem4: TMenuItem;
-    MenuItem5: TMenuItem;
     MenuItem6: TMenuItem;
     miLoad: TMenuItem;
     MenuItem1: TMenuItem;
@@ -134,7 +130,6 @@ type
     procedure btnClusterClick(Sender: TObject);
     procedure btnReconstructClick(Sender: TObject);
     procedure btnReindexClick(Sender: TObject);
-    procedure btnSmoothClick(Sender: TObject);
     procedure btnSaveClick(Sender: TObject);
 
     procedure btnPMClick(Sender: TObject);
@@ -258,12 +253,6 @@ end;
 procedure TMainForm.btnSaveClick(Sender: TObject);
 begin
   FTilingEncoder.Run(esSave);
-  UpdateVideo(nil);
-end;
-
-procedure TMainForm.btnSmoothClick(Sender: TObject);
-begin
-  FTilingEncoder.Run(esSmooth);
   UpdateVideo(nil);
 end;
 
@@ -420,9 +409,6 @@ begin
   if OkStep(esReconstruct) then
     btnReconstructClick(nil);
 
-  if OkStep(esSmooth) then
-    btnSmoothClick(nil);
-
   if OkStep(esReindex) then
     btnReindexClick(nil);
 
@@ -559,7 +545,10 @@ begin
     pt.X := pt.X div cTileWidth;
     pt.Y := pt.Y div cTileWidth;
 
-    sedPalIdx.Value := FTilingEncoder.Tiles[FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].Smoothed.TileIdx]^.PalIdx;
+    if FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].TileIdx >= 0 then
+      sedPalIdx.Value := FTilingEncoder.Tiles[FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].TileIdx]^.PalIdx
+    else
+      sedPalIdx.Value := -1;
   end;
 end;
 
@@ -651,7 +640,6 @@ begin
   FTilingEncoder.RenderFrameIndex := Max(0, tbFrame.Position);
   FTilingEncoder.RenderPredicted := chkPredicted.Checked;
   FTilingEncoder.RenderMirrored := chkMirrored.Checked;
-  FTilingEncoder.RenderSmoothed := chkSmoothed.Checked;
   FTilingEncoder.RenderOutputDithered := chkDitheredO.Checked;
   FTilingEncoder.RenderUseGamma := chkGamma.Checked;
   FTilingEncoder.RenderMode := TPsyVisMode(cbxVisMode.ItemIndex);
@@ -673,8 +661,6 @@ begin
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingMode := TPsyVisMode(cbxFTMode.ItemIndex);
-
-  FTilingEncoder.SmoothingFactor := seTempoSmoo.Value;
 
   FTilingEncoder.ShotTransMinSecondsPerKF := seShotTransMinSecondsPerKF.Value;
   FTilingEncoder.ShotTransMaxSecondsPerKF := seShotTransMaxSecondsPerKF.Value;
@@ -741,8 +727,6 @@ begin
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
    cbxFTMode.ItemIndex := Ord(FTilingEncoder.FrameTilingMode);
-
-   seTempoSmoo.Value := FTilingEncoder.SmoothingFactor;
 
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
    seMaxCores.Value := FTilingEncoder.MaxThreadCount;
