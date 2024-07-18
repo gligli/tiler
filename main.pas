@@ -22,9 +22,7 @@ type
     cbxGlobMode: TComboBox;
     cbxDitheringMode: TComboBox;
     cbxFTMode: TComboBox;
-    chkClusterFromPal: TCheckBox;
     chkPredicted: TCheckBox;
-    chkDitheredI: TCheckBox;
     chkGlobGamma: TCheckBox;
     chkQuantize: TCheckBox;
     cbxScaling: TComboBox;
@@ -303,8 +301,8 @@ begin
   useCount := -1;
   if InRange(FTilingEncoder.RenderFrameIndex, 0, High(FTilingEncoder.Frames)) and
       Assigned(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame) and
-      InRange(palIdx, 0, High(FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Palettes)) then
-    useCount := FTilingEncoder.Frames[FTilingEncoder.RenderFrameIndex].PKeyFrame.Palettes[palIdx].UseCount;
+      InRange(palIdx, 0, High(FTilingEncoder.Palettes)) then
+    useCount := FTilingEncoder.Palettes[palIdx].UseCount;
 
   llPalTileDesc.Caption := Format('Palette #: %3d, UseCount: %6d', [palIdx, useCount]);
 end;
@@ -410,14 +408,14 @@ begin
   if OkStep(esPredictMotion) then
     btnPredictMotionClick(nil);
 
+  if OkStep(esCluster) then
+    btnClusterClick(nil);
+
   if OkStep(esPreparePalettes) then
     btnPreparePalettesClick(nil);
 
   if OkStep(esDither) then
     btnDitherClick(nil);
-
-  if OkStep(esCluster) then
-    btnClusterClick(nil);
 
   if OkStep(esReconstruct) then
     btnReconstructClick(nil);
@@ -561,7 +559,7 @@ begin
     pt.X := pt.X div cTileWidth;
     pt.Y := pt.Y div cTileWidth;
 
-    sedPalIdx.Value := FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].Smoothed.PalIdx;
+    sedPalIdx.Value := FTilingEncoder.Tiles[FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].Smoothed.TileIdx]^.PalIdx;
   end;
 end;
 
@@ -612,7 +610,7 @@ begin
 
   FTilingEncoder.Render(not fromTimer);
   PsyVTimer.Enabled := False;
-  PsyVTimer.Enabled := not fromTimer;
+  //PsyVTimer.Enabled := not fromTimer;
 
   imgSource.Picture.Bitmap := FTilingEncoder.InputBitmap;
   imgDest.Picture.Bitmap := FTilingEncoder.OutputBitmap;
@@ -655,7 +653,6 @@ begin
   FTilingEncoder.RenderMirrored := chkMirrored.Checked;
   FTilingEncoder.RenderSmoothed := chkSmoothed.Checked;
   FTilingEncoder.RenderOutputDithered := chkDitheredO.Checked;
-  FTilingEncoder.RenderInputDithered := chkDitheredI.Checked;
   FTilingEncoder.RenderUseGamma := chkGamma.Checked;
   FTilingEncoder.RenderMode := TPsyVisMode(cbxVisMode.ItemIndex);
   FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;
@@ -669,7 +666,6 @@ begin
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
-  FTilingEncoder.GlobalTilingFromPalette := chkClusterFromPal.Checked;
   FTilingEncoder.GlobalTilingUseGamma := chkGlobGamma.Checked;
   FTilingEncoder.GlobalTilingMode := TPsyVisMode(cbxGlobMode.ItemIndex);
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
@@ -738,7 +734,6 @@ begin
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
    cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
-   chkClusterFromPal.Checked := FTilingEncoder.GlobalTilingFromPalette;
    chkGlobGamma.Checked := FTilingEncoder.GlobalTilingUseGamma;
    cbxGlobMode.ItemIndex := Ord(FTilingEncoder.GlobalTilingMode);
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;

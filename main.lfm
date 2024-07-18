@@ -72,7 +72,7 @@ object MainForm: TMainForm
     Anchors = [akLeft, akBottom]
     AutoSize = False
     Caption = 'Gamma'
-    TabOrder = 14
+    TabOrder = 13
     OnChange = UpdateVideo
   end
   object chkSmoothed: TCheckBox
@@ -117,7 +117,7 @@ object MainForm: TMainForm
     AutoSize = False
     MinValue = -1
     OnChange = UpdateVideo
-    TabOrder = 13
+    TabOrder = 12
     Value = -1
   end
   object Label8: TLabel
@@ -157,7 +157,7 @@ object MainForm: TMainForm
         Left = 328
         Height = 23
         Top = 121
-        Width = 71
+        Width = 104
         Increment = 1000
         MaxValue = 1000000000
         OnChange = seMaxTilesEditingDone
@@ -297,7 +297,7 @@ object MainForm: TMainForm
         Top = 360
         Width = 168
         Caption = 'Dithering gamma correction'
-        TabOrder = 30
+        TabOrder = 29
         OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
@@ -306,7 +306,7 @@ object MainForm: TMainForm
         Top = 396
         Width = 182
         Caption = 'Reconstruct gamma correction'
-        TabOrder = 32
+        TabOrder = 31
         OnChange = UpdateGUI
       end
       object Label10: TLabel
@@ -342,7 +342,7 @@ object MainForm: TMainForm
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
-        Left = 400
+        Left = 433
         Height = 23
         Top = 121
         Width = 71
@@ -372,7 +372,7 @@ object MainForm: TMainForm
         ParentColor = False
       end
       object cbxPalSize: TComboBox
-        Left = 400
+        Left = 433
         Height = 23
         Top = 97
         Width = 71
@@ -393,7 +393,7 @@ object MainForm: TMainForm
         Left = 328
         Height = 23
         Top = 97
-        Width = 71
+        Width = 104
         DropDownCount = 20
         ItemHeight = 15
         Items.Strings = (
@@ -406,6 +406,14 @@ object MainForm: TMainForm
           '64'
           '128'
           '256'
+          '512'
+          '1024'
+          '2048'
+          '4096'
+          '8192'
+          '16384'
+          '32768'
+          '65536'
         )
         TabOrder = 12
         OnChange = UpdateGUI
@@ -455,7 +463,7 @@ object MainForm: TMainForm
         Top = 396
         Width = 188
         Caption = 'Reconstruct from palettized tiles'
-        TabOrder = 29
+        TabOrder = 28
         OnChange = UpdateGUI
       end
       object Label16: TLabel
@@ -538,7 +546,7 @@ object MainForm: TMainForm
         Top = 378
         Width = 156
         Caption = 'Cluster gamma correction'
-        TabOrder = 31
+        TabOrder = 30
         OnChange = UpdateGUI
       end
       object Label23: TLabel
@@ -629,15 +637,6 @@ object MainForm: TMainForm
         TabOrder = 26
         OnChange = UpdateVideo
       end
-      object chkClusterFromPal: TCheckBox
-        Left = 8
-        Height = 19
-        Top = 378
-        Width = 162
-        Caption = 'Cluster from palettized tiles'
-        TabOrder = 28
-        OnChange = UpdateGUI
-      end
       object cbxClusMethod: TComboBox
         Left = 328
         Height = 23
@@ -648,8 +647,6 @@ object MainForm: TMainForm
         Items.Strings = (
           'CoreSets (BIRCH)'
           'CoreSets (BICO)'
-          'KMeans (Yakmo)'
-          'KModes'
           'Transfer tiles only'
         )
         Style = csDropDownList
@@ -884,7 +881,7 @@ object MainForm: TMainForm
     Anchors = [akTop, akLeft, akRight]
     BevelInner = bvLowered
     BevelOuter = bvNone
-    TabOrder = 15
+    TabOrder = 14
   end
   object btnPM: TButton
     Left = 80
@@ -902,9 +899,9 @@ object MainForm: TMainForm
     Left = 312
     Height = 19
     Top = 575
-    Width = 110
+    Width = 63
     Anchors = [akLeft, akBottom]
-    Caption = 'Dithered (output)'
+    Caption = 'Dithered'
     Checked = True
     State = cbChecked
     TabOrder = 11
@@ -920,16 +917,6 @@ object MainForm: TMainForm
     Checked = True
     State = cbChecked
     TabOrder = 10
-    OnChange = UpdateVideo
-  end
-  object chkDitheredI: TCheckBox
-    Left = 436
-    Height = 19
-    Top = 575
-    Width = 102
-    Anchors = [akLeft, akBottom]
-    Caption = 'Dithered (input)'
-    TabOrder = 12
     OnChange = UpdateVideo
   end
   object IdleTimer: TIdleTimer
@@ -950,6 +937,11 @@ object MainForm: TMainForm
       Caption = 'Predict motion'
       OnClick = btnPredictMotionClick
     end
+    object MenuItem2: TMenuItem
+      Caption = 'Cluster'
+      ShortCut = 116
+      OnClick = btnClusterClick
+    end
     object MenuItem1: TMenuItem
       Caption = 'Prepare palettes'
       ShortCut = 115
@@ -958,11 +950,6 @@ object MainForm: TMainForm
     object MenuItem8: TMenuItem
       Caption = 'Dither'
       OnClick = btnDitherClick
-    end
-    object MenuItem2: TMenuItem
-      Caption = 'Cluster'
-      ShortCut = 116
-      OnClick = btnClusterClick
     end
     object MenuItem3: TMenuItem
       Caption = 'Reconstruct'
