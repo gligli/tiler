@@ -24,7 +24,6 @@ type
     cbxFTMode: TComboBox;
     chkPredicted: TCheckBox;
     chkGlobGamma: TCheckBox;
-    chkQuantize: TCheckBox;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
@@ -52,6 +51,7 @@ type
     Label11: TLabel;
     Label12: TLabel;
     Label13: TLabel;
+    Label14: TLabel;
     lblQuantizer: TLabel;
     Label15: TLabel;
     Label16: TLabel;
@@ -659,8 +659,7 @@ begin
   FTilingEncoder.RenderTilePage := sePage.Value;
   FTilingEncoder.RenderGammaValue := seVisGamma.Value;
 
-  FTilingEncoder.UseQuantizer := chkQuantize.Checked;
-  FTilingEncoder.Quantizer := tbQuantizer.Position / 4;
+  FTilingEncoder.MotionPredictQuantizer := tbQuantizer.Position / 10;
   FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
   FTilingEncoder.DitheringMode := TPsyVisMode(cbxDitheringMode.ItemIndex);
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
@@ -695,7 +694,7 @@ begin
 
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
-  lblQuantizer.Caption := FormatFloat('##0.00', FTilingEncoder.Quantizer);
+  lblQuantizer.Caption := FormatFloat('##0.00', FTilingEncoder.MotionPredictQuantizer);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
   miReload.Enabled := FTilingEncoder.FrameCount > 0;
 end;
@@ -727,8 +726,7 @@ begin
 
    cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
    cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
-   chkQuantize.Checked := FTilingEncoder.UseQuantizer;
-   tbQuantizer.Position := round(FTilingEncoder.Quantizer * 4);
+   tbQuantizer.Position := round(FTilingEncoder.MotionPredictQuantizer * 10);
    chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
    cbxDitheringMode.ItemIndex := Ord(FTilingEncoder.DitheringMode);
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;

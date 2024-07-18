@@ -371,8 +371,7 @@ type
     FEncoderGammaValue: Double;
     FPaletteSize: Integer;
     FPaletteCount: Integer;
-    FUseQuantizer: Boolean;
-    FQuantizer: Double;
+    FMotionPredictQuantizer: Double;
     FDitheringUseGamma: Boolean;
     FDitheringMode: TPsyVisMode;
     FDitheringUseThomasKnoll: Boolean;
@@ -430,7 +429,7 @@ type
     procedure SetMaxThreadCount(AValue: Integer);
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
-    procedure SetQuantizer(AValue: Double);
+    procedure SetMotionPredictQuantizer(AValue: Double);
     procedure SetRenderFrameIndex(AValue: Integer);
     procedure SetRenderGammaValue(AValue: Double);
     procedure SetRenderPaletteIndex(AValue: Integer);
@@ -498,7 +497,6 @@ type
     procedure DoPalettization(ADitheringGamma: Integer);
     procedure OptimizePalettes;
     function QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer): Double;
-    function GRYakmoQuant(x: TFloat; Data: Pointer): TFloat;
     procedure DoQuantization(APalIdx: Integer; ADitheringGamma: Integer);
     procedure PrepareTiling(AFTGamma: Integer);
     procedure FinishTiling;
@@ -580,8 +578,7 @@ type
     property EncoderGammaValue: Double read FEncoderGammaValue write SetEncoderGammaValue;
     property PaletteSize: Integer read FPaletteSize write SetPaletteSize;
     property PaletteCount: Integer read FPaletteCount write SetPaletteCount;
-    property Quantizer: Double read FQuantizer write SetQuantizer;
-    property UseQuantizer: Boolean read FUseQuantizer write FUseQuantizer;
+    property MotionPredictQuantizer: Double read FMotionPredictQuantizer write SetMotionPredictQuantizer;
     property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
     property DitheringMode: TPsyVisMode read FDitheringMode write FDitheringMode;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
@@ -1190,7 +1187,7 @@ begin
 
             bestX := MaxInt;
             bestY := MaxInt;
-            bestErr := Encoder.FQuantizer;
+            bestErr := Encoder.FMotionPredictQuantizer;
 
             if frmIdx > StartFrame then
             begin
@@ -3139,10 +3136,10 @@ begin
   FRenderTilePage := Max(0, AValue);
 end;
 
-procedure TTilingEncoder.SetQuantizer(AValue: Double);
+procedure TTilingEncoder.SetMotionPredictQuantizer(AValue: Double);
 begin
- if FQuantizer = AValue then Exit;
- FQuantizer := EnsureRange(AValue, 0.0, 64.0);
+ if FMotionPredictQuantizer = AValue then Exit;
+ FMotionPredictQuantizer := EnsureRange(AValue, 0.0, 64.0);
 end;
 
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
@@ -4019,20 +4016,20 @@ begin
     ini.WriteInteger('Load', 'FrameCount', FrameCountSetting);
     ini.WriteFloat('Load', 'Scaling', Scaling);
 
-    ini.WriteInteger('Dither', 'PaletteSize', PaletteSize);
-    ini.WriteInteger('Dither', 'PaletteCount', PaletteCount);
-    ini.WriteBool('Dither', 'UseQuantizer', UseQuantizer);
-    ini.WriteFloat('Dither', 'Quantizer', Quantizer);
-    ini.WriteBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
-    ini.WriteInteger('Dither', 'DitheringMode', Ord(DitheringMode));
-    ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
-    ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
+    ini.WriteFloat('MotionPredict', 'MotionPredictQuantizer', MotionPredictQuantizer);
 
     ini.WriteBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingMode', Ord(GlobalTilingMode));
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingMethod', Ord(GlobalTilingMethod));
+
+    ini.WriteInteger('Dither', 'PaletteSize', PaletteSize);
+    ini.WriteInteger('Dither', 'PaletteCount', PaletteCount);
+    ini.WriteBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
+    ini.WriteInteger('Dither', 'DitheringMode', Ord(DitheringMode));
+    ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
+    ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
     ini.WriteBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
@@ -4067,20 +4064,20 @@ begin
     FrameCountSetting := ini.ReadInteger('Load', 'FrameCount', FrameCountSetting);
     Scaling := ini.ReadFloat('Load', 'Scaling', Scaling);
 
-    PaletteSize := ini.ReadInteger('Dither', 'PaletteSize', PaletteSize);
-    PaletteCount := ini.ReadInteger('Dither', 'PaletteCount', PaletteCount);
-    UseQuantizer := ini.ReadBool('Dither', 'UseQuantizer', UseQuantizer);
-    Quantizer := ini.ReadFloat('Dither', 'Quantizer', Quantizer);
-    DitheringUseGamma := ini.ReadBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
-    DitheringMode := TPsyVisMode(EnsureRange(ini.ReadInteger('Dither', 'DitheringMode', Ord(DitheringMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
-    DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
-    DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
+    MotionPredictQuantizer := ini.ReadFloat('MotionPredict', 'MotionPredictQuantizer', MotionPredictQuantizer);
 
     GlobalTilingUseGamma := ini.ReadBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     GlobalTilingMode := TPsyVisMode(EnsureRange(ini.ReadInteger('GlobalTiling', 'GlobalTilingMode', Ord(GlobalTilingMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
     GlobalTilingMethod := TClusteringMethod(EnsureRange(ini.ReadInteger('GlobalTiling', 'GlobalTilingMethod', Ord(GlobalTilingMethod)), Ord(Low(TClusteringMethod)), Ord(High(TClusteringMethod))));
+
+    PaletteSize := ini.ReadInteger('Dither', 'PaletteSize', PaletteSize);
+    PaletteCount := ini.ReadInteger('Dither', 'PaletteCount', PaletteCount);
+    DitheringUseGamma := ini.ReadBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
+    DitheringMode := TPsyVisMode(EnsureRange(ini.ReadInteger('Dither', 'DitheringMode', Ord(DitheringMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
+    DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
+    DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
     FrameTilingFromPalette := ini.ReadBool('FrameTiling', 'FrameTilingFromPalette', FrameTilingFromPalette);
     FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
@@ -4112,8 +4109,7 @@ begin
 
   PaletteSize := 16;
   PaletteCount := 1024;
-  UseQuantizer := False;
-  Quantizer := 1.0;
+  MotionPredictQuantizer := 1.0;
   DitheringUseGamma := False;
   DitheringMode := pvsWeightedSpeDCT;
   DitheringUseThomasKnoll := True;
@@ -5122,13 +5118,6 @@ begin
   Result := Sqrt(Div0(Result, uniqueColCnt * cLumaDiv));
 end;
 
-function TTilingEncoder.GRYakmoQuant(x: TFloat; Data: Pointer): TFloat;
-var
-  PalIdx: PtrInt absolute Data;
-begin
-  Result := QuantizeUsingYakmo(PalIdx, round(x), 1 shl cBitsPerComp);
-end;
-
 procedure TTilingEncoder.DoQuantization(APalIdx: Integer; ADitheringGamma: Integer);
 var
   CMPal: TCountIndexList;
@@ -5140,19 +5129,7 @@ begin
   try
     // do quantize
 
-    if UseQuantizer then
-    begin
-      x := GoldenRatioSearch(@GRYakmoQuant, 1, FPaletteSize, Quantizer, 1.0, 0.01, Pointer(PtrInt(APalIdx)));
-
-      if Round(x) <> CMPal.Count then
-        GRYakmoQuant(x, Pointer(PtrInt(APalIdx)));
-
-      //WriteLn(StartFrame:8, APalIdx:4, CMPal.Count:4);
-    end
-    else
-    begin
-      QuantizeUsingYakmo(APalIdx, FPaletteSize, 1 shl cBitsPerComp);
-    end;
+    QuantizeUsingYakmo(APalIdx, FPaletteSize, 1 shl cBitsPerComp);
 
     // split most used colors into tile FPalettes
 

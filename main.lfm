@@ -182,7 +182,7 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 10
         OnChange = UpdateGUI
-        TabOrder = 20
+        TabOrder = 19
       end
       object seStartFrame: TSpinEdit
         Left = 872
@@ -206,7 +206,7 @@ object MainForm: TMainForm
           '8'
           '16'
         )
-        TabOrder = 18
+        TabOrder = 17
         OnChange = UpdateGUI
       end
       object seFrameCount: TSpinEdit
@@ -224,7 +224,7 @@ object MainForm: TMainForm
         Top = 360
         Width = 251
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
-        TabOrder = 27
+        TabOrder = 26
         OnChange = UpdateGUI
       end
       object Label13: TLabel
@@ -297,7 +297,7 @@ object MainForm: TMainForm
         Top = 360
         Width = 168
         Caption = 'Dithering gamma correction'
-        TabOrder = 29
+        TabOrder = 28
         OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
@@ -306,7 +306,7 @@ object MainForm: TMainForm
         Top = 396
         Width = 182
         Caption = 'Reconstruct gamma correction'
-        TabOrder = 31
+        TabOrder = 30
         OnChange = UpdateGUI
       end
       object Label10: TLabel
@@ -326,7 +326,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 24
+        TabOrder = 23
         Value = 2
       end
       object seVisGamma: TFloatSpinEdit
@@ -338,7 +338,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateVideo
-        TabOrder = 25
+        TabOrder = 24
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
@@ -448,22 +448,13 @@ object MainForm: TMainForm
         Caption = 'Scaling ratio'
         ParentColor = False
       end
-      object chkQuantize: TCheckBox
-        Left = 8
-        Height = 19
-        Top = 155
-        Width = 183
-        Caption = 'Quantize palettes to (quantizer)'
-        TabOrder = 16
-        OnChange = UpdateGUI
-      end
       object chkFTFromPal: TCheckBox
         Left = 8
         Height = 19
         Top = 396
         Width = 188
         Caption = 'Reconstruct from palettized tiles'
-        TabOrder = 28
+        TabOrder = 27
         OnChange = UpdateGUI
       end
       object Label16: TLabel
@@ -546,7 +537,7 @@ object MainForm: TMainForm
         Top = 378
         Width = 156
         Caption = 'Cluster gamma correction'
-        TabOrder = 30
+        TabOrder = 29
         OnChange = UpdateGUI
       end
       object Label23: TLabel
@@ -580,7 +571,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 21
+        TabOrder = 20
         OnChange = UpdateGUI
       end
       object cbxGlobMode: TComboBox
@@ -598,7 +589,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 22
+        TabOrder = 21
         OnChange = UpdateGUI
       end
       object cbxFTMode: TComboBox
@@ -616,7 +607,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 23
+        TabOrder = 22
         OnChange = UpdateGUI
       end
       object cbxVisMode: TComboBox
@@ -634,7 +625,7 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 26
+        TabOrder = 25
         OnChange = UpdateVideo
       end
       object cbxClusMethod: TComboBox
@@ -650,7 +641,7 @@ object MainForm: TMainForm
           'Transfer tiles only'
         )
         Style = csDropDownList
-        TabOrder = 19
+        TabOrder = 18
         OnChange = UpdateGUI
       end
       object Label24: TLabel
@@ -676,14 +667,13 @@ object MainForm: TMainForm
         Height = 17
         Top = 158
         Width = 206
-        Frequency = 4
-        Max = 128
-        Min = 1
+        Frequency = 10
+        Max = 100
         OnChange = UpdateGUI
-        PageSize = 4
+        PageSize = 10
         Position = 1
         ShowSelRange = False
-        TabOrder = 17
+        TabOrder = 16
       end
       object lblQuantizer: TLabel
         Left = 536
@@ -693,6 +683,14 @@ object MainForm: TMainForm
         Alignment = taRightJustify
         AutoSize = False
         Caption = '0'
+        ParentColor = False
+      end
+      object Label14: TLabel
+        Left = 8
+        Height = 15
+        Top = 159
+        Width = 193
+        Caption = 'Motion prediction limit (PsyV based)'
         ParentColor = False
       end
     end
