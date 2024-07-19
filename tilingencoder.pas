@@ -1089,7 +1089,7 @@ end;
 
 procedure TKeyFrame.PredictMotion(ARadius: Integer; ALimit: TFloat);
 var
-  frmIdx, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY: Integer;
+  frmIdx, dx, dy, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, tx, bestX, bestY: Integer;
   err, bestErr: TFloat;
   curBuffer: Boolean;
 
@@ -1097,6 +1097,7 @@ var
   TMI: PTileMapItem;
   FrameTile: PTile;
   BackBuffer: array[Boolean] of TIntegerDynArray2;
+  RepredictPenalties: array[Boolean] of TIntegerDynArray2;
   DCTs: array of array of array[0 .. cTileDCTSize - 1] of TFloat;
   CurDCT: array[0 .. cTileDCTSize - 1] of TFloat;
 
@@ -1129,6 +1130,8 @@ begin
 
   SetLength(BackBuffer[False], Encoder.FScreenHeight, Encoder.FScreenWidth);
   SetLength(BackBuffer[True], Encoder.FScreenHeight, Encoder.FScreenWidth);
+  SetLength(RepredictPenalties[False], Encoder.FScreenHeight, Encoder.FScreenWidth);
+  SetLength(RepredictPenalties[True], Encoder.FScreenHeight, Encoder.FScreenWidth);
   SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
 
   curBuffer := False;
@@ -1173,6 +1176,10 @@ begin
                   // rationale: slightly favoring the center in case of ties improves compressibility
                   Inc(PInteger(@err)^, Abs(ox - (sx shl cTileWidthBits)) + Abs(oy - (sy shl cTileWidthBits)));
 
+                  // also apply a repredict penalty
+                  // rationale: repredicting a tile many times tends to posterize the colors
+                  Inc(PInteger(@err)^, RepredictPenalties[curBuffer, oy, ox]);
+
                   if err < bestErr then
                   begin
                     bestErr := err;
@@ -1191,15 +1198,34 @@ begin
               TMI^.PredictedX := bestX - (sx shl cTileWidthBits);
               TMI^.PredictedY := bestY - (sy shl cTileWidthBits);
 
+              dx := sx shl cTileWidthBits;
+              dy := sy shl cTileWidthBits;
               for ty := 0 to cTileWidth - 1 do
-                Move(BackBuffer[curBuffer, bestY + ty, bestX], BackBuffer[not curBuffer, (sy shl cTileWidthBits) + ty, sx shl cTileWidthBits], cTileWidth * SizeOf(Integer));
+              begin
+                Move(BackBuffer[curBuffer, bestY + ty, bestX], BackBuffer[not curBuffer, dy, dx], cTileWidth * SizeOf(Integer));
+
+                // copy the penalty and increment it
+                for tx := 0 to cTileWidth - 1 do
+                  RepredictPenalties[not curBuffer, dy, dx + tx] := RepredictPenalties[curBuffer, bestY + ty, bestX + tx] + 1;
+
+                Inc(dy);
+              end;
             end
             else
             begin
               InterLockedIncrement(Encoder.FUnpredictedTileCount);
 
+              dx := sx shl cTileWidthBits;
+              dy := sy shl cTileWidthBits;
               for ty := 0 to cTileWidth - 1 do
-                Move(FrameTile^.GetRGBPixelsPtr^[ty, 0], BackBuffer[not curBuffer, (sy shl cTileWidthBits) + ty, sx shl cTileWidthBits], cTileWidth * SizeOf(Integer));
+              begin
+                Move(FrameTile^.GetRGBPixelsPtr^[ty, 0], BackBuffer[not curBuffer, dy, dx], cTileWidth * SizeOf(Integer));
+
+                // a new tile has zero penalty
+                FillDWord(RepredictPenalties[not curBuffer, dy, dx], cTileWidth, 0);
+
+                Inc(dy);
+              end;
             end;
           end;
 
