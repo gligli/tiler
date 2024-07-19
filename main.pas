@@ -18,6 +18,7 @@ type
     btnRunAll: TButton;
     btnPM: TButton;
     cbxClusMethod: TComboBox;
+    cbxMPRadius: TComboBox;
     cbxVisMode: TComboBox;
     cbxGlobMode: TComboBox;
     cbxDitheringMode: TComboBox;
@@ -51,6 +52,7 @@ type
     Label12: TLabel;
     Label13: TLabel;
     Label14: TLabel;
+    Label18: TLabel;
     lblQuantizer: TLabel;
     Label15: TLabel;
     Label16: TLabel;
@@ -101,7 +103,7 @@ type
     seStartFrame: TSpinEdit;
     seEncGamma: TFloatSpinEdit;
     seShotTransMinSecondsPerKF: TFloatSpinEdit;
-    tbQuantizer: TTrackBar;
+    tbMPLimit: TTrackBar;
     tsTilesPal: TTabSheet;
     To1: TLabel;
     tsSettings: TTabSheet;
@@ -647,16 +649,18 @@ begin
   FTilingEncoder.RenderTilePage := sePage.Value;
   FTilingEncoder.RenderGammaValue := seVisGamma.Value;
 
-  FTilingEncoder.MotionPredictQuantizer := tbQuantizer.Position / 10;
-  FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
-  FTilingEncoder.DitheringMode := TPsyVisMode(cbxDitheringMode.ItemIndex);
-  FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
-  FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
+  FTilingEncoder.MotionPredictRadius := StrToIntDef(cbxMPRadius.Text, 0);
+  FTilingEncoder.MotionPredictLimit := tbMPLimit.Position / 10;
 
   FTilingEncoder.GlobalTilingUseGamma := chkGlobGamma.Checked;
   FTilingEncoder.GlobalTilingMode := TPsyVisMode(cbxGlobMode.ItemIndex);
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
   FTilingEncoder.GlobalTilingMethod := TClusteringMethod(cbxClusMethod.ItemIndex);
+
+  FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
+  FTilingEncoder.DitheringMode := TPsyVisMode(cbxDitheringMode.ItemIndex);
+  FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
+  FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
   FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
@@ -680,7 +684,7 @@ begin
 
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
-  lblQuantizer.Caption := FormatFloat('##0.00', FTilingEncoder.MotionPredictQuantizer);
+  lblQuantizer.Caption := FormatFloat('##0.00', FTilingEncoder.MotionPredictLimit);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
   miReload.Enabled := FTilingEncoder.FrameCount > 0;
 end;
@@ -712,17 +716,20 @@ begin
 
    cbxPalSize.Text := IntToStr(FTilingEncoder.PaletteSize);
    cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
-   tbQuantizer.Position := round(FTilingEncoder.MotionPredictQuantizer * 10);
-   chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
-   cbxDitheringMode.ItemIndex := Ord(FTilingEncoder.DitheringMode);
-   chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
-   cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
+
+   cbxMPRadius.Text := IntToStr(FTilingEncoder.MotionPredictRadius);
+   tbMPLimit.Position := round(FTilingEncoder.MotionPredictLimit * 10);
 
    chkGlobGamma.Checked := FTilingEncoder.GlobalTilingUseGamma;
    cbxGlobMode.ItemIndex := Ord(FTilingEncoder.GlobalTilingMode);
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
    cbxClusMethod.ItemIndex := Ord(FTilingEncoder.GlobalTilingMethod);
+
+   chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
+   cbxDitheringMode.ItemIndex := Ord(FTilingEncoder.DitheringMode);
+   chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
+   cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
    chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;

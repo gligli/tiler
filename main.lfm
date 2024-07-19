@@ -144,7 +144,7 @@ object MainForm: TMainForm
         Left = 328
         Height = 23
         Top = 121
-        Width = 104
+        Width = 96
         Increment = 1000
         MaxValue = 1000000000
         OnChange = seMaxTilesEditingDone
@@ -172,8 +172,8 @@ object MainForm: TMainForm
       object cbxYilMix: TComboBox
         Left = 328
         Height = 23
-        Top = 182
-        Width = 71
+        Top = 214
+        Width = 96
         ItemHeight = 15
         Items.Strings = (
           '1'
@@ -182,7 +182,7 @@ object MainForm: TMainForm
           '8'
           '16'
         )
-        TabOrder = 17
+        TabOrder = 18
         OnChange = UpdateGUI
       end
       object seFrameCount: TSpinEdit
@@ -197,10 +197,10 @@ object MainForm: TMainForm
       object chkUseTK: TCheckBox
         Left = 8
         Height = 19
-        Top = 320
+        Top = 352
         Width = 251
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
-        TabOrder = 25
+        TabOrder = 26
         OnChange = UpdateGUI
       end
       object Label13: TLabel
@@ -214,7 +214,7 @@ object MainForm: TMainForm
       object Label11: TLabel
         Left = 8
         Height = 15
-        Top = 186
+        Top = 218
         Width = 161
         Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
@@ -262,25 +262,25 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 320
+        Top = 352
         Width = 168
         Caption = 'Dithering gamma correction'
-        TabOrder = 27
+        TabOrder = 28
         OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 356
+        Top = 388
         Width = 182
         Caption = 'Reconstruct gamma correction'
-        TabOrder = 29
+        TabOrder = 30
         OnChange = UpdateGUI
       end
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 290
+        Top = 322
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -288,29 +288,29 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 287
+        Top = 319
         Width = 71
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 22
+        TabOrder = 23
         Value = 2
       end
       object seVisGamma: TFloatSpinEdit
         Left = 400
         Height = 23
-        Top = 287
+        Top = 319
         Width = 71
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateVideo
-        TabOrder = 23
+        TabOrder = 24
         Value = 0.5
       end
       object seQbTiles: TFloatSpinEdit
-        Left = 433
+        Left = 425
         Height = 23
         Top = 121
         Width = 71
@@ -340,7 +340,7 @@ object MainForm: TMainForm
         ParentColor = False
       end
       object cbxPalSize: TComboBox
-        Left = 433
+        Left = 425
         Height = 23
         Top = 97
         Width = 71
@@ -361,7 +361,7 @@ object MainForm: TMainForm
         Left = 328
         Height = 23
         Top = 97
-        Width = 104
+        Width = 96
         DropDownCount = 20
         ItemHeight = 15
         Items.Strings = (
@@ -419,10 +419,10 @@ object MainForm: TMainForm
       object chkFTFromPal: TCheckBox
         Left = 8
         Height = 19
-        Top = 356
+        Top = 388
         Width = 188
         Caption = 'Reconstruct from palettized tiles'
-        TabOrder = 26
+        TabOrder = 27
         OnChange = UpdateGUI
       end
       object Label16: TLabel
@@ -437,7 +437,7 @@ object MainForm: TMainForm
         Left = 328
         Height = 23
         Top = 64
-        Width = 71
+        Width = 96
         MaxValue = 1000000
         MinValue = 1
         OnChange = UpdateGUI
@@ -502,16 +502,16 @@ object MainForm: TMainForm
       object chkGlobGamma: TCheckBox
         Left = 328
         Height = 19
-        Top = 338
+        Top = 370
         Width = 156
         Caption = 'Cluster gamma correction'
-        TabOrder = 28
+        TabOrder = 29
         OnChange = UpdateGUI
       end
       object Label23: TLabel
         Left = 8
         Height = 15
-        Top = 222
+        Top = 254
         Width = 99
         Caption = 'Clustering method'
         ParentColor = False
@@ -519,7 +519,7 @@ object MainForm: TMainForm
       object Label17: TLabel
         Left = 8
         Height = 15
-        Top = 259
+        Top = 291
         Width = 296
         Caption = 'Psychovisual modes (dithering; cluster; reconstruct; vis.)'
         ParentColor = False
@@ -527,25 +527,7 @@ object MainForm: TMainForm
       object cbxDitheringMode: TComboBox
         Left = 328
         Height = 23
-        Top = 255
-        Width = 104
-        DropDownCount = 20
-        ItemHeight = 15
-        Items.Strings = (
-          'DCT'
-          'Weighted DCT'
-          'Haar wavelets'
-          'Special DCT'
-          'Spe. Wgt. DCT'
-        )
-        Style = csDropDownList
-        TabOrder = 19
-        OnChange = UpdateGUI
-      end
-      object cbxGlobMode: TComboBox
-        Left = 433
-        Height = 23
-        Top = 255
+        Top = 287
         Width = 104
         DropDownCount = 20
         ItemHeight = 15
@@ -560,10 +542,10 @@ object MainForm: TMainForm
         TabOrder = 20
         OnChange = UpdateGUI
       end
-      object cbxFTMode: TComboBox
-        Left = 538
+      object cbxGlobMode: TComboBox
+        Left = 433
         Height = 23
-        Top = 255
+        Top = 287
         Width = 104
         DropDownCount = 20
         ItemHeight = 15
@@ -578,10 +560,28 @@ object MainForm: TMainForm
         TabOrder = 21
         OnChange = UpdateGUI
       end
+      object cbxFTMode: TComboBox
+        Left = 538
+        Height = 23
+        Top = 287
+        Width = 104
+        DropDownCount = 20
+        ItemHeight = 15
+        Items.Strings = (
+          'DCT'
+          'Weighted DCT'
+          'Haar wavelets'
+          'Special DCT'
+          'Spe. Wgt. DCT'
+        )
+        Style = csDropDownList
+        TabOrder = 22
+        OnChange = UpdateGUI
+      end
       object cbxVisMode: TComboBox
         Left = 643
         Height = 23
-        Top = 255
+        Top = 287
         Width = 101
         DropDownCount = 20
         ItemHeight = 15
@@ -593,13 +593,13 @@ object MainForm: TMainForm
           'Spe. Wgt. DCT'
         )
         Style = csDropDownList
-        TabOrder = 24
+        TabOrder = 25
         OnChange = UpdateVideo
       end
       object cbxClusMethod: TComboBox
         Left = 328
         Height = 23
-        Top = 219
+        Top = 251
         Width = 143
         DropDownCount = 20
         ItemHeight = 15
@@ -609,7 +609,7 @@ object MainForm: TMainForm
           'Transfer tiles only'
         )
         Style = csDropDownList
-        TabOrder = 18
+        TabOrder = 19
         OnChange = UpdateGUI
       end
       object Label24: TLabel
@@ -630,10 +630,10 @@ object MainForm: TMainForm
         OnChange = UpdateGUI
         TabOrder = 10
       end
-      object tbQuantizer: TTrackBar
+      object tbMPLimit: TTrackBar
         Left = 328
         Height = 17
-        Top = 158
+        Top = 190
         Width = 206
         Frequency = 10
         Max = 100
@@ -641,12 +641,12 @@ object MainForm: TMainForm
         PageSize = 10
         Position = 1
         ShowSelRange = False
-        TabOrder = 16
+        TabOrder = 17
       end
       object lblQuantizer: TLabel
         Left = 536
         Height = 15
-        Top = 159
+        Top = 188
         Width = 32
         Alignment = taRightJustify
         AutoSize = False
@@ -656,10 +656,39 @@ object MainForm: TMainForm
       object Label14: TLabel
         Left = 8
         Height = 15
-        Top = 159
+        Top = 188
         Width = 193
         Caption = 'Motion prediction limit (PsyV based)'
         ParentColor = False
+      end
+      object Label18: TLabel
+        Left = 8
+        Height = 15
+        Top = 164
+        Width = 181
+        Caption = 'Motion prediction radius (0: none)'
+        ParentColor = False
+      end
+      object cbxMPRadius: TComboBox
+        Left = 328
+        Height = 23
+        Top = 160
+        Width = 96
+        DropDownCount = 20
+        ItemHeight = 15
+        Items.Strings = (
+          '0'
+          '1'
+          '2'
+          '4'
+          '8'
+          '16'
+          '32'
+          '64'
+          '128'
+        )
+        TabOrder = 16
+        OnChange = UpdateGUI
       end
     end
     object tsInput: TTabSheet

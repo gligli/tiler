@@ -185,7 +185,7 @@ type
 
   TTileMapItem = packed record
     TileIdx: Integer;
-    PredictedX, PredictedY: SmallInt;
+    PredictedX, PredictedY: ShortInt;
     Flags: set of (tmfHMirror, tmfVMirror, tmfPredicted);
   end;
 
@@ -299,7 +299,7 @@ type
 
     // processes
 
-    procedure PredictMotion;
+    procedure PredictMotion(ARadius: Integer; ALimit: TFloat);
   end;
 
   TKeyFrameArray =  array of TKeyFrame;
@@ -349,7 +349,8 @@ type
     FEncoderGammaValue: Double;
     FPaletteSize: Integer;
     FPaletteCount: Integer;
-    FMotionPredictQuantizer: Double;
+    FMotionPredictRadius: Integer;
+    FMotionPredictLimit: Double;
     FDitheringUseGamma: Boolean;
     FDitheringMode: TPsyVisMode;
     FDitheringUseThomasKnoll: Boolean;
@@ -405,7 +406,8 @@ type
     procedure SetMaxThreadCount(AValue: Integer);
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
-    procedure SetMotionPredictQuantizer(AValue: Double);
+    procedure SetMotionPredictRadius(AValue: Integer);
+    procedure SetMotionPredictLimit(AValue: Double);
     procedure SetRenderFrameIndex(AValue: Integer);
     procedure SetRenderGammaValue(AValue: Double);
     procedure SetRenderPaletteIndex(AValue: Integer);
@@ -548,7 +550,8 @@ type
     property EncoderGammaValue: Double read FEncoderGammaValue write SetEncoderGammaValue;
     property PaletteSize: Integer read FPaletteSize write SetPaletteSize;
     property PaletteCount: Integer read FPaletteCount write SetPaletteCount;
-    property MotionPredictQuantizer: Double read FMotionPredictQuantizer write SetMotionPredictQuantizer;
+    property MotionPredictRadius: Integer read FMotionPredictRadius write SetMotionPredictRadius;
+    property MotionPredictLimit: Double read FMotionPredictLimit write SetMotionPredictLimit;
     property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
     property DitheringMode: TPsyVisMode read FDitheringMode write FDitheringMode;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
@@ -1084,53 +1087,62 @@ begin
     Result := CompareValue(a1^[2], a2^[2]); // B
 end;
 
-procedure TKeyFrame.PredictMotion;
-const
-  CRadius: Integer = 15;
+procedure TKeyFrame.PredictMotion(ARadius: Integer; ALimit: TFloat);
 var
-  frmIdx, di, idx, x, y, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY: Integer;
+  frmIdx, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY: Integer;
   err, bestErr: TFloat;
   curBuffer: Boolean;
 
-  Tile, FrameTile: PTile;
-  TMI: PTileMapItem;
   Frame: TFrame;
-  ANN: PANNkdtree;
-
+  TMI: PTileMapItem;
+  FrameTile: PTile;
   BackBuffer: array[Boolean] of TIntegerDynArray2;
-  DCTs: TFloatDynArray2;
+  DCTs: array of array of array[0 .. cTileDCTSize - 1] of TFloat;
   CurDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+
+  procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    x, ty: Integer;
+    DCTTile: PTile;
+  begin
+    if not InRange(AIndex, 0, Encoder.FScreenHeight - cTileWidth) then
+      Exit;
+
+    DCTTile := TTile.New(True, False);
+    try
+      for x := 0 to Encoder.FScreenWidth - cTileWidth do
+      begin
+        for ty := 0 to cTileWidth - 1 do
+          Move(BackBuffer[curBuffer, AIndex + ty, x], DCTTile^.GetRGBPixelsPtr^[ty, 0], cTileWidth * SizeOf(Integer));
+        Encoder.ComputeTilePsyVisFeatures(DCTTile^, pvsSpeDCT, False, False, False, False, cColorCpns, -1, nil, DCTs[AIndex, x]);
+      end;
+    finally
+      TTile.Dispose(DCTTile);
+    end;
+  end;
+
 begin
-  curBuffer := False;
+  if ARadius <= 0 then
+    Exit;
+
+  Dec(ARadius);
+
   SetLength(BackBuffer[False], Encoder.FScreenHeight, Encoder.FScreenWidth);
   SetLength(BackBuffer[True], Encoder.FScreenHeight, Encoder.FScreenWidth);
-  SetLength(DCTs, (Encoder.FScreenHeight - cTileWidth + 1) * (Encoder.FScreenWidth - cTileWidth + 1), cTileDCTSize);
+  SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
 
-  ANN := nil;
-  Tile := TTile.New(True, False);
+  curBuffer := False;
   FrameTile := TTile.New(True, False);
   try
     for frmIdx := StartFrame to EndFrame do
     begin
       Frame := Encoder.FFrames[frmIdx];
 
-      if frmIdx > StartFrame then
-      begin
-        di := 0;
-        for y := 0 to Encoder.FScreenHeight - cTileWidth do
-          for x := 0 to Encoder.FScreenWidth - cTileWidth do
-          begin
-            for ty := 0 to cTileWidth - 1 do
-              Move(BackBuffer[curBuffer, y + ty, x], Tile^.GetRGBPixelsPtr^[ty, 0], cTileWidth * SizeOf(Integer));
-            Encoder.ComputeTilePsyVisFeatures(Tile^, pvsSpeDCT, False, False, False, False, cColorCpns, -1, nil, @DCTs[di, 0]);
-            Inc(di);
-          end;
-
-        ANN := ann_kdtree_single_create(PPFloat(@DCTs[0]), di, cTileDCTSize, 32, ANN_KD_STD);
-      end;
-
       Frame.AcquireFrameTiles;
       try
+        if frmIdx > StartFrame then
+          ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
+
         for sy := 0 to Encoder.FTileMapHeight - 1 do
           for sx := 0 to Encoder.FTileMapWidth - 1 do
           begin
@@ -1143,18 +1155,31 @@ begin
 
             bestX := MaxInt;
             bestY := MaxInt;
-            bestErr := Encoder.FMotionPredictQuantizer;
+            bestErr := ALimit;
 
             if frmIdx > StartFrame then
             begin
-              idx := ann_kdtree_single_search(ANN, CurDCT, 0.0, @err);
-              err := Sqrt(err);
+              oymn := Max(0, (sy shl cTileWidthBits) - ARadius - 1);
+              oymx := Min(Encoder.FScreenHeight - cTileWidth, (sy shl cTileWidthBits) + ARadius);
+              oxmn := Max(0, (sx shl cTileWidthBits) - ARadius - 1);
+              oxmx := Min(Encoder.FScreenWidth - cTileWidth, (sx shl cTileWidthBits) + ARadius);
 
-              if err < bestErr then
-              begin
-                bestErr := err;
-                DivMod(idx, Encoder.FScreenWidth - cTileWidth + 1, bestY, bestX);
-              end;
+              for oy := oymn to oymx do
+                for ox := oxmn to oxmx do
+                begin
+                  err := sqrt(CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]));
+
+                  // apply a penalty of float mantissa's unit times the manhattan distance to the center
+                  // rationale: slightly favoring the center in case of ties improves compressibility
+                  Inc(PInteger(@err)^, Abs(ox - (sx shl cTileWidthBits)) + Abs(oy - (sy shl cTileWidthBits)));
+
+                  if err < bestErr then
+                  begin
+                    bestErr := err;
+                    bestX := ox;
+                    bestY := oy;
+                  end;
+                end;
             end;
 
             if (bestX < MaxInt) and (bestY < MaxInt) then
@@ -1184,16 +1209,10 @@ begin
 
       finally
         Frame.ReleaseFrameTiles;
-        if Assigned(ANN) then
-        begin
-          ann_kdtree_single_destroy(ANN);
-          ANN := nil;
-        end;
       end;
     end;
   finally
     TTile.Dispose(FrameTile);
-    TTile.Dispose(Tile);
   end;
 end;
 
@@ -1744,14 +1763,14 @@ var
 
     keyFrame := FKeyFrames[AIndex];
 
-    keyFrame.PredictMotion;
+    keyFrame.PredictMotion(FMotionPredictRadius, FMotionPredictLimit);
 
     Inc(StepProgress, keyFrame.FrameCount);
     ProgressRedraw(StepProgress, 'KF: ' + IntToStr(keyFrame.StartFrame), esPredictMotion, AItem.Thread);
   end;
 
 begin
-  if Length(FFrames) = 0 then
+  if (Length(FFrames) = 0) or (FMotionPredictRadius <= 0) then
     Exit;
 
   StepProgress := 0;
@@ -2967,10 +2986,16 @@ begin
   FRenderTilePage := Max(0, AValue);
 end;
 
-procedure TTilingEncoder.SetMotionPredictQuantizer(AValue: Double);
+procedure TTilingEncoder.SetMotionPredictRadius(AValue: Integer);
 begin
- if FMotionPredictQuantizer = AValue then Exit;
- FMotionPredictQuantizer := EnsureRange(AValue, 0.0, 64.0);
+  if FMotionPredictRadius = AValue then Exit;
+  FMotionPredictRadius := EnsureRange(AValue, 0, -Low(ShortInt));
+end;
+
+procedure TTilingEncoder.SetMotionPredictLimit(AValue: Double);
+begin
+ if FMotionPredictLimit = AValue then Exit;
+ FMotionPredictLimit := Max(AValue, 0.0);
 end;
 
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
@@ -3254,7 +3279,7 @@ procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVi
 var
   i, u, v, x, y, cpn: Integer;
   CpnPixels: TCpnPixelsDouble;
-  pCpn, pLut, pCur, pDCT: PDouble;
+  pCpn, pLut, pDCT: PDouble;
   LocalDCT: array[0..cTileDCTSize - 1] of Double;
   d: Double;
 
@@ -3527,7 +3552,7 @@ procedure TTilingEncoder.Render(AFast: Boolean);
 
   procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; psyTile: PTile; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir, forceActive: Boolean); overload;
   var
-    r, g, b, tx, ty, txm, tym, ptxm, ptym, col: Integer;
+    r, g, b, tx, ty, txm, tym, col: Integer;
     psl: PInteger;
   begin
     for ty := 0 to cTileWidth - 1 do
@@ -3849,7 +3874,8 @@ begin
     ini.WriteInteger('Load', 'FrameCount', FrameCountSetting);
     ini.WriteFloat('Load', 'Scaling', Scaling);
 
-    ini.WriteFloat('MotionPredict', 'MotionPredictQuantizer', MotionPredictQuantizer);
+    ini.WriteInteger('MotionPredict', 'MotionPredictRadius', MotionPredictRadius);
+    ini.WriteFloat('MotionPredict', 'MotionPredictLimit', MotionPredictLimit);
 
     ini.WriteBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingMode', Ord(GlobalTilingMode));
@@ -3895,7 +3921,8 @@ begin
     FrameCountSetting := ini.ReadInteger('Load', 'FrameCount', FrameCountSetting);
     Scaling := ini.ReadFloat('Load', 'Scaling', Scaling);
 
-    MotionPredictQuantizer := ini.ReadFloat('MotionPredict', 'MotionPredictQuantizer', MotionPredictQuantizer);
+    MotionPredictRadius := ini.ReadInteger('MotionPredict', 'MotionPredictRadius', MotionPredictRadius);
+    MotionPredictLimit := ini.ReadFloat('MotionPredict', 'MotionPredictLimit', MotionPredictLimit);
 
     GlobalTilingUseGamma := ini.ReadBool('GlobalTiling', 'GlobalTilingUseGamma', GlobalTilingUseGamma);
     GlobalTilingMode := TPsyVisMode(EnsureRange(ini.ReadInteger('GlobalTiling', 'GlobalTilingMode', Ord(GlobalTilingMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
@@ -3938,17 +3965,20 @@ begin
 
   PaletteSize := 16;
   PaletteCount := 1024;
-  MotionPredictQuantizer := 1.0;
+
+  MotionPredictRadius := 32;
+  MotionPredictLimit := 1.0;
+
+  GlobalTilingUseGamma := False;
+  GlobalTilingMode := pvsSpeDCT;
+  GlobalTilingQualityBasedTileCount := 7.0;
+  GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
+  GlobalTilingMethod := cmBICO;
+
   DitheringUseGamma := False;
   DitheringMode := pvsWeightedSpeDCT;
   DitheringUseThomasKnoll := True;
   DitheringYliluoma2MixedColors := 4;
-
-  GlobalTilingUseGamma := False;
-  GlobalTilingMode := pvsSpeDCT;
-  GlobalTilingQualityBasedTileCount := 5.0;
-  GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
-  GlobalTilingMethod := cmBICO;
 
   FrameTilingFromPalette := False;
   FrameTilingUseGamma := False;
@@ -4378,7 +4408,6 @@ var
   var
     Frame: TFrame;
     Tile: PTile;
-    TMI: PTileMapItem;
     sx, sy: Integer;
   begin
     if not InRange(AIndex, 0, FTileMapSize - 1) then
@@ -4391,15 +4420,10 @@ var
     if Tile^.Active then
     begin
       DivMod(AIndex, FTileMapWidth, sy, sx);
-      TMI := @Frame.TileMap[sy, sx];
 
       ComputeTilePsyVisFeatures(Tile^,
           GlobalTilingMode, False, False,
           False, False, cColorCpns, AGamma, nil, @DCTs[AIndex, 0]);
-    end
-    else
-    begin
-      FillQWord(DCTs[AIndex, 0], cTileDCTSize, 0);
     end;
 
     DCTsValid[AIndex] := Tile^.Active;
@@ -4630,7 +4654,7 @@ var
   end;
 
 var
-  tIdx, sx, sy, di, palIdx, BIRCHClusterCount: Integer;
+  tIdx, di, palIdx, BIRCHClusterCount: Integer;
 
   Tile: PTile;
 
@@ -4734,7 +4758,7 @@ function TTilingEncoder.QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Int
 const
   cFeatureCount = 3;
 var
-  i, j, di, ty, tx, sy, sx, tIdx, DSLen, uniqueColCnt: Integer;
+  i, j, di, ty, tx, tIdx, DSLen, uniqueColCnt: Integer;
   rr, gg, bb: Byte;
   Tile: PTile;
   Dataset, Centroids: TDoubleDynArray2;
@@ -4849,7 +4873,6 @@ procedure TTilingEncoder.DoQuantization(APalIdx: Integer; ADitheringGamma: Integ
 var
   CMPal: TCountIndexList;
   i: Integer;
-  x: TFloat;
 begin
   CMPal := TCountIndexList.Create;
   FPalettes[APalIdx].CMPal := CMPal;
@@ -5477,10 +5500,6 @@ begin
 end;
 
 procedure TTilingEncoder.SaveStream(AStream: TStream);
-const
-  CMinBlkSkipCount = 1;
-  CMaxBlkSkipCount = 1 shl CGTMCommandBits;
-
 var
   ZStream: TMemoryStream;
 
@@ -5525,8 +5544,8 @@ var
     if isPredicted then
     begin
       DoCmd(gtPredictedTile, 0);
-      DoWord(PWord(@TMI.PredictedX)^);
-      DoWord(PWord(@TMI.PredictedY)^);
+      DoByte(PByte(@TMI.PredictedX)^);
+      DoByte(PByte(@TMI.PredictedY)^);
     end
     else
     begin
