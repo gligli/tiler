@@ -4430,6 +4430,29 @@ var
     Write(InterLockedIncrement(doneFrameCount):8, ' / ', Length(FFrames):8, #13);
   end;
 
+  procedure DoClusterInvCentroids(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    Tile: PTile;
+    HMirror, VMirror: Boolean;
+    DCT: array[0 .. cTileDCTSize - 1] of Double;
+  begin
+    if not InRange(AIndex, 0, clusterCount - 1) then
+      Exit;
+
+    FillQWord(DCT[0], cTileDCTSize, 0);
+
+    Tile := Tiles[AIndex];
+
+    Move(ANNDataset[AIndex]^, DCT[0], cTileDCTSize * SizeOf(Double));
+    ComputeInvTilePsyVisFeatures(@DCT[0], GlobalTilingMode, False, cColorCpns, AGamma, Tile^);
+
+    GetTileHVMirrorHeuristics(Tile^, False, HMirror, VMirror);
+    if HMirror then HMirrorTile(Tile^);
+    if VMirror then VMirrorTile(Tile^);
+
+    Tile^.Active := True;
+  end;
+
   procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     Frame: TFrame;
@@ -4620,13 +4643,18 @@ begin
 
   ProgressRedraw(3, 'PrepareTiles');
 
-
   if GlobalTilingMode in [pvsSpeDCT, pvsWeightedSpeDCT] then
   begin
     doneFrameCount := 0;
     ProcThreadPool.DoParallelLocalProc(@DoClusterSelect, 0, high(FFrames));
 
     ProgressRedraw(4, 'SelectTiles');
+  end
+  else
+  begin
+    ProcThreadPool.DoParallelLocalProc(@DoClusterInvCentroids, 0, clusterCount - 1);
+
+    ProgressRedraw(4, 'InverseCentroids');
   end;
 end;
 
@@ -4969,7 +4997,10 @@ begin
   // init for LogResidualErr
 
   for kfIdx := 0 to High(FKeyFrames) do
+  begin
+    FKeyFrames[kfIdx].ReconstructErrCml := 0;
     FKeyFrames[kfIdx].ReconstructFramesLeft := FKeyFrames[kfIdx].FrameCount;
+  end;
 end;
 
 procedure TTilingEncoder.FinishTiling;
