@@ -37,7 +37,6 @@ type
     chkDitheringGamma: TCheckBox;
     chkMirrored: TCheckBox;
     chkPlay: TCheckBox;
-    chkFTFromPal: TCheckBox;
     chkUseTK: TCheckBox;
     edInput: TEdit;
     edOutput: TEdit;
@@ -547,10 +546,7 @@ begin
     pt.X := pt.X div cTileWidth;
     pt.Y := pt.Y div cTileWidth;
 
-    if FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].TileIdx >= 0 then
-      sedPalIdx.Value := FTilingEncoder.Tiles[FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].TileIdx]^.PalIdx
-    else
-      sedPalIdx.Value := -1;
+    sedPalIdx.Value := FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].PalIdx
   end;
 end;
 
@@ -662,7 +658,6 @@ begin
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
-  FTilingEncoder.FrameTilingFromPalette := chkFTFromPal.Checked;
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingMode := TPsyVisMode(cbxFTMode.ItemIndex);
 
@@ -731,7 +726,6 @@ begin
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
    cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
-   chkFTFromPal.Checked := FTilingEncoder.FrameTilingFromPalette;
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
    cbxFTMode.ItemIndex := Ord(FTilingEncoder.FrameTilingMode);
 
