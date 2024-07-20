@@ -355,9 +355,17 @@ procedure TMainForm.miReloadClick(Sender: TObject);
 begin
   if odGTM.Execute then
   begin
-    FTilingEncoder.ReloadGTM(odGTM.FileName);
-    LoadGUISettings;
-    UpdateGUI(nil);
+    if not FileExists(edInput.Text) then
+      btnInputClick(nil);
+
+    if FileExists(edInput.Text) then
+    begin
+      btnGlobalLoadClick(nil);
+
+      FTilingEncoder.ReloadGTM(odGTM.FileName);
+      LoadGUISettings;
+      UpdateGUI(nil);
+    end;
   end;
 end;
 
@@ -597,7 +605,7 @@ begin
 
   FTilingEncoder.Render(not fromTimer);
   PsyVTimer.Enabled := False;
-  //PsyVTimer.Enabled := not fromTimer;
+  PsyVTimer.Enabled := not fromTimer;
 
   imgSource.Picture.Bitmap := FTilingEncoder.InputBitmap;
   imgDest.Picture.Bitmap := FTilingEncoder.OutputBitmap;
@@ -681,7 +689,6 @@ begin
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
   lblQuantizer.Caption := FormatFloat('##0.00', FTilingEncoder.MotionPredictLimit);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
-  miReload.Enabled := FTilingEncoder.FrameCount > 0;
 end;
 
 procedure TMainForm.TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);

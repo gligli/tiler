@@ -172,7 +172,7 @@ object MainForm: TMainForm
       object cbxYilMix: TComboBox
         Left = 328
         Height = 23
-        Top = 246
+        Top = 238
         Width = 96
         ItemHeight = 15
         Items.Strings = (
@@ -216,7 +216,7 @@ object MainForm: TMainForm
       object Label11: TLabel
         Left = 8
         Height = 15
-        Top = 250
+        Top = 242
         Width = 161
         Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
@@ -264,7 +264,7 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 8
         Height = 19
-        Top = 384
+        Top = 376
         Width = 334
         Alignment = taLeftJustify
         AutoSize = False
@@ -275,7 +275,7 @@ object MainForm: TMainForm
       object chkFTGamma: TCheckBox
         Left = 8
         Height = 19
-        Top = 420
+        Top = 412
         Width = 334
         Alignment = taLeftJustify
         AutoSize = False
@@ -286,7 +286,7 @@ object MainForm: TMainForm
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 358
+        Top = 350
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -294,7 +294,7 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 355
+        Top = 347
         Width = 71
         Increment = 0.1
         MaxValue = 10
@@ -306,7 +306,7 @@ object MainForm: TMainForm
       object seVisGamma: TFloatSpinEdit
         Left = 400
         Height = 23
-        Top = 355
+        Top = 347
         Width = 71
         Increment = 0.1
         MaxValue = 10
@@ -499,7 +499,7 @@ object MainForm: TMainForm
       object chkGlobGamma: TCheckBox
         Left = 8
         Height = 19
-        Top = 402
+        Top = 394
         Width = 334
         Alignment = taLeftJustify
         AutoSize = False
@@ -510,7 +510,7 @@ object MainForm: TMainForm
       object Label23: TLabel
         Left = 8
         Height = 15
-        Top = 287
+        Top = 279
         Width = 99
         Caption = 'Clustering method'
         ParentColor = False
@@ -518,7 +518,7 @@ object MainForm: TMainForm
       object Label17: TLabel
         Left = 8
         Height = 15
-        Top = 323
+        Top = 315
         Width = 296
         Caption = 'Psychovisual modes (dithering; cluster; reconstruct; vis.)'
         ParentColor = False
@@ -526,7 +526,7 @@ object MainForm: TMainForm
       object cbxDitheringMode: TComboBox
         Left = 328
         Height = 23
-        Top = 319
+        Top = 311
         Width = 104
         DropDownCount = 20
         ItemHeight = 15
@@ -544,7 +544,7 @@ object MainForm: TMainForm
       object cbxGlobMode: TComboBox
         Left = 433
         Height = 23
-        Top = 319
+        Top = 311
         Width = 104
         DropDownCount = 20
         ItemHeight = 15
@@ -562,7 +562,7 @@ object MainForm: TMainForm
       object cbxFTMode: TComboBox
         Left = 538
         Height = 23
-        Top = 319
+        Top = 311
         Width = 104
         DropDownCount = 20
         ItemHeight = 15
@@ -580,7 +580,7 @@ object MainForm: TMainForm
       object cbxVisMode: TComboBox
         Left = 643
         Height = 23
-        Top = 319
+        Top = 311
         Width = 101
         DropDownCount = 20
         ItemHeight = 15
@@ -598,7 +598,7 @@ object MainForm: TMainForm
       object cbxClusMethod: TComboBox
         Left = 328
         Height = 23
-        Top = 283
+        Top = 275
         Width = 143
         DropDownCount = 20
         ItemHeight = 15
@@ -993,11 +993,12 @@ object MainForm: TMainForm
       end
     end
     object miReload: TMenuItem
-      Caption = 'Reload GTM file... (needs loaded video)'
+      Caption = 'Reload GTM file...'
       OnClick = miReloadClick
     end
   end
   object odFFInput: TOpenDialog
+    Title = 'Open FFMPEG-compatible file'
     Left = 824
     Top = 320
   end
@@ -1029,8 +1030,9 @@ object MainForm: TMainForm
     Top = 320
   end
   object odGTM: TOpenDialog
+    Title = 'Open GTM file'
     DefaultExt = '.gtm'
-    Filter = 'GTM Videos (*.gtm)|*.gtm'
+    Filter = 'GliGli''s TileMotion|*.gtm'
     Left = 888
     Top = 368
   end
