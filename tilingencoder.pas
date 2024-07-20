@@ -21,7 +21,7 @@ type
   TClusteringMethod = (cmBIRCH, cmBICO, cmTransferTiles);
 
 const
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 4, 2, 2, -1, 2, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 4, 3, 2, -1, 2, 1);
 
 type
   // GliGli's TileMotion header structs and commands
@@ -471,15 +471,17 @@ type
     procedure LoadInputVideo;
     procedure FindKeyFrames(AManualMode: Boolean);
 
+    procedure TransferTiles;
+    procedure ClusterUsingCoreSets(AClusterCount, AGamma: Integer; ABIRCHRatio, ABICORatio: Double);
+
     procedure DoPalettization(ADitheringGamma: Integer);
     function QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer): Double;
     procedure DoQuantization(APalIdx: Integer; ADitheringGamma: Integer);
+    procedure OptimizePalettes;
+
     procedure PrepareTiling(AFTGamma: Integer);
     procedure FinishTiling;
     procedure DoTiling(AFrmIdx: Integer; AFTGamma: Integer);
-
-    procedure TransferTiles;
-    procedure ClusterUsingCoreSets(AClusterCount, AGamma: Integer; ABIRCHRatio, ABICORatio: Double);
 
     procedure ReindexTiles(KeepRGBPixels: Boolean);
     procedure MakeTilesUnique(FirstTileIndex, TileCount: Int64);
@@ -1675,9 +1677,9 @@ begin
 
   ProgressRedraw(2, 'Quantization');
 
-  //OptimizePalettes;
-  //
-  //ProgressRedraw(3, 'OptimizePalettes');
+  OptimizePalettes;
+
+  ProgressRedraw(3, 'OptimizePalettes');
 end;
 
 procedure TTilingEncoder.Dither;
@@ -4013,7 +4015,7 @@ begin
   EncoderGammaValue := 2.0;
 
   ShotTransMaxSecondsPerKF := 2.0;  // maximum seconds between keyframes
-  ShotTransMinSecondsPerKF := 0.25;  // minimum seconds between keyframes
+  ShotTransMinSecondsPerKF := 0.0;  // minimum seconds between keyframes
   ShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
   ShotTransDistHiThres := 3.0;   // interframe distance high limit
 end;
@@ -4725,7 +4727,7 @@ begin
 
   DSLen := Length(FTiles);
 
-  BIRCH := birch_create(1.0, FTileMapSize, FTileMapSize);
+  BIRCH := birch_create(1.0, FPaletteCount shl 3, FTileMapSize);
   try
     DoDataset(False);
 
@@ -4806,6 +4808,109 @@ begin
 
     Tile^.PalIdx := PalIdxLUT[YakmoClusters[ANNClusters[tIdx]]];;
   end;
+end;
+
+procedure TTilingEncoder.OptimizePalettes;
+var
+  i, j, palIdx, colIdx1, colIdx2, iteration, bestPalIdx, bestColIdx1, bestColIdx2, tmp, uc: Integer;
+  r, g, b: byte;
+  prevBest, best, v: Double;
+  InnerPerm: TByteDynArray;
+  PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: TDoubleDynArray;
+begin
+  SetLength(PalR, FPaletteSize);
+  SetLength(PalG, FPaletteSize);
+  SetLength(PalB, FPaletteSize);
+  SetLength(InnerPalR, FPaletteSize);
+  SetLength(InnerPalG, FPaletteSize);
+  SetLength(InnerPalB, FPaletteSize);
+  SetLength(InnerPerm, FPaletteSize);
+
+  // stepwise algorithm on palette colors permutations
+
+  best := 0;
+  iteration := 0;
+  repeat
+    prevBest := best;
+    best := 0;
+
+    bestPalIdx := -1;
+    bestColIdx1 := -1;
+    bestColIdx2 := -1;
+    for palIdx := 0 to FPaletteCount - 1 do
+    begin
+      // accumulate the whole palette except the one that will be permutated
+
+      FillQWord(PalR[0], Length(PalR), 0);
+      FillQWord(PalG[0], Length(PalG), 0);
+      FillQWord(PalB[0], Length(PalB), 0);
+      for i := 0 to FPaletteCount - 1 do
+      begin
+        uc := FPalettes[i].UseCount;
+        for j := 0 to FPaletteSize - 1 do
+          if i <> palIdx then
+          begin
+            FromRGB(FPalettes[i].PaletteRGB[j], r, g, b);
+            PalR[j] += r * uc;
+            PalG[j] += g * uc;
+            PalB[j] += b * uc;
+          end;
+      end;
+
+      // try all permutations in the current palette
+
+      for colIdx1 := 0 to High(InnerPerm) do
+        for colIdx2 := colIdx1 + 1 to High(InnerPerm) do
+        begin
+          for i := 0 to FPaletteSize - 1 do
+            InnerPerm[i] := i;
+
+          tmp := InnerPerm[colIdx1];
+          InnerPerm[colIdx1] := InnerPerm[colIdx2];
+          InnerPerm[colIdx2] := tmp;
+
+          Move(PalR[0], InnerPalR[0], Length(PalR) * SizeOf(Double));
+          Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
+          Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
+
+          uc := FPalettes[palIdx].UseCount;
+          for i := 0 to FPaletteSize - 1 do
+          begin
+            FromRGB(FPalettes[palIdx].PaletteRGB[InnerPerm[i]], r, g, b);
+            InnerPalR[i] += r * uc;
+            InnerPalG[i] += g * uc;
+            InnerPalB[i] += b * uc;
+          end;
+
+          // try to maximize accumulated palette standard deviation
+          // rationale: the less samey it is, the better the colors pair with each other across FPalettes
+
+          v := cRedMul * StdDev(InnerPalR) + cGreenMul * StdDev(InnerPalG) + cBlueMul * StdDev(InnerPalB);
+
+          if v > best then
+          begin
+            best := v;
+            bestPalIdx := palIdx;
+            bestColIdx1 := colIdx1;
+            bestColIdx2 := colIdx2;
+          end;
+        end;
+    end;
+
+    if (best > prevBest) and (bestPalIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
+    begin
+      tmp := FPalettes[bestPalIdx].PaletteRGB[bestColIdx1];
+      FPalettes[bestPalIdx].PaletteRGB[bestColIdx1] := FPalettes[bestPalIdx].PaletteRGB[bestColIdx2];
+      FPalettes[bestPalIdx].PaletteRGB[bestColIdx2] := tmp;
+    end;
+
+    Inc(iteration);
+
+    //WriteLn(iteration:3, bestPalIdx:3, bestColIdx1:3, bestColIdx2:3, best:12:0);
+
+  until best <= prevBest;
+
+  WriteLn('OptimizePalettes: ', iteration, ' iterations');
 end;
 
 function TTilingEncoder.QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer): Double;
