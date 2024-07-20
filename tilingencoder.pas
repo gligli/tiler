@@ -186,6 +186,7 @@ type
   TTileMapItem = packed record
     TileIdx: Integer;
     PredictedX, PredictedY: ShortInt;
+    ResidualErr: TFloat;
     Flags: set of (tmfHMirror, tmfVMirror, tmfPredicted);
   end;
 
@@ -1194,9 +1195,10 @@ begin
             if (bestX < MaxInt) and (bestY < MaxInt) then
             begin
               Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx]^.Active := False;
+
               TMI^.TileIdx := -1;
               TMI^.IsPredicted := True;
-
+              TMI^.ResidualErr := Sqr(bestErr);
               TMI^.PredictedX := bestX - (sx shl cTileWidthBits);
               TMI^.PredictedY := bestY - (sy shl cTileWidthBits);
 
@@ -5151,7 +5153,10 @@ begin
         T := Frame.FrameTiles[sy * FTileMapWidth + sx];
 
         if not T^.Active then
+        begin
+          errCml += TMI^.ResidualErr;
           Continue;
+        end;
 
         ComputeTilePsyVisFeatures(T^, FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @DCT[0]);
 
@@ -5167,6 +5172,7 @@ begin
         if InRange(dsIdx, 0, DS^.KNNSize - 1) then
         begin
           TMI^.TileIdx := dsIdx;
+          TMI^.ResidualErr := dsErr;
 
           errCml += dsErr;
         end;
