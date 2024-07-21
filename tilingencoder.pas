@@ -1119,7 +1119,7 @@ var
       begin
         for ty := 0 to cTileWidth - 1 do
           Move(BackBuffer[curBuffer, AIndex + ty, x], DCTTile^.GetRGBPixelsPtr^[ty, 0], cTileWidth * SizeOf(Integer));
-        Encoder.ComputeTilePsyVisFeatures(DCTTile^, pvsSpeDCT, False, False, False, False, cColorCpns, -1, nil, DCTs[AIndex, x]);
+        Encoder.ComputeTilePsyVisFeatures(DCTTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, DCTs[AIndex, x]);
       end;
     finally
       TTile.Dispose(DCTTile);
@@ -1158,11 +1158,11 @@ begin
             if FrameTile^.HMirror_Initial then Encoder.HMirrorTile(FrameTile^);
             if FrameTile^.VMirror_Initial then Encoder.VMirrorTile(FrameTile^);
 
-            Encoder.ComputeTilePsyVisFeatures(FrameTile^, pvsSpeDCT, False, False, False, False, cColorCpns, -1, nil, CurDCT);
+            Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, CurDCT);
 
             bestX := MaxInt;
             bestY := MaxInt;
-            bestErr := ALimit;
+            bestErr := Infinity;
 
             if frmIdx > StartFrame then
             begin
@@ -1174,7 +1174,7 @@ begin
               for oy := oymn to oymx do
                 for ox := oxmn to oxmx do
                 begin
-                  err := sqrt(CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]));
+                  err := CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]);
 
                   // apply a penalty of float mantissa's unit times the manhattan distance to the center
                   // rationale: slightly favoring the center in case of ties improves compressibility
@@ -1191,17 +1191,22 @@ begin
                     bestY := oy;
                   end;
                 end;
-            end;
 
-            if (bestX < MaxInt) and (bestY < MaxInt) then
-            begin
-              Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx]^.Active := False;
-
-              TMI^.TileIdx := -1;
-              TMI^.IsPredicted := True;
-              TMI^.ResidualErr := Sqr(bestErr);
+              TMI^.ResidualErr := bestErr;
               TMI^.PredictedX := bestX - (sx shl cTileWidthBits);
               TMI^.PredictedY := bestY - (sy shl cTileWidthBits);
+            end
+            else
+            begin
+              TMI^.ResidualErr := Infinity;
+            end;
+
+            if bestErr < Sqr(ALimit) then
+            begin
+              TMI^.TileIdx := -1;
+              TMI^.IsPredicted := True;
+
+              Frame.FrameTiles[sy * Encoder.FTileMapWidth + sx]^.Active := False;
 
               dx := sx shl cTileWidthBits;
               dy := sy shl cTileWidthBits;
@@ -1760,44 +1765,20 @@ var
     DoTiling(AIndex, gammaCor);
   end;
 
-  procedure DoFrameCopyPalIdx(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    sy, sx: Integer;
-    TMI: PTileMapItem;
-  begin
-    if not InRange(AIndex, 0, High(FFrames)) then
-      Exit;
-
-    for sy := 0 to FTileMapHeight - 1 do
-      for sx := 0 to FTileMapWidth - 1 do
-      begin
-        TMI := @FFrames[AIndex].TileMap[sy, sx];
-        if TMI^.TileIdx >= 0 then
-          TMI^.PalIdx := FTiles[TMI^.TileIdx]^.PalIdx_Initial;
-      end;
-  end;
-
 begin
   if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(0, '', esReconstruct);
 
-  if GlobalTilingMethod <> cmTransferTiles then
-  begin
-    FKeyFramesLeft := Length(FKeyFrames);
-    gammaCor := IfThen(FFrameTilingUseGamma, 0, -1);
+  FKeyFramesLeft := Length(FKeyFrames);
+  gammaCor := IfThen(FFrameTilingUseGamma, 0, -1);
 
-    PrepareTiling(gammaCor);
-    try
-      ProcThreadPool.DoParallelLocalProc(@DoFramePal, 0, High(FFrames));
-    finally
-      FinishTiling;
-    end;
-  end
-  else
-  begin
-    ProcThreadPool.DoParallelLocalProc(@DoFrameCopyPalIdx, 0, High(FFrames));
+  PrepareTiling(gammaCor);
+  try
+    ProcThreadPool.DoParallelLocalProc(@DoFramePal, 0, High(FFrames));
+  finally
+    FinishTiling;
   end;
 
   ProgressRedraw(1, '', esReconstruct);
@@ -5128,7 +5109,7 @@ var
   errCml: Double;
   dsErr: Single;
 
-  T: PTile;
+  FrameTile: PTile;
   Frame: TFrame;
   TMI: PTileMapItem;
 
@@ -5151,15 +5132,9 @@ begin
 
         // prepare KNN query
 
-        T := Frame.FrameTiles[sy * FTileMapWidth + sx];
+        FrameTile := Frame.FrameTiles[sy * FTileMapWidth + sx];
 
-        if not T^.Active then
-        begin
-          errCml += TMI^.ResidualErr;
-          Continue;
-        end;
-
-        ComputeTilePsyVisFeatures(T^, FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @DCT[0]);
+        ComputeTilePsyVisFeatures(FrameTile^, FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @DCT[0]);
 
         // query KNN
 
@@ -5167,14 +5142,19 @@ begin
 
         // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
 
-        if InRange(dsIdx, 0, DS^.KNNSize - 1) then
+        if InRange(dsIdx, 0, DS^.KNNSize - 1) and (dsErr < TMI^.ResidualErr) then
         begin
           TMI^.TileIdx := dsIdx;
           TMI^.PalIdx := FTiles[dsIdx]^.PalIdx_Initial;
           TMI^.ResidualErr := dsErr;
-
-          errCml += dsErr;
+          TMI^.IsPredicted := False;
+        end
+        else
+        begin
+          TMI^.IsPredicted := True;
         end;
+
+        errCml += TMI^.ResidualErr;
       end;
   finally
     Frame.ReleaseFrameTiles;
