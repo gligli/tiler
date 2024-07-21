@@ -21,7 +21,7 @@ type
   TClusteringMethod = (cmBIRCH, cmBICO, cmTransferTiles);
 
 const
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 4, 3, 2, -1, 3, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 4, 3, 2, 1, 3, 1);
 
 type
   // GliGli's TileMotion header structs and commands
@@ -1764,20 +1764,44 @@ var
     DoTiling(AIndex, gammaCor);
   end;
 
+  procedure DoFrameCopyPalIdx(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    sy, sx: Integer;
+    TMI: PTileMapItem;
+  begin
+    if not InRange(AIndex, 0, High(FFrames)) then
+      Exit;
+
+    for sy := 0 to FTileMapHeight - 1 do
+      for sx := 0 to FTileMapWidth - 1 do
+      begin
+        TMI := @FFrames[AIndex].TileMap[sy, sx];
+        if TMI^.TileIdx >= 0 then
+          TMI^.PalIdx := FTiles[TMI^.TileIdx]^.PalIdx_Initial;
+      end;
+  end;
+
 begin
-  if (Length(FFrames) = 0) or (GlobalTilingMethod = cmTransferTiles) then
+  if Length(FFrames) = 0 then
     Exit;
 
   ProgressRedraw(0, '', esReconstruct);
 
-  FKeyFramesLeft := Length(FKeyFrames);
-  gammaCor := IfThen(FFrameTilingUseGamma, 0, -1);
+  if GlobalTilingMethod <> cmTransferTiles then
+  begin
+    FKeyFramesLeft := Length(FKeyFrames);
+    gammaCor := IfThen(FFrameTilingUseGamma, 0, -1);
 
-  PrepareTiling(gammaCor);
-  try
-    ProcThreadPool.DoParallelLocalProc(@DoFramePal, 0, High(FFrames));
-  finally
-    FinishTiling;
+    PrepareTiling(gammaCor);
+    try
+      ProcThreadPool.DoParallelLocalProc(@DoFramePal, 0, High(FFrames));
+    finally
+      FinishTiling;
+    end;
+  end
+  else
+  begin
+    ProcThreadPool.DoParallelLocalProc(@DoFrameCopyPalIdx, 0, High(FFrames));
   end;
 
   ProgressRedraw(1, '', esReconstruct);
