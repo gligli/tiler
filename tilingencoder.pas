@@ -1699,13 +1699,7 @@ procedure TTilingEncoder.Dither;
     if not Tile^.Active then
       Exit;
 
-    if Tile^.HMirror_Initial then HMirrorTile(Tile^);
-    if Tile^.VMirror_Initial then VMirrorTile(Tile^);
-
     DitherTile(Tile^, FPalettes[Tile^.PalIdx_Initial].MixingPlan);
-
-    if Tile^.HMirror_Initial then HMirrorTile(Tile^);
-    if Tile^.VMirror_Initial then VMirrorTile(Tile^);
   end;
 
 var
