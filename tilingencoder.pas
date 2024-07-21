@@ -1358,6 +1358,7 @@ var
   HMirror, VMirror: Boolean;
   pcol: PInteger;
   Tile: PTile;
+  TMI: PTileMapItem;
 begin
   // create frame tiles from image data
 
@@ -1386,6 +1387,7 @@ begin
   for i := 0 to Encoder.FTileMapSize - 1 do
   begin
     Tile := FrameTiles[i];
+    TMI := @TileMap[i div Encoder.FTileMapWidth, i mod Encoder.FTileMapWidth];
 
     Encoder.GetTileHVMirrorHeuristics(Tile^, False, HMirror, VMirror);
 
@@ -1395,11 +1397,11 @@ begin
     Tile^.HMirror_Initial := HMirror;
     Tile^.VMirror_Initial := VMirror;
 
-    if HMirror then
-      Encoder.HMirrorTile(Tile^);
+    TMI^.HMirror := HMirror;
+    TMI^.VMirror := VMirror;
 
-    if VMirror then
-      Encoder.VMirrorTile(Tile^);
+    if HMirror then Encoder.HMirrorTile(Tile^);
+    if VMirror then Encoder.VMirrorTile(Tile^);
   end;
 
   // moderate the number of threads
@@ -4324,8 +4326,6 @@ var
 
           Tile^.CopyFrom(Frame.FrameTiles[si]^);
 
-          TMI^.HMirror := Tile^.HMirror_Initial;
-          TMI^.VMirror := Tile^.VMirror_Initial;
           TMI^.TileIdx := frameOffset + si;
 
           Inc(si);
@@ -4398,8 +4398,6 @@ var
 
           ANNClusters[frameOffset + si] := ann_kdtree_search(ANN, @DCT[0], 0.0, @ANNErrors[frameOffset + si]);
 
-          TMI^.HMirror := Tile^.HMirror_Initial;
-          TMI^.VMirror := Tile^.VMirror_Initial;
           TMI^.TileIdx := ANNClusters[frameOffset + si];
         end;
 
@@ -5179,9 +5177,6 @@ begin
         end;
 
         ComputeTilePsyVisFeatures(T^, FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @DCT[0]);
-
-        TMI^.HMirror := T^.HMirror_Initial;
-        TMI^.VMirror := T^.VMirror_Initial;
 
         // query KNN
 
