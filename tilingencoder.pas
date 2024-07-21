@@ -4020,7 +4020,7 @@ begin
   PaletteCount := 1024;
 
   MotionPredictRadius := 32;
-  MotionPredictLimit := 1.0;
+  MotionPredictLimit := 1.5;
 
   GlobalTilingUseGamma := False;
   GlobalTilingMode := pvsSpeDCT;
@@ -4691,9 +4691,7 @@ var
 
   procedure DoDataset(ACluster: Boolean);
   var
-    tIdx, ty, tx: Integer;
-    rr, gg, bb: Byte;
-    l, a, b: TFloat;
+    tIdx: Integer;
     Tile: PTile;
     DCT: array[0 .. cTileDCTSize - 1] of Double;
     ANNError: Double;
@@ -4706,21 +4704,6 @@ var
         Continue;
 
       ComputeTilePsyVisFeatures(Tile^, DitheringMode, False, True, False, False, cColorCpns, ADitheringGamma, nil, DCT);
-
-      DCT[cFeatureCount - 3] := 0.0;
-      DCT[cFeatureCount - 2] := 0.0;
-      DCT[cFeatureCount - 1] := 0.0;
-      for ty := 0 to cTileWidth - 1 do
-        for tx := 0 to cTileWidth - 1 do
-        begin
-          FromRGB(Tile^.RGBPixels[ty, tx], rr, gg, bb);
-
-          RGBToLAB(rr, gg, bb, ADitheringGamma, l, a, b);
-
-          DCT[cFeatureCount - 3] += l;
-          DCT[cFeatureCount - 2] += a;
-          DCT[cFeatureCount - 1] += b;
-        end;
 
       if ACluster then
         ANNClusters[tIdx] := ann_kdtree_search(ANN, DCT, 0.0, @ANNError)
