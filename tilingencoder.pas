@@ -21,7 +21,7 @@ type
   TClusteringMethod = (cmBIRCH, cmBICO, cmTransferTiles);
 
 const
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 4, 3, 2, 1, 3, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, -1, 4, 3, 2, 2, 3, 1);
 
 type
   // GliGli's TileMotion header structs and commands
@@ -214,7 +214,9 @@ type
   { TTilingDataset }
 
   TTilingDataset = record
-    KNNSize: Integer;
+    KNNSize, PalsPerTile: Integer;
+    DSToTileIdx: TIntegerDynArray;
+    DSToPalIdx: TWordDynArray;
     Dataset: TSingleDynArray2;
     ANN: PANNkdtree;
   end;
@@ -1757,7 +1759,7 @@ procedure TTilingEncoder.Reconstruct;
 var
   gammaCor: Integer;
 
-  procedure DoFramePal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   begin
     if not InRange(AIndex, 0, High(FFrames)) then
       Exit;
@@ -1775,13 +1777,14 @@ begin
   gammaCor := IfThen(FFrameTilingUseGamma, 0, -1);
 
   PrepareTiling(gammaCor);
+  ProgressRedraw(1, 'PrepareTiling', esReconstruct);
   try
-    ProcThreadPool.DoParallelLocalProc(@DoFramePal, 0, High(FFrames));
+    ProcThreadPool.DoParallelLocalProc(@DoFrame, 0, High(FFrames));
   finally
     FinishTiling;
   end;
 
-  ProgressRedraw(1, '', esReconstruct);
+  ProgressRedraw(2, 'DoTiling', esReconstruct);
 end;
 
 procedure TTilingEncoder.PredictMotion;
@@ -5045,35 +5048,54 @@ begin
 end;
 
 procedure TTilingEncoder.PrepareTiling(AFTGamma: Integer);
+const
+  CPalLookup = 3;
 var
   DS: PTilingDataset;
 
-  procedure DoPsyV;
+  procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     T: PTile;
-    tidx: Int64;
+    p, palIdx, dsIdx: Integer;
   begin
-    for tidx := 0 to High(Tiles) do
-    begin
-      T := Tiles[tidx];
+    if not InRange(AIndex, 0, High(FTiles)) then
+      Exit;
 
-      Assert(T^.Active);
-      ComputeTilePsyVisFeatures(T^, FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, FPalettes[T^.PalIdx_Initial].PaletteRGB, PSingle(@DS^.Dataset[tidx, 0]));
+    dsIdx := AIndex * DS^.PalsPerTile;
+
+    T := Tiles[AIndex];
+
+    Assert(T^.Active);
+
+    for p := T^.PalIdx_Initial - CPalLookup to T^.PalIdx_Initial + CPalLookup do
+    begin
+      palIdx := (p + FPaletteCount) mod FPaletteCount;
+
+      ComputeTilePsyVisFeatures(T^, FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, FPalettes[palIdx].PaletteRGB, PSingle(@DS^.Dataset[dsIdx, 0]));
+      DS^.DSToTileIdx[dsIdx] := AIndex;
+      DS^.DSToPalIdx[dsIdx] := palIdx;
+
+      Inc(dsIdx);
     end;
+
+    Assert(dsIdx = (AIndex + 1) * DS^.PalsPerTile);
   end;
 
 var
   kfIdx: Integer;
 begin
-  // Compute psycho visual model for all tiles (in curent palette)
+  // Compute psycho visual model for all tiles in all palettes
 
   DS := New(PTilingDataset);
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  DS^.KNNSize := GetTileCount(False);
+  DS^.PalsPerTile := CPalLookup * 2 + 1;
+  DS^.KNNSize := GetTileCount(False) * DS^.PalsPerTile;
   SetLength(DS^.Dataset, DS^.KNNSize, cTileDCTSize);
+  SetLength(DS^.DSToTileIdx, DS^.KNNSize);
+  SetLength(DS^.DSToPalIdx, DS^.KNNSize);
 
-  DoPsyV;
+  ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, High(FTiles));
 
   // Build KNN
 
@@ -5144,8 +5166,8 @@ begin
 
         if InRange(dsIdx, 0, DS^.KNNSize - 1) and (dsErr < TMI^.ResidualErr) then
         begin
-          TMI^.TileIdx := dsIdx;
-          TMI^.PalIdx := FTiles[dsIdx]^.PalIdx_Initial;
+          TMI^.TileIdx := DS^.DSToTileIdx[dsIdx];
+          TMI^.PalIdx := DS^.DSToPalIdx[dsIdx];
           TMI^.ResidualErr := dsErr;
           TMI^.IsPredicted := False;
         end
