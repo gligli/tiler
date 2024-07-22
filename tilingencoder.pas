@@ -1493,9 +1493,9 @@ procedure TFrame.Reconstruct(AFTGamma: Integer);
 var
   DS: PTilingDataset;
 
-  procedure DoY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    sx, dsIdx: Integer;
+    sx, sy, dsIdx: Integer;
     dsErr: Single;
 
     FrameTile: PTile;
@@ -1503,41 +1503,38 @@ var
 
     DCT: array[0 .. cTileDCTSize - 1] of Single;
   begin
-    if not InRange(AIndex, 0, Encoder.FTileMapHeight - 1) then
+    if not InRange(AIndex, 0, Encoder.FTileMapSize - 1) then
       Exit;
 
-    for sx := 0 to Encoder.FTileMapWidth - 1 do
+    DivMod(AIndex, Encoder.FTileMapWidth, sy, sx);
+
+    // prepare KNN query
+
+    TMI := @TileMap[sy, sx];
+    FrameTile := FrameTiles[AIndex];
+    Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @DCT[0]);
+
+    // query KNN
+
+    dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
+
+    // map tilemap items to reduced tiles, parsing KNN query
+
+    if InRange(dsIdx, 0, DS^.KNNSize - 1) and (dsErr < TMI^.ResidualErr) then
     begin
-      TMI := @TileMap[AIndex, sx];
-
-      // prepare KNN query
-
-      FrameTile := FrameTiles[AIndex * Encoder.FTileMapWidth + sx];
-
-      Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @DCT[0]);
-
-      // query KNN
-
-      dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
-
-      // map keyframe tilemap items to reduced tiles and mirrors, parsing KNN query
-
-      if InRange(dsIdx, 0, DS^.KNNSize - 1) and (dsErr < TMI^.ResidualErr) then
-      begin
-        TMI^.TileIdx := DS^.DSToTileIdx[dsIdx];
-        TMI^.PalIdx := DS^.DSToPalIdx[dsIdx];
-        TMI^.ResidualErr := dsErr;
-        TMI^.IsPredicted := False;
-      end
-      else
-      begin
-        TMI^.IsPredicted := True;
-      end;
-
-      SpinEnter(@PKeyFrame.ReconstructLock);
-      PKeyFrame.ReconstructErrCml += TMI^.ResidualErr;
-      SpinLeave(@PKeyFrame.ReconstructLock);
+      TMI^.TileIdx := DS^.DSToTileIdx[dsIdx];
+      TMI^.PalIdx := DS^.DSToPalIdx[dsIdx];
+      TMI^.ResidualErr := dsErr;
+      TMI^.IsPredicted := False;
+    end
+    else
+    begin
+      TMI^.IsPredicted := True;
     end;
+
+    SpinEnter(@PKeyFrame.ReconstructLock);
+    PKeyFrame.ReconstructErrCml += TMI^.ResidualErr;
+    SpinLeave(@PKeyFrame.ReconstructLock);
   end;
 
 begin
@@ -1547,7 +1544,7 @@ begin
 
   AcquireFrameTiles;
   try
-    ProcThreadPool.DoParallelLocalProc(@DoY, 0, Encoder.FTileMapHeight - 1);
+    ProcThreadPool.DoParallelLocalProc(@DoXY, 0, Encoder.FTileMapSize - 1);
   finally
     ReleaseFrameTiles;
   end;
