@@ -127,7 +127,7 @@ type
   PCountIndex = ^TCountIndex;
   TCountIndexList = specialize TFPGList<PCountIndex>;
 
-  TFloatFloatFunction = function(x: TFloat; Data: Pointer): TFloat of object;
+  TGRSEvalFunc = function(x: Double; Data: Pointer): Double of object;
 
 procedure SpinEnter(Lock: PSpinLock); assembler;
 procedure SpinLeave(Lock: PSpinLock); assembler;
@@ -144,9 +144,9 @@ procedure FromRGB(col: Integer; out r, g, b: Byte); inline; overload;
 function ToLuma(r, g, b: Byte): Integer; inline;
 function ToBW(col: Integer): Integer;
 function CompareIntegers(const Item1, Item2: Integer): Integer;
-function lerp(x, y, alpha: TFloat): TFloat; inline;
+function lerp(x, y, alpha: Double): Double; inline;
 function ilerp(x, y, alpha, maxAlpha: Integer): Integer; inline;
-function revlerp(x, r, alpha: TFloat): TFloat; inline;
+function revlerp(x, r, alpha: Double): Double; inline;
 function Posterize(v: Byte; cvt: Integer): Byte; inline;
 function PosterizeBpc(v, bpc: Byte): Byte; inline;
 function CompareEuclideanDCTPtr(pa, pb: PFloat): TFloat; overload;
@@ -158,8 +158,8 @@ function CompareCMULHS(const Item1,Item2:PCountIndex):Integer;
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
 function ComputeBlendingError_Asm(PPlain_rcx, PPrev_rdx, POff_r8: PFloat; bp_xmm3, bo_stack: TFloat): TFloat; register; assembler;
 function EqualQualityTileCount(tileCount: TFloat): Integer;
-function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
-  EpsilonX, EpsilonY: TFloat; Data: Pointer): TFloat;
+function GoldenRatioSearch(Func: TGRSEvalFunc; MinX, MaxX: Double; ObjectiveY: Double;
+  EpsilonX, EpsilonY: Double; Data: Pointer): Double;
 
 implementation
 
@@ -274,7 +274,7 @@ begin
   Result := CompareValue(Item1, Item2);
 end;
 
-function lerp(x, y, alpha: TFloat): TFloat; inline;
+function lerp(x, y, alpha: Double): Double; inline;
 begin
   Result := x + (y - x) * alpha;
 end;
@@ -284,7 +284,7 @@ begin
   Result := x + ((y - x) * alpha) div maxAlpha;
 end;
 
-function revlerp(x, r, alpha: TFloat): TFloat; inline;
+function revlerp(x, r, alpha: Double): Double; inline;
 begin
   Result := x + (r - x) / alpha;
 end;
@@ -620,33 +620,31 @@ begin
 end;
 
 
-function GoldenRatioSearch(Func: TFloatFloatFunction; Mini, Maxi: TFloat; ObjectiveY: TFloat;
-  EpsilonX, EpsilonY: TFloat; Data: Pointer): TFloat;
+function GoldenRatioSearch(Func: TGRSEvalFunc; MinX, MaxX: Double; ObjectiveY: Double;
+  EpsilonX, EpsilonY: Double; Data: Pointer): Double;
 var
-  x, y: TFloat;
+  x, y: Double;
 begin
-  if SameValue(Mini, Maxi, EpsilonX) then
+  if SameValue(MinX, MaxX, EpsilonX) then
   begin
-    Result := Mini;
+    Result := MinX;
     Exit;
   end;
 
-  if Mini < Maxi then
-    x := lerp(Mini, Maxi, 1.0 - cInvPhi)
+  if MinX < MaxX then
+    x := lerp(MinX, MaxX, 1.0 - cInvPhi)
   else
-    x := lerp(Mini, Maxi, cInvPhi);
+    x := lerp(MinX, MaxX, cInvPhi);
 
   y := Func(x, Data);
 
-  //EnterCriticalSection(FCS);
-  //WriteLn('X: ', FormatFloat('0.000', x), #9'Y: ', FormatFloat('0.000', y), #9'Mini: ', FormatFloat('0.000', Mini), #9'Maxi: ', FormatFloat('0.000', Maxi));
-  //LeaveCriticalSection(FCS);
+  WriteLn('X: ', x:12:6, ' Y: ', y:12:0, ' Mini: ', MinX:12:6, ' Maxi: ', MaxX:12:6);
 
   case CompareValue(y, ObjectiveY, EpsilonY) of
     LessThanValue:
-      Result := GoldenRatioSearch(Func, Mini, x, ObjectiveY, EpsilonX, EpsilonY, Data);
+      Result := GoldenRatioSearch(Func, x, MaxX, ObjectiveY, EpsilonX, EpsilonY, Data);
     GreaterThanValue:
-      Result := GoldenRatioSearch(Func, x, Maxi, ObjectiveY, EpsilonX, EpsilonY, Data);
+      Result := GoldenRatioSearch(Func, MinX, x, ObjectiveY, EpsilonX, EpsilonY, Data);
   else
       Result := x;
   end;

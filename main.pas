@@ -13,18 +13,17 @@ type
   { TMainForm }
 
   TMainForm = class(TForm)
+    Bevel1: TBevel;
+    Bevel2: TBevel;
+    Bevel3: TBevel;
     btnInput: TButton;
     btnGTM: TButton;
     btnRunAll: TButton;
     btnPM: TButton;
-    cbxClusMethod: TComboBox;
     cbxMPRadius: TComboBox;
-    cbxVisMode: TComboBox;
-    cbxGlobMode: TComboBox;
     cbxDitheringMode: TComboBox;
     cbxFTMode: TComboBox;
     chkPredicted: TCheckBox;
-    chkGlobGamma: TCheckBox;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
     cbxPalCount: TComboBox;
@@ -52,17 +51,12 @@ type
     Label13: TLabel;
     Label14: TLabel;
     Label18: TLabel;
-    lblQuantizer: TLabel;
     Label15: TLabel;
     Label16: TLabel;
     Label17: TLabel;
     Label2: TLabel;
     Label20: TLabel;
-    Label21: TLabel;
     Label22: TLabel;
-    Label23: TLabel;
-    Label24: TLabel;
-    Label3: TLabel;
     Label4: TLabel;
     Label6: TLabel;
     lblPct: TLabel;
@@ -84,16 +78,16 @@ type
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
-    PsyVTimer: TTimer;
     sbTiles: TScrollBox;
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
+    seMaxCores: TSpinEdit;
+    seMPLimit: TFloatSpinEdit;
     Separator1: TMenuItem;
     Separator3: TMenuItem;
     seShotTransDistHiThres: TFloatSpinEdit;
     seShotTransMaxSecondsPerKF: TFloatSpinEdit;
     seShotTransCorrelLoThres: TFloatSpinEdit;
-    seMaxCores: TSpinEdit;
     seQbTiles: TFloatSpinEdit;
     seVisGamma: TFloatSpinEdit;
     seFrameCount: TSpinEdit;
@@ -102,7 +96,6 @@ type
     seStartFrame: TSpinEdit;
     seEncGamma: TFloatSpinEdit;
     seShotTransMinSecondsPerKF: TFloatSpinEdit;
-    tbMPLimit: TTrackBar;
     tsTilesPal: TTabSheet;
     To1: TLabel;
     tsSettings: TTabSheet;
@@ -157,7 +150,6 @@ type
     procedure miLoadSettingsClick(Sender: TObject);
     procedure miReloadClick(Sender: TObject);
     procedure miSaveSettingsClick(Sender: TObject);
-    procedure PsyVTimerTimer(Sender: TObject);
     procedure seMaxTilesEditingDone(Sender: TObject);
     procedure seQbTilesEditingDone(Sender: TObject);
     procedure UpdateVideo(Sender: TObject);
@@ -210,7 +202,7 @@ end;
 
 procedure TMainForm.btnClusterClick(Sender: TObject);
 begin
-  FTilingEncoder.Run(esCluster);
+  FTilingEncoder.Run(esReduce);
   UpdateVideo(nil);
 end;
 
@@ -380,12 +372,6 @@ begin
   end;
 end;
 
-procedure TMainForm.PsyVTimerTimer(Sender: TObject);
-begin
-  UpdateVideo(Sender);
-  PsyVTimer.Enabled := False;
-end;
-
 procedure TMainForm.btnRunAllClick(Sender: TObject);
 var
   firstStep: TEncoderStep;
@@ -406,7 +392,7 @@ begin
   if OkStep(esPredictMotion) then
     btnPredictMotionClick(nil);
 
-  if OkStep(esCluster) then
+  if OkStep(esReduce) then
     btnClusterClick(nil);
 
   if OkStep(esPreparePalettes) then
@@ -604,8 +590,6 @@ begin
   fromTimer := Assigned(Sender) and (Sender is TTimer);
 
   FTilingEncoder.Render(not fromTimer);
-  PsyVTimer.Enabled := False;
-  PsyVTimer.Enabled := not fromTimer;
 
   imgSource.Picture.Bitmap := FTilingEncoder.InputBitmap;
   imgDest.Picture.Bitmap := FTilingEncoder.OutputBitmap;
@@ -648,18 +632,14 @@ begin
   FTilingEncoder.RenderMirrored := chkMirrored.Checked;
   FTilingEncoder.RenderOutputDithered := chkDitheredO.Checked;
   FTilingEncoder.RenderUseGamma := chkGamma.Checked;
-  FTilingEncoder.RenderMode := TPsyVisMode(cbxVisMode.ItemIndex);
   FTilingEncoder.RenderPaletteIndex := sedPalIdx.Value;
   FTilingEncoder.RenderTilePage := sePage.Value;
   FTilingEncoder.RenderGammaValue := seVisGamma.Value;
 
   FTilingEncoder.MotionPredictRadius := StrToIntDef(cbxMPRadius.Text, 0);
-  FTilingEncoder.MotionPredictLimit := tbMPLimit.Position / 10;
+  FTilingEncoder.MotionPredictLimit := seMPLimit.Value;
 
-  FTilingEncoder.GlobalTilingUseGamma := chkGlobGamma.Checked;
-  FTilingEncoder.GlobalTilingMode := TPsyVisMode(cbxGlobMode.ItemIndex);
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
-  FTilingEncoder.GlobalTilingMethod := TClusteringMethod(cbxClusMethod.ItemIndex);
 
   FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
   FTilingEncoder.DitheringMode := TPsyVisMode(cbxDitheringMode.ItemIndex);
@@ -687,7 +667,6 @@ begin
 
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
-  lblQuantizer.Caption := FormatFloat('##0.00', FTilingEncoder.MotionPredictLimit);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
 end;
 
@@ -720,13 +699,10 @@ begin
    cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
 
    cbxMPRadius.Text := IntToStr(FTilingEncoder.MotionPredictRadius);
-   tbMPLimit.Position := round(FTilingEncoder.MotionPredictLimit * 10);
+   seMPLimit.Value := FTilingEncoder.MotionPredictLimit;
 
-   chkGlobGamma.Checked := FTilingEncoder.GlobalTilingUseGamma;
-   cbxGlobMode.ItemIndex := Ord(FTilingEncoder.GlobalTilingMode);
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
-   cbxClusMethod.ItemIndex := Ord(FTilingEncoder.GlobalTilingMethod);
 
    chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
    cbxDitheringMode.ItemIndex := Ord(FTilingEncoder.DitheringMode);
@@ -737,9 +713,9 @@ begin
    cbxFTMode.ItemIndex := Ord(FTilingEncoder.FrameTilingMode);
 
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
+   seVisGamma.Value := FTilingEncoder.RenderGammaValue;
    seMaxCores.Value := FTilingEncoder.MaxThreadCount;
 
-   cbxVisMode.ItemIndex := Ord(FTilingEncoder.RenderMode);
    seShotTransMinSecondsPerKF.Value := FTilingEncoder.ShotTransMinSecondsPerKF;
    seShotTransMaxSecondsPerKF.Value := FTilingEncoder.ShotTransMaxSecondsPerKF;
    seShotTransCorrelLoThres.Value := FTilingEncoder.ShotTransCorrelLoThres;
