@@ -256,7 +256,7 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 8
         Height = 19
-        Top = 347
+        Top = 341
         Width = 334
         Alignment = taLeftJustify
         AutoSize = False
