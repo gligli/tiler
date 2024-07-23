@@ -154,7 +154,7 @@ function CompareEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat): TFloat; register; a
 function CompareEuclideanDCT(const a, b: TFloatDynArray): TFloat; inline; overload;
 function CompareEuclidean(const a, b: TFloatDynArray): TFloat; inline;
 function CompareEuclidean(a, b: PDouble; size: Integer): Double; inline;
-function CompareCMULHS(const Item1,Item2:PCountIndex):Integer;
+function CompareCountIndexVSH(const Item1,Item2:PCountIndex):Integer;
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
 function ComputeBlendingError_Asm(PPlain_rcx, PPrev_rdx, POff_r8: PFloat; bp_xmm3, bo_stack: TFloat): TFloat; register; assembler;
 function EqualQualityTileCount(tileCount: TFloat): Integer;
@@ -476,7 +476,7 @@ begin
     Result += sqr(a[i] - b[i]);
 end;
 
-function CompareCMULHS(const Item1,Item2:PCountIndex):Integer;
+function CompareCountIndexVSH(const Item1,Item2:PCountIndex):Integer;
 begin
   Result := CompareValue(Item1^.Val, Item2^.Val);
   if Result = 0 then

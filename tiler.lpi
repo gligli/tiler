@@ -197,6 +197,9 @@
       <StackSize Value="16777216"/>
       <VerifyObjMethodCallValidity Value="True"/>
       <TargetCPU Value="x86_64"/>
+      <Optimizations>
+        <OptimizationLevel Value="0"/>
+      </Optimizations>
     </CodeGeneration>
     <Linking>
       <Debugging>

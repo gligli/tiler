@@ -21,7 +21,7 @@ type
   TClusteringMethod = (cmBIRCH, cmBICO, cmTransferTiles);
 
 const
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 1, 3, 3, 2, 2, 3, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 1, 4, 3, 2, 2, 3, 1);
 
 type
   // GliGli's TileMotion header structs and commands
@@ -481,15 +481,15 @@ type
     procedure TransferTiles;
 
     procedure DoPalettization(ADitheringGamma: Integer);
-    function QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer): Double;
+    procedure QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer);
     procedure DoQuantization(APalIdx: Integer; ADitheringGamma: Integer);
     procedure OptimizePalettes;
 
     procedure PrepareReconstruct(AFTGamma: Integer);
     procedure FinishReconstruct;
 
-    procedure ReindexTiles(KeepRGBPixels: Boolean);
-    procedure MakeTilesUniqueByPalPixels;
+    procedure ReindexTiles(OnRGBPixels: Boolean);
+    procedure MakeTilesUnique(OnRGBPixels: Boolean);
     procedure InitMergeTiles;
     procedure FinishMergeTiles;
     procedure MergeTiles(const TileIndexes: array of Int64; TileCount: Integer; BestIdx: Int64; NewTile: PPalPixels;
@@ -618,7 +618,12 @@ const
 
     Result := CompareValue(t2^.UseCount, t1^.UseCount);
     if Result = 0 then
-      Result := t1^.ComparePalPixelsTo(t2^);
+    begin
+      if Assigned(UserParameter) then
+        Result := t1^.CompareRGBPixelsTo(t2^)
+      else
+        Result := t1^.ComparePalPixelsTo(t2^);
+    end;
   end;
 
 { TTileMapItemHelper }
@@ -1807,11 +1812,15 @@ begin
 
   ProgressRedraw(2, 'TransferTiles');
 
+  MakeTilesUnique(True);
+
+  ProgressRedraw(3, 'MakeTilesUnique');
+
   // remove inactive tiles
 
   ReindexTiles(True);
 
-  ProgressRedraw(3, 'ReindexTiles');
+  ProgressRedraw(4, 'ReindexTiles');
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -1877,7 +1886,7 @@ begin
 
   ProgressRedraw(0, '', esReindex);
 
-  MakeTilesUniqueByPalPixels;
+  MakeTilesUnique(False);
 
   ProgressRedraw(1, 'MakeTilesUnique');
 
@@ -1898,7 +1907,7 @@ begin
 
   ProgressRedraw(2, 'UseCount');
 
-  ReindexTiles(True);
+  ReindexTiles(False);
 
   ProgressRedraw(3, 'Sort');
 end;
@@ -4413,16 +4422,16 @@ begin
 
   DSLen := Length(FTiles);
 
-  BIRCH := birch_create(1.0, FPaletteCount shl 3, FTileMapSize);
+  BIRCH := birch_create(1.0, FPaletteCount shl 3, FPaletteCount);
   try
     DoDataset(False);
 
-    BIRCHClusterCount := birch_compute(BIRCH, False, False);
+    BIRCHClusterCount := birch_compute(BIRCH, True, True);
 
     SetLength(BIRCHCentroids, BIRCHClusterCount * cFeatureCount);
     birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
 
-    WriteLn('Palettization BIRCHClusterCount: ', BIRCHClusterCount:6);
+    WriteLn('BIRCHClusterCount: ', BIRCHClusterCount:6);
   finally
     birch_destroy(BIRCH);
   end;
@@ -4501,24 +4510,22 @@ var
 
   procedure DoPal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    i, j, colIdx1, colIdx2, tmp, uc: Integer;
+    i, j, colIdx1, colIdx2, uc: Integer;
     r, g, b: byte;
     best, v: Double;
     bestPalIdx, bestColIdx1, bestColIdx2: Integer;
 
-    InnerPerm: TIntegerDynArray;
-    PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: TDoubleDynArray;
+    InnerPerm: array[0 .. Sqr(cTileWidth) - 1] of Integer;
+    PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: array[0 .. Sqr(cTileWidth) - 1] of Double;
   begin
-    SetLength(PalR, FPaletteSize);
-    SetLength(PalG, FPaletteSize);
-    SetLength(PalB, FPaletteSize);
-    SetLength(InnerPalR, FPaletteSize);
-    SetLength(InnerPalG, FPaletteSize);
-    SetLength(InnerPalB, FPaletteSize);
-    SetLength(InnerPerm, FPaletteSize);
+    if not InRange(AIndex, 0, FPaletteCount - 1) then
+      Exit;
 
     // accumulate the whole palette except the one that will be permutated
 
+    FillQWord(PalR[0], FPaletteSize, 0);
+    FillQWord(PalG[0], FPaletteSize, 0);
+    FillQWord(PalB[0], FPaletteSize, 0);
     for i := 0 to FPaletteCount - 1 do
     begin
       uc := FPalettes[i].UseCount;
@@ -4539,19 +4546,17 @@ var
     bestColIdx1 := -1;
     bestColIdx2 := -1;
 
-    for colIdx1 := 0 to High(InnerPerm) do
-      for colIdx2 := colIdx1 + 1 to High(InnerPerm) do
+    for colIdx1 := 0 to FPaletteSize - 1 do
+      for colIdx2 := colIdx1 + 1 to FPaletteSize - 1 do
       begin
         for i := 0 to FPaletteSize - 1 do
           InnerPerm[i] := i;
 
-        tmp := InnerPerm[colIdx1];
-        InnerPerm[colIdx1] := InnerPerm[colIdx2];
-        InnerPerm[colIdx2] := tmp;
+        Exchange(InnerPerm[colIdx1], InnerPerm[colIdx2]);
 
-        Move(PalR[0], InnerPalR[0], Length(PalR) * SizeOf(Double));
-        Move(PalG[0], InnerPalG[0], Length(PalG) * SizeOf(Double));
-        Move(PalB[0], InnerPalB[0], Length(PalB) * SizeOf(Double));
+        Move(PalR[0], InnerPalR[0], FPaletteSize * SizeOf(Double));
+        Move(PalG[0], InnerPalG[0], FPaletteSize * SizeOf(Double));
+        Move(PalB[0], InnerPalB[0], FPaletteSize * SizeOf(Double));
 
         uc := FPalettes[AIndex].UseCount;
         for i := 0 to FPaletteSize - 1 do
@@ -4565,7 +4570,7 @@ var
         // try to maximize accumulated palette standard deviation
         // rationale: the less samey it is, the better the colors pair with each other across FPalettes
 
-        v := cRedMul * StdDev(InnerPalR) + cGreenMul * StdDev(InnerPalG) + cBlueMul * StdDev(InnerPalB);
+        v := cRedMul * StdDev(InnerPalR, FPaletteSize) + cGreenMul * StdDev(InnerPalG, FPaletteSize) + cBlueMul * StdDev(InnerPalB, FPaletteSize);
 
         if v > best then
         begin
@@ -4583,7 +4588,7 @@ var
   end;
 
 var
-  iteration, tmp, palIdx: Integer;
+  iteration, palIdx: Integer;
   best, prevBest: Double;
   bestPalIdx, bestColIdx1, bestColIdx2: Integer;
 begin
@@ -4599,7 +4604,7 @@ begin
   repeat
     prevBest := best;
 
-    ProcThreadPool.DoParallelLocalProc(@DoPal, 0, FPaletteCount - 1);
+    ProcThreadPool.DoParallelLocalProc(@DoPal, 0, FPaletteCount - 1, nil);
 
     best := 0;
     bestPalIdx := -1;
@@ -4615,11 +4620,7 @@ begin
       end;
 
     if (best > prevBest) and (bestPalIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
-    begin
-      tmp := FPalettes[bestPalIdx].PaletteRGB[bestColIdx1];
-      FPalettes[bestPalIdx].PaletteRGB[bestColIdx1] := FPalettes[bestPalIdx].PaletteRGB[bestColIdx2];
-      FPalettes[bestPalIdx].PaletteRGB[bestColIdx2] := tmp;
-    end;
+      Exchange(FPalettes[bestPalIdx].PaletteRGB[bestColIdx1], FPalettes[bestPalIdx].PaletteRGB[bestColIdx2]);
 
     Inc(iteration);
 
@@ -4630,11 +4631,11 @@ begin
   WriteLn('OptimizePalettes: ', iteration, ' iterations');
 end;
 
-function TTilingEncoder.QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer): Double;
+procedure TTilingEncoder.QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer);
 const
   cFeatureCount = 3;
 var
-  i, j, di, ty, tx, tIdx, DSLen, uniqueColCnt: Integer;
+  i, j, di, ty, tx, tIdx, DSLen: Integer;
   rr, gg, bb: Byte;
   Tile: PTile;
   Dataset, Centroids: TDoubleDynArray2;
@@ -4654,10 +4655,7 @@ begin
     Inc(DSLen, sqr(cTileWidth) * Ord(FTiles[tIdx]^.PalIdx_Initial = APalIdx));
 
   if DSLen <= 0 then
-  begin
-    Result := NaN;
     Exit;
-  end;
 
   SetLength(Dataset, DSLen, cFeatureCount);
   SetLength(Clusters, DSLen);
@@ -4730,19 +4728,6 @@ begin
     RGBToHSV(ToRGB(CMItem^.R, CMItem^.G, CMItem^.B), CMItem^.Hue, CMItem^.Sat, CMItem^.Val);
     CMPal.Add(CMItem);
   end;
-
-  Result := 0.0;
-  uniqueColCnt := 0;
-  for i := 0 to High(Clusters) do
-    if (i <= 0) or (CompareDSPixel(@Dataset[i], @Dataset[i - 1], nil) <> 0) then
-    begin
-      j := Clusters[i];
-      Result += sqr(Dataset[i, 0] - CMPal[j]^.R) * cRedMul;
-      Result += sqr(Dataset[i, 1] - CMPal[j]^.G) * cGreenMul;
-      Result += sqr(Dataset[i, 2] - CMPal[j]^.B) * cBlueMul;
-      Inc(uniqueColCnt);
-    end;
-  Result := Sqrt(Div0(Result, uniqueColCnt * cLumaDiv));
 end;
 
 procedure TTilingEncoder.DoQuantization(APalIdx: Integer; ADitheringGamma: Integer);
@@ -4757,9 +4742,9 @@ begin
 
     QuantizeUsingYakmo(APalIdx, FPaletteSize, 1 shl cBitsPerComp);
 
-    // split most used colors into tile FPalettes
+    // split most used colors into tile palettes
 
-    CMPal.Sort(@CompareCMULHS);
+    CMPal.Sort(@CompareCountIndexVSH);
 
     SetLength(FPalettes[APalIdx].PaletteRGB, FPaletteSize);
     for i := 0 to CMPal.Count - 1 do
@@ -4855,7 +4840,7 @@ begin
   FTileDS := nil;
 end;
 
-procedure TTilingEncoder.ReindexTiles(KeepRGBPixels: Boolean);
+procedure TTilingEncoder.ReindexTiles(OnRGBPixels: Boolean);
 var
   IdxMap: TInt64DynArray;
   Frame: TFrame;
@@ -4891,7 +4876,7 @@ begin
 
   // pack the global Tiles, removing inactive ones
 
-  LocTiles := TTile.Array1DNew(cnt, KeepRGBPixels, True);
+  LocTiles := TTile.Array1DNew(cnt, True, True);
   pos := 0;
   for tidx := 0 to High(Tiles) do
     if (Tiles[tidx]^.Active) and (Tiles[tidx]^.UseCount > 0) then
@@ -4909,7 +4894,7 @@ begin
 
   // sort tiles
 
-  QuickSort(Tiles[0], 0, High(Tiles), SizeOf(PTile), @CompareTileUseCountRev);
+  QuickSort(Tiles[0], 0, High(Tiles), SizeOf(PTile), @CompareTileUseCountRev, Pointer(Ord(OnRGBPixels)));
 
   for tidx := 0 to High(Tiles) do
     IdxMap[Tiles[tidx]^.TmpIndex] := tidx;
@@ -4931,7 +4916,7 @@ begin
   WriteLn('ReindexTiles: ', Length(Tiles):12, ' / ', Length(FFrames) * FTileMapSize:12,  ' final tiles, (', Length(Tiles) * 100.0 / (Length(FFrames) * FTileMapSize):4:3, '%)');
 end;
 
-function CompareTilePixels(Item1, Item2:Pointer):Integer;
+function CompareTilePalPixels(Item1, Item2:Pointer):Integer;
 var
   t1, t2: PTile;
 begin
@@ -4940,7 +4925,16 @@ begin
   Result := t1^.ComparePalPixelsTo(t2^);
 end;
 
-procedure TTilingEncoder.MakeTilesUniqueByPalPixels;
+function CompareTileRGBPixels(Item1, Item2:Pointer):Integer;
+var
+  t1, t2: PTile;
+begin
+  t1 := PTile(Item1);
+  t2 := PTile(Item2);
+  Result := t1^.CompareRGBPixelsTo(t2^);
+end;
+
+procedure TTilingEncoder.MakeTilesUnique(OnRGBPixels: Boolean);
 var
   i, pos, firstSameIdx: Int64;
   sortList: TFPList;
@@ -4959,7 +4953,13 @@ var
     firstSameIdx := i;
   end;
 
+var
+  PixelLSC: TListSortCompare;
 begin
+  PixelLSC := @CompareTilePalPixels;
+  if OnRGBPixels then
+    PixelLSC := @CompareTileRGBPixels;
+
   InitMergeTiles;
   sortList := TFPList.Create;
   try
@@ -4979,13 +4979,13 @@ begin
       end;
     sortList.Count := pos;
 
-    sortList.Sort(@CompareTilePixels);
+    sortList.Sort(PixelLSC);
 
     // merge exactly similar tiles (so, consecutive after prev code)
 
     firstSameIdx := 0;
     for i := 1 to sortList.Count - 1 do
-      if PTile(sortList[i - 1])^.ComparePalPixelsTo(PTile(sortList[i])^) <> 0 then
+      if PixelLSC(sortList[i - 1], sortList[i]) <> 0 then
         DoOneMerge;
 
     i := sortList.Count;
