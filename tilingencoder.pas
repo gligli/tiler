@@ -21,7 +21,7 @@ type
   TClusteringMethod = (cmBIRCH, cmBICO, cmTransferTiles);
 
 const
-  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 1, 4, 3, 2, 2, 3, 1);
+  cEncoderStepLen: array[TEncoderStep] of Integer = (0, 3, 1, 2, 3, 2, 2, 3, 1);
 
 type
   // GliGli's TileMotion header structs and commands
@@ -1805,22 +1805,11 @@ begin
   SolveTileCount(FGlobalTilingTileCount);
 
   ProgressRedraw(1, 'SolveTileCount');
-
-  // cleanup any prior tile set
-  TTile.Array1DDispose(FTiles);
-  TransferTiles;
-
-  ProgressRedraw(2, 'TransferTiles');
-
-  MakeTilesUnique(True);
-
-  ProgressRedraw(3, 'MakeTilesUnique');
-
   // remove inactive tiles
 
   ReindexTiles(True);
 
-  ProgressRedraw(4, 'ReindexTiles');
+  ProgressRedraw(2, 'ReindexTiles');
 end;
 
 procedure TTilingEncoder.Reconstruct;
@@ -4314,7 +4303,12 @@ begin
 
         inc(FUnpredictedTileCount, Ord(not TMI^.IsPredicted));
       end;
-  Result := FUnpredictedTileCount;
+
+  TransferTiles;
+
+  MakeTilesUnique(True);
+
+  Result := GetTileCount(True);
 end;
 
 function TTilingEncoder.SolveTileCount(ATileCount: Integer): Double;
@@ -4354,6 +4348,10 @@ var
             Tile^.CopyFrom(Frame.FrameTiles[sy * FTileMapWidth + sx]^);
 
             TMI^.TileIdx := tIdx;
+          end
+          else
+          begin
+            TMI^.TileIdx := -1;
           end;
         end;
 
@@ -4365,6 +4363,7 @@ var
   end;
 
 begin
+  TTile.Array1DDispose(FTiles);
   FTiles := TTile.Array1DNew(FUnpredictedTileCount, True, True);
 
   doneFrameCount := 0;
