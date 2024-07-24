@@ -23,6 +23,7 @@ type
     cbxMPRadius: TComboBox;
     cbxDitheringMode: TComboBox;
     cbxFTMode: TComboBox;
+    chkStretch: TCheckBox;
     chkPredicted: TCheckBox;
     cbxScaling: TComboBox;
     cbxEndStep: TComboBox;
@@ -77,7 +78,7 @@ type
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
-    sbTiles: TScrollBox;
+    sbPalette: TScrollBox;
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
     seMaxCores: TSpinEdit;
@@ -594,6 +595,8 @@ begin
   imgPalette.Picture.Bitmap := FTilingEncoder.PaletteBitmap;
   imgTiles.Picture.Bitmap := FTilingEncoder.TilesBitmap;
 
+  imgPalette.Height := (imgPalette.Width div FTilingEncoder.PaletteSize) * FTilingEncoder.PaletteCount;
+
   UpdateGUI(Sender);
 end;
 
@@ -665,6 +668,8 @@ begin
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
+  imgSource.Stretch := chkStretch.Checked;
+  imgDest.Stretch := chkStretch.Checked;
 end;
 
 procedure TMainForm.TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);
@@ -743,7 +748,7 @@ begin
     cbxStartStep.ItemIndex := Ord(Succ(Low(TEncoderStep)));
     cbxEndStep.ItemIndex := Ord(High(TEncoderStep));
 
-    seMaxCores.MaxValue := NumberOfProcessors;
+    seMaxCores.MaxValue := NumberOfProcessors + QuarterNumberOfProcessors;
     seMaxCores.Value := ProcThreadPool.MaxThreadCount;
   finally
     FLockChanges := False;
