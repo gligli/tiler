@@ -1515,10 +1515,6 @@ var
     FrameTile := FrameTiles[AIndex];
     Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @DCT[0]);
 
-    // query KNN
-
-    dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
-
     // recompute error from prediction (account for palette)
 
     fbErr := Infinity;
@@ -1533,6 +1529,13 @@ var
        TTile.Dispose(FbTile);
       end;
     end;
+
+    // query KNN
+
+    dsErr := Infinity;
+    dsIdx := -1;
+    if not IsZero(fbErr) then // only query if there is prediction error
+      dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
 
     // map tilemap items to reduced tiles, parsing KNN query
 
