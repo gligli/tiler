@@ -282,7 +282,8 @@ type
 
     // processes
 
-    procedure Reconstruct(AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
+    procedure PredictMotion(ARadius: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
+    procedure Reconstruct(ARadius, AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
   end;
 
   TFrameArray =  array of TFrame;
@@ -305,10 +306,6 @@ type
 
     procedure AcquireFrameTiles;
     procedure ReleaseFrameTiles;
-
-    // processes
-
-    procedure PredictMotion(ARadius: Integer);
   end;
 
   TKeyFrameArray =  array of TKeyFrame;
@@ -1103,141 +1100,6 @@ begin
     Result := CompareValue(a1^[2], a2^[2]); // B
 end;
 
-procedure TKeyFrame.PredictMotion(ARadius: Integer);
-var
-  frmIdx: Integer;
-  curBuffer: Boolean;
-
-  Frame: TFrame;
-
-  FrameBuffer: array[Boolean] of TIntegerDynArray2;
-  DCTs: array of array of array[0 .. cTileDCTSize - 1] of TFloat;
-
-  procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    x: Integer;
-    DCTTile: PTile;
-  begin
-    if not InRange(AIndex, 0, Encoder.FScreenHeight - cTileWidth) then
-      Exit;
-
-    DCTTile := TTile.New(True, False);
-    try
-      for x := 0 to Encoder.FScreenWidth - cTileWidth do
-      begin
-        DCTTile^.CopyRGBPixels(FrameBuffer[curBuffer], x, AIndex);
-        Encoder.ComputeTilePsyVisFeatures(DCTTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, DCTs[AIndex, x]);
-      end;
-    finally
-      TTile.Dispose(DCTTile);
-    end;
-  end;
-
-  procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  var
-    dx, dy, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY: Integer;
-    TMI: PTileMapItem;
-    FrameTile: PTile;
-    err, bestErr: TFloat;
-    CurDCT: array[0 .. cTileDCTSize - 1] of TFloat;
-  begin
-    if not InRange(AIndex, 0, Encoder.FTileMapSize - 1) then
-      Exit;
-
-    DivMod(AIndex, Encoder.FTileMapWidth, sy, sx);
-
-    FrameTile := TTile.New(True, False);
-    try
-      TMI := @Frame.TileMap[sy, sx];
-      FrameTile^.CopyFrom(Frame.FrameTiles[AIndex]^);
-      if FrameTile^.HMirror_Initial then Encoder.HMirrorTile(FrameTile^);
-      if FrameTile^.VMirror_Initial then Encoder.VMirrorTile(FrameTile^);
-
-      Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, CurDCT);
-
-      bestX := MaxInt;
-      bestY := MaxInt;
-      bestErr := Infinity;
-
-      dx := sx shl cTileWidthBits;
-      dy := sy shl cTileWidthBits;
-
-      if frmIdx > StartFrame then
-      begin
-        oymn := Max(0, dy - ARadius - 1);
-        oymx := Min(Encoder.FScreenHeight - cTileWidth, dy + ARadius);
-        oxmn := Max(0, dx - ARadius - 1);
-        oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
-
-        for oy := oymn to oymx do
-          for ox := oxmn to oxmx do
-          begin
-            err := CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]);
-
-            // apply a penalty of float mantissa's unit times the manhattan distance to the center
-            // rationale: slightly favoring the center in case of ties improves compressibility
-            Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
-
-            if err < bestErr then
-            begin
-              bestErr := err;
-              bestX := ox;
-              bestY := oy;
-            end;
-          end;
-
-        TMI^.ResidualErr := bestErr;
-        TMI^.PredictedX := bestX - dx;
-        TMI^.PredictedY := bestY - dy;
-      end
-      else
-      begin
-        TMI^.ResidualErr := Infinity;
-      end;
-
-      // draw fb
-      for ty := 0 to cTileWidth - 1 do
-      begin
-        Move(FrameTile^.GetRGBPixelsPtr^[ty, 0], FrameBuffer[not curBuffer, dy, dx], cTileWidth * SizeOf(Integer));
-        Inc(dy);
-      end;
-    finally
-      TTile.Dispose(FrameTile);
-    end;
-  end;
-
-
-begin
-  if ARadius <= 0 then
-    Exit;
-
-  Dec(ARadius);
-
-  SetLength(FrameBuffer[False], Encoder.FScreenHeight, Encoder.FScreenWidth);
-  SetLength(FrameBuffer[True], Encoder.FScreenHeight, Encoder.FScreenWidth);
-  SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
-
-  curBuffer := False;
-  AcquireFrameTiles;
-  try
-    for frmIdx := StartFrame to EndFrame do
-    begin
-      Frame := Encoder.FFrames[frmIdx];
-
-      if frmIdx > StartFrame then
-        ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
-
-      ProcThreadPool.DoParallelLocalProc(@DoXY, 0, Encoder.FTileMapSize);
-
-      curBuffer := not curBuffer;
-
-      Write(frmIdx:8, ' / ', Length(Encoder.FFrames):8, #13);
-    end;
-  finally
-    ReleaseFrameTiles;
-  end;
-end;
-
 { TFrame }
 
 constructor TFrame.Create(AParent: TTilingEncoder; AIndex: Integer);
@@ -1331,6 +1193,116 @@ begin
     end;
   finally
     SpinLeave(@FrameTilesLock);
+  end;
+end;
+
+procedure TFrame.PredictMotion(ARadius: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
+var
+  DCTs: array of array of array[0 .. cTileDCTSize - 1] of TFloat;
+
+  procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    x: Integer;
+    DCTTile: PTile;
+  begin
+    if not InRange(AIndex, 0, Encoder.FScreenHeight - cTileWidth) then
+      Exit;
+
+    DCTTile := TTile.New(True, False);
+    try
+      for x := 0 to Encoder.FScreenWidth - cTileWidth do
+      begin
+        DCTTile^.CopyRGBPixels(ABackBuffer, x, AIndex);
+        Encoder.ComputeTilePsyVisFeatures(DCTTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, DCTs[AIndex, x]);
+      end;
+    finally
+      TTile.Dispose(DCTTile);
+    end;
+  end;
+
+  procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    dx, dy, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY: Integer;
+    TMI: PTileMapItem;
+    FrameTile: PTile;
+    err, bestErr: TFloat;
+    CurDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+  begin
+    if not InRange(AIndex, 0, Encoder.FTileMapSize - 1) then
+      Exit;
+
+    DivMod(AIndex, Encoder.FTileMapWidth, sy, sx);
+
+    FrameTile := TTile.New(True, False);
+    try
+      TMI := @TileMap[sy, sx];
+      FrameTile^.CopyFrom(FrameTiles[AIndex]^);
+      if FrameTile^.HMirror_Initial then Encoder.HMirrorTile(FrameTile^);
+      if FrameTile^.VMirror_Initial then Encoder.VMirrorTile(FrameTile^);
+
+      Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, CurDCT);
+
+      bestX := MaxInt;
+      bestY := MaxInt;
+      bestErr := Infinity;
+
+      dx := sx shl cTileWidthBits;
+      dy := sy shl cTileWidthBits;
+
+      oymn := Max(0, dy - ARadius - 1);
+      oymx := Min(Encoder.FScreenHeight - cTileWidth, dy + ARadius);
+      oxmn := Max(0, dx - ARadius - 1);
+      oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
+
+      for oy := oymn to oymx do
+        for ox := oxmn to oxmx do
+        begin
+          err := CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]);
+
+          // apply a penalty of float mantissa's unit times the manhattan distance to the center
+          // rationale: slightly favoring the center in case of ties improves compressibility
+          Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
+
+          if err < bestErr then
+          begin
+            bestErr := err;
+            bestX := ox;
+            bestY := oy;
+          end;
+        end;
+
+      TMI^.ResidualErr := bestErr;
+      TMI^.PredictedX := bestX - dx;
+      TMI^.PredictedY := bestY - dy;
+
+      // draw fb
+      for ty := 0 to cTileWidth - 1 do
+      begin
+        Move(FrameTile^.GetRGBPixelsPtr^[ty, 0], AFrontBuffer[dy, dx], cTileWidth * SizeOf(Integer));
+        Inc(dy);
+      end;
+    finally
+      TTile.Dispose(FrameTile);
+    end;
+  end;
+
+
+begin
+  if ARadius <= 0 then
+    Exit;
+
+  Dec(ARadius);
+
+  SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
+
+  AcquireFrameTiles;
+  try
+    if Index > 0 then
+      ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
+
+    ProcThreadPool.DoParallelLocalProc(@DoXY, 0, Encoder.FTileMapSize);
+  finally
+    ReleaseFrameTiles;
   end;
 end;
 
@@ -1487,19 +1459,41 @@ begin
   SetEvent(LoadFromImageFinishedEvent);
 end;
 
-procedure TFrame.Reconstruct(AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
+procedure TFrame.Reconstruct(ARadius, AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
 var
   DS: PTilingDataset;
 
+  DCTs: array of array of array[0 .. cTileDCTSize - 1] of TFloat;
+
+  procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
+  var
+    x: Integer;
+    DCTTile: PTile;
+  begin
+    if not InRange(AIndex, 0, Encoder.FScreenHeight - cTileWidth) then
+      Exit;
+
+    DCTTile := TTile.New(True, False);
+    try
+      for x := 0 to Encoder.FScreenWidth - cTileWidth do
+      begin
+        DCTTile^.CopyRGBPixels(ABackBuffer, x, AIndex);
+        Encoder.ComputeTilePsyVisFeatures(DCTTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, DCTs[AIndex, x]);
+      end;
+    finally
+      TTile.Dispose(DCTTile);
+    end;
+  end;
+
   procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    sx, sy, dx, dy, ty, tx, tym, txm, dsIdx: Integer;
-    dsErr, fbErr: Single;
+    sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, dsIdx: Integer;
+    dsErr, fbErr, err: Single;
 
-    FrameTile, FbTile: PTile;
+    FrameTile: PTile;
     TMI: PTileMapItem;
 
-    DCT, FbDCT: array[0 .. cTileDCTSize - 1] of Single;
+    DCT: array[0 .. cTileDCTSize - 1] of Single;
   begin
     if not InRange(AIndex, 0, Encoder.FTileMapSize - 1) then
       Exit;
@@ -1512,30 +1506,43 @@ var
     // prepare KNN query
 
     TMI := @TileMap[sy, sx];
+
     FrameTile := FrameTiles[AIndex];
     Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @DCT[0]);
 
-    // recompute error from prediction (account for palette)
-
-    fbErr := Infinity;
-    if TMI^.IsPredicted then
-    begin
-      FbTile := TTile.New(True, False);
-      try
-        FbTile^.CopyRGBPixels(ABackBuffer, dx + TMI^.PredictedX, dy + TMI^.PredictedY);
-        Encoder.ComputeTilePsyVisFeatures(FbTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @FbDCT[0]);
-        fbErr := CompareEuclideanDCTPtr_asm(@DCT[0], @FbDCT[0]);
-      finally
-       TTile.Dispose(FbTile);
-      end;
-    end;
-
     // query KNN
 
-    dsErr := Infinity;
-    dsIdx := -1;
-    if not IsZero(fbErr) then // only query if there is prediction error
-      dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
+    dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
+
+    // repredict (account for palette)
+
+    fbErr := Infinity;
+    if (Index <> PKeyFrame.StartFrame) and not IsZero(dsErr) and TMI^.IsPredicted then
+    begin
+      Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, cColorCpns, AFTGamma, nil, @DCT[0]);
+
+      oymn := Max(0, dy - ARadius - 1);
+      oymx := Min(Encoder.FScreenHeight - cTileWidth, dy + ARadius);
+      oxmn := Max(0, dx - ARadius - 1);
+      oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
+
+      for oy := oymn to oymx do
+        for ox := oxmn to oxmx do
+        begin
+          err := CompareEuclideanDCTPtr_asm(DCT, DCTs[oy, ox]);
+
+          // apply a penalty of float mantissa's unit times the manhattan distance to the center
+          // rationale: slightly favoring the center in case of ties improves compressibility
+          Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
+
+          if err < fbErr then
+          begin
+            fbErr := err;
+            TMI^.PredictedX := ox - dx;
+            TMI^.PredictedY := oy - dy;
+          end;
+        end;
+    end;
 
     // map tilemap items to reduced tiles, parsing KNN query
 
@@ -1583,6 +1590,11 @@ begin
   DS := Encoder.FTileDS;
   if DS^.KNNSize <= 0 then
     Exit;
+
+  SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
+  ARadius := Encoder.FMotionPredictRadius;
+
+  ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
 
   AcquireFrameTiles;
   try
@@ -1863,8 +1875,10 @@ begin
   try
     for frmIdx := 0 to High(FFrames) do
     begin
-      FFrames[frmIdx].Reconstruct(gammaCor, FrameBuffer[not curBuffer], FrameBuffer[curBuffer]);
+      FFrames[frmIdx].Reconstruct(FMotionPredictRadius, gammaCor, FrameBuffer[not curBuffer], FrameBuffer[curBuffer]);
       curBuffer := not curBuffer;
+
+      Write(frmIdx + 1:8, ' / ', Length(FFrames):8, #13);
     end;
   finally
     FinishReconstruct;
@@ -1875,15 +1889,27 @@ end;
 
 procedure TTilingEncoder.PredictMotion;
 var
-  kfIdx: Integer;
+  frmIdx: Integer;
+  curBuffer: Boolean;
+
+  FrameBuffer: array[Boolean] of TIntegerDynArray2;
 begin
   if (Length(FFrames) = 0) or (FMotionPredictRadius <= 0) then
     Exit;
 
   ProgressRedraw(0, '', esPredictMotion);
 
-  for kfIdx := 0 to High(FKeyFrames) do
-    FKeyFrames[kfIdx].PredictMotion(FMotionPredictRadius);
+  curBuffer := False;
+  SetLength(FrameBuffer[False], FScreenHeight, FScreenWidth);
+  SetLength(FrameBuffer[True], FScreenHeight, FScreenWidth);
+
+  for frmIdx := 0 to High(FFrames) do
+  begin
+    FFrames[frmIdx].PredictMotion(FMotionPredictRadius, FrameBuffer[not curBuffer], FrameBuffer[curBuffer]);
+    curBuffer := not curBuffer;
+
+    Write(frmIdx + 1:8, ' / ', Length(FFrames):8, #13);
+  end;
 
   ProgressRedraw(1, '', esPredictMotion);
 end;
@@ -4053,7 +4079,7 @@ begin
   EncoderGammaValue := 2.0;
 
   ShotTransMaxSecondsPerKF := 5.0;  // maximum seconds between keyframes
-  ShotTransMinSecondsPerKF := 0.25;  // minimum seconds between keyframes
+  ShotTransMinSecondsPerKF := 1.0;  // minimum seconds between keyframes
   ShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
   ShotTransDistHiThres := 3.0;   // interframe distance high limit
 end;
