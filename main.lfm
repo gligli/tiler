@@ -676,11 +676,11 @@ object MainForm: TMainForm
         HorzScrollBar.Page = 1
         HorzScrollBar.Visible = False
         VertScrollBar.Increment = 256
-        VertScrollBar.Page = 90
+        VertScrollBar.Page = 445
         VertScrollBar.Tracking = True
         Anchors = [akTop, akLeft, akBottom]
         ClientHeight = 445
-        ClientWidth = 256
+        ClientWidth = 239
         TabOrder = 1
         object imgPalette: TImage
           Cursor = crHandPoint
@@ -811,9 +811,9 @@ object MainForm: TMainForm
     OnChange = UpdateVideo
   end
   object chkStretch: TCheckBox
-    Left = 544
+    Left = 560
     Height = 19
-    Top = 616
+    Top = 615
     Width = 68
     Anchors = [akLeft, akBottom]
     Caption = 'Stretched'
