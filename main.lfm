@@ -417,7 +417,7 @@ object MainForm: TMainForm
       object Label16: TLabel
         Left = 8
         Height = 15
-        Top = 496
+        Top = 464
         Width = 240
         Caption = 'Maximum CPU cores used for multithreading'
         ParentColor = False
@@ -569,39 +569,19 @@ object MainForm: TMainForm
       object Bevel3: TBevel
         Left = 8
         Height = 2
-        Top = 484
+        Top = 452
         Width = 712
         Shape = bsTopLine
-      end
-      object Label14: TLabel
-        Left = 8
-        Height = 15
-        Top = 454
-        Width = 193
-        Caption = 'Motion prediction limit (PsyV based)'
-        ParentColor = False
-      end
-      object seMPLimit: TFloatSpinEdit
-        Left = 328
-        Height = 23
-        Top = 451
-        Width = 64
-        Increment = 0.1
-        MaxValue = 10
-        MinValue = 0.1
-        OnChange = UpdateGUI
-        TabOrder = 24
-        Value = 1
       end
       object seMaxCores: TSpinEdit
         Left = 328
         Height = 23
-        Top = 492
+        Top = 460
         Width = 64
         MaxValue = 1000000
         MinValue = 1
         OnChange = UpdateGUI
-        TabOrder = 25
+        TabOrder = 24
         Value = 1
       end
     end

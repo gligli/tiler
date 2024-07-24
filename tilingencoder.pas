@@ -161,7 +161,8 @@ type
     procedure CopyPalPixelsFrom(const ATile: TTile);
     procedure CopyPalPixels(const APalPixels: TPalPixels); overload;
     procedure CopyPalPixels(const APalPixels: TByteDynArray); overload;
-    procedure CopyRGBPixels(const ARGBPixels: TRGBPixels);
+    procedure CopyRGBPixels(const ARGBPixels: TRGBPixels); overload;
+    procedure CopyRGBPixels(var AFrameBuffer: TIntegerDynArray2; AX, AY: Integer); overload;
     procedure ClearPalPixels;
     procedure ClearRGBPixels;
     procedure ClearPixels;
@@ -281,7 +282,7 @@ type
 
     // processes
 
-    procedure Reconstruct(AFTGamma: Integer);
+    procedure Reconstruct(AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
   end;
 
   TFrameArray =  array of TFrame;
@@ -307,7 +308,7 @@ type
 
     // processes
 
-    procedure PredictMotion(ARadius: Integer; ALimit: TFloat);
+    procedure PredictMotion(ARadius: Integer);
   end;
 
   TKeyFrameArray =  array of TKeyFrame;
@@ -357,7 +358,6 @@ type
     FPaletteSize: Integer;
     FPaletteCount: Integer;
     FMotionPredictRadius: Integer;
-    FMotionPredictLimit: Double;
     FDitheringUseGamma: Boolean;
     FDitheringMode: TPsyVisMode;
     FDitheringUseThomasKnoll: Boolean;
@@ -412,7 +412,6 @@ type
     procedure SetPaletteCount(AValue: Integer);
     procedure SetPaletteSize(AValue: Integer);
     procedure SetMotionPredictRadius(AValue: Integer);
-    procedure SetMotionPredictLimit(AValue: Double);
     procedure SetRenderFrameIndex(AValue: Integer);
     procedure SetRenderGammaValue(AValue: Double);
     procedure SetRenderPaletteIndex(AValue: Integer);
@@ -558,7 +557,6 @@ type
     property PaletteSize: Integer read FPaletteSize write SetPaletteSize;
     property PaletteCount: Integer read FPaletteCount write SetPaletteCount;
     property MotionPredictRadius: Integer read FMotionPredictRadius write SetMotionPredictRadius;
-    property MotionPredictLimit: Double read FMotionPredictLimit write SetMotionPredictLimit;
     property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
     property DitheringMode: TPsyVisMode read FDitheringMode write FDitheringMode;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
@@ -899,6 +897,17 @@ begin
   Move(ARGBPixels[0, 0], GetRGBPixelsPtr^[0, 0], SizeOf(TRGBPixels));
 end;
 
+procedure TTileHelper.CopyRGBPixels(var AFrameBuffer: TIntegerDynArray2; AX, AY: Integer);
+var
+  ty: Integer;
+begin
+  for ty := 0 to cTileWidth - 1 do
+  begin
+    Move(AFrameBuffer[AY, AX], GetRGBPixelsPtr^[ty, 0], cTileWidth * SizeOf(Integer));
+    Inc(AY);
+  end;
+end;
+
 procedure TTileHelper.ClearPalPixels;
 begin
   FillByte(GetPalPixelsPtr^[0, 0], sqr(cTileWidth), 0);
@@ -1094,20 +1103,19 @@ begin
     Result := CompareValue(a1^[2], a2^[2]); // B
 end;
 
-procedure TKeyFrame.PredictMotion(ARadius: Integer; ALimit: TFloat);
+procedure TKeyFrame.PredictMotion(ARadius: Integer);
 var
   frmIdx: Integer;
   curBuffer: Boolean;
 
   Frame: TFrame;
 
-  BackBuffer: array[Boolean] of TIntegerDynArray2;
-  RepredictPenalties: array[Boolean] of TIntegerDynArray2;
+  FrameBuffer: array[Boolean] of TIntegerDynArray2;
   DCTs: array of array of array[0 .. cTileDCTSize - 1] of TFloat;
 
   procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    x, ty: Integer;
+    x: Integer;
     DCTTile: PTile;
   begin
     if not InRange(AIndex, 0, Encoder.FScreenHeight - cTileWidth) then
@@ -1117,8 +1125,7 @@ var
     try
       for x := 0 to Encoder.FScreenWidth - cTileWidth do
       begin
-        for ty := 0 to cTileWidth - 1 do
-          Move(BackBuffer[curBuffer, AIndex + ty, x], DCTTile^.GetRGBPixelsPtr^[ty, 0], cTileWidth * SizeOf(Integer));
+        DCTTile^.CopyRGBPixels(FrameBuffer[curBuffer], x, AIndex);
         Encoder.ComputeTilePsyVisFeatures(DCTTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, DCTs[AIndex, x]);
       end;
     finally
@@ -1128,7 +1135,7 @@ var
 
   procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    dx, dy, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, tx, bestX, bestY: Integer;
+    dx, dy, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY: Integer;
     TMI: PTileMapItem;
     FrameTile: PTile;
     err, bestErr: TFloat;
@@ -1171,10 +1178,6 @@ var
             // rationale: slightly favoring the center in case of ties improves compressibility
             Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
 
-            // also apply a repredict penalty
-            // rationale: repredicting a tile many times tends to posterize the colors
-            Inc(PInteger(@err)^, RepredictPenalties[curBuffer, oy, ox]);
-
             if err < bestErr then
             begin
               bestErr := err;
@@ -1192,30 +1195,11 @@ var
         TMI^.ResidualErr := Infinity;
       end;
 
-      if bestErr < Sqr(ALimit) then
+      // draw fb
+      for ty := 0 to cTileWidth - 1 do
       begin
-        for ty := 0 to cTileWidth - 1 do
-        begin
-          Move(BackBuffer[curBuffer, bestY + ty, bestX], BackBuffer[not curBuffer, dy, dx], cTileWidth * SizeOf(Integer));
-
-          // copy the penalty and increment it
-          for tx := 0 to cTileWidth - 1 do
-            RepredictPenalties[not curBuffer, dy, dx + tx] := RepredictPenalties[curBuffer, bestY + ty, bestX + tx] + 1;
-
-          Inc(dy);
-        end;
-      end
-      else
-      begin
-        for ty := 0 to cTileWidth - 1 do
-        begin
-          Move(FrameTile^.GetRGBPixelsPtr^[ty, 0], BackBuffer[not curBuffer, dy, dx], cTileWidth * SizeOf(Integer));
-
-          // a new tile has zero penalty
-          FillDWord(RepredictPenalties[not curBuffer, dy, dx], cTileWidth, 0);
-
-          Inc(dy);
-        end;
+        Move(FrameTile^.GetRGBPixelsPtr^[ty, 0], FrameBuffer[not curBuffer, dy, dx], cTileWidth * SizeOf(Integer));
+        Inc(dy);
       end;
     finally
       TTile.Dispose(FrameTile);
@@ -1229,10 +1213,8 @@ begin
 
   Dec(ARadius);
 
-  SetLength(BackBuffer[False], Encoder.FScreenHeight, Encoder.FScreenWidth);
-  SetLength(BackBuffer[True], Encoder.FScreenHeight, Encoder.FScreenWidth);
-  SetLength(RepredictPenalties[False], Encoder.FScreenHeight, Encoder.FScreenWidth);
-  SetLength(RepredictPenalties[True], Encoder.FScreenHeight, Encoder.FScreenWidth);
+  SetLength(FrameBuffer[False], Encoder.FScreenHeight, Encoder.FScreenWidth);
+  SetLength(FrameBuffer[True], Encoder.FScreenHeight, Encoder.FScreenWidth);
   SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
 
   curBuffer := False;
@@ -1505,24 +1487,27 @@ begin
   SetEvent(LoadFromImageFinishedEvent);
 end;
 
-procedure TFrame.Reconstruct(AFTGamma: Integer);
+procedure TFrame.Reconstruct(AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
 var
   DS: PTilingDataset;
 
   procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    sx, sy, dsIdx: Integer;
-    dsErr: Single;
+    sx, sy, dx, dy, ty, tx, tym, txm, dsIdx: Integer;
+    dsErr, fbErr: Single;
 
-    FrameTile: PTile;
+    FrameTile, FbTile: PTile;
     TMI: PTileMapItem;
 
-    DCT: array[0 .. cTileDCTSize - 1] of Single;
+    DCT, FbDCT: array[0 .. cTileDCTSize - 1] of Single;
   begin
     if not InRange(AIndex, 0, Encoder.FTileMapSize - 1) then
       Exit;
 
     DivMod(AIndex, Encoder.FTileMapWidth, sy, sx);
+
+    dx := sx shl cTileWidthBits;
+    dy := sy shl cTileWidthBits;
 
     // prepare KNN query
 
@@ -1534,18 +1519,56 @@ var
 
     dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
 
+    // recompute error from prediction (account for palette)
+
+    fbErr := Infinity;
+    if TMI^.IsPredicted then
+    begin
+      FbTile := TTile.New(True, False);
+      try
+        FbTile^.CopyRGBPixels(ABackBuffer, dx + TMI^.PredictedX, dy + TMI^.PredictedY);
+        Encoder.ComputeTilePsyVisFeatures(FbTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @FbDCT[0]);
+        fbErr := CompareEuclideanDCTPtr_asm(@DCT[0], @FbDCT[0]);
+      finally
+       TTile.Dispose(FbTile);
+      end;
+    end;
+
     // map tilemap items to reduced tiles, parsing KNN query
 
-    if InRange(dsIdx, 0, DS^.KNNSize - 1) and (dsErr < TMI^.ResidualErr) then
+    if InRange(dsIdx, 0, DS^.KNNSize - 1) and (dsErr < fbErr) then
     begin
       TMI^.TileIdx := DS^.DSToTileIdx[dsIdx];
       TMI^.PalIdx := DS^.DSToPalIdx[dsIdx];
       TMI^.ResidualErr := dsErr;
       TMI^.IsPredicted := False;
+
+      // draw fb (pal tile)
+      for ty := 0 to cTileWidth - 1 do
+      begin
+        tym := ty;
+        if TMI^.VMirror then tym := cTileWidth - 1 - tym;
+
+        for tx := 0 to cTileWidth - 1 do
+        begin
+          txm := tx;
+          if TMI^.HMirror then txm := cTileWidth - 1 - txm;
+
+          AFrontBuffer[dy + ty, dx + tx] := Encoder.FPalettes[TMI^.PalIdx].PaletteRGB[Encoder.FTiles[TMI^.TileIdx]^.PalPixels[tym, txm]];
+        end;
+      end;
     end
     else
     begin
+      TMI^.ResidualErr := fbErr;
       TMI^.IsPredicted := True;
+
+      // draw fb (predicted tile)
+      for ty := 0 to cTileWidth - 1 do
+      begin
+        Move(ABackBuffer[dy + TMI^.PredictedY, dx + TMI^.PredictedX], AFrontBuffer[dy, dx], cTileWidth * SizeOf(Integer));
+        Inc(dy);
+      end;
     end;
 
     SpinEnter(@PKeyFrame.ReconstructLock);
@@ -1814,10 +1837,11 @@ end;
 
 procedure TTilingEncoder.Reconstruct;
 var
-  gammaCor: Integer;
-
-var
   frmIdx: Integer;
+  gammaCor: Integer;
+  curBuffer: Boolean;
+
+  FrameBuffer: array[Boolean] of TIntegerDynArray2;
 begin
   if Length(FFrames) = 0 then
     Exit;
@@ -1826,12 +1850,19 @@ begin
 
   FKeyFramesLeft := Length(FKeyFrames);
   gammaCor := IfThen(FFrameTilingUseGamma, 0, -1);
+  curBuffer := False;
+  SetLength(FrameBuffer[False], FScreenHeight, FScreenWidth);
+  SetLength(FrameBuffer[True], FScreenHeight, FScreenWidth);
+
 
   PrepareReconstruct(gammaCor);
   ProgressRedraw(1, 'PrepareReconstruct', esReconstruct);
   try
     for frmIdx := 0 to High(FFrames) do
-      FFrames[frmIdx].Reconstruct(gammaCor);
+    begin
+      FFrames[frmIdx].Reconstruct(gammaCor, FrameBuffer[not curBuffer], FrameBuffer[curBuffer]);
+      curBuffer := not curBuffer;
+    end;
   finally
     FinishReconstruct;
   end;
@@ -1849,7 +1880,7 @@ begin
   ProgressRedraw(0, '', esPredictMotion);
 
   for kfIdx := 0 to High(FKeyFrames) do
-    FKeyFrames[kfIdx].PredictMotion(FMotionPredictRadius, FMotionPredictLimit);
+    FKeyFrames[kfIdx].PredictMotion(FMotionPredictRadius);
 
   ProgressRedraw(1, '', esPredictMotion);
 end;
@@ -3075,12 +3106,6 @@ begin
   FMotionPredictRadius := EnsureRange(AValue, 0, -Low(ShortInt));
 end;
 
-procedure TTilingEncoder.SetMotionPredictLimit(AValue: Double);
-begin
- if FMotionPredictLimit = AValue then Exit;
- FMotionPredictLimit := Max(AValue, 0.0);
-end;
-
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
 var
   i: integer;
@@ -3928,7 +3953,6 @@ begin
     ini.WriteFloat('Load', 'Scaling', Scaling);
 
     ini.WriteInteger('MotionPredict', 'MotionPredictRadius', MotionPredictRadius);
-    ini.WriteFloat('MotionPredict', 'MotionPredictLimit', MotionPredictLimit);
 
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
@@ -3971,7 +3995,6 @@ begin
     Scaling := ini.ReadFloat('Load', 'Scaling', Scaling);
 
     MotionPredictRadius := ini.ReadInteger('MotionPredict', 'MotionPredictRadius', MotionPredictRadius);
-    MotionPredictLimit := ini.ReadFloat('MotionPredict', 'MotionPredictLimit', MotionPredictLimit);
 
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
@@ -4012,7 +4035,6 @@ begin
   PaletteCount := 1024;
 
   MotionPredictRadius := 32;
-  MotionPredictLimit := 2.0;
 
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority

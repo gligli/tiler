@@ -49,7 +49,6 @@ type
     Label11: TLabel;
     Label12: TLabel;
     Label13: TLabel;
-    Label14: TLabel;
     Label18: TLabel;
     Label15: TLabel;
     Label16: TLabel;
@@ -82,7 +81,6 @@ type
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
     seMaxCores: TSpinEdit;
-    seMPLimit: TFloatSpinEdit;
     Separator1: TMenuItem;
     Separator3: TMenuItem;
     seShotTransDistHiThres: TFloatSpinEdit;
@@ -637,7 +635,6 @@ begin
   FTilingEncoder.RenderGammaValue := seVisGamma.Value;
 
   FTilingEncoder.MotionPredictRadius := StrToIntDef(cbxMPRadius.Text, 0);
-  FTilingEncoder.MotionPredictLimit := seMPLimit.Value;
 
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
 
@@ -699,7 +696,6 @@ begin
    cbxPalCount.Text := IntToStr(FTilingEncoder.PaletteCount);
 
    cbxMPRadius.Text := IntToStr(FTilingEncoder.MotionPredictRadius);
-   seMPLimit.Value := FTilingEncoder.MotionPredictLimit;
 
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
