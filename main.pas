@@ -533,7 +533,7 @@ begin
   pt.X -= (TImage(Sender).Width - FTilingEncoder.ScreenWidth) div 2;
   pt.Y -= (TImage(Sender).Height - FTilingEncoder.ScreenHeight) div 2;
 
-  if Assigned(FTilingEncoder) and (tbFrame.Position < FTilingEncoder.FrameCount) and
+  if Assigned(FTilingEncoder) and InRange(tbFrame.Position, 0, FTilingEncoder.FrameCount - 1) and
     InRange(pt.X, 0, FTilingEncoder.ScreenWidth - 1) and InRange(pt.Y, 0, FTilingEncoder.ScreenHeight - 1) then
   begin
     pt.X := pt.X div cTileWidth;

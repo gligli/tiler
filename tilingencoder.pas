@@ -215,9 +215,7 @@ type
   { TTilingDataset }
 
   TTilingDataset = record
-    KNNSize, PalsPerTile: Integer;
-    DSToTileIdx: TIntegerDynArray;
-    DSToPalIdx: TWordDynArray;
+    KNNSize: Integer;
     Dataset: TSingleDynArray2;
     ANN: PANNkdtree;
   end;
@@ -303,9 +301,6 @@ type
 
     constructor Create(AParent: TTilingEncoder; AIndex, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
-
-    procedure AcquireFrameTiles;
-    procedure ReleaseFrameTiles;
   end;
 
   TKeyFrameArray =  array of TKeyFrame;
@@ -1060,34 +1055,6 @@ begin
   inherited Destroy;
 end;
 
-procedure TKeyFrame.AcquireFrameTiles;
-
-  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    if not InRange(AIndex, StartFrame, EndFrame) then
-      Exit;
-
-    Encoder.Frames[AIndex].AcquireFrameTiles;
-  end;
-
-begin
-  ProcThreadPool.DoParallelLocalProc(@DoFrame, StartFrame, EndFrame);
-end;
-
-procedure TKeyFrame.ReleaseFrameTiles;
-
-  procedure DoFrame(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
-  begin
-    if not InRange(AIndex, StartFrame, EndFrame) then
-      Exit;
-
-    Encoder.Frames[AIndex].ReleaseFrameTiles;
-  end;
-
-begin
-  ProcThreadPool.DoParallelLocalProc(@DoFrame, StartFrame, EndFrame);
-end;
-
 function CompareDSPixel(Item1,Item2,UserParameter:Pointer):Integer;
 var
   a1: ^TDoubleDynArray absolute Item1;
@@ -1490,7 +1457,7 @@ var
     sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, dsIdx: Integer;
     dsErr, fbErr, err: Single;
 
-    FrameTile: PTile;
+    FrameTile, Tile: PTile;
     TMI: PTileMapItem;
 
     DCT: array[0 .. cTileDCTSize - 1] of Single;
@@ -1548,8 +1515,10 @@ var
 
     if InRange(dsIdx, 0, DS^.KNNSize - 1) and (dsErr < fbErr) then
     begin
-      TMI^.TileIdx := DS^.DSToTileIdx[dsIdx];
-      TMI^.PalIdx := DS^.DSToPalIdx[dsIdx];
+      Tile := Encoder.FTiles[dsIdx];
+
+      TMI^.TileIdx := dsIdx;
+      TMI^.PalIdx := Tile^.PalIdx_Initial;
       TMI^.ResidualErr := dsErr;
       TMI^.IsPredicted := False;
 
@@ -1564,7 +1533,7 @@ var
           txm := tx;
           if TMI^.HMirror then txm := cTileWidth - 1 - txm;
 
-          AFrontBuffer[dy + ty, dx + tx] := Encoder.FPalettes[TMI^.PalIdx].PaletteRGB[Encoder.FTiles[TMI^.TileIdx]^.PalPixels[tym, txm]];
+          AFrontBuffer[dy + ty, dx + tx] := Encoder.FPalettes[TMI^.PalIdx].PaletteRGB[Tile^.PalPixels[tym, txm]];
         end;
       end;
     end
@@ -4364,7 +4333,7 @@ end;
 
 function TTilingEncoder.SolveTileCount(ATileCount: Integer): Double;
 begin
-  Result := GoldenRatioSearch(@STCGREval, cTileDCTSize, 0.0, ATileCount, 1e-6, 1.0, nil);
+  Result := GoldenRatioSearch(@STCGREval, cTileDCTSize, 0.0, ATileCount, 1e-6, 0.5, nil);
 end;
 
 procedure TTilingEncoder.TransferTiles;
@@ -4813,37 +4782,20 @@ begin
 end;
 
 procedure TTilingEncoder.PrepareReconstruct(AFTGamma: Integer);
-const
-  CPalLookup = 3;
 var
   DS: PTilingDataset;
 
   procedure DoPsyV(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     T: PTile;
-    p, palIdx, dsIdx: Integer;
   begin
     if not InRange(AIndex, 0, High(FTiles)) then
       Exit;
 
-    dsIdx := AIndex * DS^.PalsPerTile;
-
     T := Tiles[AIndex];
-
     Assert(T^.Active);
 
-    for p := T^.PalIdx_Initial - CPalLookup to T^.PalIdx_Initial + CPalLookup do
-    begin
-      palIdx := (p + FPaletteCount) mod FPaletteCount;
-
-      ComputeTilePsyVisFeatures(T^, FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, FPalettes[palIdx].PaletteRGB, PSingle(@DS^.Dataset[dsIdx, 0]));
-      DS^.DSToTileIdx[dsIdx] := AIndex;
-      DS^.DSToPalIdx[dsIdx] := palIdx;
-
-      Inc(dsIdx);
-    end;
-
-    Assert(dsIdx = (AIndex + 1) * DS^.PalsPerTile);
+    ComputeTilePsyVisFeatures(T^, FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, FPalettes[T^.PalIdx_Initial].PaletteRGB, PSingle(@DS^.Dataset[AIndex, 0]));
   end;
 
 var
@@ -4854,11 +4806,8 @@ begin
   DS := New(PTilingDataset);
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
-  DS^.PalsPerTile := CPalLookup * 2 + 1;
-  DS^.KNNSize := GetTileCount(False) * DS^.PalsPerTile;
+  DS^.KNNSize := Length(FTiles);
   SetLength(DS^.Dataset, DS^.KNNSize, cTileDCTSize);
-  SetLength(DS^.DSToTileIdx, DS^.KNNSize);
-  SetLength(DS^.DSToPalIdx, DS^.KNNSize);
 
   ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, High(FTiles));
 
