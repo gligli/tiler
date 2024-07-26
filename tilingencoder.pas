@@ -3258,7 +3258,7 @@ begin
   begin
    for cpn := 0 to ColorCpns - 1 do
    begin
-     pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
+     pDCT := @LocalDCT[cpn * sqr(cTileWidth)];
      specialize WaveletGS<Single, PSingle>(@CpnPixels[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
    end;
   end
@@ -3266,7 +3266,7 @@ begin
   begin
     for cpn := 0 to ColorCpns - 1 do
     begin
-      pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
+      pDCT := @LocalDCT[cpn * sqr(cTileWidth)];
       pLut := @FDCTLut[Mode in [pvsSpeDCT, pvsWeightedSpeDCT], 0];
       for v := 0 to cTileWidth - 1 do
         for u := 0 to cTileWidth - 1 do
@@ -3283,9 +3283,9 @@ begin
     end;
   end;
 
-  for i := 0 to cTileDCTSize div cColorCpns - 1 do
-    for cpn := 0 to ColorCpns - 1 do
-      DCT[cDCTSnake[i] * cColorCpns + cpn] := LocalDCT[i + cpn * (cTileDCTSize div ColorCpns)];
+  for cpn := 0 to ColorCpns - 1 do
+    for i := 0 to sqr(cTileWidth) - 1 do
+      DCT[cDCTSnake[i] + cpn * sqr(cTileWidth)] := LocalDCT[i + cpn * sqr(cTileWidth)];
 end;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
@@ -3350,7 +3350,7 @@ begin
   begin
    for cpn := 0 to ColorCpns - 1 do
    begin
-     pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
+     pDCT := @LocalDCT[cpn * sqr(cTileWidth)];
      specialize WaveletGS<Double, PDouble>(@CpnPixels[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
    end;
   end
@@ -3358,7 +3358,7 @@ begin
   begin
     for cpn := 0 to ColorCpns - 1 do
     begin
-      pDCT := @LocalDCT[cpn * (cTileDCTSize div ColorCpns)];
+      pDCT := @LocalDCT[cpn * sqr(cTileWidth)];
       pLut := @FDCTLutDouble[Mode in [pvsSpeDCT, pvsWeightedSpeDCT], 0];
       for v := 0 to cTileWidth - 1 do
         for u := 0 to cTileWidth - 1 do
@@ -3375,9 +3375,9 @@ begin
     end;
   end;
 
-  for i := 0 to cTileDCTSize div cColorCpns - 1 do
-    for cpn := 0 to ColorCpns - 1 do
-      DCT[cDCTSnake[i] * cColorCpns + cpn] := LocalDCT[i + cpn * (cTileDCTSize div ColorCpns)];
+  for cpn := 0 to ColorCpns - 1 do
+    for i := 0 to sqr(cTileWidth) - 1 do
+      DCT[cDCTSnake[i] + cpn * sqr(cTileWidth)] := LocalDCT[i + cpn * sqr(cTileWidth)];
 end;
 
 procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns, GammaCor: Integer;
@@ -3414,7 +3414,7 @@ begin
     for v := 0 to cTileWidth - 1 do
       for u := 0 to cTileWidth - 1 do
       begin
-        d := DCT[cDCTSnake[i] * cColorCpns + cpn];
+        d := DCT[cDCTSnake[i] + cpn * sqr(cTileWidth)];
         if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
           pDCT^ := d / cDCTQuantization[cpn, v, u]
         else
@@ -3429,7 +3429,7 @@ begin
     for cpn := 0 to ColorCpns - 1 do
     begin
       pCpn := @CpnPixels[cpn, 0, 0];
-      specialize DeWaveletGS<Double, PDouble>(@LocalDCT[cpn * (cTileDCTSize div ColorCpns)], pCpn, cTileWidth, cTileWidth, 2);
+      specialize DeWaveletGS<Double, PDouble>(@LocalDCT[cpn * sqr(cTileWidth)], pCpn, cTileWidth, cTileWidth, 2);
     end;
   end
   else
@@ -3442,7 +3442,7 @@ begin
       for y := 0 to cTileWidth - 1 do
         for x := 0 to cTileWidth - 1 do
         begin
-          pCpn^ := specialize DCTInner<PDouble>(@LocalDCT[cpn * (cTileDCTSize div ColorCpns)], pLut, 1);
+          pCpn^ := specialize DCTInner<PDouble>(@LocalDCT[cpn * sqr(cTileWidth)], pLut, 1);
           Inc(pCpn);
           Inc(pLut, Sqr(cTileWidth));
         end;
