@@ -121,9 +121,9 @@ object MainForm: TMainForm
     Height = 548
     Top = 40
     Width = 1028
-    ActivePage = tsTilesPal
+    ActivePage = tsSettings
     Anchors = [akTop, akLeft, akRight, akBottom]
-    TabIndex = 3
+    TabIndex = 0
     TabOrder = 5
     OnChange = UpdateVideo
     object tsSettings: TTabSheet
@@ -665,7 +665,6 @@ object MainForm: TMainForm
         Anchors = [akTop, akLeft, akRight, akBottom]
         OnMouseMove = imgTilesMouseMove
         PopupMenu = pmProcesses
-        Proportional = True
         Stretch = True
       end
       object sbPalette: TScrollBox
