@@ -4397,8 +4397,7 @@ procedure TTilingEncoder.DoPalettization(ADitheringGamma: Integer);
 const
   cFeatureCount = cTileDCTSize;
 var
-  DSLen: Integer;
-  BIRCH: PBIRCH;
+  BICO: PBICO;
   ANN: PANNkdtree;
   ANNClusters: TIntegerDynArray;
 
@@ -4419,18 +4418,18 @@ var
       if ACluster then
         ANNClusters[tIdx] := ann_kdtree_search(ANN, DCT, 0.0, @ANNError)
       else
-        birch_insert_line(BIRCH, DCT);
+        bico_insert_line(BICO, DCT, Tile^.UseCount);
     end;
   end;
 
 var
-  tIdx, di, palIdx, BIRCHClusterCount: Integer;
+  DSLen, tIdx, di, palIdx, BICOClusterCount: Integer;
 
   Tile: PTile;
 
   Yakmo: PYakmo;
 
-  BIRCHCentroids: TDoubleDynArray;
+  BICOCentroids, BICOWeights: TDoubleDynArray;
 
   ANNDataset: array of PDouble;
   YakmoClusters: TIntegerDynArray;
@@ -4440,30 +4439,31 @@ begin
   // build dataset
 
   DSLen := Length(FTiles);
+  BICOClusterCount := FPaletteCount shl 3;
 
-  BIRCH := birch_create(1.0, FPaletteCount shl 3, FPaletteCount);
+  BICO := bico_create(cFeatureCount, DSLen, BICOClusterCount, 32, BICOClusterCount, CRandomSeed);
   try
     DoDataset(False);
 
-    BIRCHClusterCount := birch_compute(BIRCH, True, True);
+    SetLength(BICOCentroids, BICOClusterCount * cFeatureCount);
+    SetLength(BICOWeights, BICOClusterCount);
 
-    SetLength(BIRCHCentroids, BIRCHClusterCount * cFeatureCount);
-    birch_get_centroids(BIRCH, @BIRCHCentroids[0]);
+    BICOClusterCount := bico_get_results(BICO, @BICOCentroids[0], @BICOWeights[0]);
 
-    WriteLn('BIRCHClusterCount: ', BIRCHClusterCount:6);
+    WriteLn('BICOClusterCount: ', BICOClusterCount:6);
   finally
-    birch_destroy(BIRCH);
+    bico_destroy(BICO);
   end;
 
   // use ANN to compute cluster indexes
 
-  SetLength(ANNDataset, BIRCHClusterCount);
+  SetLength(ANNDataset, BICOClusterCount);
   for di := 0 to High(ANNDataset) do
-    ANNDataset[di] := @BIRCHCentroids[di * cFeatureCount];
+    ANNDataset[di] := @BICOCentroids[di * cFeatureCount];
 
   SetLength(ANNClusters, DSLen);
 
-  ANN := ann_kdtree_create(@ANNDataset[0], BIRCHClusterCount, cFeatureCount, 32, ANN_KD_STD);
+  ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cFeatureCount, 32, ANN_KD_STD);
   try
     DoDataset(True);
   finally
@@ -4472,11 +4472,11 @@ begin
 
   // cluster by palette index
 
-  if BIRCHClusterCount > FPaletteCount then
+  if BICOClusterCount > FPaletteCount then
   begin
     if FPaletteCount > 1 then
     begin
-      SetLength(YakmoClusters, BIRCHClusterCount);
+      SetLength(YakmoClusters, BICOClusterCount);
 
       Yakmo := yakmo_create(FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
       yakmo_load_train_data(Yakmo, Length(ANNDataset), cFeatureCount, PPDouble(@ANNDataset[0]));
@@ -4486,12 +4486,12 @@ begin
     end
     else
     begin
-      SetLength(YakmoClusters, BIRCHClusterCount);
+      SetLength(YakmoClusters, BICOClusterCount);
     end;
   end
   else
   begin
-    SetLength(YakmoClusters, BIRCHClusterCount);
+    SetLength(YakmoClusters, BICOClusterCount);
     for di := 0 to High(YakmoClusters) do
       YakmoClusters[di] := di;
   end;
