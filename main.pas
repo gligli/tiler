@@ -581,14 +581,10 @@ begin
 end;
 
 procedure TMainForm.UpdateVideo(Sender: TObject);
-var
-  fromTimer: Boolean;
 begin
   UpdateGUI(Sender);
 
-  fromTimer := Assigned(Sender) and (Sender is TTimer);
-
-  FTilingEncoder.Render(not fromTimer);
+  FTilingEncoder.Render;
 
   imgSource.Picture.Bitmap := FTilingEncoder.InputBitmap;
   imgDest.Picture.Bitmap := FTilingEncoder.OutputBitmap;

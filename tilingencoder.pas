@@ -509,7 +509,7 @@ type
 
     procedure Run(AStep: TEncoderStep = esAll);
 
-    procedure Render(AFast: Boolean);
+    procedure Render;
     procedure GeneratePNGs(AInput: Boolean);
     procedure GenerateY4M(AFileName: String; AInput: Boolean);
     procedure SaveSettings(ASettingsFileName: String);
@@ -1815,7 +1815,6 @@ begin
   SolveTileCount(FGlobalTilingTileCount);
 
   ProgressRedraw(1, 'SolveTileCount');
-  // remove inactive tiles
 
   ReindexTiles(True);
 
@@ -2003,7 +2002,7 @@ begin
     for i := 0 to High(FFrames) do
     begin
       RenderFrameIndex := i;
-      Render(True);
+      Render;
 
       palPict.Canvas.Draw(0, 0, BMP);
       palPict.SaveToFile(Format('%s_%.4d.png', [ChangeFileExt(FOutputFileName, ''), i]));
@@ -2013,7 +2012,7 @@ begin
 
     RenderFrameIndex := oldRenderFrameIndex;
     RenderPage := oldRenderPage;
-    Render(False);
+    Render;
 
     palData.Free;
   end;
@@ -2055,7 +2054,7 @@ begin
       fs.Write(FrameHeader[1], Length(FrameHeader));
 
       RenderFrameIndex := i;
-      Render(True);
+      Render;
 
       py := @FrameData[0 * Length(FrameData) div cColorCpns];
       pu := @FrameData[1 * Length(FrameData) div cColorCpns];
@@ -2089,7 +2088,7 @@ begin
   finally
     RenderFrameIndex := oldRenderFrameIndex;
     RenderPage := oldRenderPage;
-    Render(False);
+    Render;
     fs.Free;
   end;
 end;
@@ -3657,7 +3656,7 @@ begin
   TTile.Array1DDispose(FTiles);
 end;
 
-procedure TTilingEncoder.Render(AFast: Boolean);
+procedure TTilingEncoder.Render;
 
   procedure DrawTile(bitmap: TBitmap; sx, sy: Integer; psyTile: PTile; tilePtr: PTile; pal: TIntegerDynArray; hmir, vmir, forceActive: Boolean); inline;
   var
@@ -3734,7 +3733,7 @@ begin
 
     // Global
 
-    globalTileCount := GetTileCount(not (FRenderPlaying or AFast));
+    globalTileCount := GetTileCount(False);
 
     FRenderTitleText := 'Global: ' + IntToStr(globalTileCount) + ' / Frame #' + IntToStr(FRenderFrameIndex) + IfThen(Frame.PKeyFrame.StartFrame = FRenderFrameIndex, ' [KF]', '     ') + ' : ' + IntToStr(GetFrameTileCount(Frame));
 
@@ -3776,7 +3775,7 @@ begin
 
     // "Output" tab
 
-    if (FRenderPage = rpOutput) or not (FRenderPlaying or AFast) then
+    if FRenderPage = rpOutput then
     begin
       if Frame.Index <> FRenderPrevFrameIndex then
         FRenderBackBuffer.Canvas.CopyRect(FRenderBackBuffer.Canvas.ClipRect, FOutputBitmap.Canvas, FOutputBitmap.Canvas.ClipRect);
