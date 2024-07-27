@@ -1484,7 +1484,7 @@ var
     // repredict (account for palette)
 
     fbErr := Infinity;
-    if (Index <> PKeyFrame.StartFrame) and not IsZero(dsErr) and TMI^.IsPredicted then
+    if (Index <> PKeyFrame.StartFrame) and not IsZero(dsErr) and (ARadius >= 0) then
     begin
       Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, cColorCpns, AFTGamma, nil, @DCT[0]);
 
@@ -1560,10 +1560,13 @@ begin
   if DS^.KNNSize <= 0 then
     Exit;
 
-  SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
-  ARadius := Encoder.FMotionPredictRadius;
+  Dec(ARadius);
 
-  ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
+  if ARadius >= 0 then
+  begin
+    SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
+    ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
+  end;
 
   AcquireFrameTiles;
   try
