@@ -4028,7 +4028,7 @@ begin
   StartFrame := 0;
   FrameCountSetting := 0;
   Scaling := 1.0;
-  MaxThreadCount := MaxInt;
+  MaxThreadCount := NumberOfProcessors;
 
   PaletteSize := 16;
   PaletteCount := 1024;
