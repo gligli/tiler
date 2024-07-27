@@ -527,8 +527,8 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 140
-        Width = 279
-        Caption = 'Motion prediction radius (higher -> slower) (0: none)'
+        Width = 229
+        Caption = 'Motion prediction radius (higher -> slower)'
         ParentColor = False
       end
       object cbxMPRadius: TComboBox
@@ -539,7 +539,6 @@ object MainForm: TMainForm
         DropDownCount = 20
         ItemHeight = 15
         Items.Strings = (
-          '0'
           '1'
           '2'
           '4'

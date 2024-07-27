@@ -3011,7 +3011,7 @@ end;
 procedure TTilingEncoder.SetMaxThreadCount(AValue: Integer);
 begin
  if ProcThreadPool.MaxThreadCount = AValue then Exit;
- ProcThreadPool.MaxThreadCount := EnsureRange(AValue, 1, NumberOfProcessors);
+ ProcThreadPool.MaxThreadCount := max(1, AValue);
 end;
 
 procedure TTilingEncoder.SetPaletteCount(AValue: Integer);
@@ -3104,7 +3104,7 @@ end;
 procedure TTilingEncoder.SetMotionPredictRadius(AValue: Integer);
 begin
   if FMotionPredictRadius = AValue then Exit;
-  FMotionPredictRadius := EnsureRange(AValue, 0, -Low(ShortInt));
+  FMotionPredictRadius := EnsureRange(AValue, 1, -Low(ShortInt));
 end;
 
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
