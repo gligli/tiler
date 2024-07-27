@@ -136,13 +136,14 @@ type
     procedure FormKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure FormKeyUp(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure IdleTimerTimer(Sender: TObject);
-    procedure imgClick(Sender: TObject);
     procedure imgContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
     procedure imgPaletteClick(Sender: TObject);
     procedure btnGeneratePNGsInputClick(Sender: TObject);
     procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
     procedure imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure imgTilesMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
+    procedure imgTilesMouseWheelDown(Sender: TObject; Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
+    procedure imgTilesMouseWheelUp(Sender: TObject; Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
     procedure miGeneratePNGsOutputClick(Sender: TObject);
     procedure miGenerateY4MInputClick(Sender: TObject);
     procedure miGenerateY4MOutputClick(Sender: TObject);
@@ -310,6 +311,18 @@ begin
         IfThen(FTilingEncoder.Tiles[tileIdx]^.VMirror_Initial, ', [V]')])
   else
     llPalTileDesc.Caption := 'Invalid tile!';
+end;
+
+procedure TMainForm.imgTilesMouseWheelDown(Sender: TObject; Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
+begin
+  sePage.Value := sePage.Value + 1;
+  Handled := True;
+end;
+
+procedure TMainForm.imgTilesMouseWheelUp(Sender: TObject; Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
+begin
+  sePage.Value := sePage.Value - 1;
+  Handled := True;
 end;
 
 procedure TMainForm.miGeneratePNGsOutputClick(Sender: TObject);
@@ -524,25 +537,6 @@ begin
   end;
 end;
 
-procedure TMainForm.imgClick(Sender: TObject);
-var
-  pt: TPoint;
-begin
-  pt := TImage(Sender).ScreenToClient(Mouse.CursorPos);
-
-  pt.X -= (TImage(Sender).Width - FTilingEncoder.ScreenWidth) div 2;
-  pt.Y -= (TImage(Sender).Height - FTilingEncoder.ScreenHeight) div 2;
-
-  if Assigned(FTilingEncoder) and InRange(tbFrame.Position, 0, FTilingEncoder.FrameCount - 1) and
-    InRange(pt.X, 0, FTilingEncoder.ScreenWidth - 1) and InRange(pt.Y, 0, FTilingEncoder.ScreenHeight - 1) then
-  begin
-    pt.X := pt.X div cTileWidth;
-    pt.Y := pt.Y div cTileWidth;
-
-    sedPalIdx.Value := FTilingEncoder.Frames[tbFrame.Position].TileMap[pt.Y, pt.X].PalIdx
-  end;
-end;
-
 procedure TMainForm.imgContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
 var
   pt: TPoint;
@@ -664,8 +658,10 @@ begin
   pnLbl.Caption := FTilingEncoder.RenderTitleText;
   lblCorrel.Caption := FormatFloat('##0.000000', FTilingEncoder.RenderPsychoVisualQuality);
   sedPalIdx.MaxValue := FTilingEncoder.PaletteCount - 1;
-  imgSource.Stretch := chkStretch.Checked;
-  imgDest.Stretch := chkStretch.Checked;
+  imgSource.Stretch := chkStretch.State in [cbGrayed, cbChecked];
+  imgDest.Stretch := imgSource.Stretch;
+  imgSource.Proportional := chkStretch.State = cbGrayed;
+  imgDest.Proportional := imgSource.Proportional;
 end;
 
 procedure TMainForm.TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);

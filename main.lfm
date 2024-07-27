@@ -589,7 +589,6 @@ object MainForm: TMainForm
       ClientHeight = 520
       ClientWidth = 1020
       object imgSource: TImage
-        Cursor = crHandPoint
         Left = 0
         Height = 520
         Top = 0
@@ -597,7 +596,6 @@ object MainForm: TMainForm
         AntialiasingMode = amOff
         Align = alClient
         Center = True
-        OnClick = imgClick
         OnContextPopup = imgContextPopup
         OnPaintBackground = imgPaintBackground
         PopupMenu = pmProcesses
@@ -609,7 +607,6 @@ object MainForm: TMainForm
       ClientHeight = 520
       ClientWidth = 1020
       object imgDest: TImage
-        Cursor = crHandPoint
         Left = 0
         Height = 520
         Top = 0
@@ -618,7 +615,6 @@ object MainForm: TMainForm
         Align = alClient
         AutoSize = True
         Center = True
-        OnClick = imgClick
         OnContextPopup = imgContextPopup
         OnPaintBackground = imgPaintBackground
         PopupMenu = pmProcesses
@@ -663,6 +659,9 @@ object MainForm: TMainForm
         AntialiasingMode = amOff
         Anchors = [akTop, akLeft, akRight, akBottom]
         OnMouseMove = imgTilesMouseMove
+        OnMouseWheelDown = imgTilesMouseWheelDown
+        OnMouseWheelUp = imgTilesMouseWheelUp
+        OnPaintBackground = imgPaintBackground
         PopupMenu = pmProcesses
         Stretch = True
       end
@@ -690,6 +689,7 @@ object MainForm: TMainForm
           OnClick = imgPaletteClick
           OnContextPopup = imgContextPopup
           OnMouseMove = imgPaletteMouseMove
+          OnPaintBackground = imgPaintBackground
           PopupMenu = pmProcesses
           Stretch = True
         end
@@ -813,6 +813,7 @@ object MainForm: TMainForm
     Height = 19
     Top = 615
     Width = 68
+    AllowGrayed = True
     Anchors = [akLeft, akBottom]
     Caption = 'Stretched'
     TabOrder = 13
