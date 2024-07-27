@@ -585,7 +585,7 @@ begin
   imgPalette.Picture.Bitmap := FTilingEncoder.PaletteBitmap;
   imgTiles.Picture.Bitmap := FTilingEncoder.TilesBitmap;
 
-  imgPalette.Height := (imgPalette.Width div FTilingEncoder.PaletteSize) * FTilingEncoder.PaletteCount;
+  imgPalette.Height := Min(High(Word) + 1, FTilingEncoder.PaletteCount * cTileWidth);
 
   UpdateGUI(Sender);
 end;
