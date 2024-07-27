@@ -871,26 +871,23 @@ begin
 
       frmIdx := (FFFrame^.best_effort_timestamp - AFFMPEG.StartTimeStamp) div FFFrame^.pkt_duration;
 
-      //writeln(frmTS:8, frmIdx:8, AStartFrame + doneFrameCount:8);
-
       // seeking can be inaccurate, so ensure we have the frame we want
-      if (frmIdx = AStartFrame + doneFrameCount) or (frmIdx < 0) then
+      if (frmIdx >= AStartFrame + doneFrameCount) or (frmIdx < 0) then
       begin
         // Convert the image from its native format to RGB
         if sws_scale(FFSWSCtx, FFFrame^.data, FFFrame^.linesize, 0, AFFMPEG.CodecCtx^.height, FFDstData, FFDstLinesize) < 0 then
           raise EFFMPEGError.Create('Error rescaling frame');
 
-        AFrameCallback(AStartFrame + doneFrameCount, FFDstLinesize[0] shr 2, AFFMPEG.DstHeight, PInteger(FFDstData[0]), AUserParameter);
-        Inc(doneFrameCount);
+        while AStartFrame + doneFrameCount <= frmIdx do
+        begin
+          //writeln(frmIdx:8, AStartFrame + doneFrameCount:8);
+
+          AFrameCallback(AStartFrame + doneFrameCount, FFDstLinesize[0] shr 2, AFFMPEG.DstHeight, PInteger(FFDstData[0]), AUserParameter);
+          Inc(doneFrameCount);
+        end;
 
         if doneFrameCount >= AFrameCount then
           Break;
-      end
-      else if frmIdx > AStartFrame + doneFrameCount then
-      begin
-        // in case we went past the desired frame, seek back to the beginning of the file
-        if av_seek_frame(AFFMPEG.FmtCtx, -1, 0, AVSEEK_FLAG_BYTE) < 0 then
-          raise EFFMPEGError.Create('Could not seek to frame');
       end;
     end;
   finally
