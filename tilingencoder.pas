@@ -315,7 +315,6 @@ type
 
     FCS: TRTLCriticalSection;
     FKeyFramesLeft: Integer;
-    FUnpredictedTileCount: Integer;
     FTileDS: PTilingDataset;
 
     FGamma: array[0..1] of TFloat;
@@ -469,7 +468,7 @@ type
 
     function STCGREval(x: Double; Data: Pointer): Double;
     function SolveTileCount(ATileCount: Integer): Double;
-    procedure TransferTiles;
+    procedure TransferTiles(ATileCount: Integer);
 
     procedure DoPalettization(ADitheringGamma: Integer);
     procedure QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer);
@@ -4310,11 +4309,11 @@ end;
 
 function TTilingEncoder.STCGREval(x: Double; Data: Pointer): Double;
 var
-  frmIdx, sy, sx: Integer;
+  frmIdx, sy, sx, unpredictedTileCount: Integer;
   TMI: PTileMapItem;
 begin
   x *= x;
-  FUnpredictedTileCount := 0;
+  unpredictedTileCount := 0;
   for frmIdx := 0 to High(FFrames) do
     for sy := 0 to FTileMapHeight - 1 do
       for sx := 0 to FTileMapWidth - 1 do
@@ -4323,10 +4322,10 @@ begin
 
         TMI^.IsPredicted := TMI^.ResidualErr < x;
 
-        inc(FUnpredictedTileCount, Ord(not TMI^.IsPredicted));
+        inc(unpredictedTileCount, Ord(not TMI^.IsPredicted));
       end;
 
-  TransferTiles;
+  TransferTiles(unpredictedTileCount);
 
   MakeTilesUnique(True);
 
@@ -4338,7 +4337,7 @@ begin
   Result := GoldenRatioSearch(@STCGREval, cTileDCTSize, 0.0, ATileCount, 1e-6, 0.5, nil);
 end;
 
-procedure TTilingEncoder.TransferTiles;
+procedure TTilingEncoder.TransferTiles(ATileCount: Integer);
 var
   doneFrameCount: Integer;
   newTIdx: Integer;
@@ -4386,13 +4385,13 @@ var
 
 begin
   TTile.Array1DDispose(FTiles);
-  FTiles := TTile.Array1DNew(FUnpredictedTileCount, True, True);
+  FTiles := TTile.Array1DNew(ATileCount, True, True);
 
   doneFrameCount := 0;
   newTIdx := -1;
   ProcThreadPool.DoParallelLocalProc(@DoTransfer, 0, High(FFrames));
 
-  Assert(newTIdx = FUnpredictedTileCount - 1);
+  Assert(newTIdx = ATileCount - 1);
 end;
 
 procedure TTilingEncoder.DoPalettization(ADitheringGamma: Integer);
