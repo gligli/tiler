@@ -1263,8 +1263,7 @@ begin
 
   AcquireFrameTiles;
   try
-    if Index > 0 then
-      ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
+    ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
 
     ProcThreadPool.DoParallelLocalProc(@DoXY, 0, Encoder.FTileMapSize);
   finally
@@ -1873,9 +1872,9 @@ begin
   SetLength(FrameBuffer[False], FScreenHeight, FScreenWidth);
   SetLength(FrameBuffer[True], FScreenHeight, FScreenWidth);
 
-  for frmIdx := 0 to High(FFrames) do
+  for frmIdx := -Min(1, High(FFrames)) to High(FFrames) do // first frame is predicted from next frame if it exists
   begin
-    FFrames[frmIdx].PredictMotion(FMotionPredictRadius, FrameBuffer[not curBuffer], FrameBuffer[curBuffer]);
+    FFrames[Abs(frmIdx)].PredictMotion(FMotionPredictRadius, FrameBuffer[not curBuffer], FrameBuffer[curBuffer]);
     curBuffer := not curBuffer;
 
     Write(frmIdx + 1:8, ' / ', Length(FFrames):8, #13);
