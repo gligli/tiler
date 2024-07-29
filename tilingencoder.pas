@@ -235,6 +235,8 @@ type
   TTilingEncoder = class;
   TKeyFrame = class;
 
+  { TPalette }
+
   TPalette = record
     UseCount: Integer;
     PalIdx_Initial: Integer;
@@ -267,12 +269,12 @@ type
     FrameTilesLock: TSpinlock;
     CompressedFrameTiles: TMemoryStream;
 
-    function PrepareInterFrameData: TFloatDynArray;
-    procedure ComputeInterFrameAndCompress;
-    procedure LoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
 
     constructor Create(AParent: TTilingEncoder; AIndex: Integer);
     destructor Destroy; override;
+
+    function PrepareInterFrameData: TFloatDynArray;
+    procedure ComputeInterFrameAndCompress;
 
     procedure CompressFrameTiles;
     procedure AcquireFrameTiles;
@@ -280,6 +282,7 @@ type
 
     // processes
 
+    procedure LoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
     procedure PredictMotion(ARadius: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
     procedure Reconstruct(ARadius, AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
   end;
@@ -446,7 +449,7 @@ type
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
 
     class function ColorCompare(r1, g1, b1, r2, g2, b2: Int64): Int64;
-    procedure PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
+    procedure PreparePlan(var Plan: TMixingPlan; const pal: array of Integer);
     procedure TerminatePlan(var Plan: TMixingPlan);
     function DeviseBestMixingPlanYliluoma(var Plan: TMixingPlan; col: Integer; var List: array of Byte): Integer;
     procedure DeviseBestMixingPlanThomasKnoll(var Plan: TMixingPlan; col: Integer; var List: array of Byte);
@@ -1002,6 +1005,7 @@ begin
   UseCount := ATile.UseCount;
   TmpIndex := ATile.TmpIndex;
   PalIdx_Initial := ATile.PalIdx_Initial;
+  MergeIndex := ATile.MergeIndex;
   Active := ATile.Active;
   HMirror_Initial := ATile.HMirror_Initial;
   VMirror_Initial := ATile.VMirror_Initial;
@@ -1794,7 +1798,7 @@ begin
 
   // build ditherers
   for palIdx := 0 to High(FPalettes) do
-    PreparePlan(FPalettes[palIdx].MixingPlan, FDitheringYliluoma2MixedColors, FPalettes[palIdx].PaletteRGB);
+    PreparePlan(FPalettes[palIdx].MixingPlan, FPalettes[palIdx].PaletteRGB);
 
   ProgressRedraw(1, 'BuildDitherers');
 
@@ -2163,13 +2167,13 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.PreparePlan(var Plan: TMixingPlan; MixedColors: Integer; const pal: array of Integer);
+procedure TTilingEncoder.PreparePlan(var Plan: TMixingPlan; const pal: array of Integer);
 var
   i, cnt, r, g, b: Integer;
 begin
   FillChar(Plan, SizeOf(Plan), 0);
 
-  Plan.Y2MixedColors := MixedColors;
+  Plan.Y2MixedColors := FDitheringYliluoma2MixedColors;
   SetLength(Plan.LumaPal, length(pal));
   SetLength(Plan.Y2Palette, length(pal));
   SetLength(Plan.Remap, length(pal));
