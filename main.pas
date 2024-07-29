@@ -23,6 +23,7 @@ type
     cbxMPRadius: TComboBox;
     cbxDitheringMode: TComboBox;
     cbxFTMode: TComboBox;
+    chkFTEPU: TCheckBox;
     chkStretch: TCheckBox;
     chkPredicted: TCheckBox;
     cbxScaling: TComboBox;
@@ -638,6 +639,7 @@ begin
 
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingMode := TPsyVisMode(cbxFTMode.ItemIndex);
+  FTilingEncoder.FrameTilingExtendedPaletteUsage := chkFTEPU.Checked;
 
   FTilingEncoder.ShotTransMinSecondsPerKF := seShotTransMinSecondsPerKF.Value;
   FTilingEncoder.ShotTransMaxSecondsPerKF := seShotTransMaxSecondsPerKF.Value;
@@ -704,6 +706,7 @@ begin
 
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
    cbxFTMode.ItemIndex := Ord(FTilingEncoder.FrameTilingMode);
+   chkFTEPU.Checked := FTilingEncoder.FrameTilingExtendedPaletteUsage;
 
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
    seVisGamma.Value := FTilingEncoder.RenderGammaValue;

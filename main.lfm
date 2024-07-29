@@ -256,29 +256,29 @@ object MainForm: TMainForm
       object chkDitheringGamma: TCheckBox
         Left = 8
         Height = 19
-        Top = 341
+        Top = 365
         Width = 334
         Alignment = taLeftJustify
         AutoSize = False
         Caption = 'Dithering gamma correction'
-        TabOrder = 18
+        TabOrder = 19
         OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
         Left = 8
         Height = 19
-        Top = 367
+        Top = 391
         Width = 334
         Alignment = taLeftJustify
         AutoSize = False
         Caption = 'Reconstruct gamma correction'
-        TabOrder = 19
+        TabOrder = 20
         OnChange = UpdateGUI
       end
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 318
+        Top = 342
         Width = 167
         Caption = 'Gamma (encoder; visualization)'
         ParentColor = False
@@ -286,25 +286,25 @@ object MainForm: TMainForm
       object seEncGamma: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 315
+        Top = 339
         Width = 64
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 16
+        TabOrder = 17
         Value = 1
       end
       object seVisGamma: TFloatSpinEdit
         Left = 393
         Height = 23
-        Top = 315
+        Top = 339
         Width = 64
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateVideo
-        TabOrder = 17
+        TabOrder = 18
         Value = 1
       end
       object seQbTiles: TFloatSpinEdit
@@ -417,7 +417,7 @@ object MainForm: TMainForm
       object Label16: TLabel
         Left = 8
         Height = 15
-        Top = 464
+        Top = 488
         Width = 240
         Caption = 'Maximum CPU cores used for multithreading'
         ParentColor = False
@@ -425,7 +425,7 @@ object MainForm: TMainForm
       object Label20: TLabel
         Left = 8
         Height = 15
-        Top = 397
+        Top = 421
         Width = 207
         Caption = 'Keyframes length (seconds) (min; max)'
         ParentColor = False
@@ -433,27 +433,27 @@ object MainForm: TMainForm
       object seShotTransMaxSecondsPerKF: TFloatSpinEdit
         Left = 393
         Height = 23
-        Top = 393
+        Top = 417
         Width = 64
         Increment = 0.1
         MaxValue = 100
         OnChange = UpdateGUI
-        TabOrder = 21
+        TabOrder = 22
       end
       object seShotTransMinSecondsPerKF: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 393
+        Top = 417
         Width = 64
         Increment = 0.05
         MaxValue = 100
         OnChange = UpdateGUI
-        TabOrder = 20
+        TabOrder = 21
       end
       object Label22: TLabel
         Left = 8
         Height = 15
-        Top = 421
+        Top = 445
         Width = 233
         Caption = 'Keyframes threshold (correlation; euclidean)'
         ParentColor = False
@@ -461,18 +461,18 @@ object MainForm: TMainForm
       object seShotTransCorrelLoThres: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 417
+        Top = 441
         Width = 64
         Increment = 0.05
         MaxValue = 1
         MinValue = -1
         OnChange = UpdateGUI
-        TabOrder = 22
+        TabOrder = 23
       end
       object Label17: TLabel
         Left = 8
         Height = 15
-        Top = 283
+        Top = 307
         Width = 236
         Caption = 'Psychovisual modes (prepare palettes; other)'
         ParentColor = False
@@ -480,25 +480,7 @@ object MainForm: TMainForm
       object cbxDitheringMode: TComboBox
         Left = 328
         Height = 23
-        Top = 279
-        Width = 129
-        DropDownCount = 20
-        ItemHeight = 15
-        Items.Strings = (
-          'DCT'
-          'Weighted DCT'
-          'Haar wavelets'
-          'Special DCT'
-          'Spe. Wgt. DCT'
-        )
-        Style = csDropDownList
-        TabOrder = 14
-        OnChange = UpdateGUI
-      end
-      object cbxFTMode: TComboBox
-        Left = 458
-        Height = 23
-        Top = 279
+        Top = 303
         Width = 129
         DropDownCount = 20
         ItemHeight = 15
@@ -513,15 +495,33 @@ object MainForm: TMainForm
         TabOrder = 15
         OnChange = UpdateGUI
       end
+      object cbxFTMode: TComboBox
+        Left = 458
+        Height = 23
+        Top = 303
+        Width = 129
+        DropDownCount = 20
+        ItemHeight = 15
+        Items.Strings = (
+          'DCT'
+          'Weighted DCT'
+          'Haar wavelets'
+          'Special DCT'
+          'Spe. Wgt. DCT'
+        )
+        Style = csDropDownList
+        TabOrder = 16
+        OnChange = UpdateGUI
+      end
       object seShotTransDistHiThres: TFloatSpinEdit
         Left = 393
         Height = 23
-        Top = 417
+        Top = 441
         Width = 64
         Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 23
+        TabOrder = 24
       end
       object Label18: TLabel
         Left = 8
@@ -568,20 +568,31 @@ object MainForm: TMainForm
       object Bevel3: TBevel
         Left = 8
         Height = 2
-        Top = 452
+        Top = 476
         Width = 712
         Shape = bsTopLine
       end
       object seMaxCores: TSpinEdit
         Left = 328
         Height = 23
-        Top = 460
+        Top = 484
         Width = 64
         MaxValue = 1000000
         MinValue = 1
         OnChange = UpdateGUI
-        TabOrder = 24
+        TabOrder = 25
         Value = 1
+      end
+      object chkFTEPU: TCheckBox
+        Left = 8
+        Height = 19
+        Top = 276
+        Width = 334
+        Alignment = taLeftJustify
+        AutoSize = False
+        Caption = 'Reconstruct extended palette usage (slower, more accurate)'
+        TabOrder = 14
+        OnChange = UpdateGUI
       end
     end
     object tsInput: TTabSheet
