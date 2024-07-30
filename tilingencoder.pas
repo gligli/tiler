@@ -5686,8 +5686,8 @@ begin
   try
     WriteSettings;
     WriteDimensions;
-    WritePalettes;
     WriteTiles;
+    WritePalettes;
 
     LastKF := 0;
     for kfIdx := 0 to High(FKeyFrames) do
