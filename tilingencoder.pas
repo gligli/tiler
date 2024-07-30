@@ -87,6 +87,7 @@ type
     gtShortAdditionalTileIdx = 9,
     gtLongAdditionalTileIdx = 10,
     gtIntraTile = 11,
+    gtLongTileIdxLongPalIdx = 12,
 
     gtFrameEnd = 28,
     gtTileSet = 29,
@@ -201,6 +202,7 @@ type
   TTileMapItemHelper = record helper for TTileMapItem
   private
     function GetHMirror: Boolean;
+    function GetIsSmoothed: Boolean;
     function GetVMirror: Boolean;
     procedure SetHMirror(AValue: Boolean);
     procedure SetVMirror(AValue: Boolean);
@@ -208,6 +210,7 @@ type
     procedure SetIsPredicted(AValue: Boolean);
   public
     property IsPredicted: Boolean read GetIsPredicted write SetIsPredicted;
+    property IsSmoothed: Boolean read GetIsSmoothed;
     property HMirror: Boolean read GetHMirror write SetHMirror;
     property VMirror: Boolean read GetVMirror write SetVMirror;
   end;
@@ -642,6 +645,11 @@ end;
 function TTileMapItemHelper.GetHMirror: Boolean;
 begin
   Result := tmfHMirror in Flags;
+end;
+
+function TTileMapItemHelper.GetIsSmoothed: Boolean;
+begin
+  Result := IsPredicted and (PredictedX = 0) and (PredictedY = 0);
 end;
 
 function TTileMapItemHelper.GetVMirror: Boolean;
@@ -5483,6 +5491,10 @@ begin
 end;
 
 procedure TTilingEncoder.SaveStream(AStream: TStream);
+const
+  CMinBlkSkipCount = 4;
+  CMaxBlkSkipCount = 1 shl CGTMCommandBits;
+
 var
   ZStream: TMemoryStream;
 
@@ -5509,9 +5521,14 @@ var
     DoWord((Data shl CGTMCommandCodeBits) or Ord(Cmd));
   end;
 
-  function ExtractTMIAttributes(const TMI: TTileMapItem; out attrs: Word; out isPredicted: Boolean): Integer;
+  function ExtractTMIAttributes(const TMI: TTileMapItem; out attrs: Word; out isPredicted, isLongPal: Boolean): Integer;
   begin
+    isLongPal := TMI.PalIdx > High(Byte);
+
     attrs := (Ord(TMI.VMirror) shl 1) or Ord(TMI.HMirror);
+    if not isLongPal then
+      attrs := attrs or TMI.PalIdx shl 2;
+
     isPredicted := TMI.IsPredicted;
     Result := TMI.TileIdx;
   end;
@@ -5520,9 +5537,9 @@ var
   var
     tileIdx: Integer;
     attrs: Word;
-    isPredicted: Boolean;
+    isPredicted, isLongPal: Boolean;
   begin
-    tileIdx := ExtractTMIAttributes(TMI, attrs, isPredicted);
+    tileIdx := ExtractTMIAttributes(TMI, attrs, isPredicted, isLongPal);
 
     if isPredicted then
     begin
@@ -5540,15 +5557,19 @@ var
       end
       else
       begin
-        if tileIdx < (1 shl 16) then
+        if (tileIdx <= High(Word)) and not isLongPal then
         begin
           DoCmd(gtShortTileIdx, attrs);
-          DoWord(TMI.PalIdx);
           DoWord(tileIdx);
+        end
+        else if not isLongPal then
+        begin
+          DoCmd(gtLongTileIdx, attrs);
+          DoDWord(tileIdx);
         end
         else
         begin
-          DoCmd(gtLongTileIdx, attrs);
+          DoCmd(gtLongTileIdxLongPalIdx, attrs);
           DoWord(TMI.PalIdx);
           DoDWord(tileIdx);
         end;
@@ -5623,8 +5644,8 @@ var
   end;
 
 var
-  StartPos, StreamSize, LastKF, KFCount, KFSize: Integer;
-  kfIdx, frmIdx, sx, sy: Integer;
+  StartPos, StreamSize, LastKF, KFCount, KFSize, BlkSkipCount: Integer;
+  kfIdx, frmIdx, yx, yxs, cs, sx, sy: Integer;
   IsKF: Boolean;
   KeyFrame: TKeyFrame;
   Frame: TFrame;
@@ -5677,9 +5698,54 @@ begin
       begin
         Frame := FFrames[frmIdx];
 
-        for sy := 0 to FTileMapHeight - 1 do
-          for sx := 0 to FTileMapWidth - 1 do
-            DoTMI(Frame.TileMap[sy, sx]);
+        cs := 0;
+        BlkSkipCount := 0;
+        for yx := 0 to FTileMapSize - 1 do
+        begin
+          if BlkSkipCount > 0 then
+          begin
+            // handle an ongoing block skip
+
+            Dec(BlkSkipCount);
+          end
+          else
+          begin
+            // find a potential new skip
+
+            BlkSkipCount := 0;
+            for yxs := yx to FTileMapSize - 1 do
+            begin
+              DivMod(yxs, FTileMapWidth, sy, sx);
+              if not Frame.TileMap[sy, sx].IsSmoothed then
+                Break;
+              Inc(BlkSkipCount);
+            end;
+            BlkSkipCount := min(CMaxBlkSkipCount, BlkSkipCount);
+
+            // filter using heuristics to avoid unbeneficial skips
+
+            if BlkSkipCount >= CMinBlkSkipCount then
+            begin
+              //writeln('blk ', BlkSkipCount);
+
+              DoCmd(gtSkipBlock, BlkSkipCount - 1);
+              Inc(cs, BlkSkipCount);
+              Dec(BlkSkipCount);
+            end
+            else
+            begin
+              // standard case: emit tilemap item
+
+              BlkSkipCount := 0;
+
+              DivMod(yx, FTileMapWidth, sy, sx);
+              DoTMI(Frame.TileMap[sy, sx]);
+              Inc(cs);
+            end;
+          end;
+        end;
+        Assert(cs = FTileMapSize, 'incomplete TM');
+        Assert(BlkSkipCount = 0, 'pending skips');
 
         IsKF := (frmIdx = KeyFrame.EndFrame);
 
