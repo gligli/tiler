@@ -52,50 +52,36 @@ type
   // Commands Description:
   // =====================
   //
-  // SkipBlock:               data -> none; commandBits -> skip count - 1 (10 bits)
-  // ShortTileIdx:            data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // LongTileIdx:             data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // LoadPalette:             data -> palette index (16 bits); RGBA bytes (32bits); commandBits -> palette format (0: RGBA32) (10 bits)
-  // ShortBlendTileIdx:       data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
-  //                            commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // LongBlendTileIdx:         data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
-  //                            commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // ShortAddlBlendTileIdx:   data -> tile index (16 bits) * 2; blending ratio (8 bits); padding (8 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // LongAddlBlendTileIdx:    data -> tile index (32 bits) * 2; blending ratio (8 bits); padding (8 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // ShortAdditionalTileIdx:  data -> tile index (16 bits) * 2; commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-  // LongAdditionalTileIdx:   data -> tile index (32 bits) * 2; commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+  // PredictedTileShortOffsets:        data -> none; commandBits -> y offset (5 bits); x offset (5 bits)
+  // PredictedTileLongOffsets:         data -> x offset (8 bits); y offset (8 bits); commandBits -> none
+  // ShortTileIdxShortPalIdx:          data -> tile index (16 bits); commandBits -> palette index (10 bits); V mirror (1 bit); H mirror (1 bit)
+  // LongTileIdxShortPalIdx:           data -> tile index (32 bits); commandBits -> palette index (10 bits); V mirror (1 bit); H mirror (1 bit)
+  // LongTileIdxLongPalIdx:            data -> palette index (16 bits); tile index (32 bits); commandBits -> none (10 bits); V mirror (1 bit); H mirror (1 bit)
+  // IntraTile:                        data -> palette index (16 bits); indexes per pixel (64 bytes); commandBits -> none (10 bits); V mirror (1 bit); H mirror (1 bit)
+  // SkipBlock:                        data -> none; commandBits -> skip count - 1 (12 bits)
   //
   // (insert new commands here...)
   //
-  // FrameEnd:                data -> none; commandBits bit 0 -> keyframe end
-  // TileSet:                 data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
-  // SetDimensions:           data -> width in tiles (16 bits); height in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
-  // ExtendedCommand:         data -> following bytes count (32 bits); custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
-  //
-  // ReservedArea:            reserving the MSB for future use (do not use for new commands)
+  // FrameEnd:                         data -> none; commandBits -> none (11 bits); keyframe end (1 bit)
+  // LoadPalette:                      data -> palette index (16 bits); { RGBA bytes (32bits) } * indexes count; commandBits -> palette format (0: RGBA32) (12 bits)
+  // TileSet:                          data -> start tile (32 bits); end tile (32 bits); { indexes per pixel (64 bytes) } * count; commandBits -> indexes count per palette
+  // SetDimensions:                    data -> width in tiles (16 bits); height in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
+  // ExtendedCommand:                  data -> following bytes count (32 bits); custom commands, proprietary extensions, ...; commandBits -> extended command index (12 bits)
 
   TGTMCommand = (
-    gtSkipBlock = 0,
-    gtShortTileIdx = 1,
-    gtLongTileIdx = 2,
-    gtLoadPalette = 3,
-    gtShortBlendTileIdx = 4,
-    gtLongBlendTileIdx = 5,
-    gtShortAddlBlendTileIdx = 6,
-    gtLongAddlBlendTileIdx = 7,
-    gtPredictedTile = 8,
-    gtShortAdditionalTileIdx = 9,
-    gtLongAdditionalTileIdx = 10,
-    gtIntraTile = 11,
-    gtLongTileIdxLongPalIdx = 12,
+    gtPredictedTileShortOffsets = 0,
+    gtPredictedTileLongOffsets = 1,
+    gtShortTileIdxShortPalIdx = 2,
+    gtLongTileIdxShortPalIdx = 3,
+    gtLongTileIdxLongPalIdx = 4,
+    gtIntraTile = 5,
+    gtSkipBlock = 6,
 
-    gtFrameEnd = 28,
-    gtTileSet = 29,
-    gtSetDimensions = 30,
-    gtExtendedCommand = 31,
-
-    gtReservedAreaBegin = 32,
-    gtReservedAreaEnd = 63
+    gtFrameEnd = 11,
+    gtLoadPalette = 12,
+    gtTileSet = 13,
+    gtSetDimensions = 14,
+    gtExtendedCommand = 15
   );
 
   PIntegerDynArray = ^TIntegerDynArray;
@@ -5317,14 +5303,6 @@ var
       FPalettes[palIdx].PaletteRGB[i] := ReadDWord and $ffffff;
   end;
 
-  procedure ReadPredictedTMI(var TMI: TTileMapItem);
-  begin
-    TMI.PredictedX := ShortInt(ReadByte);
-    TMI.PredictedY := ShortInt(ReadByte);
-
-    TMI.IsPredicted := True;
-  end;
-
   procedure SetTMI(tileIdx, palIdx: Integer; attrs: Integer; var TMI: TTileMapItem);
   begin
     TMI.TileIdx := tileIdx;
@@ -5344,6 +5322,22 @@ var
     Result.PKeyFrame := kf;
   end;
 
+  procedure SkipBlock(frm: TFrame; SkipCount: Integer; var tmPos: Integer);
+  var
+    i: Integer;
+    sx, sy: Integer;
+  begin
+    Assert(frm.Index > 0);
+    for i := tmPos to tmPos + SkipCount - 1 do
+    begin
+      DivMod(i, FTileMapWidth, sy, sx);
+      frm.TileMap[sy, sx].IsPredicted := True;
+      frm.TileMap[sy, sx].PredictedX := 0;
+      frm.TileMap[sy, sx].PredictedY := 0;
+    end;
+    tmPos += SkipCount;
+  end;
+
 var
   Header: TGTMHeader;
   Command, prevCommand: TGTMCommand;
@@ -5354,6 +5348,7 @@ var
   frm: TFrame;
   kf: TKeyFrame;
   compat: String;
+  TMI: PTileMapItem;
 begin
   FillChar(Header, SizeOf(Header), 0);
 
@@ -5395,7 +5390,7 @@ begin
       kf := TKeyFrame.Create(Self, High(FKeyFrames), loadedFrmCount, -1);
       FKeyFrames[High(FKeyFrames)] := kf;
 
-      prevCommand := gtReservedAreaEnd;
+      prevCommand := gtExtendedCommand;
       tmPos := 0;
       repeat
         ReadCmd(Command, CommandData);
@@ -5429,11 +5424,22 @@ begin
             if (CommandData and 1) <> 0 then // keyframe end?
               Break;
           end;
-          gtShortTileIdx, gtLongTileIdx:
+          gtSkipBlock:
           begin
-            palIdx := ReadWord;
+            // next frame if needed
+            if frm = nil then
+              frm := NextFrame(kf);
 
-            if Command in [gtShortTileIdx] then
+            SkipBlock(frm, CommandData + 1, tmPos);
+          end;
+          gtShortTileIdxShortPalIdx, gtLongTileIdxShortPalIdx, gtLongTileIdxLongPalIdx:
+          begin
+            if Command in [gtLongTileIdxLongPalIdx] then
+              palIdx := ReadWord
+            else
+              palIdx := (CommandData shr 2) and ((1 shl (CGTMCommandBits - 2)) - 1);
+
+            if Command in [gtShortTileIdxShortPalIdx] then
               tileIdx := ReadWord
             else
               tileIdx := ReadDWord;
@@ -5445,13 +5451,33 @@ begin
             SetTMI(tileIdx, palIdx, CommandData, frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth]);
             Inc(tmPos);
           end;
-          gtPredictedTile:
+          gtPredictedTileShortOffsets:
           begin
             // next frame if needed
             if frm = nil then
               frm := NextFrame(kf);
 
-            ReadPredictedTMI(frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth]);
+            TMI := @frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth];
+
+            TMI^.PredictedX := (CommandData and 31) - (CommandData and 32);
+            TMI^.PredictedY := ((CommandData shr 6) and 31) - ((CommandData shr 6) and 32);
+            TMI^.IsPredicted := True;
+
+            Inc(tmPos);
+          end;
+          gtPredictedTileLongOffsets:
+          begin
+            // next frame if needed
+            if frm = nil then
+              frm := NextFrame(kf);
+
+            TMI := @frm.TileMap[tmPos div FTileMapWidth, tmPos mod FTileMapWidth];
+
+            TMI^.PredictedX := ShortInt(ReadByte);
+            TMI^.PredictedY := ShortInt(ReadByte);
+
+            TMI^.IsPredicted := True;
+
             Inc(tmPos);
           end;
           gtIntraTile:
@@ -5521,56 +5547,62 @@ var
     DoWord((Data shl CGTMCommandCodeBits) or Ord(Cmd));
   end;
 
-  function ExtractTMIAttributes(const TMI: TTileMapItem; out attrs: Word; out isPredicted, isLongPal: Boolean): Integer;
-  begin
-    isLongPal := TMI.PalIdx > High(Byte);
-
-    attrs := (Ord(TMI.VMirror) shl 1) or Ord(TMI.HMirror);
-    if not isLongPal then
-      attrs := attrs or TMI.PalIdx shl 2;
-
-    isPredicted := TMI.IsPredicted;
-    Result := TMI.TileIdx;
-  end;
-
   procedure DoTMI(const TMI: TTileMapItem);
   var
-    tileIdx: Integer;
-    attrs: Word;
-    isPredicted, isLongPal: Boolean;
+    tileIdx: Cardinal;
+    palIdx, attrs: Word;
+    isIntra, isLongTile, isLongPal, isLongOffsets: Boolean;
   begin
-    tileIdx := ExtractTMIAttributes(TMI, attrs, isPredicted, isLongPal);
-
-    if isPredicted then
+    if TMI.IsPredicted then
     begin
-      DoCmd(gtPredictedTile, 0);
-      DoByte(PByte(@TMI.PredictedX)^);
-      DoByte(PByte(@TMI.PredictedY)^);
+      isLongOffsets :=  not InRange(TMI.PredictedX, -32, 31) or not InRange(TMI.PredictedY, -32, 31);
+
+      if isLongOffsets then
+      begin
+        DoCmd(gtPredictedTileLongOffsets, 0);
+        DoByte(PByte(@TMI.PredictedX)^);
+        DoByte(PByte(@TMI.PredictedY)^);
+      end
+      else
+      begin
+        attrs := (PByte(@TMI.PredictedX)^ and 63) or ((PByte(@TMI.PredictedY)^ and 63) shl 6);
+
+        DoCmd(gtPredictedTileShortOffsets, attrs);
+      end;
     end
     else
     begin
-      if Tiles[tileIdx]^.UseCount <= 1 then
+      tileIdx := Max(0, TMI.TileIdx);
+      palIdx := Max(0, TMI.PalIdx);
+
+      isIntra := FTiles[tileIdx]^.UseCount <= 1;
+      isLongTile := tileIdx > High(Word);
+      isLongPal := palIdx >= (1 shl (CGTMCommandBits - 2));
+
+      attrs := (Ord(TMI.VMirror) shl 1) or Ord(TMI.HMirror);
+
+      if isIntra then
       begin
         DoCmd(gtIntraTile, attrs);
-        DoWord(TMI.PalIdx);
+        DoWord(palIdx);
         ZStream.Write(Tiles[tileIdx]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
       end
       else
       begin
-        if (tileIdx <= High(Word)) and not isLongPal then
+        if not isLongTile and not isLongPal then
         begin
-          DoCmd(gtShortTileIdx, attrs);
+          DoCmd(gtShortTileIdxShortPalIdx, attrs or (palIdx shl 2));
           DoWord(tileIdx);
         end
         else if not isLongPal then
         begin
-          DoCmd(gtLongTileIdx, attrs);
+          DoCmd(gtLongTileIdxShortPalIdx, attrs or (palIdx shl 2));
           DoDWord(tileIdx);
         end
         else
         begin
           DoCmd(gtLongTileIdxLongPalIdx, attrs);
-          DoWord(TMI.PalIdx);
+          DoWord(palIdx);
           DoDWord(tileIdx);
         end;
       end;
@@ -5603,12 +5635,11 @@ var
   begin
     reusedTileCount := 0;
     for i := 0 to High(Tiles) do
-    begin
-      if Tiles[i]^.UseCount > 1 then
-        reusedTileCount := i
-      else
+      if Tiles[i]^.UseCount = 1 then
+      begin
+        reusedTileCount := i;
         Break;
-    end;
+      end;
 
     if reusedTileCount > 0 then
     begin

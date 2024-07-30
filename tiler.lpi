@@ -128,13 +128,13 @@
     </PublishOptions>
     <RunParams>
       <local>
-        <LaunchingApplication Use="True"/>
+        <LaunchingApplication PathPlusParams="C:\WINDOWS\system32\cmd.exe /K ${TargetCmdLine}"/>
       </local>
       <FormatVersion Value="2"/>
       <Modes Count="1">
         <Mode0 Name="default">
           <local>
-            <LaunchingApplication Use="True"/>
+            <LaunchingApplication PathPlusParams="C:\WINDOWS\system32\cmd.exe /K ${TargetCmdLine}"/>
           </local>
         </Mode0>
       </Modes>
