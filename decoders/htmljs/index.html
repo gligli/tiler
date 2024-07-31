@@ -9,27 +9,23 @@
       background-color: #888;
       margin: 0px;
       padding: 0px;
+      display: block;
+      overflow-x: hidden;
+    }
+    
+    canvas { 
+      background-color: #000;
+      height: 90vh; 
+      margin: auto;
+      display: block;
     }
 
-    #drop {
-      border: 2px dashed #bbb;
-      -moz-border-radius: 5px;
-      -webkit-border-radius: 5px;
-      border-radius: 5px;
-      margin: 50px;
-      text-align: center;
-      font-size: 20pt;
-      color: #fff;
-      background-color: #999;
-    }
     </style>
   </head>
   <body>
-    <h2>GliGli's TileMotion Live Demo</h2>
-    <p>This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</p>
-    <canvas id="frame" width="8" height="8"></canvas>
-    <div id="drop"><p>Drag a GTM file into this area to play the contents</p></div><br/>
-    <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
+    <h2>GliGli's TileMotion Live Demo (drop a GTM file into the viewport to play the contents)</h2>
+    <canvas id="frame" width="128" height="72"></canvas><br/>
+    <input type="checkbox" id="play_loop" checked> Play video as loop<br/>
     <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
     <script src="./lzma.js"></script>
     <script src="./lzma.shim.js"></script>
@@ -37,7 +33,7 @@
     <script src="./wlzma.wrk.js"></script>
     <script src="./gtm.player.js"></script>
     <script>
-      drop = document.querySelector('#drop');
+      drop = document.querySelector('#frame');
       drop.addEventListener('drop', (event) => {
         event.preventDefault();
       
@@ -55,7 +51,7 @@
         gtmSetPlaying(document.querySelector('#play_loop').checked);
       });
 
-      document.querySelector('#drop').addEventListener('dragover', (event) => {
+      document.querySelector('#frame').addEventListener('dragover', (event) => {
         event.preventDefault();
       });
     </script>
