@@ -4496,6 +4496,8 @@ begin
 
   BICO := bico_create(cFeatureCount, DSLen, BICOClusterCount, 32, BICOClusterCount, CRandomSeed);
   try
+    bico_set_num_threads(MaxThreadCount);
+
     DoDataset(False);
 
     SetLength(BICOCentroids, BICOClusterCount * cFeatureCount);
