@@ -4085,11 +4085,11 @@ begin
 
   FrameTilingUseGamma := False;
   FrameTilingMode := pvsSpeDCT;
-  FrameTilingExtendedPaletteUsage := True;
+  FrameTilingExtendedPaletteUsage := False;
 
   EncoderGammaValue := 2.0;
 
-  ShotTransMaxSecondsPerKF := 5.0;  // maximum seconds between keyframes
+  ShotTransMaxSecondsPerKF := 15.0;  // maximum seconds between keyframes
   ShotTransMinSecondsPerKF := 1.0;  // minimum seconds between keyframes
   ShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
   ShotTransDistHiThres := 3.0;   // interframe distance high limit
