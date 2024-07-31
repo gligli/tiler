@@ -450,7 +450,6 @@ type
     function GetTileCount(AActiveOnly: Boolean): Integer;
     function GetFrameTileCount(AFrame: TFrame): Integer;
     procedure DitherTile(var ATile: TTile; var Plan: TMixingPlan);
-    procedure ExtractTilePalette(var ATile: TTile; var pal: array of Integer);
     class function GetTileZoneSum(const ATile: TTile; AOnPal: Boolean; x, y, w, h: Integer): Integer;
     class procedure GetTileHVMirrorHeuristics(const ATile: TTile; AOnPal: Boolean; out AHMirror, AVMirror: Boolean);
     class procedure HMirrorTile(var ATile: TTile; APalOnly: Boolean = False);
@@ -2658,80 +2657,6 @@ begin
   finally
     if ATile.HMirror_Initial then HMirrorTile(ATile);
     if ATile.VMirror_Initial then VMirrorTile(ATile);
-  end;
-end;
-
-procedure TTilingEncoder.ExtractTilePalette(var ATile: TTile; var pal: array of Integer);
-var
-  tx, ty, i, colIdx1, colIdx2, bestColIdx1, bestColIdx2: Integer;
-  dist, bestDist: Int64;
-  CI, CI2: PCountIndex;
-  CIList: TCountIndexList;
-begin
-
-  CIList := TCountIndexList.Create;
-  try
-    for ty := 0 to cTileWidth - 1 do
-      for tx := 0 to cTileWidth - 1 do
-      begin
-        New(CI);
-        CI^.Count := 1;
-        CI^.Index := CIList.Count;
-
-        CIList.Add(CI);
-
-        FromRGB(ATile.RGBPixels[ty, tx], CI^.R, CI^.G, CI^.B);
-        RGBToHSV(ATile.RGBPixels[ty, tx], CI^.Hue, CI^.Sat, CI^.Val);
-      end;
-
-    while CIList.Count > Length(pal) do
-    begin
-      bestColIdx1 := -1;
-      bestColIdx2 := -1;
-      bestDist := High(Int64);
-      for colIdx1 := 0 to CIList.Count - 1 do
-      begin
-        CI := CIList[colIdx1];
-
-        for colIdx2 := colIdx1 + 1 to CIList.Count - 1 do
-        begin
-          CI2 := CIList[colIdx2];
-
-          dist := ColorCompare(CI^.R, CI^.G, CI^.B, CI2^.R, CI2^.G, CI2^.B);
-
-          if dist < bestDist then
-          begin
-            bestDist := dist;
-            bestColIdx1 := colIdx1;
-            bestColIdx2 := colIdx2;
-          end;
-        end;
-      end;
-
-      CI := CIList[bestColIdx1];
-      CI2 := CIList[bestColIdx2];
-
-      CI^.R := (CI^.R + CI2^.R) shr 1;
-      CI^.G := (CI^.G + CI2^.G) shr 1;
-      CI^.B := (CI^.B + CI2^.B) shr 1;
-      RGBToHSV(ToRGB(CI^.R, CI^.G, CI^.B), CI^.Hue, CI^.Sat, CI^.Val);
-
-      Dispose(CI2);
-      CIList.Delete(bestColIdx2);
-    end;
-
-    Assert(CIList.Count = Length(pal));
-    CIList.Sort(@CompareCountIndexVSH);
-
-    for i := 0 to CIList.Count - 1 do
-    begin
-      CI := CIList[i];
-      pal[i] := ToRGB(CI^.R, CI^.G, CI^.B);
-      Dispose(CI);
-    end;
-
-  finally
-    CIList.Free;
   end;
 end;
 
@@ -5611,15 +5536,15 @@ var
 
   procedure WritePalettes;
   var
-    i, j, col: Integer;
+    colIdx, palIdx, col: Integer;
   begin
-    for j := 0 to FPaletteCount - 1 do
+    for palIdx := 0 to FPaletteCount - 1 do
     begin
       DoCmd(gtLoadPalette, 0);
-      DoWord(j);
-      for i := 0 to FPaletteSize - 1 do
+      DoWord(palIdx);
+      for colIdx := 0 to FPaletteSize - 1 do
       begin
-        col := FPalettes[j].PaletteRGB[i];
+        col := FPalettes[palIdx].PaletteRGB[colIdx];
 
         if col = cDitheringNullColor then
           col := $ffffff;
@@ -5631,15 +5556,18 @@ var
 
   procedure WriteTiles;
   var
-    i, reusedTileCount: Integer;
+    tIdx, reusedTileCount, tx, ty: Integer;
   begin
     reusedTileCount := 0;
-    for i := 0 to High(Tiles) do
-      if Tiles[i]^.UseCount = 1 then
+    for tIdx := 0 to High(Tiles) do
+    begin
+      Assert(Tiles[tIdx]^.Active);
+      if Tiles[tIdx]^.UseCount = 1 then
       begin
-        reusedTileCount := i;
+        reusedTileCount := tIdx;
         Break;
       end;
+    end;
 
     if reusedTileCount > 0 then
     begin
@@ -5647,11 +5575,8 @@ var
       DoDWord(0); // start tile
       DoDWord(reusedTileCount - 1); // end tile
 
-      for i := 0 to reusedTileCount - 1 do
-      begin
-        Assert(Tiles[i]^.Active);
-        ZStream.Write(Tiles[i]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
-      end;
+      for tIdx := 0 to reusedTileCount - 1 do
+        ZStream.Write(Tiles[tIdx]^.GetPalPixelsPtr^[0, 0], sqr(cTileWidth));
     end;
   end;
 
