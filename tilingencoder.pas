@@ -207,9 +207,6 @@ type
     KNNSize: Integer;
     Dataset: TSingleDynArray2;
     ANN: PANNkdtree;
-
-    PalDataset: TSingleDynArray2;
-    PalANN: PANNkdtree;
   end;
 
   PTilingDataset = ^TTilingDataset;
@@ -1428,6 +1425,8 @@ begin
 end;
 
 procedure TFrame.Reconstruct(ARadius, AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2);
+const
+  cEpuKnnK = 64;
 var
   DS: PTilingDataset;
 
@@ -1455,136 +1454,161 @@ var
 
   procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, palDsIdx, dsIdx, palIdx: Integer;
-    dsErr, fbErr, palDsErr, err: Single;
+    sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, tileIdx, palIdx,
+      tileEpuIdx, palEpuIdx, prevTileIdx, prevPalIdx: Integer;
+    dsErr, fbErr, err: Single;
 
     FrameTile, Tile: PTile;
     TMI: PTileMapItem;
 
     FTDCT, DCT: array[0 .. cTileDCTSize - 1] of Single;
+    EpuErrs: array[0 .. cEpuKnnK - 1] of Single;
+    EpuTileIdxs: array[0 .. cEpuKnnK - 1] of Integer;
+    EpuPalIdxs: array[0 .. cEpuKnnK - 1] of Integer;
   begin
     if not InRange(AIndex, 0, Encoder.FTileMapSize - 1) then
       Exit;
 
-    FrameTile := TTile.New(True, True);
-    try
-      DivMod(AIndex, Encoder.FTileMapWidth, sy, sx);
+    DivMod(AIndex, Encoder.FTileMapWidth, sy, sx);
 
-      dx := sx shl cTileWidthBits;
-      dy := sy shl cTileWidthBits;
+    dx := sx shl cTileWidthBits;
+    dy := sy shl cTileWidthBits;
 
-      //
+    //
 
-      TMI := @TileMap[sy, sx];
+    TMI := @TileMap[sy, sx];
 
-      FrameTile^.CopyFrom(FrameTiles[AIndex]^);
+    FrameTile := FrameTiles[AIndex];
+    Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @FTDCT[0]);
 
-      Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @FTDCT[0]);
-
-      palDsErr := Infinity;
-      palDsIdx := ann_kdtree_single_search(DS^.PalANN, @FTDCT[0], 0.0, @palDsErr);
-      if not InRange(palDsIdx, 0, DS^.KNNSize - 1) then
-      begin
-        palDsIdx := -1;
-        palDsErr := Infinity;
-      end;
-
-      palIdx := Encoder.FTiles[palDsIdx]^.PalIdx_Initial;
-
-      dsIdx := -1;
+    if not Encoder.FrameTilingExtendedPaletteUsage then
+    begin
       dsErr := Infinity;
-      if Encoder.FrameTilingExtendedPaletteUsage and not IsZero(palDsErr) then
+      tileIdx := ann_kdtree_single_search(DS^.ANN, @FTDCT[0], 0.0, @dsErr);
+      palIdx := -1;
+      if InRange(tileIdx, 0, DS^.KNNSize - 1) then
       begin
-        Encoder.DitherTile(FrameTile^, Encoder.FPalettes[palIdx].MixingPlan);
-        FrameTile^.ExtractPalPixels(@DCT[0]);
-
-        dsIdx := ann_kdtree_single_search(DS^.ANN, @DCT[0], 0.0, @dsErr);
-        if not InRange(dsIdx, 0, DS^.KNNSize - 1) then
-        begin
-          dsIdx := -1;
-          dsErr := Infinity;
-        end;
-
-        Encoder.ComputeTilePsyVisFeatures(Encoder.FTiles[dsIdx]^, Encoder.FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, Encoder.FPalettes[palIdx].PaletteRGB, @DCT[0]);
-        dsErr := CompareEuclideanDCTPtr_asm(FTDCT, DCT);
-      end;
-
-      if dsErr >= palDsErr then
-      begin
-        dsErr := palDsErr;
-        dsIdx := palDsIdx;
-      end;
-
-      // repredict (account for palette)
-
-      fbErr := Infinity;
-      if (Index <> PKeyFrame.StartFrame) and not IsZero(dsErr) and (ARadius >= 0) then
-      begin
-        Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, cColorCpns, AFTGamma, nil, @DCT[0]);
-
-        oymn := Max(0, dy - ARadius - 1);
-        oymx := Min(Encoder.FScreenHeight - cTileWidth, dy + ARadius);
-        oxmn := Max(0, dx - ARadius - 1);
-        oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
-
-        for oy := oymn to oymx do
-          for ox := oxmn to oxmx do
-          begin
-            err := CompareEuclideanDCTPtr_asm(DCT, DCTs[oy, ox]);
-
-            // apply a penalty of float mantissa's unit times the manhattan distance to the center
-            // rationale: slightly favoring the center in case of ties improves compressibility
-            Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
-
-            if err < fbErr then
-            begin
-              fbErr := err;
-              TMI^.PredictedX := ox - dx;
-              TMI^.PredictedY := oy - dy;
-            end;
-          end;
-      end;
-
-      // map tilemap items to reduced tiles, parsing KNN query
-
-      if InRange(dsIdx, 0, DS^.KNNSize - 1) and (dsErr < fbErr) then
-      begin
-        Tile := Encoder.FTiles[dsIdx];
-
-        TMI^.TileIdx := dsIdx;
-        TMI^.PalIdx := palIdx;
-        TMI^.ResidualErr := dsErr;
-        TMI^.IsPredicted := False;
-
-        // draw fb (pal tile)
-        for ty := 0 to cTileWidth - 1 do
-        begin
-          tym := ty;
-          if TMI^.VMirror then tym := cTileWidth - 1 - tym;
-
-          for tx := 0 to cTileWidth - 1 do
-          begin
-            txm := tx;
-            if TMI^.HMirror then txm := cTileWidth - 1 - txm;
-
-            AFrontBuffer[dy + ty, dx + tx] := Encoder.FPalettes[TMI^.PalIdx].PaletteRGB[Tile^.PalPixels[tym, txm]];
-          end;
-        end;
+        palIdx := Encoder.FTiles[tileIdx]^.PalIdx_Initial;
       end
       else
       begin
-        TMI^.ResidualErr := fbErr;
-        TMI^.IsPredicted := True;
+        tileIdx := -1;
+        dsErr := Infinity;
+      end;
+    end
+    else
+    begin
+      ann_kdtree_single_search_multi(DS^.ANN, EpuTileIdxs, EpuErrs, cEpuKnnK, @FTDCT[0], 0.0);
 
-        // draw fb (predicted tile)
-        for ty := 0 to cTileWidth - 1 do
+      for tileEpuIdx := 0 to cEpuKnnK - 1 do
+        if InRange(EpuTileIdxs[tileEpuIdx], 0, DS^.KNNSize - 1) then
         begin
-          Move(ABackBuffer[dy + TMI^.PredictedY, dx + TMI^.PredictedX], AFrontBuffer[dy, dx], cTileWidth * SizeOf(Integer));
-          Inc(dy);
+          EpuPalIdxs[tileEpuIdx] := Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^.PalIdx_Initial
+        end
+        else
+        begin
+          EpuTileIdxs[tileEpuIdx] := -1;
+          EpuPalIdxs[tileEpuIdx] := -1;
+        end;
+
+      QuickSort(EpuTileIdxs, 0, cEpuKnnK - 1, SizeOf(EpuTileIdxs[0]), @CompareIntegers);
+      QuickSort(EpuPalIdxs, 0, cEpuKnnK - 1, SizeOf(EpuPalIdxs[0]), @CompareIntegers);
+
+      dsErr := Infinity;
+      tileIdx := -1;
+      palIdx := -1;
+      prevTileIdx := -1;
+      for tileEpuIdx := 0 to cEpuKnnK - 1 do
+        if EpuTileIdxs[tileEpuIdx] <> prevTileIdx then
+        begin
+          prevPalIdx := -1;
+          for palEpuIdx := 0 to cEpuKnnK - 1 do
+            if EpuPalIdxs[palEpuIdx] <> prevPalIdx then
+            begin
+              Encoder.ComputeTilePsyVisFeatures(Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^, Encoder.FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, Encoder.FPalettes[EpuPalIdxs[palEpuIdx]].PaletteRGB, @DCT[0]);
+              err := CompareEuclideanDCTPtr_asm(FTDCT, DCT);
+
+              if err < dsErr then
+              begin
+                dsErr := err;
+                tileIdx := EpuTileIdxs[tileEpuIdx];
+                palIdx := EpuPalIdxs[palEpuIdx];
+              end;
+
+              prevPalIdx := EpuPalIdxs[palEpuIdx];
+            end;
+
+          prevTileIdx := EpuTileIdxs[tileEpuIdx];
+        end;
+    end;
+
+    // repredict (account for palette)
+
+    fbErr := Infinity;
+    if (Index <> PKeyFrame.StartFrame) and not IsZero(dsErr) and (ARadius >= 0) then
+    begin
+      Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, cColorCpns, AFTGamma, nil, @DCT[0]);
+
+      oymn := Max(0, dy - ARadius - 1);
+      oymx := Min(Encoder.FScreenHeight - cTileWidth, dy + ARadius);
+      oxmn := Max(0, dx - ARadius - 1);
+      oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
+
+      for oy := oymn to oymx do
+        for ox := oxmn to oxmx do
+        begin
+          err := CompareEuclideanDCTPtr_asm(DCT, DCTs[oy, ox]);
+
+          // apply a penalty of float mantissa's unit times the manhattan distance to the center
+          // rationale: slightly favoring the center in case of ties improves compressibility
+          Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
+
+          if err < fbErr then
+          begin
+            fbErr := err;
+            TMI^.PredictedX := ox - dx;
+            TMI^.PredictedY := oy - dy;
+          end;
+        end;
+    end;
+
+    // map tilemap items to reduced tiles, parsing KNN query
+
+    if InRange(tileIdx, 0, DS^.KNNSize - 1) and (dsErr < fbErr) then
+    begin
+      Tile := Encoder.FTiles[tileIdx];
+
+      TMI^.TileIdx := tileIdx;
+      TMI^.PalIdx := palIdx;
+      TMI^.ResidualErr := dsErr;
+      TMI^.IsPredicted := False;
+
+      // draw fb (pal tile)
+      for ty := 0 to cTileWidth - 1 do
+      begin
+        tym := ty;
+        if TMI^.VMirror then tym := cTileWidth - 1 - tym;
+
+        for tx := 0 to cTileWidth - 1 do
+        begin
+          txm := tx;
+          if TMI^.HMirror then txm := cTileWidth - 1 - txm;
+
+          AFrontBuffer[dy + ty, dx + tx] := Encoder.FPalettes[TMI^.PalIdx].PaletteRGB[Tile^.PalPixels[tym, txm]];
         end;
       end;
-    finally
-      TTile.Dispose(FrameTile);
+    end
+    else
+    begin
+      TMI^.ResidualErr := fbErr;
+      TMI^.IsPredicted := True;
+
+      // draw fb (predicted tile)
+      for ty := 0 to cTileWidth - 1 do
+      begin
+        Move(ABackBuffer[dy + TMI^.PredictedY, dx + TMI^.PredictedX], AFrontBuffer[dy, dx], cTileWidth * SizeOf(Integer));
+        Inc(dy);
+      end;
     end;
 
     SpinEnter(@PKeyFrame.ReconstructLock);
@@ -4844,10 +4868,7 @@ var
     T := Tiles[AIndex];
     Assert(T^.Active);
 
-    ComputeTilePsyVisFeatures(T^, FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, FPalettes[T^.PalIdx_Initial].PaletteRGB, PSingle(@DS^.PalDataset[AIndex, 0]));
-
-    if FFrameTilingExtendedPaletteUsage then
-      T^.ExtractPalPixels(PSingle(@DS^.Dataset[AIndex, 0]));
+    ComputeTilePsyVisFeatures(T^, FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, FPalettes[T^.PalIdx_Initial].PaletteRGB, PSingle(@DS^.Dataset[AIndex, 0]));
   end;
 
 var
@@ -4859,17 +4880,13 @@ begin
   FillChar(DS^, SizeOf(TTilingDataset), 0);
 
   DS^.KNNSize := Length(FTiles);
-  SetLength(DS^.PalDataset, DS^.KNNSize, cTileDCTSize);
-  if FFrameTilingExtendedPaletteUsage then
-    SetLength(DS^.Dataset, DS^.KNNSize, sqr(cTileWidth));
+  SetLength(DS^.Dataset, DS^.KNNSize, cTileDCTSize);
 
   ProcThreadPool.DoParallelLocalProc(@DoPsyV, 0, High(FTiles));
 
   // Build KNN
 
-  DS^.PalANN := ann_kdtree_single_create(PPSingle(@DS^.PalDataset[0]), DS^.KNNSize, cTileDCTSize, 32, ANN_KD_STD);
-  if FFrameTilingExtendedPaletteUsage then
-    DS^.ANN := ann_kdtree_single_create(PPSingle(@DS^.Dataset[0]), DS^.KNNSize, sqr(cTileWidth), 32, ANN_KD_STD);
+  DS^.ANN := ann_kdtree_single_create(PPSingle(@DS^.Dataset[0]), DS^.KNNSize, cTileDCTSize, 32, ANN_KD_STD);
 
   // Dataset is ready
 
@@ -4887,15 +4904,9 @@ end;
 procedure TTilingEncoder.FinishReconstruct;
 begin
   if Length(FTileDS^.Dataset) > 0 then
-  begin
-    ann_kdtree_single_destroy(FTileDS^.PalANN);
-    if Assigned(FTileDS^.PalANN) then
-      ann_kdtree_single_destroy(FTileDS^.ANN);
-  end;
+    ann_kdtree_single_destroy(FTileDS^.ANN);
   FTileDS^.ANN := nil;
-  FTileDS^.PalANN := nil;
   SetLength(FTileDS^.Dataset, 0);
-  SetLength(FTileDS^.PalDataset, 0);
   Dispose(FTileDS);
 
   FTileDS := nil;
@@ -5563,7 +5574,7 @@ var
 
   procedure WriteTiles;
   var
-    tIdx, reusedTileCount, tx, ty: Integer;
+    tIdx, reusedTileCount: Integer;
   begin
     reusedTileCount := 0;
     for tIdx := 0 to High(Tiles) do

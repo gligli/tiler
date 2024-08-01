@@ -143,7 +143,6 @@ procedure FromRGB(col: Integer; out r, g, b: Integer); inline; overload;
 procedure FromRGB(col: Integer; out r, g, b: Byte); inline; overload;
 function ToLuma(r, g, b: Byte): Integer; inline;
 function ToBW(col: Integer): Integer;
-function CompareIntegers(const Item1, Item2: Integer): Integer;
 function lerp(x, y, alpha: Double): Double; inline;
 function ilerp(x, y, alpha, maxAlpha: Integer): Integer; inline;
 function revlerp(x, r, alpha: Double): Double; inline;
@@ -155,6 +154,7 @@ function CompareEuclideanDCT(const a, b: TFloatDynArray): TFloat; inline; overlo
 function CompareEuclidean(const a, b: TFloatDynArray): TFloat; inline;
 function CompareEuclidean(a, b: PDouble; size: Integer): Double; inline;
 function CompareCountIndexVSH(const Item1,Item2:PCountIndex):Integer;
+function CompareIntegers(Item1,Item2,UserParameter:Pointer):Integer;
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
 function ComputeBlendingError_Asm(PPlain_rcx, PPrev_rdx, POff_r8: PFloat; bp_xmm3, bo_stack: TFloat): TFloat; register; assembler;
 function EqualQualityTileCount(tileCount: TFloat): Integer;
@@ -269,9 +269,9 @@ begin
   Result := ToRGB(Result, Result, Result);
 end;
 
-function CompareIntegers(const Item1, Item2: Integer): Integer;
+function CompareIntegers(Item1, Item2, UserParameter: Pointer): Integer;
 begin
-  Result := CompareValue(Item1, Item2);
+  Result := CompareValue(PInteger(Item1)^, PInteger(Item2)^);
 end;
 
 function lerp(x, y, alpha: Double): Double; inline;

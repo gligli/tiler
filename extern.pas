@@ -179,6 +179,7 @@ function ann_kdtree_search(akd: PANNkdtree; q: PDouble; eps: Double; err: PDoubl
 function ann_kdtree_single_create(pa: PPFloat; n, dd, bs: Integer; split: TANNsplitRule): PANNkdtree; external 'ANN_single.dll' name 'ann_kdtree_create';
 procedure ann_kdtree_single_destroy(akd: PANNkdtree); external 'ANN_single.dll' name 'ann_kdtree_destroy';
 function ann_kdtree_single_search(akd: PANNkdtree; q: PSingle; eps: Single; err: PSingle): Integer; external 'ANN_single.dll' name 'ann_kdtree_search';
+procedure ann_kdtree_single_search_multi(akd: PANNkdtree; idxs: PInteger; errs: PSingle; cnt: Integer; q: PSingle; eps: Single); external 'ANN_single.dll' name 'ann_kdtree_search_multi';
 
 procedure DEFAULT_FLANN_PARAMETERS; cdecl; external 'flann.dll';
 function flann_build_index(dataset: PSingle; rows, cols: Integer; speedup: PSingle; flann_params: PFLANNParameters): flann_index_t; cdecl; external 'flann.dll';
