@@ -1218,40 +1218,31 @@ var
       dx := sx shl cTileWidthBits;
       dy := sy shl cTileWidthBits;
 
-      if Index <> PKeyFrame.StartFrame then
-      begin
-        oymn := Max(0, dy - ARadius - 1);
-        oymx := Min(Encoder.FScreenHeight - cTileWidth, dy + ARadius);
-        oxmn := Max(0, dx - ARadius - 1);
-        oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
+      oymn := Max(0, dy - ARadius - 1);
+      oymx := Min(Encoder.FScreenHeight - cTileWidth, dy + ARadius);
+      oxmn := Max(0, dx - ARadius - 1);
+      oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
 
-        for oy := oymn to oymx do
-          for ox := oxmn to oxmx do
+      for oy := oymn to oymx do
+        for ox := oxmn to oxmx do
+        begin
+          err := CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]);
+
+          // apply a penalty of float mantissa's unit times the manhattan distance to the center
+          // rationale: slightly favoring the center in case of ties improves compressibility
+          Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
+
+          if err < bestErr then
           begin
-            err := CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]);
-
-            // apply a penalty of float mantissa's unit times the manhattan distance to the center
-            // rationale: slightly favoring the center in case of ties improves compressibility
-            Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
-
-            if err < bestErr then
-            begin
-              bestErr := err;
-              bestX := ox;
-              bestY := oy;
-            end;
+            bestErr := err;
+            bestX := ox;
+            bestY := oy;
           end;
+        end;
 
-        TMI^.ResidualErr := bestErr;
-        TMI^.PredictedX := bestX - dx;
-        TMI^.PredictedY := bestY - dy;
-      end
-      else
-      begin
-        TMI^.ResidualErr := Infinity;
-        TMI^.PredictedX := 0;
-        TMI^.PredictedY := 0;
-      end;
+      TMI^.ResidualErr := bestErr;
+      TMI^.PredictedX := bestX - dx;
+      TMI^.PredictedY := bestY - dy;
 
       // draw fb
       for ty := 0 to cTileWidth - 1 do
@@ -1271,13 +1262,11 @@ begin
 
   Dec(ARadius);
 
-  if Index <> PKeyFrame.StartFrame then
-    SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
+  SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
 
   AcquireFrameTiles;
   try
-    if Index <> PKeyFrame.StartFrame then
-      ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
+    ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
 
     ProcThreadPool.DoParallelLocalProc(@DoXY, 0, Encoder.FTileMapSize);
   finally
@@ -1922,9 +1911,9 @@ begin
   SetLength(FrameBuffer[False], FScreenHeight, FScreenWidth);
   SetLength(FrameBuffer[True], FScreenHeight, FScreenWidth);
 
-  for frmIdx := 0 to High(FFrames) do
+  for frmIdx := -Min(1, High(FFrames)) to High(FFrames) do // first frame is predicted from next frame if it exists
   begin
-    FFrames[frmIdx].PredictMotion(FMotionPredictRadius, FrameBuffer[not curBuffer], FrameBuffer[curBuffer]);
+    FFrames[Abs(frmIdx)].PredictMotion(FMotionPredictRadius, FrameBuffer[not curBuffer], FrameBuffer[curBuffer]);
     curBuffer := not curBuffer;
 
     Write(frmIdx + 1:8, ' / ', Length(FFrames):8, #13);
