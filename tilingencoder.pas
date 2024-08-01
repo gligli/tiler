@@ -4349,6 +4349,8 @@ end;
 
 
 function TTilingEncoder.STCGREval(x: Double; Data: Pointer): Double;
+const
+  CKFResErrBoost = 10.0;
 var
   frmIdx, sy, sx, unpredictedTileCount: Integer;
   TMI: PTileMapItem;
@@ -4361,7 +4363,10 @@ begin
       begin
         TMI := @FFrames[frmIdx].TileMap[sy, sx];
 
-        TMI^.IsPredicted := TMI^.ResidualErr < x;
+        if (frmIdx = FFrames[frmIdx].PKeyFrame.StartFrame) and not IsInfinite(TMI^.ResidualErr) then
+          TMI^.IsPredicted := TMI^.ResidualErr + CKFResErrBoost < x
+        else
+          TMI^.IsPredicted := TMI^.ResidualErr < x;
 
         inc(unpredictedTileCount, Ord(not TMI^.IsPredicted));
       end;
