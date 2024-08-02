@@ -5255,7 +5255,11 @@ var
 
     TMI.IsPredicted := False;
 
-    Inc(FTiles[tileIdx]^.UseCount);
+    if InRange(tileIdx, 0, High(FTiles)) then
+      Inc(FTiles[tileIdx]^.UseCount);
+
+    if InRange(palIdx, 0, High(FPalettes)) then
+      Inc(FPalettes[palIdx].UseCount);
   end;
 
   function NextFrame(KF: TKeyFrame): TFrame;
@@ -5518,7 +5522,7 @@ var
       tileIdx := Max(0, TMI.TileIdx);
       palIdx := Max(0, TMI.PalIdx);
 
-      isIntra := FTiles[tileIdx]^.UseCount <= 1;
+      isIntra := InRange(tileIdx, 0, High(FTiles)) and (FTiles[tileIdx]^.UseCount <= 1);
       isLongTile := tileIdx > High(Word);
       isLongPal := palIdx >= (1 shl (CGTMCommandBits - 2));
 
@@ -5562,7 +5566,9 @@ var
       DoWord(palIdx);
       for colIdx := 0 to FPaletteSize - 1 do
       begin
-        col := FPalettes[palIdx].PaletteRGB[colIdx];
+        col := 0;
+        if InRange(palIdx, 0, High(FPalettes)) and InRange(colIdx, 0, High(FPalettes[palIdx].PaletteRGB)) then
+          col := FPalettes[palIdx].PaletteRGB[colIdx];
 
         if col = cDitheringNullColor then
           col := $ffffff;
