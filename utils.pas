@@ -135,7 +135,6 @@ procedure Exchange(var a, b: Integer);
 function iDiv0(x, y: Integer): Integer;overload;inline;
 function iDiv0(x, y: Int64): Int64;overload;inline;
 function Div0(x, y: TFloat): TFloat;inline;
-procedure DivMod(Dividend: Int64; Divisor: LongInt; var Result, Remainder: LongInt);
 function NanDef(x, def: TFloat): TFloat; inline;
 function SwapRB(c: Integer): Integer; inline;
 function ToRGB(r, g, b: Byte): Integer; inline;
@@ -156,7 +155,8 @@ function CompareEuclidean(a, b: PDouble; size: Integer): Double; inline;
 function CompareCountIndexVSH(const Item1,Item2:PCountIndex):Integer;
 function CompareIntegers(Item1,Item2,UserParameter:Pointer):Integer;
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
-function ComputeBlendingError_Asm(PPlain_rcx, PPrev_rdx, POff_r8: PFloat; bp_xmm3, bo_stack: TFloat): TFloat; register; assembler;
+generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
+function DCTInner_asm(pCpn_rcx, pLut_rdx: PFloat): Double; register; assembler;
 function EqualQualityTileCount(tileCount: TFloat): Integer;
 function GoldenRatioSearch(Func: TGRSEvalFunc; MinX, MaxX: Double; ObjectiveY: Double;
   EpsilonX, EpsilonY: Double; Data: Pointer): Double;
@@ -215,12 +215,6 @@ begin
   Result := 0;
   if y <> 0 then
     Result := x / y;
-end;
-
-procedure DivMod(Dividend: Int64; Divisor: LongInt; var Result, Remainder: LongInt);
-begin
-  Result := Dividend div Divisor;
-  Remainder := Dividend mod Divisor;
 end;
 
 function NanDef(x, def: TFloat): TFloat; inline;
@@ -490,35 +484,101 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-function ComputeBlendingError(PPlain, PPrev, POff: PFloat; bp, bo: TFloat): TFloat; inline;
+generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
 var
-  i: Integer;
+  i: integer;
 begin
-  Result := 0.0;
-  for i := 0 to cTileDCTSize div 8 - 1 do // unroll by 8
+  Result := 0;
+
+  for i := 0 to count- 1 do
   begin
-    Result += Sqr(PPlain^ - (PPrev^ * bp + POff^ * bo)); Inc(PPlain); Inc(PPrev); Inc(POff);
-    Result += Sqr(PPlain^ - (PPrev^ * bp + POff^ * bo)); Inc(PPlain); Inc(PPrev); Inc(POff);
-    Result += Sqr(PPlain^ - (PPrev^ * bp + POff^ * bo)); Inc(PPlain); Inc(PPrev); Inc(POff);
-    Result += Sqr(PPlain^ - (PPrev^ * bp + POff^ * bo)); Inc(PPlain); Inc(PPrev); Inc(POff);
-    Result += Sqr(PPlain^ - (PPrev^ * bp + POff^ * bo)); Inc(PPlain); Inc(PPrev); Inc(POff);
-    Result += Sqr(PPlain^ - (PPrev^ * bp + POff^ * bo)); Inc(PPlain); Inc(PPrev); Inc(POff);
-    Result += Sqr(PPlain^ - (PPrev^ * bp + POff^ * bo)); Inc(PPlain); Inc(PPrev); Inc(POff);
-    Result += Sqr(PPlain^ - (PPrev^ * bp + POff^ * bo)); Inc(PPlain); Inc(PPrev); Inc(POff);
+    // unroll y by cTileWidth
+
+    // unroll x by cTileWidth
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+    // unroll x by cTileWidth
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+    // unroll x by cTileWidth
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+    // unroll x by cTileWidth
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+    // unroll x by cTileWidth
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+    // unroll x by cTileWidth
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+    // unroll x by cTileWidth
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+
+    // unroll x by cTileWidth
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
+    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
   end;
 end;
 
-
-function ComputeBlendingError_Asm(PPlain_rcx, PPrev_rdx, POff_r8: PFloat; bp_xmm3, bo_stack: TFloat): TFloat; register; assembler;
-const
-  cDCTSizeOffset = cTileDCTSize * SizeOf(TFloat);
-label loop;
+function DCTInner_asm(pCpn_rcx, pLut_rdx: PFloat): Double; register; assembler;
 asm
-  push rcx
-  push rdx
-  push r8
-
-  sub rsp, 16 * 14
+  sub rsp, 16 * 8
   movdqu oword ptr [rsp],       xmm1
   movdqu oword ptr [rsp + $10], xmm2
   movdqu oword ptr [rsp + $20], xmm3
@@ -527,71 +587,144 @@ asm
   movdqu oword ptr [rsp + $50], xmm6
   movdqu oword ptr [rsp + $60], xmm7
   movdqu oword ptr [rsp + $70], xmm8
-  movdqu oword ptr [rsp + $80], xmm9
-  movdqu oword ptr [rsp + $90], xmm10
-  movdqu oword ptr [rsp + $a0], xmm11
-  movdqu oword ptr [rsp + $b0], xmm12
-  movdqu oword ptr [rsp + $c0], xmm13
-  movdqu oword ptr [rsp + $d0], xmm14
 
-  pshufd xmm1, xmm3, 0
-  pshufd xmm2, dword ptr [bo_stack], 0
-  xorps xmm0, xmm0
+  // unrolled for 64  = Sqr(cTileWidth)
 
-  lea rax, byte ptr [rcx + cDCTSizeOffset]
-  loop:
-    movups xmm3,  oword ptr [rcx]
-    movups xmm6,  oword ptr [rcx + $10]
-    movups xmm9,  oword ptr [rcx + $20]
-    movups xmm12, oword ptr [rcx + $30]
+  pxor xmm0, xmm0
 
-    movups xmm4,  oword ptr [rdx]
-    movups xmm7,  oword ptr [rdx + $10]
-    movups xmm10, oword ptr [rdx + $20]
-    movups xmm13, oword ptr [rdx + $30]
+  // step 1
 
-    movups xmm5,  oword ptr [r8]
-    movups xmm8,  oword ptr [r8 + $10]
-    movups xmm11, oword ptr [r8 + $20]
-    movups xmm14, oword ptr [r8 + $30]
+  movups xmm2, oword ptr [rcx]
+  movups xmm4, oword ptr [rcx + $10]
+  movups xmm6, oword ptr [rcx + $20]
+  movups xmm8, oword ptr [rcx + $30]
 
-    mulps xmm4, xmm1
-    mulps xmm5, xmm2
-    addps xmm4, xmm5
-    subps xmm3, xmm4
-    mulps xmm3, xmm3
-    addps xmm0, xmm3
+  movups xmm1, oword ptr [rdx]
+  movups xmm3, oword ptr [rdx + $10]
+  movups xmm5, oword ptr [rdx + $20]
+  movups xmm7, oword ptr [rdx + $30]
 
-    mulps xmm7, xmm1
-    mulps xmm8, xmm2
-    addps xmm7, xmm8
-    subps xmm6, xmm7
-    mulps xmm6, xmm6
-    addps xmm0, xmm6
+  mulps xmm1, xmm2
+  mulps xmm3, xmm4
+  mulps xmm5, xmm6
+  mulps xmm7, xmm8
 
-    mulps xmm10, xmm1
-    mulps xmm11, xmm2
-    addps xmm10, xmm11
-    subps xmm9, xmm10
-    mulps xmm9, xmm9
-    addps xmm0, xmm9
+  addps xmm1, xmm3
+  addps xmm5, xmm7
 
-    mulps xmm13, xmm1
-    mulps xmm14, xmm2
-    addps xmm13, xmm14
-    subps xmm12, xmm13
-    mulps xmm12, xmm12
-    addps xmm0, xmm12
+  cvtps2pd xmm2, xmm1
+  cvtps2pd xmm4, xmm5
+  movhlps xmm3, xmm1
+  movhlps xmm7, xmm5
+  cvtps2pd xmm6, xmm3
+  cvtps2pd xmm8, xmm7
 
-    lea rcx, [rcx + $40]
-    lea rdx, [rdx + $40]
-    lea r8, [r8 + $40]
+  addpd xmm2, xmm4
+  addpd xmm6, xmm8
 
-    cmp rcx, rax
-    jne loop
+  addpd xmm2, xmm6
+  addpd xmm0, xmm2
 
-  haddps xmm0, xmm0
-  haddps xmm0, xmm0
+  // step 2
+
+  movups xmm2, oword ptr [rcx + $40]
+  movups xmm4, oword ptr [rcx + $50]
+  movups xmm6, oword ptr [rcx + $60]
+  movups xmm8, oword ptr [rcx + $70]
+
+  movups xmm1, oword ptr [rdx + $40]
+  movups xmm3, oword ptr [rdx + $50]
+  movups xmm5, oword ptr [rdx + $60]
+  movups xmm7, oword ptr [rdx + $70]
+
+  mulps xmm1, xmm2
+  mulps xmm3, xmm4
+  mulps xmm5, xmm6
+  mulps xmm7, xmm8
+
+  addps xmm1, xmm3
+  addps xmm5, xmm7
+
+  cvtps2pd xmm2, xmm1
+  cvtps2pd xmm4, xmm5
+  movhlps xmm3, xmm1
+  movhlps xmm7, xmm5
+  cvtps2pd xmm6, xmm3
+  cvtps2pd xmm8, xmm7
+
+  addpd xmm2, xmm4
+  addpd xmm6, xmm8
+
+  addpd xmm2, xmm6
+  addpd xmm0, xmm2
+
+  // step 3
+
+  movups xmm2, oword ptr [rcx + $80]
+  movups xmm4, oword ptr [rcx + $90]
+  movups xmm6, oword ptr [rcx + $a0]
+  movups xmm8, oword ptr [rcx + $b0]
+
+  movups xmm1, oword ptr [rdx + $80]
+  movups xmm3, oword ptr [rdx + $90]
+  movups xmm5, oword ptr [rdx + $a0]
+  movups xmm7, oword ptr [rdx + $b0]
+
+  mulps xmm1, xmm2
+  mulps xmm3, xmm4
+  mulps xmm5, xmm6
+  mulps xmm7, xmm8
+
+  addps xmm1, xmm3
+  addps xmm5, xmm7
+
+  cvtps2pd xmm2, xmm1
+  cvtps2pd xmm4, xmm5
+  movhlps xmm3, xmm1
+  movhlps xmm7, xmm5
+  cvtps2pd xmm6, xmm3
+  cvtps2pd xmm8, xmm7
+
+  addpd xmm2, xmm4
+  addpd xmm6, xmm8
+
+  addpd xmm2, xmm6
+  addpd xmm0, xmm2
+
+  // step 4
+
+  movups xmm2, oword ptr [rcx + $c0]
+  movups xmm4, oword ptr [rcx + $d0]
+  movups xmm6, oword ptr [rcx + $e0]
+  movups xmm8, oword ptr [rcx + $f0]
+
+  movups xmm1, oword ptr [rdx + $c0]
+  movups xmm3, oword ptr [rdx + $d0]
+  movups xmm5, oword ptr [rdx + $e0]
+  movups xmm7, oword ptr [rdx + $f0]
+
+  mulps xmm1, xmm2
+  mulps xmm3, xmm4
+  mulps xmm5, xmm6
+  mulps xmm7, xmm8
+
+  addps xmm1, xmm3
+  addps xmm5, xmm7
+
+  cvtps2pd xmm2, xmm1
+  cvtps2pd xmm4, xmm5
+  movhlps xmm3, xmm1
+  movhlps xmm7, xmm5
+  cvtps2pd xmm6, xmm3
+  cvtps2pd xmm8, xmm7
+
+  addpd xmm2, xmm4
+  addpd xmm6, xmm8
+
+  addpd xmm2, xmm6
+  addpd xmm0, xmm2
+
+  // end
 
   movdqu xmm1,  oword ptr [rsp]
   movdqu xmm2,  oword ptr [rsp + $10]
@@ -601,18 +734,11 @@ asm
   movdqu xmm6,  oword ptr [rsp + $50]
   movdqu xmm7,  oword ptr [rsp + $60]
   movdqu xmm8,  oword ptr [rsp + $70]
-  movdqu xmm9,  oword ptr [rsp + $80]
-  movdqu xmm10, oword ptr [rsp + $90]
-  movdqu xmm11, oword ptr [rsp + $a0]
-  movdqu xmm12, oword ptr [rsp + $b0]
-  movdqu xmm13, oword ptr [rsp + $c0]
-  movdqu xmm14, oword ptr [rsp + $d0]
-  add rsp, 16 * 14
+  add rsp, 16 * 8
 
-  pop r8
-  pop rdx
-  pop rcx
+  haddpd xmm0, xmm0
 end;
+
 
 function EqualQualityTileCount(tileCount: TFloat): Integer;
 begin

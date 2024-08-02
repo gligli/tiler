@@ -3167,98 +3167,6 @@ begin
   FMotionPredictRadius := EnsureRange(AValue, 1, -Low(ShortInt));
 end;
 
-generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
-var
-  i: integer;
-begin
-  Result := 0;
-
-  for i := 0 to count- 1 do
-  begin
-    // unroll y by cTileWidth
-
-    // unroll x by cTileWidth
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-    // unroll x by cTileWidth
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-    // unroll x by cTileWidth
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-    // unroll x by cTileWidth
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-    // unroll x by cTileWidth
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-    // unroll x by cTileWidth
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-    // unroll x by cTileWidth
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-
-    // unroll x by cTileWidth
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-    Result += pCpn^ * pLut^; Inc(pCpn); Inc(pLut);
-  end;
-end;
-
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
   VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
 var
@@ -3334,7 +3242,7 @@ begin
       for v := 0 to cTileWidth - 1 do
         for u := 0 to cTileWidth - 1 do
         begin
-  		    z := specialize DCTInner<PSingle>(@CpnPixels[cpn, 0, 0], pLut, 1);
+  		    z := DCTInner_asm(@CpnPixels[cpn, 0, 0], pLut);
 
           if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
              z *= cDCTQuantization[cpn, v, u];
