@@ -15,17 +15,21 @@
     
     canvas { 
       background-color: #000;
-      height: 90vh; 
       margin: auto;
       display: block;
     }
-
+	
+	.zoomed {
+      height: 90vh; 
+    }
+	
     </style>
   </head>
   <body>
-    <h2>GliGli's TileMotion Live Demo (drop a GTM file into the viewport to play the contents)</h2>
-    <canvas id="frame" width="128" height="72"></canvas><br/>
-    <input type="checkbox" id="play_loop" checked> Play video as loop<br/>
+    <h4>GliGli's TileMotion Live Demo (drop a GTM file into the frame to play the contents)</h4>
+    <canvas id="frame" width="640" height="360"></canvas><br/>
+    <input type="checkbox" id="play_loop" checked><label for="play_loop">Play video as loop</label>
+    <input type="checkbox" id="zoom"><label for="zoom">Zoomed</label><br/>
     <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
     <script src="./lzma.js"></script>
     <script src="./lzma.shim.js"></script>
@@ -33,8 +37,7 @@
     <script src="./wlzma.wrk.js"></script>
     <script src="./gtm.player.js"></script>
     <script>
-      drop = document.querySelector('#frame');
-      drop.addEventListener('drop', (event) => {
+      document.querySelector('#frame').addEventListener('drop', (event) => {
         event.preventDefault();
       
         let file;
@@ -50,6 +53,10 @@
       document.querySelector('#play_loop').addEventListener('click', () => {
         gtmSetPlaying(document.querySelector('#play_loop').checked);
       });
+	  
+      document.querySelector('#zoom').addEventListener('click', () => {
+		document.querySelector('#frame').className = document.querySelector('#zoom').checked ? 'zoomed' : '';
+      });	  
 
       document.querySelector('#frame').addEventListener('dragover', (event) => {
         event.preventDefault();
