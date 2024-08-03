@@ -284,8 +284,13 @@ begin
 end;
 
 function Posterize(v: Byte; cvt: Integer): Byte; inline;
+var
+  p: Integer;
 begin
-  Result := min(255, Round(Round((v * cvt) / 255.0) * 255.0 / cvt));
+  Assert(cvt <= 255);
+  p := Round(Round((v * cvt) / 255.0) * 255.0 / cvt);
+  Assert(p <= 255);
+  Result := p;
 end;
 
 function PosterizeBpc(v, bpc: Byte): Byte; inline;

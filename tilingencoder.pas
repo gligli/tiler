@@ -4768,7 +4768,7 @@ begin
   try
     // do quantize
 
-    QuantizeUsingYakmo(APalIdx, FPaletteSize, 1 shl cBitsPerComp);
+    QuantizeUsingYakmo(APalIdx, FPaletteSize, (1 shl cBitsPerComp) - 1);
 
     // split most used colors into tile palettes
 
