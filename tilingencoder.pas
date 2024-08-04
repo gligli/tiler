@@ -1623,7 +1623,7 @@ begin
 
   Dec(ARadius);
 
-  if ARadius >= 0 then
+  if (Index <> PKeyFrame.StartFrame) and (ARadius >= 0) then
   begin
     SetLength(DCTs, Encoder.FScreenHeight, Encoder.FScreenWidth);
     ProcThreadPool.DoParallelLocalProc(@DoDCTs, 0, Encoder.FScreenHeight - cTileWidth);
