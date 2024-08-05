@@ -1456,7 +1456,7 @@ var
   var
     sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, tileIdx, palIdx,
       tileEpuIdx, palEpuIdx, prevTileIdx, prevPalIdx: Integer;
-    dsErr, fbErr, err: Single;
+    knnErr, mpErr, err: Single;
 
     FrameTile, Tile: PTile;
     TMI: PTileMapItem;
@@ -1471,81 +1471,18 @@ var
 
     DivMod(AIndex, Encoder.FTileMapWidth, sy, sx);
 
-    dx := sx shl cTileWidthBits;
-    dy := sy shl cTileWidthBits;
-
-    //
-
     TMI := @TileMap[sy, sx];
 
     FrameTile := FrameTiles[AIndex];
     Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @FTDCT[0]);
 
-    if not Encoder.FrameTilingExtendedPaletteUsage then
-    begin
-      dsErr := Infinity;
-      tileIdx := ann_kdtree_single_search(DS^.ANN, @FTDCT[0], 0.0, @dsErr);
-      palIdx := -1;
-      if InRange(tileIdx, 0, DS^.KNNSize - 1) then
-      begin
-        palIdx := Encoder.FTiles[tileIdx]^.PalIdx_Initial;
-      end
-      else
-      begin
-        tileIdx := -1;
-        dsErr := Infinity;
-      end;
-    end
-    else
-    begin
-      ann_kdtree_single_search_multi(DS^.ANN, EpuTileIdxs, EpuErrs, cEpuKnnK, @FTDCT[0], 0.0);
+    dx := sx shl cTileWidthBits;
+    dy := sy shl cTileWidthBits;
 
-      for tileEpuIdx := 0 to cEpuKnnK - 1 do
-        if InRange(EpuTileIdxs[tileEpuIdx], 0, DS^.KNNSize - 1) then
-        begin
-          EpuPalIdxs[tileEpuIdx] := Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^.PalIdx_Initial
-        end
-        else
-        begin
-          EpuTileIdxs[tileEpuIdx] := -1;
-          EpuPalIdxs[tileEpuIdx] := -1;
-        end;
+    // redo motion prediction (account for palette)
 
-      QuickSort(EpuTileIdxs, 0, cEpuKnnK - 1, SizeOf(EpuTileIdxs[0]), @CompareIntegers);
-      QuickSort(EpuPalIdxs, 0, cEpuKnnK - 1, SizeOf(EpuPalIdxs[0]), @CompareIntegers);
-
-      dsErr := Infinity;
-      tileIdx := -1;
-      palIdx := -1;
-      prevTileIdx := -1;
-      for tileEpuIdx := 0 to cEpuKnnK - 1 do
-        if EpuTileIdxs[tileEpuIdx] <> prevTileIdx then
-        begin
-          prevPalIdx := -1;
-          for palEpuIdx := 0 to cEpuKnnK - 1 do
-            if EpuPalIdxs[palEpuIdx] <> prevPalIdx then
-            begin
-              Encoder.ComputeTilePsyVisFeatures(Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^, Encoder.FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, Encoder.FPalettes[EpuPalIdxs[palEpuIdx]].PaletteRGB, @DCT[0]);
-              err := CompareEuclideanDCTPtr_asm(FTDCT, DCT);
-
-              if err < dsErr then
-              begin
-                dsErr := err;
-                tileIdx := EpuTileIdxs[tileEpuIdx];
-                palIdx := EpuPalIdxs[palEpuIdx];
-              end;
-
-              prevPalIdx := EpuPalIdxs[palEpuIdx];
-            end;
-
-          prevTileIdx := EpuTileIdxs[tileEpuIdx];
-        end;
-    end;
-
-    // repredict (account for palette)
-
-    fbErr := Infinity;
-    if (Index <> PKeyFrame.StartFrame) and not IsZero(dsErr) and (ARadius >= 0) then
+    mpErr := Infinity;
+    if (Index <> PKeyFrame.StartFrame) and (ARadius >= 0) then
     begin
       Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, cColorCpns, AFTGamma, nil, @DCT[0]);
 
@@ -1563,24 +1500,99 @@ var
           // rationale: slightly favoring the center in case of ties improves compressibility
           Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
 
-          if err < fbErr then
+          if err < mpErr then
           begin
-            fbErr := err;
+            mpErr := err;
             TMI^.PredictedX := ox - dx;
             TMI^.PredictedY := oy - dy;
           end;
         end;
     end;
 
-    // map tilemap items to reduced tiles, parsing KNN query
-
-    if InRange(tileIdx, 0, DS^.KNNSize - 1) and (dsErr < fbErr) then
+    if IsZero(mpErr) then
     begin
+      // motion prediction has priority in case perfect (less bitrate)
+
+      palIdx := -1;
+      tileIdx := -1;
+      knnErr := Infinity;
+    end
+    else if not Encoder.FrameTilingExtendedPaletteUsage then
+    begin
+      // use the KNN dataset to predict a tile with its associated palette
+
+      knnErr := Infinity;
+      tileIdx := ann_kdtree_single_search(DS^.ANN, @FTDCT[0], 0.0, @knnErr);
+      palIdx := -1;
+      if InRange(tileIdx, 0, DS^.KNNSize - 1) then
+      begin
+        palIdx := Encoder.FTiles[tileIdx]^.PalIdx_Initial;
+      end
+      else
+      begin
+        tileIdx := -1;
+        knnErr := Infinity;
+      end;
+    end
+    else
+    begin
+      // predict multiple tiles with the KNN and try the cartesian product of unique tiles * palettes
+
+      ann_kdtree_single_search_multi(DS^.ANN, EpuTileIdxs, EpuErrs, cEpuKnnK, @FTDCT[0], 0.0);
+
+      for tileEpuIdx := 0 to cEpuKnnK - 1 do
+        if InRange(EpuTileIdxs[tileEpuIdx], 0, DS^.KNNSize - 1) then
+        begin
+          EpuPalIdxs[tileEpuIdx] := Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^.PalIdx_Initial
+        end
+        else
+        begin
+          EpuTileIdxs[tileEpuIdx] := -1;
+          EpuPalIdxs[tileEpuIdx] := -1;
+        end;
+
+      QuickSort(EpuTileIdxs, 0, cEpuKnnK - 1, SizeOf(EpuTileIdxs[0]), @CompareIntegers);
+      QuickSort(EpuPalIdxs, 0, cEpuKnnK - 1, SizeOf(EpuPalIdxs[0]), @CompareIntegers);
+
+      knnErr := Infinity;
+      tileIdx := -1;
+      palIdx := -1;
+      prevTileIdx := -1;
+      for tileEpuIdx := 0 to cEpuKnnK - 1 do
+        if EpuTileIdxs[tileEpuIdx] <> prevTileIdx then
+        begin
+          prevPalIdx := -1;
+          for palEpuIdx := 0 to cEpuKnnK - 1 do
+            if EpuPalIdxs[palEpuIdx] <> prevPalIdx then
+            begin
+              Encoder.ComputeTilePsyVisFeatures(Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^, Encoder.FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, Encoder.FPalettes[EpuPalIdxs[palEpuIdx]].PaletteRGB, @DCT[0]);
+              err := CompareEuclideanDCTPtr_asm(FTDCT, DCT);
+
+              if err < knnErr then
+              begin
+                knnErr := err;
+                tileIdx := EpuTileIdxs[tileEpuIdx];
+                palIdx := EpuPalIdxs[palEpuIdx];
+              end;
+
+              prevPalIdx := EpuPalIdxs[palEpuIdx];
+            end;
+
+          prevTileIdx := EpuTileIdxs[tileEpuIdx];
+        end;
+    end;
+
+    // devise which is best
+
+    if (tileIdx >= 0) and (knnErr < mpErr) then
+    begin
+      // KNN is best
+
       Tile := Encoder.FTiles[tileIdx];
 
       TMI^.TileIdx := tileIdx;
       TMI^.PalIdx := palIdx;
-      TMI^.ResidualErr := dsErr;
+      TMI^.ResidualErr := knnErr;
       TMI^.IsPredicted := False;
 
       // draw fb (pal tile)
@@ -1600,10 +1612,12 @@ var
     end
     else
     begin
-      TMI^.ResidualErr := fbErr;
+      // motion prediction is best
+
+      TMI^.ResidualErr := mpErr;
       TMI^.IsPredicted := True;
 
-      // draw fb (predicted tile)
+      // draw fb (motion predicted tile)
       for ty := 0 to cTileWidth - 1 do
       begin
         Move(ABackBuffer[dy + TMI^.PredictedY, dx + TMI^.PredictedX], AFrontBuffer[dy, dx], cTileWidth * SizeOf(Integer));
