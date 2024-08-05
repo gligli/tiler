@@ -16,53 +16,43 @@ const GTMHeader = {
 // Commands Description:
 // =====================
 //
-// SkipBlock:               data -> none; commandBits -> skip count - 1 (10 bits)
-// ShortTileIdx:            data -> tile index (16 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LongTileIdx:             data -> tile index (32 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LoadPalette:             data -> palette index (8 bits); palette format (8 bits) (0: RGBA32); RGBA bytes (32bits); commandBits -> none
-// ShortBlendTileIdx:       data -> tile index (16 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
-//                            commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LongLendTileIdx:         data -> tile index (32 bits); BlendY offset(4 bits); BlendX offset(4 bits); Previous frame factor (4 bits); Current frame factor (4 bits);
-//                            commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// ShortAddlBlendTileIdx:   data -> tile index (16 bits) * 2; blending ratio (8 bits); padding (8 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LongAddlBlendTileIdx:    data -> tile index (32 bits) * 2; blending ratio (8 bits); padding (8 bits); commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// ShortAdditionalTileIdx:  data -> tile index (16 bits) * 2; commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
-// LongAdditionalTileIdx:   data -> tile index (32 bits) * 2; commandBits -> palette index (8 bits); V mirror (1 bit); H mirror (1 bit)
+// PredictedTileShortOffsets:        data -> none; commandBits -> y offset (5 bits); x offset (5 bits)
+// PredictedTileLongOffsets:         data -> x offset (8 bits); y offset (8 bits); commandBits -> none
+// ShortTileIdxShortPalIdx:          data -> tile index (16 bits); commandBits -> palette index (10 bits); V mirror (1 bit); H mirror (1 bit)
+// LongTileIdxShortPalIdx:           data -> tile index (32 bits); commandBits -> palette index (10 bits); V mirror (1 bit); H mirror (1 bit)
+// LongTileIdxLongPalIdx:            data -> palette index (16 bits); tile index (32 bits); commandBits -> none (10 bits); V mirror (1 bit); H mirror (1 bit)
+// IntraTile:                        data -> palette index (16 bits); indexes per pixel (64 bytes); commandBits -> none (10 bits); V mirror (1 bit); H mirror (1 bit)
+// SkipBlock:                        data -> none; commandBits -> skip count - 1 (12 bits)
 //
 // (insert new commands here...)
 //
-// FrameEnd:                data -> none; commandBits bit 0 -> keyframe end
-// TileSet:                 data -> start tile (32 bits); end tile (32 bits); { indexes per tile (64 bytes) } * count; commandBits -> indexes count per palette
-// SetDimensions:           data -> height in tiles (16 bits); width in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
-// ExtendedCommand:         data -> following bytes count (32 bits); custom commands, proprietary extensions, ...; commandBits -> extended command index (10 bits)
-//
-// ReservedArea:            reserving the MSB for future use (do not use for new commands)    
+// FrameEnd:                         data -> none; commandBits -> none (11 bits); keyframe end (1 bit)
+// LoadPalette:                      data -> palette index (16 bits); { RGBA bytes (32bits) } * indexes count; commandBits -> palette format (0: RGBA32) (12 bits)
+// TileSet:                          data -> start tile (32 bits); end tile (32 bits); { indexes per pixel (64 bytes) } * count; commandBits -> indexes count per palette
+// SetDimensions:                    data -> width in tiles (16 bits); height in tiles (16 bits); frame length in nanoseconds (32 bits) (2^32-1: still frame); tile count (32 bits); commandBits -> none
+// ExtendedCommand:                  data -> following bytes count (32 bits); custom commands, proprietary extensions, ...; commandBits -> extended command index (12 bits)
 
 const GTMCommand = {
-	'SkipBlock' : 0,
-	'ShortTileIdx' : 1,
-	'LongTileIdx' : 2,
-	'LoadPalette' : 3,
-	'ShortBlendTileIdx' : 4,
-	'LongBlendTileIdx' : 5,
-	'ShortAddlBlendTileIdx' : 6,
-    'LongAddlBlendTileIdx' : 7,
-    'ShortAdditionalTileIdx' : 9,
-    'LongAdditionalTileIdx' : 10,
+    'PredictedTileShortOffsets' : 0,
+    'PredictedTileLongOffsets' : 1,
+    'ShortTileIdxShortPalIdx' : 2,
+    'LongTileIdxShortPalIdx' : 3,
+    'LongTileIdxLongPalIdx' : 4,
+    'IntraTile' : 5,
+    'SkipBlock' : 6,
 	
-	'FrameEnd' : 28,
-	'TileSet' : 29,
-	'SetDimensions' : 30,
-	'ExtendedCommand' : 31,
-	
-	'ReservedAreaBegin' : 32,
-	'ReservedAreaEnd' : 63
+    'FrameEnd' : 11,
+    'LoadPalette' : 12,
+    'TileSet' : 13,
+    'SetDimensions' : 14,
+    'ExtendedCommand' : 15,
 }; 
 
 const CTileWidth = 8;
-const CTMAttrBits = 1 + 1 + 8; // HMir + VMir + PalIdx
+const CTMAttrBits = 1 + 1 + 10; // HMir + VMir + PalIdx
 const CShortIdxBits = 16 - CTMAttrBits;
 const CTileSize = CTileWidth * CTileWidth;
+const CMaxPaletteCount = 65536;
 
 let gtmWLZMA = null;
 
@@ -70,15 +60,12 @@ let gtmCanvasId = '';
 let gtmInBuffer = null;
 let gtmOutStream = null;
 let gtmHeader = null;
-let gtmLzmaBytesPerSecond = 1024 * 1024;
 let gtmTiles = null;
-let gtmTMImageData = null;
-let gtmPaletteR = new Array(512);
-let gtmPaletteG = new Array(512);
-let gtmPaletteB = new Array(512);
-let gtmPaletteA = new Array(512);
-let gtmTMIndexes = new Array(2);
-let gtmTMAttrs = new Array(2);
+let gtmPaletteR = new Array(CMaxPaletteCount);
+let gtmPaletteG = new Array(CMaxPaletteCount);
+let gtmPaletteB = new Array(CMaxPaletteCount);
+let gtmPaletteA = new Array(CMaxPaletteCount);
+let gtmTMImageData = new Array(2);
 let gtmFrameInterval = null;
 
 let gtmAwaitingCanvasId = ''
@@ -95,13 +82,11 @@ let gtmWidth = 0;
 let gtmHeight = 0;
 let gtmFrameLength = 0;
 let gtmTileCount = 0;
+let gtmCurIntraTile = 0;
 let gtmPalSize = 0;
 let gtmTMPos = 0;
 let gtmTMDblBuff = 0;
-let gtmKFCurDblBuff = 0;
-let gtmKFPrevDblBuff = 0;
 let gtmLoopCount = 0;
-let gtmMaxFTBlend = 16;
 
 function gtmPlayFromFile(file, canvasId) {
 	if (gtmReady) {
@@ -160,7 +145,6 @@ function resetDecoding() {
 	gtmInBuffer = null;
 	gtmOutStream = null;
 	gtmHeader = null;
-	gtmLzmaBytesPerSecond = 1024 * 1024;
 	gtmTiles = null;
 	
 	gtmReady = false;
@@ -170,11 +154,10 @@ function resetDecoding() {
 	gtmDataBufGlobalPos = 0;
 	gtmFrameLength = 0;
 	gtmTileCount = 0;
+	gtmCurIntraTile = 0;
 	gtmPalSize = 0;
 	gtmTMPos = 0;
 	gtmTMDblBuff = 0;
-	gtmKFCurDblBuff = 0;
-	gtmKFPrevDblBuff = 0;
 	gtmLoopCount = 0;
 }
 
@@ -228,18 +211,11 @@ function parseHeader(buffer) {
 		
 		gtmWidth = (gtmHeader[GTMHeader.FramePixelWidth] / CTileWidth) >>> 0;
 		gtmHeight = (gtmHeader[GTMHeader.FramePixelHeight] / CTileWidth) >>> 0;
-		gtmLzmaBytesPerSecond = gtmHeader[GTMHeader.KFMaxBytesPerSec];
 		console.log('Header:', gtmHeader[GTMHeader.FramePixelWidth], 'x', gtmHeader[GTMHeader.FramePixelHeight], ',',
 			Math.round(gtmHeader[GTMHeader.AverageBytesPerSec] * 8 / 1024), 'KBps (average)', ',',
 			Math.round(gtmHeader[GTMHeader.KFMaxBytesPerSec] * 8 / 1024), 'KBps (max)');
 		
 		stream.offset = whlsize; // position on start of LZMA bitstream
-		
-		// KLUDGE: before version 2, blending had wrong extents
-		if (gtmHeader[GTMHeader.EncoderVersion] < 2)
-			gtmMaxFTBlend = 15
-		else
-			gtmMaxFTBlend = 16;
 		
 		redimFrame();
 	} else {
@@ -282,11 +258,8 @@ function redimFrame() {
 		canvas.fillStyle = 'black';
 		canvas.fillRect(0, 0, gtmWidth * CTileWidth, gtmHeight * CTileWidth);
 
-		gtmTMImageData = canvas.getImageData(0, 0, frame.width, frame.height);
-		gtmTMIndexes[0] = new Uint32Array(gtmWidth * gtmHeight);
-		gtmTMIndexes[1] = new Uint32Array(gtmWidth * gtmHeight);
-		gtmTMAttrs[0] = new Uint16Array(gtmWidth * gtmHeight);
-		gtmTMAttrs[1] = new Uint16Array(gtmWidth * gtmHeight);
+		gtmTMImageData[0] = canvas.getImageData(0, 0, frame.width, frame.height);
+		gtmTMImageData[1] = canvas.getImageData(0, 0, frame.width, frame.height);
 	}
 }
 
@@ -297,11 +270,11 @@ function renderEnd() {
 	
 	var frame = document.getElementById(gtmCanvasId);
 	var canvas = frame.getContext('2d');
-	canvas.putImageData(gtmTMImageData, 0, 0);
+	canvas.putImageData(gtmTMImageData[gtmTMDblBuff], 0, 0);
 }
 
 function drawTilemapItem(idx, attrs) {
-	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
+	let palIdx = attrs >> 2;
 	let tOff = ((attrs & 3) * gtmTileCount + idx) * CTileSize;
 	let palR = gtmPaletteR[palIdx];
 	let palG = gtmPaletteG[palIdx];
@@ -310,7 +283,7 @@ function drawTilemapItem(idx, attrs) {
 	let x = (gtmTMPos % gtmWidth) * CTileWidth;
 	let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
 	let p = (y * gtmWidth * CTileWidth + x) * 4;
-	var data = gtmTMImageData.data;
+	var data = gtmTMImageData[gtmTMDblBuff].data;
 	
 	for (let ty = 0; ty < CTileWidth; ty++) {
 		for (let tx = 0; tx < CTileWidth; tx++) {
@@ -323,112 +296,37 @@ function drawTilemapItem(idx, attrs) {
 		p += (gtmWidth - 1) * CTileWidth * 4;
 	}
 	
-	gtmTMIndexes[gtmTMDblBuff][gtmTMPos] = idx;
-	gtmTMAttrs[gtmTMDblBuff][gtmTMPos] = attrs;
 	gtmTMPos++;
 }
 
-function drawBlendedTilemapItem(idx, attrs, blend) {
-	let blendOff = (((blend >> 12) & 7) - ((blend >> 12) & 8)) * gtmWidth + (((blend >> 8) & 7) - ((blend >> 8) & 8));
-	let blendPrev = (blend >> 4) & 15;
-	let blendCur = blend & 15;
-	
-	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
-	let tOff = ((attrs & 3) * gtmTileCount + idx) * CTileSize;
-	let palR = gtmPaletteR[palIdx];
-	let palG = gtmPaletteG[palIdx];
-	let palB = gtmPaletteB[palIdx];
-	let palA = gtmPaletteA[palIdx];
-	
-	let prevAttrs = gtmTMAttrs[1 - gtmTMDblBuff][gtmTMPos + blendOff];
-	let prevIdx = gtmTMIndexes[1 - gtmTMDblBuff][gtmTMPos + blendOff];
-	
-	let prevPalIdx = (prevAttrs >> 2)  + 256 * gtmKFPrevDblBuff;
-	let prevTOff = ((prevAttrs & 3) * gtmTileCount + prevIdx) * CTileSize;
-	let prevPalR = gtmPaletteR[prevPalIdx];
-	let prevPalG = gtmPaletteG[prevPalIdx];
-	let prevPalB = gtmPaletteB[prevPalIdx];
-	
+function drawPredictedTilemapItem(offsetX, offsetY) {
+	var data = gtmTMImageData[gtmTMDblBuff].data;
+	var prevData = gtmTMImageData[1 - gtmTMDblBuff].data;
+
 	let x = (gtmTMPos % gtmWidth) * CTileWidth;
 	let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
+
 	let p = (y * gtmWidth * CTileWidth + x) * 4;
-	
-	var data = gtmTMImageData.data;
+	let o = p + (offsetY * gtmWidth * CTileWidth + offsetX) * 4;
 	
 	for (let ty = 0; ty < CTileWidth; ty++) {
 		for (let tx = 0; tx < CTileWidth; tx++) {
-			let pv = gtmTiles[prevTOff++];
-			let cv = gtmTiles[tOff++];
-			data[p++] = Math.min(255, ((palR[cv] * blendCur + prevPalR[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
-			data[p++] = Math.min(255, ((palG[cv] * blendCur + prevPalG[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
-			data[p++] = Math.min(255, ((palB[cv] * blendCur + prevPalB[pv] * blendPrev) / gtmMaxFTBlend) >> 0);
-			data[p++] = palA[cv];
+			data[p++] = prevData[o++];
+			data[p++] = prevData[o++];
+			data[p++] = prevData[o++];
+			data[p++] = prevData[o++];
 		}
 		p += (gtmWidth - 1) * CTileWidth * 4;
+		o += (gtmWidth - 1) * CTileWidth * 4;
 	}
-	
-	gtmTMIndexes[gtmTMDblBuff][gtmTMPos] = idx;
-	gtmTMAttrs[gtmTMDblBuff][gtmTMPos] = attrs;
-	gtmTMPos++;
-}
 
-function drawAdditionalTilemapItem(idx, idx2, attrs, blend) {
-	let palIdx = (attrs >> 2) + 256 * gtmKFCurDblBuff;
-	let tOff = ((attrs & 3) * gtmTileCount + idx) * CTileSize;
-	let tOff2 = ((attrs & 3) * gtmTileCount + idx2) * CTileSize;
-	let palR = gtmPaletteR[palIdx];
-	let palG = gtmPaletteG[palIdx];
-	let palB = gtmPaletteB[palIdx];
-	let palA = gtmPaletteA[palIdx];
-	let x = (gtmTMPos % gtmWidth) * CTileWidth;
-	let y = Math.trunc(gtmTMPos / gtmWidth) * CTileWidth;
-	let p = (y * gtmWidth * CTileWidth + x) * 4;
-	var data = gtmTMImageData.data;
-	
-	if (blend == 128)
-	{
-		for (let ty = 0; ty < CTileWidth; ty++) {
-			for (let tx = 0; tx < CTileWidth; tx++) {
-				let v = gtmTiles[tOff++];
-				let v2 = gtmTiles[tOff2++];
-
-				data[p++] = (palR[v] + palR[v2]) >> 1;
-				data[p++] = (palG[v] + palG[v2]) >> 1;
-				data[p++] = (palB[v] + palB[v2]) >> 1;
-				data[p++] = (palA[v] + palA[v2]) >> 1;
-			}
-			p += (gtmWidth - 1) * CTileWidth * 4;
-		}
-	}
-	else
-	{
-		let rblend = 256 - blend;
-		
-		for (let ty = 0; ty < CTileWidth; ty++) {
-			for (let tx = 0; tx < CTileWidth; tx++) {
-				let v = gtmTiles[tOff++];
-				let v2 = gtmTiles[tOff2++];
-
-				data[p++] = (palR[v] * rblend + palR[v2] * blend) >> 8;
-				data[p++] = (palG[v] * rblend + palG[v2] * blend) >> 8;
-				data[p++] = (palB[v] * rblend + palB[v2] * blend) >> 8;
-				data[p++] = (palA[v] * rblend + palA[v2] * blend) >> 8;
-			}
-			p += (gtmWidth - 1) * CTileWidth * 4;
-		}
-	}
-	
-	gtmTMIndexes[gtmTMDblBuff][gtmTMPos] = idx;
-	gtmTMAttrs[gtmTMDblBuff][gtmTMPos] = attrs;
 	gtmTMPos++;
 }
 
 function skipBlock(skipCount) {
 	for(let s = 0; s < skipCount; s++)
 	{
-		gtmTMIndexes[gtmTMDblBuff][gtmTMPos] = gtmTMIndexes[1 - gtmTMDblBuff][gtmTMPos];
-		gtmTMAttrs[gtmTMDblBuff][gtmTMPos] = gtmTMAttrs[1 - gtmTMDblBuff][gtmTMPos];
-		gtmTMPos++;
+		drawPredictedTilemapItem(0, 0);
 	}
 }
 
@@ -474,6 +372,8 @@ function decodeFrame() {
 		do {
 			let cmd = readCommand();
 			
+			// console.log('command @' + gtmDataBufGlobalPos + ': ' + cmd + '\n');
+			
 			switch (cmd[0]) {
 			case GTMCommand.SetDimensions:
 				gtmWidth = readWord();
@@ -481,6 +381,9 @@ function decodeFrame() {
 				gtmFrameLength = Math.round(readDWord() / (1000 * 1000));
 				gtmTileCount = readDWord();
 				console.log('TileCount:', gtmTileCount);
+				
+				gtmCurIntraTile = gtmTileCount;
+				gtmTileCount += gtmWidth * gtmHeight * 2 // for intra tiles (at most 2 entire tilemaps)
 				
 				if (gtmLoopCount <= 0) {
 					gtmFrameInterval = setInterval(decodeFrame, gtmFrameLength);
@@ -524,11 +427,6 @@ function decodeFrame() {
 				gtmTMPos = 0;
 
 				gtmTMDblBuff = 1 - gtmTMDblBuff;
-				gtmKFPrevDblBuff = gtmKFCurDblBuff;
-				if (cmd[1] & 1) // keyframe?
-				{
-					gtmKFCurDblBuff = 1 - gtmKFCurDblBuff;
-				}
 				doContinue = false;
 				break;
 				
@@ -536,17 +434,21 @@ function decodeFrame() {
 				skipBlock(cmd[1] + 1);
 				break;
 				
-			case GTMCommand.ShortTileIdx:
+			case GTMCommand.ShortTileIdxShortPalIdx:
 				drawTilemapItem(readWord(), cmd[1]);
 				break;
 				
-			case GTMCommand.LongTileIdx:
+			case GTMCommand.LongTileIdxShortPalIdx:
 				drawTilemapItem(readDWord(), cmd[1]);
 				break;
 				
+			case GTMCommand.LongTileIdxLongPalIdx:
+				let palIdxW = readWord();
+				drawTilemapItem(readDWord(), cmd[1] | (palIdxW << 2));
+				break;
+				
 			case GTMCommand.LoadPalette:
-				let palIdx = readByte() + 256 * gtmKFCurDblBuff;
-				readByte(); // palette format
+				let palIdx = readWord();
 				
 				gtmPaletteR[palIdx] = new Uint8Array(gtmPalSize);
 				gtmPaletteG[palIdx] = new Uint8Array(gtmPalSize);
@@ -561,46 +463,52 @@ function decodeFrame() {
 				}
 				break;
 				
-			case GTMCommand.ShortBlendTileIdx:
-				let idxW = readWord();
-				let blendW = readWord();
-				drawBlendedTilemapItem(idxW, cmd[1], blendW);
-				break;
-				
-			case GTMCommand.LongBlendTileIdx:
-				let idxDW = readDWord();
-				let blendDW = readWord();
-				drawBlendedTilemapItem(idxDW, cmd[1], blendDW);
-				break;
-				
-			case GTMCommand.ShortAddlBlendTileIdx:
-				let idx1bW = readWord();
-				let idx2bW = readWord();
-				let blendbW = readByte();
-				readByte(); // padding
-				drawAdditionalTilemapItem(idx1bW, idx2bW, cmd[1], blendbW);
-				break;
-				
-			case GTMCommand.LongAddlBlendTileIdx:
-				let idx1bDW = readDWord();
-				let idx2bDW = readDWord();
-				let blendbDW = readByte();
-				readByte(); // padding
-				drawAdditionalTilemapItem(idx1bDW, idx2bDW, cmd[1], blendbDW);
-				break;
-				
-			case GTMCommand.ShortAdditionalTileIdx:
-				let idx1W = readWord();
-				let idx2W = readWord();
-				drawAdditionalTilemapItem(idx1W, idx2W, cmd[1], 128);
+			case GTMCommand.PredictedTileShortOffsets:
+				drawPredictedTilemapItem((cmd[1] & 31) - (cmd[1] & 32), ((cmd[1] >> 6) & 31) - ((cmd[1] >> 6) & 32));
 				break;
 
-			case GTMCommand.LongAdditionalTileIdx:
-				let idx1DW = readDWord();
-				let idx2DW = readDWord();
-				drawAdditionalTilemapItem(idx1DW, idx2DW, cmd[1], 128);
+			case GTMCommand.PredictedTileLongOffsets:
+				let offsetX = readByte();
+				let offsetY = readByte();
+				drawPredictedTilemapItem((offsetX & 127) - (offsetX & 128), (offsetY & 127) - (offsetY & 128));
 				break;
+				
+			case GTMCommand.IntraTile:
+				let palIdxWI = readWord();
 
+				let ioff = gtmCurIntraTile * CTileSize + gtmTileCount * CTileSize * 0;
+				let ioffh = gtmCurIntraTile * CTileSize + gtmTileCount * CTileSize * 1;
+				let ioffv = gtmCurIntraTile * CTileSize + gtmTileCount * CTileSize * 2;
+				let ioffhv = gtmCurIntraTile * CTileSize + gtmTileCount * CTileSize * 3;
+
+				for (let ty = 0; ty < CTileWidth; ty++) {
+					for (let tx = 0; tx < CTileWidth; tx++) {
+						let b = readByte();
+						gtmTiles[ioff + ty * CTileWidth + tx] = b;
+						gtmTiles[ioffh + ty * CTileWidth + (CTileWidth - 1 - tx)] = b;
+						gtmTiles[ioffv + (CTileWidth - 1 - ty) * CTileWidth + tx] = b;
+						gtmTiles[ioffhv + (CTileWidth - 1 - ty) * CTileWidth + (CTileWidth - 1 - tx)] = b;
+					}
+				}
+				
+				drawTilemapItem(gtmCurIntraTile, cmd[1] | (palIdxWI << 2));
+				
+				if((++gtmCurIntraTile) >= gtmTileCount) {
+					gtmCurIntraTile = gtmTileCount - gtmWidth * gtmHeight * 2;
+				}
+				break;
+				
+			case GTMCommand.ExtendedCommand:
+				let size = readDWord();
+				let settings = '';
+				for (let i = 0; i < size; i++) {
+					settings += String.fromCharCode(readByte());
+				}
+				if (cmd[1] == 0) {
+					console.log(settings);
+				}
+				break;
+			
 			default:
 				console.error('Undecoded command @' + gtmDataBufGlobalPos + ': ' + cmd + '\n');
 				break;
