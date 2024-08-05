@@ -4031,7 +4031,7 @@ begin
 
   FrameTilingUseGamma := False;
   FrameTilingMode := pvsSpeDCT;
-  FrameTilingExtendedPaletteUsage := False;
+  FrameTilingExtendedPaletteUsage := True;
 
   EncoderGammaValue := 2.0;
 
