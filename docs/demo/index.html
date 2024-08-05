@@ -104,11 +104,21 @@
     #drop {
       margin: 25px;
       padding: 25px;
-      font-size: 20pt;
+      font-size: 12pt;
       background:#f2f2f2;
       border-top:1px dashed #888;
       border-bottom:1px dashed #888
     }
+	
+    canvas { 
+      background-color: #000;
+      margin: auto;
+      display: block;
+    }
+	
+	.zoomed {
+      height: 90vh; 
+    }	
     </style>
   </head>
   <body>
@@ -118,19 +128,20 @@
         <span id="project_tagline">This demo decompresses GliGli's TileMotion video in your web browser. No data is sent to an external server.</span>
       </header>
     </div>
-    <canvas id="frame" width="8" height="8"></canvas><br/>
     <div id="drop">
-      <h2>Click on a GTM file to play the contents (source: <a href="https://media.xiph.org/">media.xiph.org</a>)</h2>
-      (Encoded using version from 2022-08-28)<br/>
-      <a class="sample" href="sintel_trailer_2k.gtm">sintel_trailer_2k.gtm</a> (1080p, 1253 frames, 7.3 MBits/Sec)<br/>
-      <a class="sample" href="sunflower_540p25.gtm">sunflower_540p25.gtm</a> (540p, 500 frames, 6.7 MBits/Sec)<br/>
-      <a class="sample" href="rush_field_cuts_540p.gtm">rush_field_cuts_540p.gtm</a> (540p, 570 frames, 7.2 MBits/Sec)<br/>
-      <a class="sample" href="tractor_540p25_old.gtm">tractor_540p25_old.gtm (early alpha encoding)</a> (540p, 690 frames, 4.8 MBits/Sec)<br/>
-      <a class="sample" href="tractor_540p25_new.gtm">tractor_540p25_new.gtm</a> (540p, 690 frames, 6.7 MBits/Sec)<br/>
-      <a class="sample" href="football_cif.gtm">football_cif.gtm</a> (CIF, 260 frames, 2.0 MBits/Sec)<br/>
-      <a class="sample" href="city_cif.gtm">city_cif.gtm</a> (CIF, 300 frames, 2.0 MBits/Sec)<br/>
+      <h4>Click on a GTM file to play the contents (source: <a href="https://media.xiph.org/">media.xiph.org</a>)</h4>
+      (Encoded using version from 2024-08-05)<br/>
+      <a class="sample" href="sintel_trailer_2k.gtm">sintel_trailer_2k.gtm</a> (1080p, 1253 frames, 8.6 MBits/Sec)<br/>
+      <a class="sample" href="aspen_1080p.gtm">aspen_1080p.gtm</a> (1080p, 570 frames, 25.1 MBits/Sec)<br/>
+      <a class="sample" href="sunflower_540p25.gtm">sunflower_540p25.gtm</a> (540p, 500 frames, 4.7 MBits/Sec)<br/>
+      <a class="sample" href="rush_field_cuts_540p.gtm">rush_field_cuts_540p.gtm</a> (540p, 570 frames, 9.1 MBits/Sec)<br/>
+      <a class="sample" href="tractor_540p25.gtm">tractor_540p25.gtm</a> (540p, 690 frames, 3.7 MBits/Sec)<br/>
+      <a class="sample" href="football_cif.gtm">football_cif.gtm</a> (CIF, 260 frames, 2.8 MBits/Sec)<br/>
+      <a class="sample" href="city_cif.gtm">city_cif.gtm</a> (CIF, 300 frames, 2.6 MBits/Sec)<br/>
     </div>
-    <input type="checkbox" id="play_loop" checked> Play video as loop <br/>
+    <canvas id="frame" width="640" height="360"></canvas><br/>
+    <input type="checkbox" id="play_loop" checked><label for="play_loop">Play video as loop</label>
+    <input type="checkbox" id="zoom"><label for="zoom">Zoomed</label><br/>
     <a href="https://github.com/gligli/tiler">Source code on GitHub</a>
     <script src="./lzma.js"></script>
     <script src="./lzma.shim.js"></script>
@@ -141,15 +152,17 @@
       document.querySelectorAll('.sample').forEach( function(sample) {
         sample.addEventListener('click', (event) => {
           event.preventDefault();
-  
           gtmPlayFromURL(sample.href, 'frame');
-          document.querySelector('#drop').parentNode.removeChild(document.querySelector('#drop'));
         });
       });
       
       document.querySelector('#play_loop').addEventListener('click', () => {
         gtmSetPlaying(document.querySelector('#play_loop').checked);
       });
+	  
+      document.querySelector('#zoom').addEventListener('click', () => {
+		document.querySelector('#frame').className = document.querySelector('#zoom').checked ? 'zoomed' : '';
+      });	  
     </script>
   </body>
 </html>
