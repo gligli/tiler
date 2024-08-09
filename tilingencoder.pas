@@ -1222,20 +1222,21 @@ var
 
       for oy := oymn to oymx do
         for ox := oxmn to oxmx do
-        begin
-          err := CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]);
-
-          // apply a penalty of float mantissa's unit times the manhattan distance to the center
-          // rationale: slightly favoring the center in case of ties improves compressibility
-          Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
-
-          if err < bestErr then
+          if QuickTestEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox], bestErr) then
           begin
-            bestErr := err;
-            bestX := ox;
-            bestY := oy;
+            err := CompareEuclideanDCTPtr_asm(CurDCT, DCTs[oy, ox]);
+
+            // apply a penalty of float mantissa's unit times the manhattan distance to the center
+            // rationale: slightly favoring the center in case of ties improves compressibility
+            Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
+
+            if err < bestErr then
+            begin
+              bestErr := err;
+              bestX := ox;
+              bestY := oy;
+            end;
           end;
-        end;
 
       TMI^.ResidualErr := bestErr;
       TMI^.PredictedX := bestX - dx;
@@ -1493,20 +1494,21 @@ var
 
       for oy := oymn to oymx do
         for ox := oxmn to oxmx do
-        begin
-          err := CompareEuclideanDCTPtr_asm(DCT, DCTs[oy, ox]);
-
-          // apply a penalty of float mantissa's unit times the manhattan distance to the center
-          // rationale: slightly favoring the center in case of ties improves compressibility
-          Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
-
-          if err < mpErr then
+          if QuickTestEuclideanDCTPtr_asm(DCT, DCTs[oy, ox], mpErr) then
           begin
-            mpErr := err;
-            TMI^.PredictedX := ox - dx;
-            TMI^.PredictedY := oy - dy;
+            err := CompareEuclideanDCTPtr_asm(DCT, DCTs[oy, ox]);
+
+            // apply a penalty of float mantissa's unit times the manhattan distance to the center
+            // rationale: slightly favoring the center in case of ties improves compressibility
+            Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
+
+            if err < mpErr then
+            begin
+              mpErr := err;
+              TMI^.PredictedX := ox - dx;
+              TMI^.PredictedY := oy - dy;
+            end;
           end;
-        end;
     end;
 
     if IsZero(mpErr) then
@@ -1538,7 +1540,7 @@ var
     begin
       // predict multiple tiles with the KNN and try the cartesian product of unique tiles * palettes
 
-      ann_kdtree_single_search_multi(DS^.ANN, EpuTileIdxs, EpuErrs, cEpuKnnK, @FTDCT[0], 0.0);
+      ann_kdtree_single_search_multi(DS^.ANN, @EpuTileIdxs[0], @EpuErrs[0], cEpuKnnK, @FTDCT[0], 0.0);
 
       for tileEpuIdx := 0 to cEpuKnnK - 1 do
         if InRange(EpuTileIdxs[tileEpuIdx], 0, DS^.KNNSize - 1) then
@@ -1566,13 +1568,17 @@ var
             if EpuPalIdxs[palEpuIdx] <> prevPalIdx then
             begin
               Encoder.ComputeTilePsyVisFeatures(Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^, Encoder.FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, Encoder.FPalettes[EpuPalIdxs[palEpuIdx]].PaletteRGB, @DCT[0]);
-              err := CompareEuclideanDCTPtr_asm(FTDCT, DCT);
 
-              if err < knnErr then
+              if QuickTestEuclideanDCTPtr_asm(FTDCT, DCT, knnErr) then
               begin
-                knnErr := err;
-                tileIdx := EpuTileIdxs[tileEpuIdx];
-                palIdx := EpuPalIdxs[palEpuIdx];
+                err := CompareEuclideanDCTPtr_asm(FTDCT, DCT);
+
+                if err < knnErr then
+                begin
+                  knnErr := err;
+                  tileIdx := EpuTileIdxs[tileEpuIdx];
+                  palIdx := EpuPalIdxs[palEpuIdx];
+                end;
               end;
 
               prevPalIdx := EpuPalIdxs[palEpuIdx];

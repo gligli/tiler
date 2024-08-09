@@ -155,6 +155,7 @@ function CompareEuclidean(a, b: PDouble; size: Integer): Double; inline;
 function CompareCountIndexVSH(const Item1,Item2:PCountIndex):Integer;
 function CompareIntegers(Item1,Item2,UserParameter:Pointer):Integer;
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
+function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat; min_dist_xmm2: TFloat): Boolean; register; assembler;
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
 function DCTInner_asm(pCpn_rcx, pLut_rdx: PFloat): Double; register; assembler;
 function EqualQualityTileCount(tileCount: TFloat): Integer;
@@ -487,6 +488,27 @@ end;
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
 begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
+end;
+
+function QuickTestEuclideanDCTPtr(pa, pb: PFloat; min_dist: TFloat): Boolean;
+begin
+  Result := Sqr(pa[0] - pb[0]) + Sqr(pa[1] - pb[1]) + Sqr(pa[2] - pb[2]) + Sqr(pa[3] - pb[3]) < min_dist;
+end;
+
+function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat; min_dist_xmm2: TFloat): Boolean; register;
+asm
+  movups xmm0, oword ptr [rcx]
+  movups xmm1, oword ptr [rdx]
+
+  subps xmm0,  xmm1
+
+  mulps xmm0,  xmm0
+
+  haddps xmm0, xmm0
+  haddps xmm0, xmm0
+
+  ucomiss xmm0, xmm2
+  setb al
 end;
 
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
