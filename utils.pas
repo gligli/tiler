@@ -1,6 +1,9 @@
 unit utils;
 
 {$mode ObjFPC}{$H+}
+{$ModeSwitch advancedrecords}
+{$TYPEDADDRESS ON}
+{$CODEALIGN LOCALMIN=16}
 
 interface
 
@@ -129,6 +132,9 @@ type
   TCountIndexList = specialize TFPGList<PCountIndex>;
 
   TGRSEvalFunc = function(x: Double; Data: Pointer): Double of object;
+
+  TSingleDCTDynArray = array of array[0 .. cTileDCTSize - 1] of Single;
+  TPSingleDynArray = array of PSingle;
 
 procedure SpinEnter(Lock: PSpinLock); assembler;
 procedure SpinLeave(Lock: PSpinLock); assembler;
@@ -496,7 +502,7 @@ begin
   Result := Sqr(pa[0] - pb[0]) + Sqr(pa[1] - pb[1]) + Sqr(pa[2] - pb[2]) + Sqr(pa[3] - pb[3]) < min_dist;
 end;
 
-function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat; min_dist_xmm2: TFloat): Boolean; register;
+function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat; min_dist_xmm2: TFloat): Boolean; register; assembler;
 asm
   sub rsp, 16 * 1
   movdqu oword ptr [rsp], xmm0
