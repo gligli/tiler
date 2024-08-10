@@ -10,6 +10,7 @@ uses
 const
   // tweakable constants
 
+  cPsyVEpsilon = 1e-6;
   cYakmoMaxIterations = 300;
 
   {$if false}

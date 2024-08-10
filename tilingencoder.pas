@@ -1511,7 +1511,7 @@ var
           end;
     end;
 
-    if IsZero(mpErr) then
+    if IsZero(mpErr, cPsyVEpsilon) then
     begin
       // motion prediction has priority in case perfect (less bitrate)
 
@@ -1590,7 +1590,7 @@ var
 
     // devise which is best
 
-    if (tileIdx >= 0) and (knnErr < mpErr) then
+    if (tileIdx >= 0) and (CompareValue(knnErr, mpErr, cPsyVEpsilon) < 0) then
     begin
       // KNN is best
 
@@ -4332,7 +4332,7 @@ end;
 
 function TTilingEncoder.SolveTileCount(ATileCount: Integer): Double;
 begin
-  Result := GoldenRatioSearch(@STCGREval, cTileDCTSize, 0.0, ATileCount, 1e-6, 0.5, nil);
+  Result := GoldenRatioSearch(@STCGREval, cTileDCTSize, 0.0, ATileCount, cPsyVEpsilon, 0.5, nil);
 end;
 
 procedure TTilingEncoder.TransferTiles(ATileCount: Integer);
