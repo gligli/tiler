@@ -497,18 +497,22 @@ end;
 
 function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat; min_dist_xmm2: TFloat): Boolean; register;
 asm
+  sub rsp, 16 * 1
+  movdqu oword ptr [rsp], xmm0
+
   movups xmm0, oword ptr [rcx]
-  movups xmm1, oword ptr [rdx]
+  subps xmm0, oword ptr [rdx]
 
-  subps xmm0,  xmm1
-
-  mulps xmm0,  xmm0
+  mulps xmm0, xmm0
 
   haddps xmm0, xmm0
   haddps xmm0, xmm0
 
   ucomiss xmm0, xmm2
   setb al
+
+  movdqu xmm0, oword ptr [rsp]
+  add rsp, 16 * 1
 end;
 
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
