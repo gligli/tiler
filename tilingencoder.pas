@@ -433,7 +433,7 @@ type
     generic procedure WaveletGS<T, PT>(Data: PT; Output: PT; dx, dy, depth: cardinal);
     generic procedure DeWaveletGS<T, PT>(wl: PT; pic: PT; dx, dy, depth: longint);
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror, VMirror: Boolean;
-     ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat); inline; overload;
+     ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PSingle); inline; overload;
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror, VMirror: Boolean;
      ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
     procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns, GammaCor: Integer;
@@ -1463,8 +1463,7 @@ var
 
   procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, tileIdx, palIdx,
-      tileEpuIdx, palEpuIdx, prevTileIdx, prevPalIdx: Integer;
+    sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, tileEpuIdx, palEpuIdx, prevTileIdx, prevPalIdx: Integer;
     knnErr, mpErr, err: Single;
 
     FrameTile, Tile: PTile;
@@ -1528,8 +1527,8 @@ var
     begin
       // motion prediction has priority in case perfect (less bitrate)
 
-      palIdx := -1;
-      tileIdx := -1;
+      TMI^.PalIdx := -1;
+      TMI^.TileIdx := -1;
       knnErr := Infinity;
     end
     else if not Encoder.FrameTilingExtendedPaletteUsage then
@@ -1537,15 +1536,15 @@ var
       // use the KNN dataset to predict a tile with its associated palette
 
       knnErr := Infinity;
-      tileIdx := ann_kdtree_single_search(DS^.ANN, @FTDCT[0], 0.0, @knnErr);
-      palIdx := -1;
-      if InRange(tileIdx, 0, DS^.KNNSize - 1) then
+      TMI^.TileIdx := ann_kdtree_single_search(DS^.ANN, @FTDCT[0], 0.0, @knnErr);
+      TMI^.PalIdx := -1;
+      if InRange(TMI^.TileIdx, 0, DS^.KNNSize - 1) then
       begin
-        palIdx := Encoder.FTiles[tileIdx]^.PalIdx_Initial;
+        TMI^.PalIdx := Encoder.FTiles[TMI^.TileIdx]^.PalIdx_Initial;
       end
       else
       begin
-        tileIdx := -1;
+        TMI^.TileIdx := -1;
         knnErr := Infinity;
       end;
     end
@@ -1570,8 +1569,8 @@ var
       QuickSort(EpuPalIdxs, 0, cEpuKnnK - 1, SizeOf(EpuPalIdxs[0]), @CompareIntegers);
 
       knnErr := Infinity;
-      tileIdx := -1;
-      palIdx := -1;
+      TMI^.TileIdx := -1;
+      TMI^.PalIdx := -1;
       prevTileIdx := -1;
       for tileEpuIdx := 0 to cEpuKnnK - 1 do
         if EpuTileIdxs[tileEpuIdx] <> prevTileIdx then
@@ -1589,8 +1588,8 @@ var
                 if err < knnErr then
                 begin
                   knnErr := err;
-                  tileIdx := EpuTileIdxs[tileEpuIdx];
-                  palIdx := EpuPalIdxs[palEpuIdx];
+                  TMI^.TileIdx := EpuTileIdxs[tileEpuIdx];
+                  TMI^.PalIdx := EpuPalIdxs[palEpuIdx];
                 end;
               end;
 
@@ -1603,44 +1602,45 @@ var
 
     // devise which is best
 
-    if (tileIdx >= 0) and (CompareValue(knnErr, mpErr, cPsyVEpsilon) < 0) then
-    begin
-      // KNN is best
-
-      Tile := Encoder.FTiles[tileIdx];
-
-      TMI^.TileIdx := tileIdx;
-      TMI^.PalIdx := palIdx;
-      TMI^.ResidualErr := knnErr;
-      TMI^.IsPredicted := False;
-
-      // draw fb (pal tile)
-      for ty := 0 to cTileWidth - 1 do
+    case CompareValue(knnErr, mpErr, cPsyVEpsilon) of
+      LessThanValue:
       begin
-        tym := ty;
-        if TMI^.VMirror then tym := cTileWidth - 1 - tym;
+        // KNN is best
 
-        for tx := 0 to cTileWidth - 1 do
+        TMI^.ResidualErr := knnErr;
+        TMI^.IsPredicted := False;
+
+        Tile := Encoder.FTiles[TMI^.TileIdx];
+
+        // draw fb (pal tile)
+        for ty := 0 to cTileWidth - 1 do
         begin
-          txm := tx;
-          if TMI^.HMirror then txm := cTileWidth - 1 - txm;
+          tym := ty;
+          if TMI^.VMirror then tym := cTileWidth - 1 - tym;
 
-          AFrontBuffer[dy + ty, dx + tx] := Encoder.FPalettes[TMI^.PalIdx].PaletteRGB[Tile^.PalPixels[tym, txm]];
+          for tx := 0 to cTileWidth - 1 do
+          begin
+            txm := tx;
+            if TMI^.HMirror then txm := cTileWidth - 1 - txm;
+
+            AFrontBuffer[dy + ty, dx + tx] := Encoder.FPalettes[TMI^.PalIdx].PaletteRGB[Tile^.PalPixels[tym, txm]];
+          end;
         end;
       end;
-    end
-    else
-    begin
-      // motion prediction is best
-
-      TMI^.ResidualErr := mpErr;
-      TMI^.IsPredicted := True;
-
-      // draw fb (motion predicted tile)
-      for ty := 0 to cTileWidth - 1 do
+      EqualsValue, // motion prediction has priority in case of ties (less bitrate)
+      GreaterThanValue:
       begin
-        Move(ABackBuffer[dy + TMI^.PredictedY, dx + TMI^.PredictedX], AFrontBuffer[dy, dx], cTileWidth * SizeOf(Integer));
-        Inc(dy);
+        // motion prediction is best
+
+        TMI^.ResidualErr := mpErr;
+        TMI^.IsPredicted := True;
+
+        // draw fb (motion predicted tile)
+        for ty := 0 to cTileWidth - 1 do
+        begin
+          Move(ABackBuffer[dy + TMI^.PredictedY, dx + TMI^.PredictedX], AFrontBuffer[dy, dx], cTileWidth * SizeOf(Integer));
+          Inc(dy);
+        end;
       end;
     end;
 
@@ -3211,13 +3211,13 @@ begin
 end;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
-  VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PFloat);
+  VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PSingle);
 var
   i, u, v, x, y, xx, yy, cpn: Integer;
   z: Double;
   CpnPixels: TCpnPixels;
-  pDCT, pLut: PFloat;
-  LocalDCT: array[0..cTileDCTSize - 1] of TFloat;
+  pDCT, pLut: PSingle;
+  LocalDCT: array[0..cTileDCTSize - 1] of Single;
 
   procedure ToCpn(col, x, y: Integer); inline;
   var
