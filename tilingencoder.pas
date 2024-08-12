@@ -53,7 +53,7 @@ type
   // Commands Description:
   // =====================
   //
-  // PredictedTileShortOffsets:        data -> none; commandBits -> y offset (5 bits); x offset (5 bits)
+  // PredictedTileShortOffsets:        data -> none; commandBits -> y offset (6 bits); x offset (6 bits)
   // PredictedTileLongOffsets:         data -> x offset (8 bits); y offset (8 bits); commandBits -> none
   // ShortTileIdxShortPalIdx:          data -> tile index (16 bits); commandBits -> palette index (10 bits); V mirror (1 bit); H mirror (1 bit)
   // LongTileIdxShortPalIdx:           data -> tile index (32 bits); commandBits -> palette index (10 bits); V mirror (1 bit); H mirror (1 bit)
