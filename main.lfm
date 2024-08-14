@@ -87,12 +87,12 @@ object MainForm: TMainForm
     ParentColor = False
   end
   object Label5: TLabel
-    Left = 834
+    Left = 785
     Height = 15
     Top = 617
-    Width = 108
+    Width = 157
     Anchors = [akRight, akBottom]
-    Caption = 'PsyV (residual error):'
+    Caption = 'PSNR-HVS (objective quality):'
     ParentColor = False
   end
   object sedPalIdx: TSpinEdit
@@ -261,7 +261,7 @@ object MainForm: TMainForm
         Alignment = taLeftJustify
         AutoSize = False
         Caption = 'Dithering gamma correction'
-        TabOrder = 19
+        TabOrder = 18
         OnChange = UpdateGUI
       end
       object chkFTGamma: TCheckBox
@@ -272,7 +272,7 @@ object MainForm: TMainForm
         Alignment = taLeftJustify
         AutoSize = False
         Caption = 'Reconstruct gamma correction'
-        TabOrder = 20
+        TabOrder = 19
         OnChange = UpdateGUI
       end
       object Label10: TLabel
@@ -292,7 +292,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateGUI
-        TabOrder = 17
+        TabOrder = 16
         Value = 1
       end
       object seVisGamma: TFloatSpinEdit
@@ -304,7 +304,7 @@ object MainForm: TMainForm
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateVideo
-        TabOrder = 18
+        TabOrder = 17
         Value = 1
       end
       object seQbTiles: TFloatSpinEdit
@@ -438,7 +438,7 @@ object MainForm: TMainForm
         Increment = 0.1
         MaxValue = 100
         OnChange = UpdateGUI
-        TabOrder = 22
+        TabOrder = 21
       end
       object seShotTransMinSecondsPerKF: TFloatSpinEdit
         Left = 328
@@ -448,7 +448,7 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 100
         OnChange = UpdateGUI
-        TabOrder = 21
+        TabOrder = 20
       end
       object Label22: TLabel
         Left = 8
@@ -467,14 +467,14 @@ object MainForm: TMainForm
         MaxValue = 1
         MinValue = -1
         OnChange = UpdateGUI
-        TabOrder = 23
+        TabOrder = 22
       end
       object Label17: TLabel
         Left = 8
         Height = 15
         Top = 307
-        Width = 236
-        Caption = 'Psychovisual modes (prepare palettes; other)'
+        Width = 202
+        Caption = 'Psychovisual modes (prepare palettes)'
         ParentColor = False
       end
       object cbxDitheringMode: TComboBox
@@ -495,24 +495,6 @@ object MainForm: TMainForm
         TabOrder = 15
         OnChange = UpdateGUI
       end
-      object cbxFTMode: TComboBox
-        Left = 458
-        Height = 23
-        Top = 303
-        Width = 129
-        DropDownCount = 20
-        ItemHeight = 15
-        Items.Strings = (
-          'DCT'
-          'Weighted DCT'
-          'Haar wavelets'
-          'Special DCT'
-          'Spe. Wgt. DCT'
-        )
-        Style = csDropDownList
-        TabOrder = 16
-        OnChange = UpdateGUI
-      end
       object seShotTransDistHiThres: TFloatSpinEdit
         Left = 393
         Height = 23
@@ -521,7 +503,7 @@ object MainForm: TMainForm
         Increment = 0.05
         MaxValue = 1000
         OnChange = UpdateGUI
-        TabOrder = 24
+        TabOrder = 23
       end
       object Label18: TLabel
         Left = 8
@@ -580,7 +562,7 @@ object MainForm: TMainForm
         MaxValue = 1000000
         MinValue = 1
         OnChange = UpdateGUI
-        TabOrder = 25
+        TabOrder = 24
         Value = 1
       end
       object chkFTEPU: TCheckBox

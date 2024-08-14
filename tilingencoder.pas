@@ -100,11 +100,14 @@ type
 
   TRGBPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Integer;
   TPalPixels = array[0..(cTileWidth - 1),0..(cTileWidth - 1)] of Byte;
-  TCpnPixels = array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of TFloat;
-  TCpnPixelsDouble = array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of Double;
   PRGBPixels = ^TRGBPixels;
   PPalPixels = ^TPalPixels;
+
+  TCpnPixels = array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of Single;
+  TCpnPixelsDouble = array[0..cColorCpns-1, 0..cTileWidth-1,0..cTileWidth-1] of Double;
+
   PCpnPixels = ^TCpnPixels;
+  TPCpnPixelsDynArray = array of PCpnPixels;
 
   ETilingEncoderGTMReloadError = class(Exception);
 
@@ -176,7 +179,7 @@ type
     TileIdx: Integer;
     PalIdx: Integer;
     PredictedX, PredictedY: ShortInt;
-    ResidualErr: TFloat;
+    PSNR: TFloat;
     Flags: set of (tmfHMirror, tmfVMirror, tmfPredicted);
   end;
 
@@ -289,10 +292,10 @@ type
     Reason: TKeyFrameReason;
 
     ReconstructFramesLeft: Integer;
-    ReconstructErrCml: Double;
+    ReconstructPSNRCml: Double;
     ReconstructLock: TSpinlock;
 
-    procedure LogResidualErr;
+    procedure LogPSNR;
 
     constructor Create(AParent: TTilingEncoder; AIndex, AStartFrame, AEndFrame: Integer);
     destructor Destroy; override;
@@ -352,7 +355,6 @@ type
     FGlobalTilingQualityBasedTileCount: Double;
     FFrameTilingUseGamma: Boolean;
     FFrameTilingExtendedPaletteUsage: Boolean;
-    FFrameTilingMode: TPsyVisMode;
     FShotTransMaxSecondsPerKF: Double;
     FShotTransMinSecondsPerKF: Double;
     FShotTransCorrelLoThres: Double;
@@ -432,10 +434,14 @@ type
 
     generic procedure WaveletGS<T, PT>(Data: PT; Output: PT; dx, dy, depth: cardinal);
     generic procedure DeWaveletGS<T, PT>(wl: PT; pic: PT; dx, dy, depth: longint);
+
+    procedure ConvertToCpnPixels(const ATile: TTile; FromPal, UseLAB, HMirror, VMirror: Boolean; GammaCor: Integer; const APalette: TIntegerDynArray; var ACpnPixel: TCpnPixels);
+    procedure ComputeCpnPixelsPsyVisFeatures(const ACpnPixel: TCpnPixels; Mode: TPsyVisMode; ColorCpns: Integer; ADCT: PSingle); inline;
+
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror, VMirror: Boolean;
-     ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PSingle); inline; overload;
+     ColorCpns, GammaCor: Integer; const APalette: TIntegerDynArray; ADCT: PSingle); inline; overload;
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror, VMirror: Boolean;
-     ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble); inline; overload;
+     ColorCpns, GammaCor: Integer; const APalette: TIntegerDynArray; ADCT: PDouble); inline; overload;
     procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns, GammaCor: Integer;
       var ATile: TTile);
 
@@ -552,7 +558,6 @@ type
     property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingExtendedPaletteUsage: Boolean read FFrameTilingExtendedPaletteUsage write FFrameTilingExtendedPaletteUsage;
-    property FrameTilingMode: TPsyVisMode read FFrameTilingMode write FFrameTilingMode;
     property MaxThreadCount: Integer read GetMaxThreadCount write SetMaxThreadCount;
     property ShotTransMaxSecondsPerKF: Double read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
     property ShotTransMinSecondsPerKF: Double read FShotTransMinSecondsPerKF write SetShotTransMinSecondsPerKF;
@@ -1017,7 +1022,7 @@ end;
 
 { TKeyFrame }
 
-procedure TKeyFrame.LogResidualErr;
+procedure TKeyFrame.LogPSNR;
 var
   kfIdx: Integer;
   tileResd, errCml: Double;
@@ -1025,18 +1030,18 @@ begin
   InterLockedDecrement(ReconstructFramesLeft);
   if ReconstructFramesLeft <= 0 then
   begin
-    tileResd := Sqrt(ReconstructErrCml / (Encoder.FTileMapSize * FrameCount));
-    WriteLn('KF: ', StartFrame:8, ' ResidualErr: ', tileResd:12:6, ' (by tile)');
+    tileResd := ReconstructPSNRCml / (Encoder.FTileMapSize * FrameCount);
+    WriteLn('KF: ', StartFrame:8, ' PSNR-HVS: ', tileResd:12:6, ' (by tile)');
 
     InterLockedDecrement(Encoder.FKeyFramesLeft);
     if Encoder.FKeyFramesLeft <= 0 then
     begin
       errCml := 0.0;
       for kfIdx := 0 to High(Encoder.FKeyFrames) do
-        errCml += Encoder.FKeyFrames[kfIdx].ReconstructErrCml;
+        errCml += Encoder.FKeyFrames[kfIdx].ReconstructPSNRCml;
 
-      tileResd := Sqrt(errCml / (Encoder.FTileMapSize * Length(Encoder.FFrames)));
-      WriteLn('All:', Length(Encoder.FFrames):8, ' ResidualErr: ', tileResd:12:6, ' (by tile)');
+      tileResd := errCml / (Encoder.FTileMapSize * Length(Encoder.FFrames));
+      WriteLn('All:', Length(Encoder.FFrames):8, ' PSNR-HVS: ', tileResd:12:6, ' (by tile)');
     end;
   end;
 end;
@@ -1170,18 +1175,25 @@ procedure TFrame.PredictMotion(ARadius: Integer; AOnlyBuffer: Boolean; var AFron
 
   procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    x: Integer;
+    x, yx: Integer;
     DCTTile: PTile;
+    CpnPixels: TCpnPixels;
   begin
     if not InRange(AIndex, 0, Encoder.FScreenHeight - cTileWidth) then
       Exit;
+
+    yx := AIndex * (Encoder.FScreenWidth - cTileWidth + 1);
 
     DCTTile := TTile.New(True, False);
     try
       for x := 0 to Encoder.FScreenWidth - cTileWidth do
       begin
         DCTTile^.CopyRGBPixels(ABackBuffer, x, AIndex);
-        Encoder.ComputeTilePsyVisFeatures(DCTTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, ADCTPtrs[AIndex * (Encoder.FScreenWidth - cTileWidth + 1) + x]);
+
+        Encoder.ConvertToCpnPixels(DCTTile^, False, False, False, False, -1, nil, CpnPixels);
+        Encoder.ComputeCpnPixelsPsyVisFeatures(CpnPixels, pvsWeightedDCT, cColorCpns, ADCTPtrs[yx]);
+
+        Inc(yx);
       end;
     finally
       TTile.Dispose(DCTTile);
@@ -1190,12 +1202,13 @@ procedure TFrame.PredictMotion(ARadius: Integer; AOnlyBuffer: Boolean; var AFron
 
   procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    dx, dy, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY: Integer;
+    dx, dy, sy, sx, oy, ox, oymn, oymx, oxmn, oxmx, ty, bestX, bestY, yx: Integer;
     TMI: PTileMapItem;
     FrameTile: PTile;
-    DCTPtr: PSingle;
+    PrevDCTPtr: PSingle;
     err, bestErr: TFloat;
-    CurDCT: array[0 .. cTileDCTSize - 1] of TFloat;
+    CurDCT: TDCT;
+    CurCpnPixels: TCpnPixels;
   begin
     if not InRange(AIndex, 0, Encoder.FTileMapSize - 1) then
       Exit;
@@ -1214,7 +1227,8 @@ procedure TFrame.PredictMotion(ARadius: Integer; AOnlyBuffer: Boolean; var AFron
 
       if not AOnlyBuffer then
       begin
-        Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, CurDCT);
+        Encoder.ConvertToCpnPixels(FrameTile^, False, False, False, False, -1, nil, CurCpnPixels);
+        Encoder.ComputeCpnPixelsPsyVisFeatures(CurCpnPixels, pvsWeightedDCT, cColorCpns, CurDCT);
 
         bestX := MaxInt;
         bestY := MaxInt;
@@ -1226,17 +1240,19 @@ procedure TFrame.PredictMotion(ARadius: Integer; AOnlyBuffer: Boolean; var AFron
         oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
 
         for oy := oymn to oymx do
+        begin
+          yx := oy * (Encoder.FScreenWidth - cTileWidth + 1) + oxmn;
           for ox := oxmn to oxmx do
           begin
-            DCTPtr := ADCTPtrs[oy * (Encoder.FScreenWidth - cTileWidth + 1) + ox];
+            PrevDCTPtr := ADCTPtrs[yx];
 
-            if QuickTestEuclideanDCTPtr_asm(CurDCT, DCTPtr, bestErr) then
+            if QuickTestEuclideanDCTPtr_asm(CurDCT, PrevDCTPtr, bestErr) then
             begin
-              err := CompareEuclideanDCTPtr_asm(CurDCT, DCTPtr);
+              err := CompareEuclideanDCTPtr_asm(CurDCT, PrevDCTPtr);
 
-              // apply a penalty of float mantissa's unit times the manhattan distance to the center
+              // apply a penalty of cPsyVEpsilon times the manhattan distance to the center
               // rationale: slightly favoring the center in case of ties improves compressibility
-              Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
+              err += (Abs(ox - dx) + Abs(oy - dy)) * cPsyVEpsilon;
 
               if err < bestErr then
               begin
@@ -1245,9 +1261,12 @@ procedure TFrame.PredictMotion(ARadius: Integer; AOnlyBuffer: Boolean; var AFron
                 bestY := oy;
               end;
             end;
-          end;
 
-        TMI^.ResidualErr := bestErr;
+            Inc(yx);
+          end;
+        end;
+
+        TMI^.PSNR := EuclideanToPSNR(bestErr);
         TMI^.PredictedX := bestX - dx;
         TMI^.PredictedY := bestY - dy;
       end;
@@ -1443,18 +1462,25 @@ var
 
   procedure DoDCTs(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    x: Integer;
+    x, yx: Integer;
     DCTTile: PTile;
+    CpnPixels: TCpnPixels;
   begin
     if not InRange(AIndex, 0, Encoder.FScreenHeight - cTileWidth) then
       Exit;
+
+    yx := AIndex * (Encoder.FScreenWidth - cTileWidth + 1);
 
     DCTTile := TTile.New(True, False);
     try
       for x := 0 to Encoder.FScreenWidth - cTileWidth do
       begin
         DCTTile^.CopyRGBPixels(ABackBuffer, x, AIndex);
-        Encoder.ComputeTilePsyVisFeatures(DCTTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, -1, nil, ADCTPtrs[AIndex * (Encoder.FScreenWidth - cTileWidth + 1) + x]);
+
+        Encoder.ConvertToCpnPixels(DCTTile^, False, False, False, False, AFTGamma, nil, CpnPixels);
+        Encoder.ComputeCpnPixelsPsyVisFeatures(CpnPixels, pvsWeightedDCT, cColorCpns, ADCTPtrs[yx]);
+
+        Inc(yx);
       end;
     finally
       TTile.Dispose(DCTTile);
@@ -1463,14 +1489,15 @@ var
 
   procedure DoXY(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, tileEpuIdx, palEpuIdx, prevTileIdx, prevPalIdx: Integer;
+    sx, sy, dx, dy, ty, tx, tym, txm, ox, oy, oxmn, oxmx, oymn, oymx, tileEpuIdx, palEpuIdx, prevTileIdx, prevPalIdx, yx: Integer;
     knnErr, mpErr, err: Single;
 
     FrameTile, Tile: PTile;
     TMI: PTileMapItem;
-    DCTPtr: PSingle;
+    PrevDCTPtr: PSingle;
 
-    FTDCT, CurDCT: array[0 .. cTileDCTSize - 1] of Single;
+    FTDCT, CurDCT: TDCT;
+    FTCpnPixels, CurCpnPixels: TCpnPixels;
     EpuErrs: array[0 .. cEpuKnnK - 1] of Single;
     EpuTileIdxs: array[0 .. cEpuKnnK - 1] of Integer;
     EpuPalIdxs: array[0 .. cEpuKnnK - 1] of Integer;
@@ -1483,7 +1510,8 @@ var
     TMI := @TileMap[sy, sx];
 
     FrameTile := FrameTiles[AIndex];
-    Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, False, False, cColorCpns, AFTGamma, nil, @FTDCT[0]);
+    Encoder.ConvertToCpnPixels(FrameTile^, False, False, False, False, AFTGamma, nil, FTCpnPixels);
+    Encoder.ComputeCpnPixelsPsyVisFeatures(FTCpnPixels, pvsWeightedDCT, cColorCpns, FTDCT);
 
     dx := sx shl cTileWidthBits;
     dy := sy shl cTileWidthBits;
@@ -1493,7 +1521,8 @@ var
     mpErr := Infinity;
     if (Index <> PKeyFrame.StartFrame) and (ARadius >= 0) then
     begin
-      Encoder.ComputeTilePsyVisFeatures(FrameTile^, Encoder.FrameTilingMode, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, cColorCpns, AFTGamma, nil, @CurDCT[0]);
+      Encoder.ConvertToCpnPixels(FrameTile^, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, AFTGamma, nil, CurCpnPixels);
+      Encoder.ComputeCpnPixelsPsyVisFeatures(CurCpnPixels, pvsWeightedDCT, cColorCpns, CurDCT);
 
       oymn := Max(0, dy - ARadius - 1);
       oymx := Min(Encoder.FScreenHeight - cTileWidth, dy + ARadius);
@@ -1501,17 +1530,19 @@ var
       oxmx := Min(Encoder.FScreenWidth - cTileWidth, dx + ARadius);
 
       for oy := oymn to oymx do
+      begin
+        yx := oy * (Encoder.FScreenWidth - cTileWidth + 1) + oxmn;
         for ox := oxmn to oxmx do
         begin
-          DCTPtr := ADCTPtrs[oy * (Encoder.FScreenWidth - cTileWidth + 1) + ox];
+          PrevDCTPtr := ADCTPtrs[yx];
 
-          if QuickTestEuclideanDCTPtr_asm(CurDCT, DCTPtr, mpErr) then
+          if QuickTestEuclideanDCTPtr_asm(CurDCT, PrevDCTPtr, mpErr) then
           begin
-            err := CompareEuclideanDCTPtr_asm(CurDCT, DCTPtr);
+            err := CompareEuclideanDCTPtr_asm(CurDCT, PrevDCTPtr);
 
-            // apply a penalty of float mantissa's unit times the manhattan distance to the center
+            // apply a penalty of cPsyVEpsilon times the manhattan distance to the center
             // rationale: slightly favoring the center in case of ties improves compressibility
-            Inc(PInteger(@err)^, Abs(ox - dx) + Abs(oy - dy));
+            err += (Abs(ox - dx) + Abs(oy - dy)) * cPsyVEpsilon;
 
             if err < mpErr then
             begin
@@ -1520,7 +1551,10 @@ var
               TMI^.PredictedY := oy - dy;
             end;
           end;
+
+          Inc(yx);
         end;
+      end;
     end;
 
     if IsZero(mpErr, cPsyVEpsilon) then
@@ -1579,7 +1613,8 @@ var
           for palEpuIdx := 0 to cEpuKnnK - 1 do
             if EpuPalIdxs[palEpuIdx] <> prevPalIdx then
             begin
-              Encoder.ComputeTilePsyVisFeatures(Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^, Encoder.FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, Encoder.FPalettes[EpuPalIdxs[palEpuIdx]].PaletteRGB, @CurDCT[0]);
+              Encoder.ConvertToCpnPixels(Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^, True, False, False, False, AFTGamma, Encoder.FPalettes[EpuPalIdxs[palEpuIdx]].PaletteRGB, CurCpnPixels);
+              Encoder.ComputeCpnPixelsPsyVisFeatures(CurCpnPixels, pvsWeightedDCT, cColorCpns, CurDCT);
 
               if QuickTestEuclideanDCTPtr_asm(FTDCT, CurDCT, knnErr) then
               begin
@@ -1607,7 +1642,7 @@ var
       begin
         // KNN is best
 
-        TMI^.ResidualErr := knnErr;
+        TMI^.PSNR := EuclideanToPSNR(knnErr);
         TMI^.IsPredicted := False;
 
         Tile := Encoder.FTiles[TMI^.TileIdx];
@@ -1632,7 +1667,7 @@ var
       begin
         // motion prediction is best
 
-        TMI^.ResidualErr := mpErr;
+        TMI^.PSNR := EuclideanToPSNR(mpErr);
         TMI^.IsPredicted := True;
 
         // draw fb (motion predicted tile)
@@ -1645,7 +1680,7 @@ var
     end;
 
     SpinEnter(@PKeyFrame.ReconstructLock);
-    PKeyFrame.ReconstructErrCml += TMI^.ResidualErr;
+    PKeyFrame.ReconstructPSNRCml += TMI^.PSNR;
     SpinLeave(@PKeyFrame.ReconstructLock);
   end;
 
@@ -1666,7 +1701,7 @@ begin
     ReleaseFrameTiles;
   end;
 
-  PKeyFrame.LogResidualErr;
+  PKeyFrame.LogPSNR;
 end;
 
 { TTilingEncoder }
@@ -1919,7 +1954,7 @@ var
   curBuffer: Boolean;
 
   FrameBuffer: array[Boolean] of TIntegerDynArray2;
-  DCTs: TSingleDCTDynArray;
+  DCTs: TDCTDynArray;
   DCTPtrs: TPSingleDynArray;
 begin
   if Length(FFrames) = 0 then
@@ -1961,7 +1996,7 @@ var
   curBuffer: Boolean;
 
   FrameBuffer: array[Boolean] of TIntegerDynArray2;
-  DCTs: TSingleDCTDynArray;
+  DCTs: TDCTDynArray;
   DCTPtrs: TPSingleDynArray;
 begin
   if (Length(FFrames) = 0) or (FMotionPredictRadius <= 0) then
@@ -2139,7 +2174,7 @@ begin
   oldRenderPage := RenderPage;
   fs := TBufferedFileStream.Create(AFileName, fmCreate or fmShareDenyWrite);
   try
-    Header := Format('YUV4MPEG2 W%d H%d F%d:1000000 C444'#10, [FTileMapWidth * cTileWidth, FTileMapHeight * cTileWidth, round(FFramesPerSecond * 1000000)]);
+    Header := Format('YUV4MPEG2 W%d H%d F%d:1000000 Ip C444'#10, [FTileMapWidth * cTileWidth, FTileMapHeight * cTileWidth, round(FFramesPerSecond * 1000000)]);
     fs.Write(Header[1], length(Header));
 
     SetLength(FrameData, FTileMapWidth * cTileWidth * FTileMapHeight * cTileWidth * cColorCpns);
@@ -2178,9 +2213,9 @@ begin
 
             RGBToYUV(r, g, b, -1, yf, uf, vf);
 
-            py^ := EnsureRange(Round(yf * High(Byte)), 0, High(Byte)); Inc(py);
-            pu^ := EnsureRange(Round((uf + 0.5) * High(Byte)), 0, High(Byte)); Inc(pu);
-            pv^ := EnsureRange(Round((vf + 0.5) * High(Byte)), 0, High(Byte)); Inc(pv);
+            py^ := EnsureRange(Round(yf), 0, High(Byte)); Inc(py);
+            pu^ := EnsureRange(Round(uf - Low(ShortInt)), 0, High(Byte)); Inc(pu);
+            pv^ := EnsureRange(Round(vf - Low(ShortInt)), 0, High(Byte)); Inc(pv);
           end;
         end;
       finally
@@ -2742,9 +2777,9 @@ var
   fr, fg, fb: TFloat;
   yy, uu, vv: TFloat;
 begin
-  fr := GammaCorrect(GammaCor, r);
-  fg := GammaCorrect(GammaCor, g);
-  fb := GammaCorrect(GammaCor, b);
+  fr := GammaCorrect(GammaCor, r) * 255.0;
+  fg := GammaCorrect(GammaCor, g) * 255.0;
+  fb := GammaCorrect(GammaCor, b) * 255.0;
 
   yy := fr * (cRedMul / cLumaDiv) + fg * (cGreenMul / cLumaDiv) + fb * (cBlueMul / cLumaDiv);
   uu := (fb - yy) * 0.492;
@@ -2760,6 +2795,10 @@ function TTilingEncoder.YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
 var
   r, g, b: TFloat;
 begin
+  y *= 1/255.0;
+  u *= 1/255.0;
+  v *= 1/255.0;
+
 {$if cRedMul = 299}
   r := y + v * 1.13983;
   g := y - u * 0.39465 - v * 0.58060;
@@ -3210,16 +3249,9 @@ begin
   FMotionPredictRadius := EnsureRange(AValue, 1, -Low(ShortInt));
 end;
 
-procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
-  VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PSingle);
-var
-  i, u, v, x, y, xx, yy, cpn: Integer;
-  z: Double;
-  CpnPixels: TCpnPixels;
-  pDCT, pLut: PSingle;
-  LocalDCT: array[0..cTileDCTSize - 1] of Single;
+procedure TTilingEncoder.ConvertToCpnPixels(const ATile: TTile; FromPal, UseLAB, HMirror, VMirror: Boolean; GammaCor: Integer; const APalette: TIntegerDynArray; var ACpnPixel: TCpnPixels);
 
-  procedure ToCpn(col, x, y: Integer); inline;
+  procedure ToCpn(col, x, y: Integer);
   var
     r, g, b: Byte;
     yy, uu, vv: TFloat;
@@ -3235,11 +3267,13 @@ var
       RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
     end;
 
-    CpnPixels[0, y, x] := yy;
-    CpnPixels[1, y, x] := uu;
-    CpnPixels[2, y, x] := vv;
+    ACpnPixel[0, y, x] := yy;
+    ACpnPixel[1, y, x] := uu;
+    ACpnPixel[2, y, x] := vv;
   end;
 
+var
+  x, y, xx, yy: Integer;
 begin
   if FromPal then
   begin
@@ -3251,7 +3285,7 @@ begin
         if HMirror then xx := cTileWidth - 1 - x;
         if VMirror then yy := cTileWidth - 1 - y;
 
-        ToCpn(pal[ATile.PalPixels[yy,xx]], x, y);
+        ToCpn(APalette[ATile.PalPixels[yy,xx]], x, y);
       end;
   end
   else
@@ -3267,13 +3301,21 @@ begin
         ToCpn(ATile.RGBPixels[yy,xx], x, y);
       end;
   end;
+end;
 
+procedure TTilingEncoder.ComputeCpnPixelsPsyVisFeatures(const ACpnPixel: TCpnPixels; Mode: TPsyVisMode; ColorCpns: Integer; ADCT: PSingle);
+var
+  i, u, v, cpn: Integer;
+  z: Double;
+  pDCT, pLut: PSingle;
+  LocalDCT: TDCT;
+begin
   if Mode = pvsWavelets then
   begin
    for cpn := 0 to ColorCpns - 1 do
    begin
      pDCT := @LocalDCT[cpn * sqr(cTileWidth)];
-     specialize WaveletGS<Single, PSingle>(@CpnPixels[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
+     specialize WaveletGS<Single, PSingle>(@ACpnPixel[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
    end;
   end
   else
@@ -3285,7 +3327,7 @@ begin
       for v := 0 to cTileWidth - 1 do
         for u := 0 to cTileWidth - 1 do
         begin
-  		    z := DCTInner_asm(@CpnPixels[cpn, 0, 0], pLut);
+  		    z := DCTInner_asm(@ACpnPixel[cpn, 0, 0], pLut);
 
           if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
              z *= cDCTQuantization[cpn, v, u];
@@ -3299,73 +3341,42 @@ begin
 
   for cpn := 0 to ColorCpns - 1 do
     for i := 0 to sqr(cTileWidth) - 1 do
-      DCT[cDCTSnake[i] + cpn * sqr(cTileWidth)] := LocalDCT[i + cpn * sqr(cTileWidth)];
+      ADCT[cDCTSnake[i] + cpn * sqr(cTileWidth)] := LocalDCT[i + cpn * sqr(cTileWidth)];
 end;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
-  VMirror: Boolean; ColorCpns, GammaCor: Integer; const pal: TIntegerDynArray; DCT: PDouble);
+  VMirror: Boolean; ColorCpns, GammaCor: Integer; const APalette: TIntegerDynArray; ADCT: PSingle);
 var
-  i, u, v, x, y, xx, yy, cpn: Integer;
+  CpnPixels: TCpnPixels;
+begin
+  ConvertToCpnPixels(ATile, FromPal, UseLAB, HMirror, VMirror, GammaCor, APalette, CpnPixels);
+  ComputeCpnPixelsPsyVisFeatures(CpnPixels, Mode, ColorCpns, ADCT);
+end;
+
+procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
+  VMirror: Boolean; ColorCpns, GammaCor: Integer; const APalette: TIntegerDynArray; ADCT: PDouble);
+var
+  i, u, v, cpn: Integer;
   z: Double;
-  CpnPixels: TCpnPixelsDouble;
+  CpnPixels: TCpnPixels;
+  CpnPixelsDouble: TCpnPixelsDouble;
   pDCT, pLut: PDouble;
   LocalDCT: array[0..cTileDCTSize - 1] of Double;
 
-  procedure ToCpn(col, x, y: Integer); inline;
-  var
-    r, g, b: Byte;
-    yy, uu, vv: TFloat;
-  begin
-    FromRGB(col, r, g, b);
-
-    if UseLAB then
-    begin
-      RGBToLAB(r, g, b, GammaCor, yy, uu, vv)
-    end
-    else
-    begin
-      RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
-    end;
-
-    CpnPixels[0, y, x] := yy;
-    CpnPixels[1, y, x] := uu;
-    CpnPixels[2, y, x] := vv;
-  end;
-
 begin
-  if FromPal then
-  begin
-    for y := 0 to (cTileWidth - 1) do
-      for x := 0 to (cTileWidth - 1) do
-      begin
-        xx := x;
-        yy := y;
-        if HMirror then xx := cTileWidth - 1 - x;
-        if VMirror then yy := cTileWidth - 1 - y;
+  ConvertToCpnPixels(ATile, FromPal, UseLAB, HMirror, VMirror, GammaCor, APalette, CpnPixels);
 
-        ToCpn(pal[ATile.PalPixels[yy,xx]], x, y);
-      end;
-  end
-  else
-  begin
-    for y := 0 to (cTileWidth - 1) do
-      for x := 0 to (cTileWidth - 1) do
-      begin
-        xx := x;
-        yy := y;
-        if HMirror then xx := cTileWidth - 1 - x;
-        if VMirror then yy := cTileWidth - 1 - y;
-
-        ToCpn(ATile.RGBPixels[yy,xx], x, y);
-      end;
-  end;
+  for cpn := 0 to ColorCpns - 1 do
+    for v := 0 to cTileWidth - 1 do
+      for u := 0 to cTileWidth - 1 do
+        CpnPixelsDouble[cpn, v, u] := CpnPixels[cpn, v, u];
 
   if Mode = pvsWavelets then
   begin
    for cpn := 0 to ColorCpns - 1 do
    begin
      pDCT := @LocalDCT[cpn * sqr(cTileWidth)];
-     specialize WaveletGS<Double, PDouble>(@CpnPixels[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
+     specialize WaveletGS<Double, PDouble>(@CpnPixelsDouble[cpn, 0, 0], pDCT, cTileWidth, cTileWidth, 2);
    end;
   end
   else
@@ -3377,7 +3388,7 @@ begin
       for v := 0 to cTileWidth - 1 do
         for u := 0 to cTileWidth - 1 do
         begin
-  		    z := specialize DCTInner<PDouble>(@CpnPixels[cpn, 0, 0], pLut, 1);
+          z := specialize DCTInner<PDouble>(@CpnPixelsDouble[cpn, 0, 0], pLut, 1);
 
           if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
              z *= cDCTQuantization[cpn, v, u];
@@ -3391,7 +3402,7 @@ begin
 
   for cpn := 0 to ColorCpns - 1 do
     for i := 0 to sqr(cTileWidth) - 1 do
-      DCT[cDCTSnake[i] + cpn * sqr(cTileWidth)] := LocalDCT[i + cpn * sqr(cTileWidth)];
+      ADCT[cDCTSnake[i] + cpn * sqr(cTileWidth)] := LocalDCT[i + cpn * sqr(cTileWidth)];
 end;
 
 procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns, GammaCor: Integer;
@@ -3926,7 +3937,7 @@ begin
       end;
     end;
 
-    // ResidualErr indicator
+    // PSNR indicator
 
     q := 0.0;
     i := 0;
@@ -3935,16 +3946,16 @@ begin
       begin
         TMItem := Frame.TileMap[sy, sx];
 
-        if not IsInfinite(TMItem.ResidualErr) then
+        if not IsInfinite(TMItem.PSNR) then
         begin
-          q += TMItem.ResidualErr;
+          q += TMItem.PSNR;
           Inc(i);
         end;
       end;
     if i <> 0 then
       q /= i;
 
-    FRenderPsychoVisualQuality := Sqrt(q);
+    FRenderPsychoVisualQuality := q;
 
   finally
     FRenderPrevFrameIndex := FRenderFrameIndex;
@@ -3977,7 +3988,6 @@ begin
     ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
     ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
-    ini.WriteInteger('FrameTiling', 'FrameTilingMode', Ord(FrameTilingMode));
     ini.WriteBool('FrameTiling', 'FrameTilingExtendedPaletteUsage', FrameTilingExtendedPaletteUsage);
 
     ini.WriteFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
@@ -4020,7 +4030,6 @@ begin
     DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
     FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
-    FrameTilingMode := TPsyVisMode(EnsureRange(ini.ReadInteger('FrameTiling', 'FrameTilingMode', Ord(FrameTilingMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
     FrameTilingExtendedPaletteUsage := ini.ReadBool('FrameTiling', 'FrameTilingExtendedPaletteUsage', FrameTilingExtendedPaletteUsage);
 
     EncoderGammaValue := ini.ReadFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
@@ -4059,7 +4068,6 @@ begin
   DitheringYliluoma2MixedColors := 4;
 
   FrameTilingUseGamma := False;
-  FrameTilingMode := pvsSpeDCT;
   FrameTilingExtendedPaletteUsage := True;
 
   EncoderGammaValue := 2.0;
@@ -4325,12 +4333,11 @@ end;
 
 function TTilingEncoder.STCGREval(x: Double; Data: Pointer): Double;
 const
-  CKFResErrBoost = 10.0;
+  CKFPSNRBoost = 10.0;
 var
   frmIdx, sy, sx, unpredictedTileCount: Integer;
   TMI: PTileMapItem;
 begin
-  x *= x;
   unpredictedTileCount := 0;
   for frmIdx := 0 to High(FFrames) do
     for sy := 0 to FTileMapHeight - 1 do
@@ -4338,10 +4345,10 @@ begin
       begin
         TMI := @FFrames[frmIdx].TileMap[sy, sx];
 
-        if (frmIdx = FFrames[frmIdx].PKeyFrame.StartFrame) and not IsInfinite(TMI^.ResidualErr) then
-          TMI^.IsPredicted := TMI^.ResidualErr + CKFResErrBoost < x
+        if (frmIdx = FFrames[frmIdx].PKeyFrame.StartFrame) and not IsInfinite(TMI^.PSNR) then
+          TMI^.IsPredicted := TMI^.PSNR - CKFPSNRBoost > x
         else
-          TMI^.IsPredicted := TMI^.ResidualErr < x;
+          TMI^.IsPredicted := TMI^.PSNR > x;
 
         inc(unpredictedTileCount, Ord(not TMI^.IsPredicted));
       end;
@@ -4355,7 +4362,7 @@ end;
 
 function TTilingEncoder.SolveTileCount(ATileCount: Integer): Double;
 begin
-  Result := GoldenRatioSearch(@STCGREval, cTileDCTSize, 0.0, ATileCount, cPsyVEpsilon, 0.5, nil);
+  Result := GoldenRatioSearch(@STCGREval, 0.0, CPsnrNullValue, ATileCount, cPsyVEpsilon, 0.5, nil);
 end;
 
 procedure TTilingEncoder.TransferTiles(ATileCount: Integer);
@@ -4847,7 +4854,7 @@ var
     T := Tiles[AIndex];
     Assert(T^.Active);
 
-    ComputeTilePsyVisFeatures(T^, FrameTilingMode, True, False, False, False, cColorCpns, AFTGamma, FPalettes[T^.PalIdx_Initial].PaletteRGB, PSingle(@DS^.Dataset[AIndex, 0]));
+    ComputeTilePsyVisFeatures(T^, pvsWeightedDCT, True, False, False, False, cColorCpns, AFTGamma, FPalettes[T^.PalIdx_Initial].PaletteRGB, PSingle(@DS^.Dataset[AIndex, 0]));
   end;
 
 var
@@ -4871,11 +4878,11 @@ begin
 
   FTileDS := DS;
 
-  // init for LogResidualErr
+  // init for LogPSNR
 
   for kfIdx := 0 to High(FKeyFrames) do
   begin
-    FKeyFrames[kfIdx].ReconstructErrCml := 0;
+    FKeyFrames[kfIdx].ReconstructPSNRCml := 0;
     FKeyFrames[kfIdx].ReconstructFramesLeft := FKeyFrames[kfIdx].FrameCount;
   end;
 end;

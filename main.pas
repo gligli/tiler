@@ -22,7 +22,6 @@ type
     btnPM: TButton;
     cbxMPRadius: TComboBox;
     cbxDitheringMode: TComboBox;
-    cbxFTMode: TComboBox;
     chkFTEPU: TCheckBox;
     chkStretch: TCheckBox;
     chkPredicted: TCheckBox;
@@ -640,7 +639,6 @@ begin
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
   FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
-  FTilingEncoder.FrameTilingMode := TPsyVisMode(cbxFTMode.ItemIndex);
   FTilingEncoder.FrameTilingExtendedPaletteUsage := chkFTEPU.Checked;
 
   FTilingEncoder.ShotTransMinSecondsPerKF := seShotTransMinSecondsPerKF.Value;
@@ -707,7 +705,6 @@ begin
    cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
    chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
-   cbxFTMode.ItemIndex := Ord(FTilingEncoder.FrameTilingMode);
    chkFTEPU.Checked := FTilingEncoder.FrameTilingExtendedPaletteUsage;
 
    seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
