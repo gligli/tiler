@@ -126,9 +126,10 @@ type
 
   TGRSEvalFunc = function(x: Double; Data: Pointer): Double of object;
 
-  TDCT = array[0 .. cTileDCTSize - 1] of Single;
+  TDCTScalar = SmallInt;
+  PDCTScalar = ^TDCTScalar;
+  TDCT = array[0 .. cTileDCTSize - 1] of TDCTScalar;
   TDCTDynArray = array of TDCT;
-  TPSingleDynArray = array of PSingle;
 
 procedure SpinEnter(Lock: PSpinLock); assembler;
 procedure SpinLeave(Lock: PSpinLock); assembler;
@@ -148,21 +149,19 @@ function ilerp(x, y, alpha, maxAlpha: Integer): Integer; inline;
 function revlerp(x, r, alpha: Double): Double; inline;
 function Posterize(v: Byte; cvt: Integer): Byte; inline;
 function PosterizeBpc(v, bpc: Byte): Byte; inline;
-function CompareEuclideanDCTPtr(pa, pb: PFloat): TFloat; overload;
-function CompareEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat): TFloat; register; assembler;
-function CompareEuclideanDCT(const a, b: TFloatDynArray): TFloat; inline; overload;
-function CompareEuclidean(const a, b: TFloatDynArray): TFloat; inline;
+function CompareEuclideanDCTPtr(pa, pb: PDCTScalar): Cardinal; overload;
+function CompareEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PDCTScalar): Cardinal; register; assembler;
 function CompareEuclidean(a, b: PDouble; size: Integer): Double; inline;
 function CompareCountIndexVSH(const Item1,Item2:PCountIndex):Integer;
 function CompareIntegers(Item1,Item2,UserParameter:Pointer):Integer;
 function ComparePaletteUseCount(Item1,Item2,UserParameter:Pointer):Integer;
-function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat; min_dist_xmm2: TFloat): Boolean; register; assembler;
+function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PDCTScalar; min_dist_r8: Cardinal): Boolean; register; assembler;
 generic function DCTInner<T>(pCpn, pLut: T; count: Integer): Double;
 function DCTInner_asm(pCpn_rcx, pLut_rdx: PFloat): Double; register; assembler;
 function EqualQualityTileCount(tileCount: TFloat): Integer;
 function GoldenRatioSearch(Func: TGRSEvalFunc; MinX, MaxX: Double; ObjectiveY: Double;
   EpsilonX, EpsilonY: Double; Data: Pointer): Double;
-function EuclideanToPSNR(AEuclidean: Single): Single;
+function EuclideanToPSNR(AEuclidean: Cardinal): Single;
 
 implementation
 
@@ -301,7 +300,7 @@ begin
   Result := Posterize(v, (1 shl bpc) - 1);
 end;
 
-function CompareEuclideanDCTPtr(pa, pb: PFloat): TFloat; overload;
+function CompareEuclideanDCTPtr(pa, pb: PDCTScalar): Cardinal; overload;
 var
   i: Integer;
 begin
@@ -319,154 +318,172 @@ begin
   end;
 end;
 
-function CompareEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat): TFloat; register; assembler;
+function CompareEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PDCTScalar): Cardinal; register;
 label loop;
 asm
-  push rax
   push rcx
   push rdx
 
-  sub rsp, 16 * 12
-  movdqu oword ptr [rsp],       xmm1
-  movdqu oword ptr [rsp + $10], xmm2
-  movdqu oword ptr [rsp + $20], xmm3
-  movdqu oword ptr [rsp + $30], xmm4
-  movdqu oword ptr [rsp + $40], xmm5
-  movdqu oword ptr [rsp + $50], xmm6
-  movdqu oword ptr [rsp + $60], xmm7
-  movdqu oword ptr [rsp + $70], xmm8
-  movdqu oword ptr [rsp + $80], xmm9
-  movdqu oword ptr [rsp + $90], xmm10
-  movdqu oword ptr [rsp + $a0], xmm11
-  movdqu oword ptr [rsp + $b0], xmm12
+  sub rsp, 16 * 13
+  movdqu oword ptr [rsp],       xmm0
+  movdqu oword ptr [rsp + $10], xmm1
+  movdqu oword ptr [rsp + $20], xmm2
+  movdqu oword ptr [rsp + $30], xmm3
+  movdqu oword ptr [rsp + $40], xmm4
+  movdqu oword ptr [rsp + $50], xmm5
+  movdqu oword ptr [rsp + $60], xmm6
+  movdqu oword ptr [rsp + $70], xmm7
+  movdqu oword ptr [rsp + $80], xmm8
+  movdqu oword ptr [rsp + $90], xmm9
+  movdqu oword ptr [rsp + $a0], xmm10
+  movdqu oword ptr [rsp + $b0], xmm11
+  movdqu oword ptr [rsp + $c0], xmm12
 
-  // unrolled for 48 = (cTileDCTSize / 4)
+  // unrolled for 96 = (cTileDCTSize / 2)
 
   pxor xmm0, xmm0
-  mov al, (cTileDCTSize / 48)
-  loop:
 
-    // step 1
+  // step 1
 
-    movups xmm2,  oword ptr [rcx]
-    movups xmm4,  oword ptr [rcx + $10]
-    movups xmm6,  oword ptr [rcx + $20]
-    movups xmm8,  oword ptr [rcx + $30]
-    movups xmm10, oword ptr [rcx + $40]
-    movups xmm12, oword ptr [rcx + $50]
+  movdqu xmm1,  oword ptr [rcx]
+  movdqu xmm2,  oword ptr [rcx + $10]
+  movdqu xmm3,  oword ptr [rcx + $20]
+  movdqu xmm4,  oword ptr [rcx + $30]
+  movdqu xmm5,  oword ptr [rcx + $40]
+  movdqu xmm6,  oword ptr [rcx + $50]
+  movdqu xmm6,  oword ptr [rcx + $60]
+  movdqu xmm8,  oword ptr [rcx + $70]
+  movdqu xmm9,  oword ptr [rcx + $80]
+  movdqu xmm10, oword ptr [rcx + $90]
+  movdqu xmm11, oword ptr [rcx + $a0]
+  movdqu xmm12, oword ptr [rcx + $b0]
 
-    movups xmm1,  oword ptr [rdx]
-    movups xmm3,  oword ptr [rdx + $10]
-    movups xmm5,  oword ptr [rdx + $20]
-    movups xmm7,  oword ptr [rdx + $30]
-    movups xmm9,  oword ptr [rdx + $40]
-    movups xmm11, oword ptr [rdx + $50]
+  psubsw xmm1,  oword ptr [rdx]
+  psubsw xmm2,  oword ptr [rdx + $10]
+  psubsw xmm3,  oword ptr [rdx + $20]
+  psubsw xmm4,  oword ptr [rdx + $30]
+  psubsw xmm5,  oword ptr [rdx + $40]
+  psubsw xmm6,  oword ptr [rdx + $50]
+  psubsw xmm6,  oword ptr [rdx + $60]
+  psubsw xmm8,  oword ptr [rdx + $70]
+  psubsw xmm9,  oword ptr [rdx + $80]
+  psubsw xmm10, oword ptr [rdx + $90]
+  psubsw xmm11, oword ptr [rdx + $a0]
+  psubsw xmm12, oword ptr [rdx + $b0]
 
-    subps xmm1,  xmm2
-    subps xmm3,  xmm4
-    subps xmm5,  xmm6
-    subps xmm7,  xmm8
-    subps xmm9,  xmm10
-    subps xmm11, xmm12
+  pmaddwd xmm1,  xmm1
+  pmaddwd xmm2,  xmm2
+  pmaddwd xmm3,  xmm3
+  pmaddwd xmm4,  xmm4
+  pmaddwd xmm5,  xmm5
+  pmaddwd xmm6,  xmm6
+  pmaddwd xmm7,  xmm7
+  pmaddwd xmm8,  xmm8
+  pmaddwd xmm9,  xmm9
+  pmaddwd xmm10,  xmm10
+  pmaddwd xmm11,  xmm11
+  pmaddwd xmm12,  xmm12
 
-    mulps xmm1,  xmm1
-    mulps xmm3,  xmm3
-    mulps xmm5,  xmm5
-    mulps xmm7,  xmm7
-    mulps xmm9,  xmm9
-    mulps xmm11, xmm11
+  paddd xmm1, xmm2
+  paddd xmm3, xmm4
+  paddd xmm5, xmm6
+  paddd xmm7, xmm8
+  paddd xmm9, xmm10
+  paddd xmm11, xmm12
 
-    addps xmm1, xmm7
-    addps xmm3, xmm9
-    addps xmm5, xmm11
+  paddd xmm1, xmm3
+  paddd xmm5, xmm7
+  paddd xmm9, xmm11
 
-    addps xmm1, xmm3
-    addps xmm0, xmm5
-    addps xmm0, xmm1
+  paddd xmm1, xmm5
+  paddd xmm1, xmm9
 
-    // step 2
+  movdqa xmm0, xmm1
 
-    movups xmm2,  oword ptr [rcx + $60]
-    movups xmm4,  oword ptr [rcx + $70]
-    movups xmm6,  oword ptr [rcx + $80]
-    movups xmm8,  oword ptr [rcx + $90]
-    movups xmm10, oword ptr [rcx + $a0]
-    movups xmm12, oword ptr [rcx + $b0]
+  // step 2
 
-    movups xmm1,  oword ptr [rdx + $60]
-    movups xmm3,  oword ptr [rdx + $70]
-    movups xmm5,  oword ptr [rdx + $80]
-    movups xmm7,  oword ptr [rdx + $90]
-    movups xmm9,  oword ptr [rdx + $a0]
-    movups xmm11, oword ptr [rdx + $b0]
+  lea rcx, [rcx + $c0]
+  lea rdx, [rdx + $c0]
 
-    subps xmm1,  xmm2
-    subps xmm3,  xmm4
-    subps xmm5,  xmm6
-    subps xmm7,  xmm8
-    subps xmm9,  xmm10
-    subps xmm11, xmm12
+  movdqu xmm1,  oword ptr [rcx]
+  movdqu xmm2,  oword ptr [rcx + $10]
+  movdqu xmm3,  oword ptr [rcx + $20]
+  movdqu xmm4,  oword ptr [rcx + $30]
+  movdqu xmm5,  oword ptr [rcx + $40]
+  movdqu xmm6,  oword ptr [rcx + $50]
+  movdqu xmm6,  oword ptr [rcx + $60]
+  movdqu xmm8,  oword ptr [rcx + $70]
+  movdqu xmm9,  oword ptr [rcx + $80]
+  movdqu xmm10, oword ptr [rcx + $90]
+  movdqu xmm11, oword ptr [rcx + $a0]
+  movdqu xmm12, oword ptr [rcx + $b0]
 
-    mulps xmm1,  xmm1
-    mulps xmm3,  xmm3
-    mulps xmm5,  xmm5
-    mulps xmm7,  xmm7
-    mulps xmm9,  xmm9
-    mulps xmm11, xmm11
+  psubsw xmm1,  oword ptr [rdx]
+  psubsw xmm2,  oword ptr [rdx + $10]
+  psubsw xmm3,  oword ptr [rdx + $20]
+  psubsw xmm4,  oword ptr [rdx + $30]
+  psubsw xmm5,  oword ptr [rdx + $40]
+  psubsw xmm6,  oword ptr [rdx + $50]
+  psubsw xmm6,  oword ptr [rdx + $60]
+  psubsw xmm8,  oword ptr [rdx + $70]
+  psubsw xmm9,  oword ptr [rdx + $80]
+  psubsw xmm10, oword ptr [rdx + $90]
+  psubsw xmm11, oword ptr [rdx + $a0]
+  psubsw xmm12, oword ptr [rdx + $b0]
 
-    addps xmm1, xmm7
-    addps xmm3, xmm9
-    addps xmm5, xmm11
+  pmaddwd xmm1,  xmm1
+  pmaddwd xmm2,  xmm2
+  pmaddwd xmm3,  xmm3
+  pmaddwd xmm4,  xmm4
+  pmaddwd xmm5,  xmm5
+  pmaddwd xmm6,  xmm6
+  pmaddwd xmm7,  xmm7
+  pmaddwd xmm8,  xmm8
+  pmaddwd xmm9,  xmm9
+  pmaddwd xmm10,  xmm10
+  pmaddwd xmm11,  xmm11
+  pmaddwd xmm12,  xmm12
 
-    addps xmm1, xmm3
-    addps xmm0, xmm5
-    addps xmm0, xmm1
+  paddd xmm1, xmm2
+  paddd xmm3, xmm4
+  paddd xmm5, xmm6
+  paddd xmm7, xmm8
+  paddd xmm9, xmm10
+  paddd xmm11, xmm12
 
-    // loop
+  paddd xmm1, xmm3
+  paddd xmm5, xmm7
+  paddd xmm9, xmm11
 
-    lea rcx, [rcx + $c0]
-    lea rdx, [rdx + $c0]
-    lea r8, [r8 + $c0]
+  paddd xmm1, xmm5
+  paddd xmm1, xmm9
 
-    dec al
-    jnz loop
+  paddd xmm0, xmm1
 
   // end
 
-  movdqu xmm1,  oword ptr [rsp]
-  movdqu xmm2,  oword ptr [rsp + $10]
-  movdqu xmm3,  oword ptr [rsp + $20]
-  movdqu xmm4,  oword ptr [rsp + $30]
-  movdqu xmm5,  oword ptr [rsp + $40]
-  movdqu xmm6,  oword ptr [rsp + $50]
-  movdqu xmm7,  oword ptr [rsp + $60]
-  movdqu xmm8,  oword ptr [rsp + $70]
-  movdqu xmm9,  oword ptr [rsp + $80]
-  movdqu xmm10, oword ptr [rsp + $90]
-  movdqu xmm11, oword ptr [rsp + $a0]
-  movdqu xmm12, oword ptr [rsp + $b0]
-  add rsp, 16 * 12
+  phaddd xmm0, xmm0
+  phaddd xmm0, xmm0
 
-  haddps xmm0, xmm0
-  haddps xmm0, xmm0
+  movd eax, xmm0
+
+  movdqu xmm0,  oword ptr [rsp]
+  movdqu xmm1,  oword ptr [rsp + $10]
+  movdqu xmm2,  oword ptr [rsp + $20]
+  movdqu xmm3,  oword ptr [rsp + $30]
+  movdqu xmm4,  oword ptr [rsp + $40]
+  movdqu xmm5,  oword ptr [rsp + $50]
+  movdqu xmm6,  oword ptr [rsp + $60]
+  movdqu xmm7,  oword ptr [rsp + $70]
+  movdqu xmm8,  oword ptr [rsp + $80]
+  movdqu xmm9,  oword ptr [rsp + $90]
+  movdqu xmm10, oword ptr [rsp + $a0]
+  movdqu xmm11, oword ptr [rsp + $b0]
+  movdqu xmm12, oword ptr [rsp + $c0]
+  add rsp, 16 * 13
 
   pop rdx
   pop rcx
-  pop rax
-end;
-
-function CompareEuclideanDCT(const a, b: TFloatDynArray): TFloat; inline; overload;
-begin
-  Result := CompareEuclideanDCTPtr_asm(@a[0], @b[0]);
-end;
-
-function CompareEuclidean(const a, b: TFloatDynArray): TFloat; inline;
-var
-  i: Integer;
-begin
-  Result := 0;
-  for i := 0 to High(a) do
-    Result += sqr(a[i] - b[i]);
 end;
 
 function CompareEuclidean(a, b: PDouble; size: Integer): Double; inline;
@@ -492,25 +509,27 @@ begin
   Result := CompareValue(PInteger(Item2)^, PInteger(Item1)^);
 end;
 
-function QuickTestEuclideanDCTPtr(pa, pb: PFloat; min_dist: TFloat): Boolean;
+function QuickTestEuclideanDCTPtr(pa, pb: PDCTScalar; min_dist: Cardinal): Boolean;
 begin
-  Result := Sqr(pa[0] - pb[0]) + Sqr(pa[1] - pb[1]) + Sqr(pa[2] - pb[2]) + Sqr(pa[3] - pb[3]) < min_dist;
+  Result := Sqr(pa[0] - pb[0]) + Sqr(pa[1] - pb[1]) + Sqr(pa[2] - pb[2]) + Sqr(pa[3] - pb[3]) +
+            Sqr(pa[4] - pb[4]) + Sqr(pa[5] - pb[5]) + Sqr(pa[6] - pb[6]) + Sqr(pa[7] - pb[7]) < min_dist;
 end;
 
-function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PFloat; min_dist_xmm2: TFloat): Boolean; register; assembler;
+function QuickTestEuclideanDCTPtr_asm(pa_rcx, pb_rdx: PDCTScalar; min_dist_r8: Cardinal): Boolean; register; assembler;
 asm
   sub rsp, 16 * 1
   movdqu oword ptr [rsp], xmm0
 
-  movups xmm0, oword ptr [rcx]
-  subps xmm0, oword ptr [rdx]
+  movdqu xmm0, oword ptr [rcx]
+  psubsw xmm0, oword ptr [rdx]
 
-  mulps xmm0, xmm0
+  pmaddwd xmm0, xmm0
 
-  haddps xmm0, xmm0
-  haddps xmm0, xmm0
+  phaddd xmm0, xmm0
+  phaddd xmm0, xmm0
 
-  ucomiss xmm0, xmm2
+  movd eax, xmm0
+  cmp eax, r8
   setb al
 
   movdqu xmm0, oword ptr [rsp]
@@ -809,10 +828,10 @@ begin
   end;
 end;
 
-function EuclideanToPSNR(AEuclidean: Single): Single;
+function EuclideanToPSNR(AEuclidean: Cardinal): Single;
 begin
-  AEuclidean := AEuclidean * (1 / cTileDCTSize);
-  Result := 10 * Log10(255 * 255 / Max(0.5, AEuclidean));
+  Result := AEuclidean * (1 / cTileDCTSize);
+  Result := 10 * Log10(255 * 255 / Max(0.5, Result));
 end;
 
 end.
