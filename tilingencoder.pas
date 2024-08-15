@@ -3311,7 +3311,7 @@ begin
   		  z := DCTInner_asm(@ACpnPixel[cpn, 0, 0], pLut);
 
         if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
-           z *= cDCTQuantization[cpn, v, u];
+           z *= cDCTWeights[cpn, v, u];
 
         pDCT^ := Round(z);
         Inc(pDCT);
@@ -3362,7 +3362,7 @@ begin
           z := specialize DCTInner<PDouble>(@CpnPixelsDouble[cpn, 0, 0], pLut, 1);
 
           if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
-             z *= cDCTQuantization[cpn, v, u];
+             z *= cDCTWeights[cpn, v, u];
 
           pDCT^ := z;
           Inc(pDCT);
@@ -3412,7 +3412,7 @@ begin
       begin
         d := DCT[cDCTSnake[i] + cpn * sqr(cTileWidth)];
         if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
-          pDCT^ := d / cDCTQuantization[cpn, v, u]
+          pDCT^ := d / cDCTWeights[cpn, v, u]
         else
           pDCT^ := d;
         Inc(pDCT);
@@ -4304,7 +4304,7 @@ end;
 
 function TTilingEncoder.STCGREval(x: Double; Data: Pointer): Double;
 const
-  CKFPSNRBoost = 10.0;
+  CKFPSNRBoost = cPsnrMaxValue;
 var
   frmIdx, sy, sx, unpredictedTileCount: Integer;
   TMI: PTileMapItem;
@@ -4333,7 +4333,7 @@ end;
 
 function TTilingEncoder.SolveTileCount(ATileCount: Integer): Double;
 begin
-  Result := GoldenRatioSearch(@STCGREval, 0.0, CPsnrNullValue, ATileCount, cPsyVEpsilon, 0.5, nil);
+  Result := GoldenRatioSearch(@STCGREval, 0.0, cPsnrMaxValue, ATileCount, cPsyVEpsilon, 0.5, nil);
 end;
 
 procedure TTilingEncoder.TransferTiles(ATileCount: Integer);

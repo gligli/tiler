@@ -69,7 +69,7 @@ const
 
   // Normalized inverse quantization matrix for 8x8 DCT at the point of transparency.
   // from: https://gitlab-restore.xiph.org/xiph/daala/-/blob/gitlab-ci/tools/dump_psnrhvs.c?ref_type=heads
-  cDCTQuantization: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of TFloat = (
+  cDCTWeights: array[0..cColorCpns-1{YUV}, 0..7, 0..7] of Double = (
     ((1.6193873005, 2.2901594831, 2.08509755623, 1.48366094411, 1.00227514334, 0.678296995242, 0.466224900598, 0.3265091542),
      (2.2901594831, 1.94321815382, 2.04793073064, 1.68731108984, 1.2305666963, 0.868920337363, 0.61280991668, 0.436405793551),
      (2.08509755623, 2.04793073064, 1.34329019223, 1.09205635862, 0.875748795257, 0.670882927016, 0.501731932449, 0.372504254596),
@@ -108,7 +108,7 @@ const
     (sqrt(0.5), 1, 1, 1, 1, 1, 1, 1)
   );
 
-  CPsnrNullValue = 100;
+  cPsnrMaxValue = 10 * Ln(255 * 255 / 0.5) / Ln(10);
 type
   TSpinlock = LongInt;
   PSpinLock = ^TSpinlock;
