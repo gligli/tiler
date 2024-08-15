@@ -351,6 +351,8 @@ type
     FDitheringMode: TPsyVisMode;
     FDitheringUseThomasKnoll: Boolean;
     FDitheringYliluoma2MixedColors: Integer;
+    FGlobalTilingUseTargetPSNR: Boolean;
+    FGlobalTilingTargetPSNR: Double;
     FGlobalTilingTileCount: Integer;
     FGlobalTilingQualityBasedTileCount: Double;
     FFrameTilingUseGamma: Boolean;
@@ -405,6 +407,7 @@ type
     procedure SetRenderGammaValue(AValue: Double);
     procedure SetRenderPaletteIndex(AValue: Integer);
     procedure SetRenderTilePage(AValue: Integer);
+    procedure SetGlobalTilingTargetPSNR(AValue: Double);
     procedure SetGlobalTilingTileCount(AValue: Integer);
     procedure SetScaling(AValue: Double);
     procedure SetShotTransCorrelLoThres(AValue: Double);
@@ -552,6 +555,8 @@ type
     property DitheringMode: TPsyVisMode read FDitheringMode write FDitheringMode;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
     property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
+    property GlobalTilingUseTargetPSNR: Boolean read FGlobalTilingUseTargetPSNR write FGlobalTilingUseTargetPSNR;
+    property GlobalTilingTargetPSNR: Double read FGlobalTilingTargetPSNR write SetGlobalTilingTargetPSNR;
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
     property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
     property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
@@ -1936,7 +1941,10 @@ begin
 
   ProgressRedraw(0, '', esReduce);
 
-  SolveTileCount(FGlobalTilingTileCount);
+  if FGlobalTilingUseTargetPSNR then
+    STCGREval(FGlobalTilingTargetPSNR, nil)
+  else
+    SolveTileCount(FGlobalTilingTileCount);
 
   ProgressRedraw(1, 'SolveTileCount');
 
@@ -3156,6 +3164,12 @@ begin
   FPaletteSize := EnsureRange(AValue, 2, 64);
 end;
 
+procedure TTilingEncoder.SetGlobalTilingTargetPSNR(AValue: Double);
+begin
+  if FGlobalTilingTargetPSNR = AValue then Exit;
+  FGlobalTilingTargetPSNR := EnsureRange(AValue, 0, cPsnrMaxValue);
+end;
+
 procedure TTilingEncoder.SetGlobalTilingTileCount(AValue: Integer);
 var
   RawTileCount: Integer;
@@ -3948,6 +3962,8 @@ begin
 
     ini.WriteInteger('MotionPredict', 'MotionPredictRadius', MotionPredictRadius);
 
+    ini.WriteBool('GlobalTiling', 'GlobalTilingUseTargetPSNR', GlobalTilingUseTargetPSNR);
+    ini.WriteFloat('GlobalTiling', 'GlobalTilingTargetPSNR', GlobalTilingTargetPSNR);
     ini.WriteFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     ini.WriteInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount);
 
@@ -3990,6 +4006,8 @@ begin
 
     MotionPredictRadius := ini.ReadInteger('MotionPredict', 'MotionPredictRadius', MotionPredictRadius);
 
+    GlobalTilingUseTargetPSNR := ini.ReadBool('GlobalTiling', 'GlobalTilingUseTargetPSNR', GlobalTilingUseTargetPSNR);
+    GlobalTilingTargetPSNR := ini.ReadFloat('GlobalTiling', 'GlobalTilingTargetPSNR', GlobalTilingTargetPSNR);
     GlobalTilingQualityBasedTileCount := ini.ReadFloat('GlobalTiling', 'GlobalTilingQualityBasedTileCount', GlobalTilingQualityBasedTileCount);
     GlobalTilingTileCount := ini.ReadInteger('GlobalTiling', 'GlobalTilingTileCount', GlobalTilingTileCount); // after GlobalTilingQualityBasedTileCount because has priority
 
@@ -4030,6 +4048,8 @@ begin
 
   MotionPredictRadius := 32;
 
+  GlobalTilingUseTargetPSNR := False;
+  GlobalTilingTargetPSNR := 20.0;
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
 
@@ -4304,7 +4324,7 @@ end;
 
 function TTilingEncoder.STCGREval(x: Double; Data: Pointer): Double;
 const
-  CKFPSNRBoost = cPsnrMaxValue;
+  CKFPSNRDiv = 10.0;
 var
   frmIdx, sy, sx, unpredictedTileCount: Integer;
   TMI: PTileMapItem;
@@ -4317,7 +4337,7 @@ begin
         TMI := @FFrames[frmIdx].TileMap[sy, sx];
 
         if (frmIdx = FFrames[frmIdx].PKeyFrame.StartFrame) and not IsInfinite(TMI^.PSNR) then
-          TMI^.IsPredicted := TMI^.PSNR - CKFPSNRBoost > x
+          TMI^.IsPredicted := TMI^.PSNR / CKFPSNRDiv > x
         else
           TMI^.IsPredicted := TMI^.PSNR > x;
 

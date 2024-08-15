@@ -54,7 +54,6 @@ type
     Label15: TLabel;
     Label16: TLabel;
     Label17: TLabel;
-    Label2: TLabel;
     Label20: TLabel;
     Label22: TLabel;
     Label4: TLabel;
@@ -78,12 +77,15 @@ type
     pbProgress: TProgressBar;
     pcPages: TPageControl;
     pnLbl: TPanel;
+    rbTileLimit: TRadioButton;
+    rbPSNR: TRadioButton;
     sbPalette: TScrollBox;
     sdGTM: TSaveDialog;
     sdSettings: TSaveDialog;
     seMaxCores: TSpinEdit;
     Separator1: TMenuItem;
     Separator3: TMenuItem;
+    sePSNR: TFloatSpinEdit;
     seShotTransDistHiThres: TFloatSpinEdit;
     seShotTransMaxSecondsPerKF: TFloatSpinEdit;
     seShotTransCorrelLoThres: TFloatSpinEdit;
@@ -631,6 +633,8 @@ begin
 
   FTilingEncoder.MotionPredictRadius := StrToIntDef(cbxMPRadius.Text, 0);
 
+  FTilingEncoder.GlobalTilingUseTargetPSNR := rbPSNR.Checked;
+  FTilingEncoder.GlobalTilingTargetPSNR := sePSNR.Value;
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
 
   FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
@@ -664,6 +668,9 @@ begin
   imgDest.Stretch := imgSource.Stretch;
   imgSource.Proportional := chkStretch.State = cbGrayed;
   imgDest.Proportional := imgSource.Proportional;
+  sePSNR.Enabled := rbPSNR.Checked;
+  seQbTiles.Enabled := rbTileLimit.Checked;
+  seMaxTiles.Enabled := rbTileLimit.Checked;
 end;
 
 procedure TMainForm.TilingEncoderProgress(ASender: TTilingEncoder; APosition, AMax: Integer; AHourGlass: Boolean);
@@ -696,6 +703,9 @@ begin
 
    cbxMPRadius.Text := IntToStr(FTilingEncoder.MotionPredictRadius);
 
+   rbPSNR.Checked := FTilingEncoder.GlobalTilingUseTargetPSNR;
+   rbTileLimit.Checked := not FTilingEncoder.GlobalTilingUseTargetPSNR;
+   sePSNR.Value := FTilingEncoder.GlobalTilingTargetPSNR;
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
 
