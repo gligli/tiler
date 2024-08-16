@@ -3307,18 +3307,19 @@ end;
 
 procedure TTilingEncoder.ComputeCpnPixelsPsyVisFeatures(const ACpnPixel: TCpnPixels; Mode: TPsyVisMode; ColorCpns: Integer; ADCT: PDCTScalar);
 var
-  i, u, v, cpn: Integer;
+  u, v, cpn: Integer;
   z: Double;
   pLut: PSingle;
   pDCT: PSmallInt;
-  LocalDCT: TDCT;
+  pSnake: PByte;
 begin
   Assert(not (Mode in [pvsWavelets]), 'Wavelets on SmallInt vector unimplemented!');
 
   for cpn := 0 to ColorCpns - 1 do
   begin
-    pDCT := @LocalDCT[cpn * sqr(cTileWidth)];
+    pDCT := @ADCT[cpn * sqr(cTileWidth)];
     pLut := @FDCTLut[Mode in [pvsSpeDCT, pvsWeightedSpeDCT], 0];
+    pSnake := @cDCTSnake[0];
     for v := 0 to cTileWidth - 1 do
       for u := 0 to cTileWidth - 1 do
       begin
@@ -3327,15 +3328,11 @@ begin
         if Mode in [pvsWeightedDCT, pvsWeightedSpeDCT] then
            z *= cDCTWeights[cpn, v, u];
 
-        pDCT^ := Round(z);
-        Inc(pDCT);
+        pDCT[pSnake^] := Round(z);
         Inc(pLut, Sqr(cTileWidth));
+        Inc(pSnake);
       end;
   end;
-
-  for cpn := 0 to ColorCpns - 1 do
-    for i := 0 to sqr(cTileWidth) - 1 do
-      ADCT[cDCTSnake[i] + cpn * sqr(cTileWidth)] := LocalDCT[i + cpn * sqr(cTileWidth)];
 end;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
@@ -3347,7 +3344,6 @@ var
   CpnPixelsDouble: TCpnPixelsDouble;
   pDCT, pLut: PDouble;
   LocalDCT: array[0..cTileDCTSize - 1] of Double;
-
 begin
   ConvertToCpnPixels(ATile, FromPal, UseLAB, HMirror, VMirror, GammaCor, APalette, CpnPixels);
 
@@ -3398,7 +3394,6 @@ var
   pCpn, pLut, pDCT: PDouble;
   LocalDCT: array[0..cTileDCTSize - 1] of Double;
   d: Double;
-
 
   function FromCpn(x, y: Integer): Integer; inline;
   var
