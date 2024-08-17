@@ -172,7 +172,7 @@ object MainForm: TMainForm
       object cbxYilMix: TComboBox
         Left = 328
         Height = 23
-        Top = 246
+        Top = 342
         Width = 64
         ItemHeight = 15
         Items.Strings = (
@@ -182,7 +182,7 @@ object MainForm: TMainForm
           '8'
           '16'
         )
-        TabOrder = 16
+        TabOrder = 20
         OnChange = UpdateGUI
       end
       object seFrameCount: TSpinEdit
@@ -197,18 +197,18 @@ object MainForm: TMainForm
       object chkUseTK: TCheckBox
         Left = 8
         Height = 19
-        Top = 224
+        Top = 320
         Width = 334
         Alignment = taLeftJustify
         AutoSize = False
         Caption = 'Use Thomas Knoll dithering (not Yliluoma 2)'
-        TabOrder = 15
+        TabOrder = 19
         OnChange = UpdateGUI
       end
       object Label13: TLabel
         Left = 8
         Height = 15
-        Top = 68
+        Top = 67
         Width = 166
         Caption = 'Start frame; Frame count (0: all)'
         ParentColor = False
@@ -216,7 +216,7 @@ object MainForm: TMainForm
       object Label11: TLabel
         Left = 8
         Height = 15
-        Top = 250
+        Top = 343
         Width = 161
         Caption = 'Yliluoma 2 mixed colors count'
         ParentColor = False
@@ -245,58 +245,24 @@ object MainForm: TMainForm
         TabOrder = 0
         OnChange = UpdateGUI
       end
-      object chkDitheringGamma: TCheckBox
-        Left = 8
-        Height = 19
-        Top = 365
-        Width = 334
-        Alignment = taLeftJustify
-        AutoSize = False
-        Caption = 'Dithering gamma correction'
-        TabOrder = 21
-        OnChange = UpdateGUI
-      end
-      object chkFTGamma: TCheckBox
-        Left = 8
-        Height = 19
-        Top = 391
-        Width = 334
-        Alignment = taLeftJustify
-        AutoSize = False
-        Caption = 'Reconstruct gamma correction'
-        TabOrder = 22
-        OnChange = UpdateGUI
-      end
       object Label10: TLabel
         Left = 8
         Height = 15
-        Top = 342
-        Width = 167
-        Caption = 'Gamma (encoder; visualization)'
+        Top = 410
+        Width = 118
+        Caption = 'Gamma (visualization)'
         ParentColor = False
       end
-      object seEncGamma: TFloatSpinEdit
+      object seVisGamma: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 339
-        Width = 64
-        Increment = 0.1
-        MaxValue = 10
-        MinValue = 0.1
-        OnChange = UpdateGUI
-        TabOrder = 19
-        Value = 1
-      end
-      object seVisGamma: TFloatSpinEdit
-        Left = 393
-        Height = 23
-        Top = 339
+        Top = 407
         Width = 64
         Increment = 0.1
         MaxValue = 10
         MinValue = 0.1
         OnChange = UpdateVideo
-        TabOrder = 20
+        TabOrder = 22
         Value = 1
       end
       object seQbTiles: TFloatSpinEdit
@@ -324,7 +290,7 @@ object MainForm: TMainForm
       object Label12: TLabel
         Left = 8
         Height = 15
-        Top = 189
+        Top = 187
         Width = 271
         Caption = 'Palettes layout (higher -> more colors) (count; size)'
         ParentColor = False
@@ -409,7 +375,7 @@ object MainForm: TMainForm
       object Label16: TLabel
         Left = 8
         Height = 15
-        Top = 488
+        Top = 451
         Width = 240
         Caption = 'Maximum CPU cores used for multithreading'
         ParentColor = False
@@ -417,7 +383,7 @@ object MainForm: TMainForm
       object Label20: TLabel
         Left = 8
         Height = 15
-        Top = 421
+        Top = 231
         Width = 207
         Caption = 'Keyframes length (seconds) (min; max)'
         ParentColor = False
@@ -425,27 +391,27 @@ object MainForm: TMainForm
       object seShotTransMaxSecondsPerKF: TFloatSpinEdit
         Left = 393
         Height = 23
-        Top = 417
+        Top = 228
         Width = 64
         Increment = 0.1
         MaxValue = 100
         OnChange = UpdateGUI
-        TabOrder = 24
+        TabOrder = 16
       end
       object seShotTransMinSecondsPerKF: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 417
+        Top = 228
         Width = 64
         Increment = 0.05
         MaxValue = 100
         OnChange = UpdateGUI
-        TabOrder = 23
+        TabOrder = 15
       end
       object Label22: TLabel
         Left = 8
         Height = 15
-        Top = 445
+        Top = 255
         Width = 176
         Caption = 'Keyframes threshold (correlation)'
         ParentColor = False
@@ -453,18 +419,18 @@ object MainForm: TMainForm
       object seShotTransCorrelLoThres: TFloatSpinEdit
         Left = 328
         Height = 23
-        Top = 441
-        Width = 129
+        Top = 252
+        Width = 64
         Increment = 0.05
         MaxValue = 1
         MinValue = -1
         OnChange = UpdateGUI
-        TabOrder = 25
+        TabOrder = 17
       end
       object Label17: TLabel
         Left = 8
         Height = 15
-        Top = 307
+        Top = 291
         Width = 202
         Caption = 'Psychovisual modes (prepare palettes)'
         ParentColor = False
@@ -472,7 +438,7 @@ object MainForm: TMainForm
       object cbxDitheringMode: TComboBox
         Left = 328
         Height = 23
-        Top = 303
+        Top = 287
         Width = 129
         DropDownCount = 20
         ItemHeight = 15
@@ -490,7 +456,7 @@ object MainForm: TMainForm
       object Label18: TLabel
         Left = 8
         Height = 15
-        Top = 140
+        Top = 139
         Width = 229
         Caption = 'Motion prediction radius (higher -> slower)'
         ParentColor = False
@@ -532,30 +498,30 @@ object MainForm: TMainForm
       object Bevel3: TBevel
         Left = 8
         Height = 2
-        Top = 476
+        Top = 440
         Width = 800
         Shape = bsTopLine
       end
       object seMaxCores: TSpinEdit
         Left = 328
         Height = 23
-        Top = 484
+        Top = 448
         Width = 64
         MaxValue = 1000000
         MinValue = 1
         OnChange = UpdateGUI
-        TabOrder = 26
+        TabOrder = 23
         Value = 1
       end
       object chkFTEPU: TCheckBox
         Left = 8
         Height = 19
-        Top = 276
+        Top = 376
         Width = 334
         Alignment = taLeftJustify
         AutoSize = False
         Caption = 'Reconstruct extended palette usage (slower, more accurate)'
-        TabOrder = 17
+        TabOrder = 21
         OnChange = UpdateGUI
       end
       object rbTileLimit: TRadioButton

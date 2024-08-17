@@ -32,9 +32,7 @@ type
     cbxYilMix: TComboBox;
     cbxPalSize: TComboBox;
     chkDitheredO: TCheckBox;
-    chkFTGamma: TCheckBox;
     chkGamma: TCheckBox;
-    chkDitheringGamma: TCheckBox;
     chkMirrored: TCheckBox;
     chkPlay: TCheckBox;
     chkUseTK: TCheckBox;
@@ -94,7 +92,6 @@ type
     seMaxTiles: TSpinEdit;
     sePage: TSpinEdit;
     seStartFrame: TSpinEdit;
-    seEncGamma: TFloatSpinEdit;
     seShotTransMinSecondsPerKF: TFloatSpinEdit;
     tsTilesPal: TTabSheet;
     To1: TLabel;
@@ -619,7 +616,6 @@ begin
   FTilingEncoder.PaletteSize := StrToIntDef(cbxPalSize.Text, 2);
   FTilingEncoder.Scaling := StrToFloatDef(cbxScaling.Text, 1.0, InvariantFormatSettings);
 
-  FTilingEncoder.EncoderGammaValue := seEncGamma.Value;
   FTilingEncoder.RenderPlaying := chkPlay.Checked;
   FTilingEncoder.RenderFrameIndex := Max(0, tbFrame.Position);
   FTilingEncoder.RenderPredicted := chkPredicted.Checked;
@@ -636,12 +632,10 @@ begin
   FTilingEncoder.GlobalTilingTargetPSNR := sePSNR.Value;
   FTilingEncoder.GlobalTilingQualityBasedTileCount := seQbTiles.Value;
 
-  FTilingEncoder.DitheringUseGamma := chkDitheringGamma.Checked;
   FTilingEncoder.DitheringMode := TPsyVisMode(cbxDitheringMode.ItemIndex);
   FTilingEncoder.DitheringYliluoma2MixedColors := StrToIntDef(cbxYilMix.Text, 1);
   FTilingEncoder.DitheringUseThomasKnoll := chkUseTK.Checked;
 
-  FTilingEncoder.FrameTilingUseGamma := chkFTGamma.Checked;
   FTilingEncoder.FrameTilingExtendedPaletteUsage := chkFTEPU.Checked;
 
   FTilingEncoder.ShotTransMinSecondsPerKF := seShotTransMinSecondsPerKF.Value;
@@ -707,15 +701,12 @@ begin
    seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
    seQbTiles.Value := FTilingEncoder.GlobalTilingQualityBasedTileCount;
 
-   chkDitheringGamma.Checked := FTilingEncoder.DitheringUseGamma;
    cbxDitheringMode.ItemIndex := Ord(FTilingEncoder.DitheringMode);
    chkUseTK.Checked := FTilingEncoder.DitheringUseThomasKnoll;
    cbxYilMix.Text := IntToStr(FTilingEncoder.DitheringYliluoma2MixedColors);
 
-   chkFTGamma.Checked := FTilingEncoder.FrameTilingUseGamma;
    chkFTEPU.Checked := FTilingEncoder.FrameTilingExtendedPaletteUsage;
 
-   seEncGamma.Value := FTilingEncoder.EncoderGammaValue;
    seVisGamma.Value := FTilingEncoder.RenderGammaValue;
    seMaxCores.Value := FTilingEncoder.MaxThreadCount;
 

@@ -277,7 +277,7 @@ type
     procedure LoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
     procedure PredictMotion(ARadius: Integer; AOnlyBuffer: Boolean; var AFrontBuffer, ABackBuffer: TIntegerDynArray2;
       var ADCTs: TDCTDynArray);
-    procedure Reconstruct(ARadius, AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2;
+    procedure Reconstruct(ARadius: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2;
       var ADCTs: TDCTDynArray);
   end;
 
@@ -346,7 +346,6 @@ type
     FPaletteSize: Integer;
     FPaletteCount: Integer;
     FMotionPredictRadius: Integer;
-    FDitheringUseGamma: Boolean;
     FDitheringMode: TPsyVisMode;
     FDitheringUseThomasKnoll: Boolean;
     FDitheringYliluoma2MixedColors: Integer;
@@ -354,7 +353,6 @@ type
     FGlobalTilingTargetPSNR: Double;
     FGlobalTilingTileCount: Integer;
     FGlobalTilingQualityBasedTileCount: Double;
-    FFrameTilingUseGamma: Boolean;
     FFrameTilingExtendedPaletteUsage: Boolean;
     FShotTransMaxSecondsPerKF: Double;
     FShotTransMinSecondsPerKF: Double;
@@ -390,10 +388,8 @@ type
     function GetKeyFrameCount: Integer;
     function GetMaxThreadCount: Integer;
     function GetTiles: PTileDynArray;
-    function GetEncoderGammaValue: Double;
     function GetRenderGammaValue: Double;
     procedure SetDitheringYliluoma2MixedColors(AValue: Integer);
-    procedure SetEncoderGammaValue(AValue: Double);
     procedure SetFrameCountSetting(AValue: Integer);
     procedure SetFramesPerSecond(AValue: Double);
     procedure SetGlobalTilingQualityBasedTileCount(AValue: Double);
@@ -422,25 +418,15 @@ type
     function GammaCorrect(lut: Integer; x: Byte): TFloat; inline;
     function GammaUncorrect(lut: Integer; x: TFloat): Byte; inline;
 
-    function HSVToRGB(h, s, v: Byte): Integer;
-    procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
-    procedure RGBToHSV(col: Integer; out h, s, v: TFloat); overload;
-    procedure RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat);
-    procedure RGBToYUV(r, g, b: Byte; GammaCor: Integer; out y, u, v: TFloat);
-    procedure RGBToLAB(r, g, b: TFloat; GammaCor: Integer; out ol, oa, ob: TFloat);
-    procedure RGBToLAB(ir, ig, ib: Integer; GammaCor: Integer; out ol, oa, ob: TFloat);
-    function LABToRGB(ll, aa, bb: TFloat; GammaCor: Integer): Integer;
-    function YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
-
     generic procedure WaveletGS<T, PT>(Data: PT; Output: PT; dx, dy, depth: cardinal);
     generic procedure DeWaveletGS<T, PT>(wl: PT; pic: PT; dx, dy, depth: longint);
 
-    procedure ConvertToCpnPixels(const ATile: TTile; FromPal, UseLAB, HMirror, VMirror: Boolean; GammaCor: Integer; const APalette: TIntegerDynArray; out ACpnPixel: TCpnPixels); inline;
+    procedure ConvertToCpnPixels(const ATile: TTile; FromPal, UseLAB, HMirror, VMirror: Boolean; const APalette: TIntegerDynArray; out ACpnPixel: TCpnPixels); inline;
     procedure ComputeCpnPixelsPsyVisFeatures(const ACpnPixel: TCpnPixels; Mode: TPsyVisMode; ColorCpns: Integer; ADCT: PDCTScalar); inline;
 
     procedure ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror, VMirror: Boolean;
-     ColorCpns, GammaCor: Integer; const APalette: TIntegerDynArray; ADCT: PDouble); inline; overload;
-    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns, GammaCor: Integer;
+     ColorCpns: Integer; const APalette: TIntegerDynArray; ADCT: PDouble); inline; overload;
+    procedure ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns: Integer;
       var ATile: TTile);
 
     // Dithering algorithms ported from http://bisqwit.iki.fi/story/howto/dither/jy/
@@ -470,12 +456,12 @@ type
     function SolveTileCount(ATileCount: Integer): Double;
     procedure TransferTiles(ATileCount: Integer);
 
-    procedure DoPalettization(ADitheringGamma: Integer);
+    procedure DoPalettization;
     procedure QuantizeUsingYakmo(APalIdx, AColorCount, APosterize: Integer);
-    procedure DoQuantization(APalIdx: Integer; ADitheringGamma: Integer);
+    procedure DoQuantization(APalIdx: Integer);
     procedure OptimizePalettes;
 
-    procedure PrepareReconstruct(AFTGamma: Integer);
+    procedure PrepareReconstruct;
     procedure FinishReconstruct;
 
     procedure ReindexTiles(OnRGBPixels: Boolean);
@@ -544,11 +530,9 @@ type
     property StartFrame: Integer read FStartFrame write SetStartFrame;
     property FrameCountSetting: Integer read FFrameCountSetting write SetFrameCountSetting;
     property Scaling: Double read FScaling write SetScaling;
-    property EncoderGammaValue: Double read GetEncoderGammaValue write SetEncoderGammaValue;
     property PaletteSize: Integer read FPaletteSize write SetPaletteSize;
     property PaletteCount: Integer read FPaletteCount write SetPaletteCount;
     property MotionPredictRadius: Integer read FMotionPredictRadius write SetMotionPredictRadius;
-    property DitheringUseGamma: Boolean read FDitheringUseGamma write FDitheringUseGamma;
     property DitheringMode: TPsyVisMode read FDitheringMode write FDitheringMode;
     property DitheringUseThomasKnoll: Boolean read FDitheringUseThomasKnoll write FDitheringUseThomasKnoll;
     property DitheringYliluoma2MixedColors: Integer read FDitheringYliluoma2MixedColors write SetDitheringYliluoma2MixedColors;
@@ -556,7 +540,6 @@ type
     property GlobalTilingTargetPSNR: Double read FGlobalTilingTargetPSNR write SetGlobalTilingTargetPSNR;
     property GlobalTilingTileCount: Integer read FGlobalTilingTileCount write SetGlobalTilingTileCount;
     property GlobalTilingQualityBasedTileCount: Double read FGlobalTilingQualityBasedTileCount write SetGlobalTilingQualityBasedTileCount;
-    property FrameTilingUseGamma: Boolean read FFrameTilingUseGamma write FFrameTilingUseGamma;
     property FrameTilingExtendedPaletteUsage: Boolean read FFrameTilingExtendedPaletteUsage write FFrameTilingExtendedPaletteUsage;
     property MaxThreadCount: Integer read GetMaxThreadCount write SetMaxThreadCount;
     property ShotTransMaxSecondsPerKF: Double read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
@@ -1189,7 +1172,7 @@ procedure TFrame.PredictMotion(ARadius: Integer; AOnlyBuffer: Boolean; var AFron
       begin
         DCTTile^.CopyRGBPixels(ABackBuffer, x, AIndex);
 
-        Encoder.ConvertToCpnPixels(DCTTile^, False, False, False, False, -1, nil, CpnPixels);
+        Encoder.ConvertToCpnPixels(DCTTile^, False, False, False, False, nil, CpnPixels);
         Encoder.ComputeCpnPixelsPsyVisFeatures(CpnPixels, pvsWeightedDCT, cColorCpns, ADCTs[yx]);
 
         Inc(yx);
@@ -1226,7 +1209,7 @@ procedure TFrame.PredictMotion(ARadius: Integer; AOnlyBuffer: Boolean; var AFron
 
       if not AOnlyBuffer then
       begin
-        Encoder.ConvertToCpnPixels(FrameTile^, False, False, False, False, -1, nil, CurCpnPixels);
+        Encoder.ConvertToCpnPixels(FrameTile^, False, False, False, False, nil, CurCpnPixels);
         Encoder.ComputeCpnPixelsPsyVisFeatures(CurCpnPixels, pvsWeightedDCT, cColorCpns, CurDCT);
 
         bestX := MaxInt;
@@ -1392,7 +1375,7 @@ begin
         begin
           FromRGB(pat^, rr, gg, bb);
           Inc(pat);
-          Encoder.RGBToLAB(rr, gg, bb, -1, lll, aaa, bbb);
+          RGBToLAB(rr, gg, bb, lll, aaa, bbb);
           Result[di + 0] += lll;
           Result[di + 1] += aaa;
           Result[di + 2] += bbb;
@@ -1439,7 +1422,7 @@ begin
   SetEvent(LoadFromImageFinishedEvent);
 end;
 
-procedure TFrame.Reconstruct(ARadius, AFTGamma: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2;
+procedure TFrame.Reconstruct(ARadius: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2;
   var ADCTs: TDCTDynArray);
 const
   cEpuKnnK = 64;
@@ -1463,7 +1446,7 @@ var
       begin
         DCTTile^.CopyRGBPixels(ABackBuffer, x, AIndex);
 
-        Encoder.ConvertToCpnPixels(DCTTile^, False, False, False, False, AFTGamma, nil, CpnPixels);
+        Encoder.ConvertToCpnPixels(DCTTile^, False, False, False, False, nil, CpnPixels);
         Encoder.ComputeCpnPixelsPsyVisFeatures(CpnPixels, pvsWeightedDCT, cColorCpns, ADCTs[yx]);
 
         Inc(yx);
@@ -1496,7 +1479,7 @@ var
     TMI := @TileMap[sy, sx];
 
     FrameTile := FrameTiles[AIndex];
-    Encoder.ConvertToCpnPixels(FrameTile^, False, False, False, False, AFTGamma, nil, FTCpnPixels);
+    Encoder.ConvertToCpnPixels(FrameTile^, False, False, False, False, nil, FTCpnPixels);
     Encoder.ComputeCpnPixelsPsyVisFeatures(FTCpnPixels, pvsWeightedDCT, cColorCpns, FTDCT);
 
     dx := sx shl cTileWidthBits;
@@ -1507,7 +1490,7 @@ var
     mpErr := High(Cardinal);
     if (Index <> PKeyFrame.StartFrame) and (ARadius >= 0) then
     begin
-      Encoder.ConvertToCpnPixels(FrameTile^, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, AFTGamma, nil, CurCpnPixels);
+      Encoder.ConvertToCpnPixels(FrameTile^, False, False, FrameTile^.HMirror_Initial, FrameTile^.VMirror_Initial, nil, CurCpnPixels);
       Encoder.ComputeCpnPixelsPsyVisFeatures(CurCpnPixels, pvsWeightedDCT, cColorCpns, CurDCT);
 
       oymn := Max(0, dy - ARadius - 1);
@@ -1599,7 +1582,7 @@ var
           for palEpuIdx := 0 to cEpuKnnK - 1 do
             if EpuPalIdxs[palEpuIdx] <> prevPalIdx then
             begin
-              Encoder.ConvertToCpnPixels(Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^, True, False, False, False, AFTGamma, Encoder.FPalettes[EpuPalIdxs[palEpuIdx]].PaletteRGB, CurCpnPixels);
+              Encoder.ConvertToCpnPixels(Encoder.FTiles[EpuTileIdxs[tileEpuIdx]]^, True, False, False, False, Encoder.FPalettes[EpuPalIdxs[palEpuIdx]].PaletteRGB, CurCpnPixels);
               Encoder.ComputeCpnPixelsPsyVisFeatures(CurCpnPixels, pvsWeightedDCT, cColorCpns, CurDCT);
 
               if QuickTestEuclideanDCTPtr_asm(FTDCT, CurDCT, knnErr) then
@@ -1694,17 +1677,8 @@ end;
 
 procedure TTilingEncoder.InitLuts;
 var
-  g, i, v, u, y, x: Int64;
+  i, v, u, y, x: Int64;
 begin
-  // gamma
-
-  for g := -1 to High(FGamma) do
-    for i := 0 to High(Byte) do
-      if g >= 0 then
-        FGammaCorLut[g, i] := power(i / 255.0, FGamma[g])
-      else
-        FGammaCorLut[g, i] := i / 255.0;
-
   // inverse
 
   for i := 0 to High(FVecInv) do
@@ -1859,7 +1833,7 @@ procedure TTilingEncoder.PreparePalettes;
     if not InRange(AIndex, 0, High(FPalettes)) then
       Exit;
 
-    DoQuantization(AIndex, IfThen(FDitheringUseGamma, 0, -1));
+    DoQuantization(AIndex);
   end;
 
 begin
@@ -1868,7 +1842,7 @@ begin
 
   ProgressRedraw(0, '', esPreparePalettes);
 
-  DoPalettization(IfThen(FDitheringUseGamma, 0, -1));
+  DoPalettization;
 
   ProgressRedraw(1, 'Palettization');
 
@@ -1939,7 +1913,6 @@ end;
 procedure TTilingEncoder.Reconstruct;
 var
   frmIdx: Integer;
-  gammaCor: Integer;
   curBuffer: Boolean;
 
   FrameBuffer: array[Boolean] of TIntegerDynArray2;
@@ -1951,18 +1924,17 @@ begin
   ProgressRedraw(0, '', esReconstruct);
 
   FKeyFramesLeft := Length(FKeyFrames);
-  gammaCor := IfThen(FFrameTilingUseGamma, 0, -1);
   curBuffer := False;
   SetLength(FrameBuffer[False], FScreenHeight, FScreenWidth);
   SetLength(FrameBuffer[True], FScreenHeight, FScreenWidth);
   SetLength(DCTs, (FScreenHeight - cTileWidth + 1) * (FScreenWidth - cTileWidth + 1));
 
-  PrepareReconstruct(gammaCor);
+  PrepareReconstruct;
   ProgressRedraw(1, 'PrepareReconstruct', esReconstruct);
   try
     for frmIdx := 0 to High(FFrames) do
     begin
-      FFrames[frmIdx].Reconstruct(FMotionPredictRadius, gammaCor, FrameBuffer[not curBuffer], FrameBuffer[curBuffer], DCTs);
+      FFrames[frmIdx].Reconstruct(FMotionPredictRadius, FrameBuffer[not curBuffer], FrameBuffer[curBuffer], DCTs);
       curBuffer := not curBuffer;
 
       Write(frmIdx + 1:8, ' / ', Length(FFrames):8, #13);
@@ -2190,7 +2162,7 @@ begin
             r := ptr^; Inc(ptr);
             Inc(ptr); // alpha
 
-            RGBToYUV(r, g, b, -1, yf, uf, vf);
+            RGBToYUV(r, g, b, yf, uf, vf);
 
             py^ := EnsureRange(Round(yf), 0, High(Byte)); Inc(py);
             pu^ := EnsureRange(Round(uf - Low(ShortInt)), 0, High(Byte)); Inc(pu);
@@ -2258,11 +2230,6 @@ end;
 function TTilingEncoder.GetFrameCount: Integer;
 begin
   Result := Length(FFrames);
-end;
-
-function TTilingEncoder.GetEncoderGammaValue: Double;
-begin
-  Result := FGamma[0];
 end;
 
 function TTilingEncoder.GetRenderGammaValue: Double;
@@ -2741,58 +2708,6 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.RGBToYUV(col: Integer; GammaCor: Integer; out y, u, v: TFloat); inline;
-var
-  yy, uu, vv: TFloat;
-  r, g, b: Byte;
-begin
-  FromRGB(col, r, g, b);
-  RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
-  y := yy; u := uu; v := vv; // for safe "out" param
-end;
-
-procedure TTilingEncoder.RGBToYUV(r, g, b: Byte; GammaCor: Integer; out y, u, v: TFloat);
-var
-  fr, fg, fb: TFloat;
-  yy, uu, vv: TFloat;
-begin
-  fr := GammaCorrect(GammaCor, r) * 255.0;
-  fg := GammaCorrect(GammaCor, g) * 255.0;
-  fb := GammaCorrect(GammaCor, b) * 255.0;
-
-  yy := fr * (cRedMul / cLumaDiv) + fg * (cGreenMul / cLumaDiv) + fb * (cBlueMul / cLumaDiv);
-  uu := (fb - yy) * 0.492;
-  vv := (fr - yy) * 0.877;
-{$if cRedMul <> 299}
-  {$error RGBToYUV should be changed!}
-{$endif}
-
-  y := yy; u := uu; v := vv; // for safe "out" param
-end;
-
-function TTilingEncoder.YUVToRGB(y, u, v: TFloat; GammaCor: Integer): Integer;
-var
-  r, g, b: TFloat;
-begin
-  y *= 1/255.0;
-  u *= 1/255.0;
-  v *= 1/255.0;
-
-{$if cRedMul = 299}
-  r := y + v * 1.13983;
-  g := y - u * 0.39465 - v * 0.58060;
-  b := y + u * 2.03211;
-{$elseif cRedMul = 2126}
-  r := y + v * 1.28033;
-  g := y - u * 0.21482 - v * 0.38059;
-  b := y + u * 2.12798;
-{$else}
-  {$error YUVToRGB not implemented!}
-{$endif}
-
-  Result := ToRGB(GammaUncorrect(GammaCor, r), GammaUncorrect(GammaCor, g), GammaUncorrect(GammaCor, b));
-end;
-
 // from https://lists.freepascal.org/pipermail/fpc-announce/2006-September/000508.html
 generic procedure TTilingEncoder.WaveletGS<T, PT>(Data: PT; Output: PT; dx, dy, depth: cardinal);
 var
@@ -2986,122 +2901,10 @@ BEGIN
   move(tempx[y*cTileWidth],pic[y*cTileWidth],dx*sizeof(T)); //Copy to Pic
 END;
 
-procedure TTilingEncoder.RGBToHSV(col: Integer; out h, s, v: TFloat);
-var
-  bh, bs, bv: Byte;
-begin
-  bh := 0; bs := 0; bv := 0;
-  RGBToHSV(col, bh, bs, bv);
-  h := bh / 255.0;
-  s := bs / 255.0;
-  v := bv / 255.0;
-end;
-
-procedure TTilingEncoder.RGBToLAB(ir, ig, ib: Integer; GammaCor: Integer; out ol, oa, ob: TFloat); inline;
-var
-  r, g, b, x, y, z: TFloat;
-begin
-  r := GammaCorrect(GammaCor, ir);
-  g := GammaCorrect(GammaCor, ig);
-  b := GammaCorrect(GammaCor, ib);
-
-  if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
-  if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
-  if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
-
-  // CIE XYZ color space from the Wright–Guild data
-  x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
-  y := (r * 0.17697 + g * 0.81240 + b * 0.01063) / 0.17697;
-  z := (r * 0.00000 + g * 0.01000 + b * 0.99000) / 0.17697;
-
-{$if True}
-  // Illuminant D50
-  x *= 1 / (96.6797 / 100);
-  y *= 1 / (100.000 / 100);
-  z *= 1 / (82.5188 / 100);
-{$else}
-  // Illuminant D65
-  x *= 1 / (95.0470 / 100);
-  y *= 1 / (100.000 / 100);
-  z *= 1 / (108.883 / 100);
-{$endif}
-
-  if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
-  if y > 0.008856 then y := power(y, 1/3) else y := (7.787 * y) + 16/116;
-  if z > 0.008856 then z := power(z, 1/3) else z := (7.787 * z) + 16/116;
-
-  ol := (116 * y) - 16;
-  oa := 500 * (x - y);
-  ob := 200 * (y - z);
-end;
-
-procedure TTilingEncoder.RGBToLAB(r, g, b: TFloat; GammaCor: Integer; out ol, oa, ob: TFloat); inline;
-var
-  ll, aa, bb: TFloat;
-begin
-  RGBToLAB(Integer(round(r * 255.0)), round(g * 255.0), round(b * 255.0), GammaCor, ll, aa, bb);
-  ol := ll;
-  oa := aa;
-  ob := bb;
-end;
-
-function TTilingEncoder.LABToRGB(ll, aa, bb: TFloat; GammaCor: Integer): Integer;
-var
-  x, y, z, r, g, b: TFloat;
-begin
-  y := (ll + 16) / 116;
-  x := aa / 500 + y;
-  z := y - bb / 200;
-
-  if IntPower(y, 3) > 0.008856 then
-    y := IntPower(y, 3)
-  else
-    y := (y - 16 / 116) / 7.787;
-  if IntPower(x, 3) > 0.008856 then
-    x := IntPower(x, 3)
-  else
-    x := (x - 16 / 116) / 7.787;
-  if IntPower(z, 3) > 0.008856 then
-    z := IntPower(z, 3)
-  else
-    z := (z - 16 / 116) / 7.787;
-
-  // Illuminant D50
-  x := 96.6797 / 100 * x;
-  y := 100.000 / 100 * y;
-  z := 82.5188 / 100 * z;
-
-  r := x * 0.41847 + y * (-0.15866) + z * (-0.082835);
-  g := x * (-0.091169) + y * 0.25243 + z * 0.015708;
-  b := x * 0.00092090 + y * (-0.0025498) + z * 0.17860;
-
-  if r > 0.0031308 then
-    r := 1.055 * Power(r, 1 / 2.4) - 0.055
-  else
-    r := 12.92 * r;
-  if g > 0.0031308 then
-    g := 1.055 * Power(g, 1 / 2.4) - 0.055
-  else
-    g := 12.92 * g;
-  if b > 0.0031308 then
-    b := 1.055 * Power(b, 1 / 2.4) - 0.055
-  else
-    b := 12.92 * b;
-
-  Result := ToRGB(GammaUncorrect(GammaCor, r), GammaUncorrect(GammaCor, g), GammaUncorrect(GammaCor, b));
-end;
-
 procedure TTilingEncoder.SetDitheringYliluoma2MixedColors(AValue: Integer);
 begin
   if FDitheringYliluoma2MixedColors = AValue then Exit;
   FDitheringYliluoma2MixedColors := EnsureRange(AValue, 1, 16);
-end;
-
-procedure TTilingEncoder.SetEncoderGammaValue(AValue: Double);
-begin
-  if FGamma[0] = AValue then Exit;
-  FGamma[0] := Max(0.0, AValue);
-  InitLuts;
 end;
 
 procedure TTilingEncoder.SetFrameCountSetting(AValue: Integer);
@@ -3228,7 +3031,7 @@ begin
   FMotionPredictRadius := EnsureRange(AValue, 1, -Low(ShortInt));
 end;
 
-procedure TTilingEncoder.ConvertToCpnPixels(const ATile: TTile; FromPal, UseLAB, HMirror, VMirror: Boolean; GammaCor: Integer; const APalette: TIntegerDynArray; out ACpnPixel: TCpnPixels);
+procedure TTilingEncoder.ConvertToCpnPixels(const ATile: TTile; FromPal, UseLAB, HMirror, VMirror: Boolean; const APalette: TIntegerDynArray; out ACpnPixel: TCpnPixels);
 
   procedure ToCpn(col, x, y: Integer);
   var
@@ -3239,11 +3042,11 @@ procedure TTilingEncoder.ConvertToCpnPixels(const ATile: TTile; FromPal, UseLAB,
 
     if UseLAB then
     begin
-      RGBToLAB(r, g, b, GammaCor, yy, uu, vv)
+      RGBToLAB(r, g, b, yy, uu, vv)
     end
     else
     begin
-      RGBToYUV(r, g, b, GammaCor, yy, uu, vv);
+      RGBToYUV(r, g, b, yy, uu, vv);
     end;
 
     ACpnPixel[0, y, x] := yy;
@@ -3313,7 +3116,7 @@ begin
 end;
 
 procedure TTilingEncoder.ComputeTilePsyVisFeatures(const ATile: TTile; Mode: TPsyVisMode; FromPal, UseLAB, HMirror,
-  VMirror: Boolean; ColorCpns, GammaCor: Integer; const APalette: TIntegerDynArray; ADCT: PDouble);
+  VMirror: Boolean; ColorCpns: Integer; const APalette: TIntegerDynArray; ADCT: PDouble);
 var
   i, u, v, cpn: Integer;
   z: Double;
@@ -3322,7 +3125,7 @@ var
   pDCT, pLut: PDouble;
   LocalDCT: array[0..cTileDCTSize - 1] of Double;
 begin
-  ConvertToCpnPixels(ATile, FromPal, UseLAB, HMirror, VMirror, GammaCor, APalette, CpnPixels);
+  ConvertToCpnPixels(ATile, FromPal, UseLAB, HMirror, VMirror, APalette, CpnPixels);
 
   for cpn := 0 to ColorCpns - 1 do
     for v := 0 to cTileWidth - 1 do
@@ -3363,7 +3166,7 @@ begin
       ADCT[cDCTSnake[i] + cpn * sqr(cTileWidth)] := LocalDCT[i + cpn * sqr(cTileWidth)];
 end;
 
-procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns, GammaCor: Integer;
+procedure TTilingEncoder.ComputeInvTilePsyVisFeatures(DCT: PDouble; Mode: TPsyVisMode; UseLAB: Boolean; ColorCpns: Integer;
  var ATile: TTile);
 var
   i, u, v, x, y, cpn: Integer;
@@ -3381,9 +3184,9 @@ var
     vv := CpnPixels[2, y, x];
 
     if UseLAB then
-      Result := LABToRGB(yy, uu, vv, GammaCor)
+      Result := LABToRGB(yy, uu, vv)
     else
-      Result := YUVToRGB(yy, uu, vv, GammaCor);
+      Result := YUVToRGB(yy, uu, vv);
   end;
 
 begin
@@ -3937,15 +3740,12 @@ begin
 
     ini.WriteInteger('Dither', 'PaletteSize', PaletteSize);
     ini.WriteInteger('Dither', 'PaletteCount', PaletteCount);
-    ini.WriteBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
     ini.WriteInteger('Dither', 'DitheringMode', Ord(DitheringMode));
     ini.WriteBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     ini.WriteInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
-    ini.WriteBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
     ini.WriteBool('FrameTiling', 'FrameTilingExtendedPaletteUsage', FrameTilingExtendedPaletteUsage);
 
-    ini.WriteFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
     ini.WriteInteger('Misc', 'MaxThreadCount', MaxThreadCount);
 
     ini.WriteFloat('Load', 'ShotTransMaxSecondsPerKF', ShotTransMaxSecondsPerKF);
@@ -3980,15 +3780,12 @@ begin
 
     PaletteSize := ini.ReadInteger('Dither', 'PaletteSize', PaletteSize);
     PaletteCount := ini.ReadInteger('Dither', 'PaletteCount', PaletteCount);
-    DitheringUseGamma := ini.ReadBool('Dither', 'DitheringUseGamma', DitheringUseGamma);
     DitheringMode := TPsyVisMode(EnsureRange(ini.ReadInteger('Dither', 'DitheringMode', Ord(DitheringMode)), Ord(Low(TPsyVisMode)), Ord(High(TPsyVisMode))));
     DitheringUseThomasKnoll := ini.ReadBool('Dither', 'DitheringUseThomasKnoll', DitheringUseThomasKnoll);
     DitheringYliluoma2MixedColors := ini.ReadInteger('Dither', 'DitheringYliluoma2MixedColors', DitheringYliluoma2MixedColors);
 
-    FrameTilingUseGamma := ini.ReadBool('FrameTiling', 'FrameTilingUseGamma', FrameTilingUseGamma);
     FrameTilingExtendedPaletteUsage := ini.ReadBool('FrameTiling', 'FrameTilingExtendedPaletteUsage', FrameTilingExtendedPaletteUsage);
 
-    EncoderGammaValue := ini.ReadFloat('Misc', 'EncoderGammaValue', EncoderGammaValue);
     MaxThreadCount := ini.ReadInteger('Misc', 'MaxThreadCount', MaxThreadCount);
 
     ShotTransMaxSecondsPerKF := ini.ReadFloat('Load', 'ShotTransMaxSecondsPerKF', ShotTransMaxSecondsPerKF);
@@ -4019,15 +3816,11 @@ begin
   GlobalTilingQualityBasedTileCount := 7.0;
   GlobalTilingTileCount := 0; // after GlobalTilingQualityBasedTileCount because has priority
 
-  DitheringUseGamma := False;
   DitheringMode := pvsWeightedSpeDCT;
   DitheringUseThomasKnoll := True;
   DitheringYliluoma2MixedColors := 4;
 
-  FrameTilingUseGamma := False;
   FrameTilingExtendedPaletteUsage := True;
-
-  EncoderGammaValue := 2.0;
 
   ShotTransMaxSecondsPerKF := 15.0;  // maximum seconds between keyframes
   ShotTransMinSecondsPerKF := 1.0;  // minimum seconds between keyframes
@@ -4049,11 +3842,11 @@ begin
     rng := RandomRange(0, (1 shl 24) - 1);
     FromRGB(rng, rr, gg, bb);
 
-    RGBToLAB(rr, gg, bb, -1, l, a, b);
-    assert(rng = LABToRGB(l, a ,b, -1), 'RGBToLAB/LABToRGB mismatch');
+    RGBToLAB(rr, gg, bb, l, a, b);
+    assert(rng = LABToRGB(l, a ,b), 'RGBToLAB/LABToRGB mismatch');
 
-    RGBToYUV(rr, gg, bb, -1, y, u, v);
-    assert(rng = YUVToRGB(y, u, v, -1), 'RGBToYUV/YUVToRGB mismatch');
+    RGBToYUV(rr, gg, bb, y, u, v);
+    assert(rng = YUVToRGB(y, u, v), 'RGBToYUV/YUVToRGB mismatch');
   end;
 
   T := TTile.New(True, False);
@@ -4063,8 +3856,8 @@ begin
     for j := 0 to cTileWidth - 1 do
       T^.RGBPixels[i, j] := ToRGB(i*8, j * 32, i * j);
 
-  ComputeTilePsyVisFeatures(T^, pvsDCT, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], pvsDCT, False, cColorCpns, -1, T2^);
+  ComputeTilePsyVisFeatures(T^, pvsDCT, False, False, False, False, cColorCpns, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], pvsDCT, False, cColorCpns, T2^);
 
   //for i := 0 to 7 do
   //  for j := 0 to 7 do
@@ -4077,104 +3870,18 @@ begin
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'DCT/InvDCT mismatch');
 
-  ComputeTilePsyVisFeatures(T^, pvsWeightedDCT, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], pvsWeightedDCT, False, cColorCpns, -1, T2^);
+  ComputeTilePsyVisFeatures(T^, pvsWeightedDCT, False, False, False, False, cColorCpns, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], pvsWeightedDCT, False, cColorCpns, T2^);
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'QWeighted DCT/InvDCT mismatch');
 
-  ComputeTilePsyVisFeatures(T^, pvsWavelets, False, False, False, False, cColorCpns, -1, nil, @DCT[0]);
-  ComputeInvTilePsyVisFeatures(@DCT[0], pvsWavelets, False, cColorCpns, -1, T2^);
+  ComputeTilePsyVisFeatures(T^, pvsWavelets, False, False, False, False, cColorCpns, nil, @DCT[0]);
+  ComputeInvTilePsyVisFeatures(@DCT[0], pvsWavelets, False, cColorCpns, T2^);
 
   Assert(CompareMem(T^.GetRGBPixelsPtr, T2^.GetRGBPixelsPtr, SizeOf(TRGBPixels)), 'WL/InvWL mismatch');
 
   TTile.Dispose(T);
   TTile.Dispose(T2);
-end;
-
-// from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
-procedure TTilingEncoder.RGBToHSV(col: Integer; out h, s, v: Byte);
-var
-  rr, gg, bb: Integer;
-
-  function RGBMaxValue: Integer;
-  begin
-    Result := rr;
-    if (Result < gg) then Result := gg;
-    if (Result < bb) then Result := bb;
-  end;
-
-  function RGBMinValue : Integer;
-  begin
-    Result := rr;
-    if (Result > gg) then Result := gg;
-    if (Result > bb) then Result := bb;
-  end;
-
-var
-  Delta, mx, mn, hh, ss, ll: Integer;
-begin
-  FromRGB(col, rr, gg, bb);
-
-  mx := RGBMaxValue;
-  mn := RGBMinValue;
-
-  hh := 0;
-  ss := 0;
-  ll := mx;
-  if ll <> mn then
-  begin
-    Delta := ll - mn;
-    ss := MulDiv(Delta, 255, ll);
-
-    if (rr = ll) then
-      hh := MulDiv(42, gg - bb, Delta)
-    else if (gg = ll) then
-      hh := MulDiv(42, bb - rr, Delta) + 84
-    else if (bb = ll) then
-      hh := MulDiv(42, rr - gg, Delta) + 168;
-
-    hh := hh mod 252;
-  end;
-
-  h := hh and $ff;
-  s := ss and $ff;
-  v := ll and $ff;
-end;
-
-function TTilingEncoder.HSVToRGB(h, s, v: Byte): Integer;
-const
-  MaxHue: Integer = 252;
-  MaxSat: Integer = 255;
-  MaxLum: Integer = 255;
-  Divisor: Integer = 42;
-var
- f, LS, p, q, r: integer;
-begin
- if (s = 0) then
-   Result := ToRGB(v, v, v)
- else
-  begin
-   h := h mod MaxHue;
-   s := EnsureRange(s, 0, MaxSat);
-   v := EnsureRange(v, 0, MaxLum);
-
-   f := h mod Divisor;
-   h := h div Divisor;
-   LS := v*s;
-   p := v - LS div MaxLum;
-   q := v - (LS*f) div (255 * Divisor);
-   r := v - (LS*(Divisor - f)) div (255 * Divisor);
-   case h of
-    0: Result := ToRGB(v, r, p);
-    1: Result := ToRGB(q, v, p);
-    2: Result := ToRGB(p, v, r);
-    3: Result := ToRGB(p, q, v);
-    4: Result := ToRGB(r, p, v);
-    5: Result := ToRGB(v, p, q);
-   else
-    Result := ToRGB(0, 0, 0);
-   end;
-  end;
 end;
 
 procedure TTilingEncoder.ProgressRedraw(ASubStepIdx: Integer; AReason: String; AProgressStep: TEncoderStep;
@@ -4378,7 +4085,7 @@ begin
   Assert(newTIdx = ATileCount - 1);
 end;
 
-procedure TTilingEncoder.DoPalettization(ADitheringGamma: Integer);
+procedure TTilingEncoder.DoPalettization;
 const
   cFeatureCount = cTileDCTSize;
 var
@@ -4398,7 +4105,7 @@ var
       Tile := FTiles[tIdx];
       Assert(Tile^.Active);
 
-      ComputeTilePsyVisFeatures(Tile^, DitheringMode, False, True, False, False, cColorCpns, ADitheringGamma, nil, DCT);
+      ComputeTilePsyVisFeatures(Tile^, DitheringMode, False, True, False, False, cColorCpns, nil, DCT);
 
       if ACluster then
         ANNClusters[tIdx] := ann_kdtree_search(ANN, DCT, 0.0, @ANNError)
@@ -4764,7 +4471,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.DoQuantization(APalIdx: Integer; ADitheringGamma: Integer);
+procedure TTilingEncoder.DoQuantization(APalIdx: Integer);
 var
   CMPal: TCountIndexList;
   i: Integer;
@@ -4796,7 +4503,7 @@ begin
   end;
 end;
 
-procedure TTilingEncoder.PrepareReconstruct(AFTGamma: Integer);
+procedure TTilingEncoder.PrepareReconstruct;
 var
   DS: PTilingDataset;
 
@@ -4811,7 +4518,7 @@ var
     T := Tiles[AIndex];
     Assert(T^.Active);
 
-    ConvertToCpnPixels(T^, True, False, False, False, AFTGamma, FPalettes[T^.PalIdx_Initial].PaletteRGB, CpnPixels);
+    ConvertToCpnPixels(T^, True, False, False, False, FPalettes[T^.PalIdx_Initial].PaletteRGB, CpnPixels);
     ComputeCpnPixelsPsyVisFeatures(CpnPixels, pvsWeightedDCT, cColorCpns, @DS^.Dataset[AIndex, 0]);
   end;
 

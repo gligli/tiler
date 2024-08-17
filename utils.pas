@@ -8,7 +8,7 @@ unit utils;
 interface
 
 uses
-  Classes, SysUtils, math, fgl, extern;
+  Classes, SysUtils, Windows, math, fgl, extern;
 
 const
   // tweakable constants
@@ -144,6 +144,15 @@ procedure FromRGB(col: Integer; out r, g, b: Integer); inline; overload;
 procedure FromRGB(col: Integer; out r, g, b: Byte); inline; overload;
 function ToLuma(r, g, b: Byte): Integer; inline;
 function ToBW(col: Integer): Integer;
+function HSVToRGB(h, s, v: Byte): Integer;
+procedure RGBToHSV(col: Integer; out h, s, v: Byte); overload;
+procedure RGBToHSV(col: Integer; out h, s, v: TFloat); overload;
+procedure RGBToYUV(col: Integer; out y, u, v: TFloat);
+procedure RGBToYUV(r, g, b: Byte; out y, u, v: TFloat);
+procedure RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat);
+procedure RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat);
+function LABToRGB(ll, aa, bb: TFloat): Integer;
+function YUVToRGB(y, u, v: TFloat): Integer;
 function lerp(x, y, alpha: Double): Double; inline;
 function ilerp(x, y, alpha, maxAlpha: Integer): Integer; inline;
 function revlerp(x, r, alpha: Double): Double; inline;
@@ -265,9 +274,238 @@ begin
   Result := ToRGB(Result, Result, Result);
 end;
 
-function CompareIntegers(Item1, Item2, UserParameter: Pointer): Integer;
+// from https://www.delphipraxis.net/157099-fast-integer-rgb-hsl.html
+procedure RGBToHSV(col: Integer; out h, s, v: Byte);
+var
+  rr, gg, bb: Integer;
+
+  function RGBMaxValue: Integer;
+  begin
+    Result := rr;
+    if (Result < gg) then Result := gg;
+    if (Result < bb) then Result := bb;
+  end;
+
+  function RGBMinValue : Integer;
+  begin
+    Result := rr;
+    if (Result > gg) then Result := gg;
+    if (Result > bb) then Result := bb;
+  end;
+
+var
+  Delta, mx, mn, hh, ss, ll: Integer;
 begin
-  Result := CompareValue(PInteger(Item1)^, PInteger(Item2)^);
+  FromRGB(col, rr, gg, bb);
+
+  mx := RGBMaxValue;
+  mn := RGBMinValue;
+
+  hh := 0;
+  ss := 0;
+  ll := mx;
+  if ll <> mn then
+  begin
+    Delta := ll - mn;
+    ss := MulDiv(Delta, 255, ll);
+
+    if (rr = ll) then
+      hh := MulDiv(42, gg - bb, Delta)
+    else if (gg = ll) then
+      hh := MulDiv(42, bb - rr, Delta) + 84
+    else if (bb = ll) then
+      hh := MulDiv(42, rr - gg, Delta) + 168;
+
+    hh := hh mod 252;
+  end;
+
+  h := hh and $ff;
+  s := ss and $ff;
+  v := ll and $ff;
+end;
+
+function HSVToRGB(h, s, v: Byte): Integer;
+const
+  MaxHue: Integer = 252;
+  MaxSat: Integer = 255;
+  MaxLum: Integer = 255;
+  Divisor: Integer = 42;
+var
+ f, LS, p, q, r: integer;
+begin
+ if (s = 0) then
+   Result := ToRGB(v, v, v)
+ else
+  begin
+   h := h mod MaxHue;
+   s := EnsureRange(s, 0, MaxSat);
+   v := EnsureRange(v, 0, MaxLum);
+
+   f := h mod Divisor;
+   h := h div Divisor;
+   LS := v*s;
+   p := v - LS div MaxLum;
+   q := v - (LS*f) div (255 * Divisor);
+   r := v - (LS*(Divisor - f)) div (255 * Divisor);
+   case h of
+    0: Result := ToRGB(v, r, p);
+    1: Result := ToRGB(q, v, p);
+    2: Result := ToRGB(p, v, r);
+    3: Result := ToRGB(p, q, v);
+    4: Result := ToRGB(r, p, v);
+    5: Result := ToRGB(v, p, q);
+   else
+    Result := ToRGB(0, 0, 0);
+   end;
+  end;
+end;
+
+procedure RGBToHSV(col: Integer; out h, s, v: TFloat);
+var
+  bh, bs, bv: Byte;
+begin
+  bh := 0; bs := 0; bv := 0;
+  RGBToHSV(col, bh, bs, bv);
+  h := bh / 255.0;
+  s := bs / 255.0;
+  v := bv / 255.0;
+end;
+
+procedure RGBToLAB(ir, ig, ib: Integer; out ol, oa, ob: TFloat); inline;
+var
+  r, g, b, x, y, z: TFloat;
+begin
+  r := ir / 255.0;
+  g := ig / 255.0;
+  b := ib / 255.0;
+
+  if r > 0.04045 then r := power((r + 0.055) / 1.055, 2.4) else r := r / 12.92;
+  if g > 0.04045 then g := power((g + 0.055) / 1.055, 2.4) else g := g / 12.92;
+  if b > 0.04045 then b := power((b + 0.055) / 1.055, 2.4) else b := b / 12.92;
+
+  // CIE XYZ color space from the Wright–Guild data
+  x := (r * 0.49000 + g * 0.31000 + b * 0.20000) / 0.17697;
+  y := (r * 0.17697 + g * 0.81240 + b * 0.01063) / 0.17697;
+  z := (r * 0.00000 + g * 0.01000 + b * 0.99000) / 0.17697;
+
+{$if True}
+  // Illuminant D50
+  x *= 1 / (96.6797 / 100);
+  y *= 1 / (100.000 / 100);
+  z *= 1 / (82.5188 / 100);
+{$else}
+  // Illuminant D65
+  x *= 1 / (95.0470 / 100);
+  y *= 1 / (100.000 / 100);
+  z *= 1 / (108.883 / 100);
+{$endif}
+
+  if x > 0.008856 then x := power(x, 1/3) else x := (7.787 * x) + 16/116;
+  if y > 0.008856 then y := power(y, 1/3) else y := (7.787 * y) + 16/116;
+  if z > 0.008856 then z := power(z, 1/3) else z := (7.787 * z) + 16/116;
+
+  ol := (116 * y) - 16;
+  oa := 500 * (x - y);
+  ob := 200 * (y - z);
+end;
+
+procedure RGBToLAB(r, g, b: TFloat; out ol, oa, ob: TFloat); inline;
+var
+  ll, aa, bb: TFloat;
+begin
+  RGBToLAB(Integer(round(r * 255.0)), round(g * 255.0), round(b * 255.0), ll, aa, bb);
+  ol := ll;
+  oa := aa;
+  ob := bb;
+end;
+
+function LABToRGB(ll, aa, bb: TFloat): Integer;
+var
+  x, y, z, r, g, b: TFloat;
+begin
+  y := (ll + 16) / 116;
+  x := aa / 500 + y;
+  z := y - bb / 200;
+
+  if IntPower(y, 3) > 0.008856 then
+    y := IntPower(y, 3)
+  else
+    y := (y - 16 / 116) / 7.787;
+  if IntPower(x, 3) > 0.008856 then
+    x := IntPower(x, 3)
+  else
+    x := (x - 16 / 116) / 7.787;
+  if IntPower(z, 3) > 0.008856 then
+    z := IntPower(z, 3)
+  else
+    z := (z - 16 / 116) / 7.787;
+
+  // Illuminant D50
+  x := 96.6797 / 100 * x;
+  y := 100.000 / 100 * y;
+  z := 82.5188 / 100 * z;
+
+  r := x * 0.41847 + y * (-0.15866) + z * (-0.082835);
+  g := x * (-0.091169) + y * 0.25243 + z * 0.015708;
+  b := x * 0.00092090 + y * (-0.0025498) + z * 0.17860;
+
+  if r > 0.0031308 then
+    r := 1.055 * Power(r, 1 / 2.4) - 0.055
+  else
+    r := 12.92 * r;
+  if g > 0.0031308 then
+    g := 1.055 * Power(g, 1 / 2.4) - 0.055
+  else
+    g := 12.92 * g;
+  if b > 0.0031308 then
+    b := 1.055 * Power(b, 1 / 2.4) - 0.055
+  else
+    b := 12.92 * b;
+
+  Result := ToRGB(EnsureRange(Round(r * 255.0), 0, 255), EnsureRange(Round(g * 255.0), 0, 255), EnsureRange(Round(b * 255.0), 0, 255));
+end;
+
+procedure RGBToYUV(col: Integer; out y, u, v: TFloat); inline;
+var
+  yy, uu, vv: TFloat;
+  r, g, b: Byte;
+begin
+  FromRGB(col, r, g, b);
+  RGBToYUV(r, g, b, yy, uu, vv);
+  y := yy; u := uu; v := vv; // for safe "out" param
+end;
+
+procedure RGBToYUV(r, g, b: Byte; out y, u, v: TFloat);
+var
+  yy, uu, vv: TFloat;
+begin
+  yy := r * (cRedMul / cLumaDiv) + g * (cGreenMul / cLumaDiv) + b * (cBlueMul / cLumaDiv);
+  uu := (b - yy) * 0.492;
+  vv := (r - yy) * 0.877;
+{$if cRedMul <> 299}
+  {$error RGBToYUV should be changed!}
+{$endif}
+
+  y := yy; u := uu; v := vv; // for safe "out" param
+end;
+
+function YUVToRGB(y, u, v: TFloat): Integer;
+var
+  r, g, b: TFloat;
+begin
+{$if cRedMul = 299}
+  r := y + v * 1.13983;
+  g := y - u * 0.39465 - v * 0.58060;
+  b := y + u * 2.03211;
+{$elseif cRedMul = 2126}
+  r := y + v * 1.28033;
+  g := y - u * 0.21482 - v * 0.38059;
+  b := y + u * 2.12798;
+{$else}
+  {$error YUVToRGB not implemented!}
+{$endif}
+
+  Result := ToRGB(EnsureRange(Round(r), 0, 255), EnsureRange(Round(g), 0, 255), EnsureRange(Round(b), 0, 255));
 end;
 
 function lerp(x, y, alpha: Double): Double; inline;
@@ -493,6 +731,11 @@ begin
   Result := 0;
   for i := 0 to size - 1 do
     Result += sqr(a[i] - b[i]);
+end;
+
+function CompareIntegers(Item1, Item2, UserParameter: Pointer): Integer;
+begin
+  Result := CompareValue(PInteger(Item1)^, PInteger(Item2)^);
 end;
 
 function CompareCountIndexVSH(const Item1,Item2:PCountIndex):Integer;
