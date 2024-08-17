@@ -86,7 +86,6 @@ type
     Separator1: TMenuItem;
     Separator3: TMenuItem;
     sePSNR: TFloatSpinEdit;
-    seShotTransDistHiThres: TFloatSpinEdit;
     seShotTransMaxSecondsPerKF: TFloatSpinEdit;
     seShotTransCorrelLoThres: TFloatSpinEdit;
     seQbTiles: TFloatSpinEdit;
@@ -648,7 +647,6 @@ begin
   FTilingEncoder.ShotTransMinSecondsPerKF := seShotTransMinSecondsPerKF.Value;
   FTilingEncoder.ShotTransMaxSecondsPerKF := seShotTransMaxSecondsPerKF.Value;
   FTilingEncoder.ShotTransCorrelLoThres := seShotTransCorrelLoThres.Value;
-  FTilingEncoder.ShotTransDistHiThres := seShotTransDistHiThres.Value;
 
   if pcPages.ActivePage = tsInput then
     FTilingEncoder.RenderPage := rpInput
@@ -724,7 +722,6 @@ begin
    seShotTransMinSecondsPerKF.Value := FTilingEncoder.ShotTransMinSecondsPerKF;
    seShotTransMaxSecondsPerKF.Value := FTilingEncoder.ShotTransMaxSecondsPerKF;
    seShotTransCorrelLoThres.Value := FTilingEncoder.ShotTransCorrelLoThres;
-   seShotTransDistHiThres.Value := FTilingEncoder.ShotTransDistHiThres;
   finally
     FLockChanges := False;
   end;

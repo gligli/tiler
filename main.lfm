@@ -446,15 +446,15 @@ object MainForm: TMainForm
         Left = 8
         Height = 15
         Top = 445
-        Width = 233
-        Caption = 'Keyframes threshold (correlation; euclidean)'
+        Width = 176
+        Caption = 'Keyframes threshold (correlation)'
         ParentColor = False
       end
       object seShotTransCorrelLoThres: TFloatSpinEdit
         Left = 328
         Height = 23
         Top = 441
-        Width = 64
+        Width = 129
         Increment = 0.05
         MaxValue = 1
         MinValue = -1
@@ -486,16 +486,6 @@ object MainForm: TMainForm
         Style = csDropDownList
         TabOrder = 18
         OnChange = UpdateGUI
-      end
-      object seShotTransDistHiThres: TFloatSpinEdit
-        Left = 393
-        Height = 23
-        Top = 441
-        Width = 64
-        Increment = 0.05
-        MaxValue = 1000
-        OnChange = UpdateGUI
-        TabOrder = 26
       end
       object Label18: TLabel
         Left = 8
@@ -554,7 +544,7 @@ object MainForm: TMainForm
         MaxValue = 1000000
         MinValue = 1
         OnChange = UpdateGUI
-        TabOrder = 27
+        TabOrder = 26
         Value = 1
       end
       object chkFTEPU: TCheckBox

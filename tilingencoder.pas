@@ -252,7 +252,6 @@ type
 
     InterframeCorrelationData: TFloatDynArray;
     InterframeCorrelation: TFloat; // with previous frame
-    InterframeDistance: TFloat; // with previous frame
     InterframeCorrelationEvent: THandle;
     LoadFromImageFinishedEvent: THandle;
 
@@ -360,7 +359,6 @@ type
     FShotTransMaxSecondsPerKF: Double;
     FShotTransMinSecondsPerKF: Double;
     FShotTransCorrelLoThres: Double;
-    FShotTransDistHiThres: Double;
 
     // GUI state variables
 
@@ -411,7 +409,6 @@ type
     procedure SetGlobalTilingTileCount(AValue: Integer);
     procedure SetScaling(AValue: Double);
     procedure SetShotTransCorrelLoThres(AValue: Double);
-    procedure SetShotTransDistHiThres(AValue: Double);
     procedure SetShotTransMaxSecondsPerKF(AValue: Double);
     procedure SetShotTransMinSecondsPerKF(AValue: Double);
     procedure SetStartFrame(AValue: Integer);
@@ -565,7 +562,6 @@ type
     property ShotTransMaxSecondsPerKF: Double read FShotTransMaxSecondsPerKF write SetShotTransMaxSecondsPerKF;
     property ShotTransMinSecondsPerKF: Double read FShotTransMinSecondsPerKF write SetShotTransMinSecondsPerKF;
     property ShotTransCorrelLoThres: Double read FShotTransCorrelLoThres write SetShotTransCorrelLoThres;
-    property ShotTransDistHiThres: Double read FShotTransDistHiThres write SetShotTransDistHiThres;
 
     // GUI state variables
 
@@ -1413,8 +1409,6 @@ end;
 
 procedure TFrame.ComputeInterFrameAndCompress;
 var
-  i, j: Integer;
-  prevLSum, curLSum: TFloat;
   prevFrameICD: TFloatDynArray;
 begin
   // compute inter-frame correlations
@@ -1429,17 +1423,6 @@ begin
 
     prevFrameICD := Encoder.FFrames[Index - 1].InterframeCorrelationData;
     InterframeCorrelation := Encoder.PearsonCorrelation(prevFrameICD, InterframeCorrelationData);
-
-    prevLSum := 0;
-    curLSum := 0;
-    j := 0;
-    for i := 0 to Encoder.FTileMapSize - 1 do
-    begin
-      prevLSum += prevFrameICD[j];
-      curLSum += InterframeCorrelationData[j];
-      Inc(j, cColorCpns);
-    end;
-    InterframeDistance := Abs(prevLSum - curLSum) / Encoder.FTileMapSize;
   end;
 
   // compress frame tiles to save memory
@@ -3196,12 +3179,6 @@ begin
  FShotTransCorrelLoThres := EnsureRange(AValue, -1.0, 1.0);
 end;
 
-procedure TTilingEncoder.SetShotTransDistHiThres(AValue: Double);
-begin
- if FShotTransDistHiThres = AValue then Exit;
- FShotTransDistHiThres := max(0.0, AValue);
-end;
-
 procedure TTilingEncoder.SetShotTransMaxSecondsPerKF(AValue: Double);
 begin
  if FShotTransMaxSecondsPerKF = AValue then Exit;
@@ -3564,7 +3541,7 @@ end;
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
 var
   frmIdx, kfIdx, lastKFIdx: Integer;
-  correl, dist: TFloat;
+  correl: TFloat;
   kfReason: TKeyFrameReason;
   sfr, efr: Integer;
 begin
@@ -3576,7 +3553,6 @@ begin
   for frmIdx := 0 to High(FFrames) do
   begin
     correl := FFrames[frmIdx].InterframeCorrelation;
-    dist := FFrames[frmIdx].InterframeDistance;
 
     //writeln(frmIdx:8,correl:8:3,dist:12:3);
 
@@ -3593,9 +3569,6 @@ begin
 
       if (kfReason = kfrNone) and (correl < FShotTransCorrelLoThres) then
         kfReason := kfrDecorrelation;
-
-      if (kfReason = kfrNone) and (dist >= FShotTransDistHiThres) then
-        kfReason := kfrEuclidean;
 
       if (kfReason = kfrNone) and ((frmIdx - lastKFIdx) >= (FShotTransMaxSecondsPerKF * FFramesPerSecond)) then
         kfReason := kfrLength;
@@ -3978,7 +3951,6 @@ begin
     ini.WriteFloat('Load', 'ShotTransMaxSecondsPerKF', ShotTransMaxSecondsPerKF);
     ini.WriteFloat('Load', 'ShotTransMinSecondsPerKF', ShotTransMinSecondsPerKF);
     ini.WriteFloat('Load', 'ShotTransCorrelLoThres', ShotTransCorrelLoThres);
-    ini.WriteFloat('Load', 'ShotTransDistHiThres', ShotTransDistHiThres);
 
   finally
     ini.Free;
@@ -4022,7 +3994,6 @@ begin
     ShotTransMaxSecondsPerKF := ini.ReadFloat('Load', 'ShotTransMaxSecondsPerKF', ShotTransMaxSecondsPerKF);
     ShotTransMinSecondsPerKF := ini.ReadFloat('Load', 'ShotTransMinSecondsPerKF', ShotTransMinSecondsPerKF);
     ShotTransCorrelLoThres := ini.ReadFloat('Load', 'ShotTransCorrelLoThres', ShotTransCorrelLoThres);
-    ShotTransDistHiThres := ini.ReadFloat('Load', 'ShotTransDistHiThres', ShotTransDistHiThres);
 
   finally
     ini.Free;
@@ -4061,7 +4032,6 @@ begin
   ShotTransMaxSecondsPerKF := 15.0;  // maximum seconds between keyframes
   ShotTransMinSecondsPerKF := 1.0;  // minimum seconds between keyframes
   ShotTransCorrelLoThres := 0.8;   // interframe pearson correlation low limit
-  ShotTransDistHiThres := 3.0;   // interframe distance high limit
 end;
 
 procedure TTilingEncoder.Test;
