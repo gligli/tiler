@@ -1526,7 +1526,7 @@ var
       end;
     end;
 
-    if IsZero(mpErr, cPsyVEpsilon) then
+    if IsZero(mpErr, cTileDCTSize) then
     begin
       // motion prediction has priority in case perfect (less bitrate)
 
@@ -1606,7 +1606,7 @@ var
 
     // devise which is best
 
-    case CompareValue(knnErr, mpErr, cPsyVEpsilon) of
+    case CompareValue(knnErr, mpErr, cTileDCTSize) of
       LessThanValue:
       begin
         // KNN is best
