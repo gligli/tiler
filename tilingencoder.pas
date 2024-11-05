@@ -4220,17 +4220,18 @@ procedure TTilingEncoder.OptimizePalettes;
 var
   Bests: TDoubleDynArray;
   BestsColIdx1, BestsColIdx2: TIntegerDynArray;
+  MeanR, MeanG, MeanB: Double;
 
   procedure DoPal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
     i, j, colIdx1, colIdx2, uc: Integer;
     r, g, b: Byte;
     rr, gg, bb: UInt64;
-    best, v, MeanR, MeanG, MeanB, StdDevR, StdDevG, StdDevB: Double;
+    best, v, StdDevR, StdDevG, StdDevB: Double;
     bestColIdx1, bestColIdx2: Integer;
 
     InnerPerm: array[0 .. Sqr(cTileWidth) - 1] of Integer;
-    PalR, PalG, PalB, InnerPalR, InnerPalG, InnerPalB: array[0 .. Sqr(cTileWidth) - 1] of UInt64;
+    PalR, PalG, PalB: array[0 .. Sqr(cTileWidth) - 1] of UInt64;
   begin
     if not InRange(AIndex, 0, FPaletteCount - 1) then
       Exit;
@@ -4241,17 +4242,18 @@ var
     FillQWord(PalG[0], FPaletteSize, 0);
     FillQWord(PalB[0], FPaletteSize, 0);
     for i := 0 to FPaletteCount - 1 do
-    begin
-      uc := FPalettes[i].UseCount;
-      for j := 0 to FPaletteSize - 1 do
-        if i <> AIndex then
-        begin
-          FromRGB(FPalettes[i].PaletteRGB[j], r, g, b);
-          PalR[j] += r * uc;
-          PalG[j] += g * uc;
-          PalB[j] += b * uc;
-        end;
-    end;
+      if i <> AIndex then
+      begin
+        uc := FPalettes[i].UseCount;
+
+        for j := 0 to FPaletteSize - 1 do
+          begin
+            FromRGB(FPalettes[i].PaletteRGB[j], r, g, b);
+            PalR[j] += r * uc;
+            PalG[j] += g * uc;
+            PalB[j] += b * uc;
+          end;
+      end;
 
     // try all permutations in the current palette
 
@@ -4268,44 +4270,23 @@ var
       begin
         Exchange(InnerPerm[colIdx1], InnerPerm[colIdx2]);
 
-        Move(PalR[0], InnerPalR[0], FPaletteSize * SizeOf(UInt64));
-        Move(PalG[0], InnerPalG[0], FPaletteSize * SizeOf(UInt64));
-        Move(PalB[0], InnerPalB[0], FPaletteSize * SizeOf(UInt64));
-
-        MeanR := 0;
-        MeanG := 0;
-        MeanB := 0;
-        for i := 0 to FPaletteSize - 1 do
-        begin
-          FromRGB(FPalettes[AIndex].PaletteRGB[InnerPerm[i]], r, g, b);
-
-          rr := r * uc + InnerPalR[i];
-          gg := g * uc + InnerPalG[i];
-          bb := b * uc + InnerPalB[i];
-
-          MeanR += rr;
-          MeanG += gg;
-          MeanB += bb;
-
-          InnerPalR[i] := rr;
-          InnerPalG[i] := gg;
-          InnerPalB[i] := bb;
-        end;
-
         // try to maximize accumulated palette standard deviation
         // rationale: the less samey it is, the better the colors pair with each other across palette
 
-        MeanR /= FPaletteSize;
-        MeanG /= FPaletteSize;
-        MeanB /= FPaletteSize;
         StdDevR := 0;
         StdDevG := 0;
         StdDevB := 0;
         for i := 0 to FPaletteSize - 1 do
         begin
-          StdDevR += Sqr(InnerPalR[i] - MeanR);
-          StdDevG += Sqr(InnerPalG[i] - MeanG);
-          StdDevB += Sqr(InnerPalB[i] - MeanB);
+          FromRGB(FPalettes[AIndex].PaletteRGB[InnerPerm[i]], r, g, b);
+
+          rr := r * uc + PalR[i];
+          gg := g * uc + PalG[i];
+          bb := b * uc + PalB[i];
+
+          StdDevR += Sqr(rr - MeanR);
+          StdDevG += Sqr(gg - MeanG);
+          StdDevB += Sqr(bb - MeanB);
         end;
         StdDevR := Sqrt(StdDevR / FPaletteSize);
         StdDevG := Sqrt(StdDevG / FPaletteSize);
@@ -4330,13 +4311,38 @@ var
   end;
 
 var
-  iteration, palIdx: Integer;
+  iteration, palIdx, colIdx, uc: Integer;
+  r, g, b: Byte;
   best, prevBest: Double;
   bestPalIdx, bestColIdx1, bestColIdx2: Integer;
 begin
   SetLength(Bests, FPaletteCount);
   SetLength(BestsColIdx1, FPaletteCount);
   SetLength(BestsColIdx2, FPaletteCount);
+
+  // mean of all palette colors
+
+  MeanR := 0;
+  MeanG := 0;
+  MeanB := 0;
+
+  for palIdx := 0 to FPaletteCount - 1 do
+  begin
+    uc := FPalettes[palIdx].UseCount;
+
+    for colIdx := 0 to FPaletteSize - 1 do
+    begin
+      FromRGB(FPalettes[palIdx].PaletteRGB[colIdx], r, g, b);
+
+      MeanR += r * uc;
+      MeanG += g * uc;
+      MeanB += b * uc;
+    end;
+  end;
+
+  MeanR /= FPaletteSize;
+  MeanG /= FPaletteSize;
+  MeanB /= FPaletteSize;
 
   // stepwise algorithm on palette colors permutations
 
@@ -4365,7 +4371,7 @@ begin
 
     Inc(iteration);
 
-    //WriteLn(iteration:3, bestPalIdx:3, bestColIdx1:3, bestColIdx2:3, best:12:0);
+    //WriteLn(iteration:6, bestPalIdx:6, bestColIdx1:4, bestColIdx2:4, best:12:0);
 
   until best <= prevBest;
 

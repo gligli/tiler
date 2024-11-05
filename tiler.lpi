@@ -21,7 +21,7 @@
     <i18n>
       <EnableI18N LFM="False"/>
     </i18n>
-    <BuildModes Count="3">
+    <BuildModes Count="4">
       <Item1 Name="Debug" Default="True"/>
       <Item2 Name="Test">
         <CompilerOptions>
@@ -62,7 +62,7 @@
           </Other>
         </CompilerOptions>
       </Item2>
-      <Item3 Name="ReleaseWPO">
+      <Item3 Name="Release">
         <CompilerOptions>
           <Version Value="11"/>
           <PathDelim Value="\"/>
@@ -97,10 +97,6 @@
               <RunWithoutDebug Value="True"/>
             </Debugging>
             <LinkSmart Value="True"/>
-            <Options>
-              <PassLinkerOptions Value="True"/>
-              <LinkerOptions Value="-Fwlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo -O3 -OwALL"/>
-            </Options>
           </Linking>
           <Other>
             <Verbosity>
@@ -110,7 +106,7 @@
               <IgnoredMessages idx7122="True" idx7121="True" idx6058="True" idx5044="True" idx5024="True"/>
             </CompilerMessages>
             <CustomOptions Value="-Xs-
--FWlib\$(TargetCPU)-$(TargetOS)-$(BuildMode)\fb.wpo
+-FWlib\$(TargetCPU)-$(TargetOS)-fb.wpo
 -OWALL"/>
             <ExecuteBefore>
               <Command Value="xcopy /D /Y tools\nm.exe $(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\"/>
@@ -122,6 +118,62 @@
           </Other>
         </CompilerOptions>
       </Item3>
+      <Item4 Name="ReleaseWPO">
+        <CompilerOptions>
+          <Version Value="11"/>
+          <PathDelim Value="\"/>
+          <Target>
+            <Filename Value="tiler"/>
+          </Target>
+          <SearchPaths>
+            <IncludeFiles Value="$(ProjOutDir)"/>
+            <OtherUnitFiles Value="ffmpeg-5.1-binding\headers;ffmpeg-5.1-binding\examples;LZMA"/>
+            <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)-$(BuildMode)"/>
+          </SearchPaths>
+          <Parsing>
+            <Style Value="1"/>
+            <SyntaxOptions>
+              <IncludeAssertionCode Value="True"/>
+            </SyntaxOptions>
+          </Parsing>
+          <CodeGeneration>
+            <SmartLinkUnit Value="True"/>
+            <Checks>
+              <IOChecks Value="True"/>
+            </Checks>
+            <StackSize Value="16777216"/>
+            <TargetCPU Value="x86_64"/>
+            <Optimizations>
+              <OptimizationLevel Value="3"/>
+            </Optimizations>
+          </CodeGeneration>
+          <Linking>
+            <Debugging>
+              <GenerateDebugInfo Value="False"/>
+              <RunWithoutDebug Value="True"/>
+            </Debugging>
+            <LinkSmart Value="True"/>
+          </Linking>
+          <Other>
+            <Verbosity>
+              <ShowAll Value="True"/>
+            </Verbosity>
+            <CompilerMessages>
+              <IgnoredMessages idx7122="True" idx7121="True" idx6058="True" idx5044="True" idx5024="True"/>
+            </CompilerMessages>
+            <CustomOptions Value="-Xs-
+-Fwlib\$(TargetCPU)-$(TargetOS)-fb.wpo
+-OwALL"/>
+            <ExecuteBefore>
+              <Command Value="xcopy /D /Y tools\nm.exe $(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\"/>
+            </ExecuteBefore>
+            <ExecuteAfter>
+              <Command Value="$(LazarusDir)fpc\$(FPCVer)\bin\x86_64-win64\strip.exe $(OutputFile)"/>
+              <CompileReasons Run="False"/>
+            </ExecuteAfter>
+          </Other>
+        </CompilerOptions>
+      </Item4>
     </BuildModes>
     <PublishOptions>
       <Version Value="2"/>
