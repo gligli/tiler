@@ -12,7 +12,7 @@ interface
 
 uses
   windows, Classes, SysUtils, strutils, types, Math, FileUtil, typinfo, zstream, IniFiles, Graphics,
-  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils, kmodes;
+  IntfGraphics, FPimage, FPCanvas, FPWritePNG, GraphType, fgl, MTProcs, extern, tbbmalloc, bufstream, utils, kmodes, powell;
 
 type
   TEncoderStep = (esAll = -1, esLoad = 0, esPredictMotion, esReduce, esPreparePalettes, esDither, esReconstruct, esReindex, esSave);
@@ -4216,109 +4216,144 @@ begin
   end;
 end;
 
+type
+  TPowellOPData = record
+    Encoder: TTilingEncoder;
+    CurPalIdx: Integer;
+    MeanR, MeanG, MeanB: Double;
+    PalR, PalG, PalB: array[0 .. Sqr(cTileWidth) - 1] of UInt64;
+    InnerPerm: TCountIndexList;
+    NewPal: TIntegerDynArray2;
+  end;
+
+
+function ComparePerms(const Item1,Item2:PCountIndex):Integer;
+begin
+  Result := CompareValue(Item1^.Count, Item2^.Count);
+  if Result = 0 then
+    Result := CompareValue(Item1^.Index, Item2^.Index);
+end;
+
+function PowellOP(const x: TVector; data: Pointer): TScalar;
+var
+  PData: ^TPowellOPData absolute data;
+  StdDevR, StdDevG, StdDevB: Double;
+  colIdx, col: Integer;
+  r, g, b: Byte;
+begin
+  // from rank to palette
+
+  PData^.InnerPerm[0]^.Index := 0;
+  PData^.InnerPerm[0]^.Count := 0;
+  for colIdx := 1 to PData^.Encoder.FPaletteSize - 1 do
+  begin
+    PData^.InnerPerm[colIdx]^.Index := colIdx;
+    PData^.InnerPerm[colIdx]^.Count := round(x[colIdx - 1] * 1000);
+  end;
+
+  PData^.InnerPerm.Sort(@ComparePerms);
+
+  // try to maximize accumulated palette standard deviation
+  // rationale: the less samey it is, the better the colors pair with each other across palette
+
+  StdDevR := 0;
+  StdDevG := 0;
+  StdDevB := 0;
+  for colIdx := 0 to PData^.Encoder.FPaletteSize - 1 do
+  begin
+    col := PData^.Encoder.FPalettes[PData^.CurPalIdx].PaletteRGB[PData^.InnerPerm[colIdx]^.Index];
+    FromRGB(col, r, g, b);
+
+    PData^.NewPal[PData^.CurPalIdx, colIdx] := col;
+
+    StdDevR += Sqr(PData^.PalR[colIdx] + r - PData^.MeanR);
+    StdDevG += Sqr(PData^.PalG[colIdx] + g - PData^.MeanG);
+    StdDevB += Sqr(PData^.PalB[colIdx] + b - PData^.MeanB);
+  end;
+  StdDevR := Sqrt(StdDevR / PData^.Encoder.FPaletteSize);
+  StdDevG := Sqrt(StdDevG / PData^.Encoder.FPaletteSize);
+  StdDevB := Sqrt(StdDevB / PData^.Encoder.FPaletteSize);
+
+  Result := (cRedMul * StdDevR + cGreenMul * StdDevG + cBlueMul * StdDevB) / cLumaDiv;
+
+  Result := -Result;
+end;
+
 procedure TTilingEncoder.OptimizePalettes;
 var
-  Bests: TDoubleDynArray;
-  BestsColIdx1, BestsColIdx2: TIntegerDynArray;
+  f: TVector;
   MeanR, MeanG, MeanB: Double;
+  NewPal: TIntegerDynArray2;
 
   procedure DoPal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    i, j, colIdx1, colIdx2, uc: Integer;
+    Data: TPowellOPData;
+    x: TVector;
+    palIdx, colIdx: Integer;
+    ci: PCountIndex;
     r, g, b: Byte;
-    rr, gg, bb: UInt64;
-    best, v, StdDevR, StdDevG, StdDevB: Double;
-    bestColIdx1, bestColIdx2: Integer;
-
-    InnerPerm: array[0 .. Sqr(cTileWidth) - 1] of Integer;
-    PalR, PalG, PalB: array[0 .. Sqr(cTileWidth) - 1] of UInt64;
   begin
     if not InRange(AIndex, 0, FPaletteCount - 1) then
       Exit;
 
-    // accumulate the whole palette except the one that will be permutated
+    SetLength(x, FPaletteSize - 1);
+    for colIdx := 1 to FPaletteSize - 1 do
+      x[colIdx - 1] := colIdx;
 
-    FillQWord(PalR[0], FPaletteSize, 0);
-    FillQWord(PalG[0], FPaletteSize, 0);
-    FillQWord(PalB[0], FPaletteSize, 0);
-    for i := 0 to FPaletteCount - 1 do
-      if i <> AIndex then
-      begin
-        uc := FPalettes[i].UseCount;
+    Data.Encoder := Self;
+    Data.CurPalIdx := AIndex;
+    Data.MeanR := MeanR;
+    Data.MeanG := MeanG;
+    Data.MeanB := MeanB;
+    Data.NewPal := NewPal;
 
-        for j := 0 to FPaletteSize - 1 do
+    Data.InnerPerm := TCountIndexList.Create;
+    for colIdx := 0 to FPaletteSize - 1 do
+    begin
+      New(ci);
+      Data.InnerPerm.Add(ci);
+    end;
+    try
+
+      // accumulate the whole palette except the one that will be permutated
+
+      FillQWord(Data.PalR[0], FPaletteSize, 0);
+      FillQWord(Data.PalG[0], FPaletteSize, 0);
+      FillQWord(Data.PalB[0], FPaletteSize, 0);
+
+      for palIdx := 0 to FPaletteCount - 1 do
+        if palIdx <> AIndex then
+        begin
+          for colIdx := 0 to FPaletteSize - 1 do
           begin
-            FromRGB(FPalettes[i].PaletteRGB[j], r, g, b);
-            PalR[j] += r * uc;
-            PalG[j] += g * uc;
-            PalB[j] += b * uc;
+            FromRGB(FPalettes[palIdx].PaletteRGB[colIdx], r, g, b);
+
+            Data.PalR[colIdx] += r;
+            Data.PalG[colIdx] += g;
+            Data.PalB[colIdx] += b;
           end;
-      end;
-
-    // try all permutations in the current palette
-
-    best := 0;
-    bestColIdx1 := -1;
-    bestColIdx2 := -1;
-
-    uc := FPalettes[AIndex].UseCount;
-    for i := 0 to FPaletteSize - 1 do
-      InnerPerm[i] := i;
-
-    for colIdx1 := 0 to FPaletteSize - 1 do
-      for colIdx2 := colIdx1 + 1 to FPaletteSize - 1 do
-      begin
-        Exchange(InnerPerm[colIdx1], InnerPerm[colIdx2]);
-
-        // try to maximize accumulated palette standard deviation
-        // rationale: the less samey it is, the better the colors pair with each other across palette
-
-        StdDevR := 0;
-        StdDevG := 0;
-        StdDevB := 0;
-        for i := 0 to FPaletteSize - 1 do
-        begin
-          FromRGB(FPalettes[AIndex].PaletteRGB[InnerPerm[i]], r, g, b);
-
-          rr := r * uc + PalR[i];
-          gg := g * uc + PalG[i];
-          bb := b * uc + PalB[i];
-
-          StdDevR += Sqr(rr - MeanR);
-          StdDevG += Sqr(gg - MeanG);
-          StdDevB += Sqr(bb - MeanB);
-        end;
-        StdDevR := Sqrt(StdDevR / FPaletteSize);
-        StdDevG := Sqrt(StdDevG / FPaletteSize);
-        StdDevB := Sqrt(StdDevB / FPaletteSize);
-
-        v := cRedMul * StdDevR + cGreenMul * StdDevG + cBlueMul * StdDevB;
-
-        if v > best then
-        begin
-          best := v;
-          bestColIdx1 := colIdx1;
-          bestColIdx2 := colIdx2;
         end;
 
-        // "repair" what was changed
-        Exchange(InnerPerm[colIdx1], InnerPerm[colIdx2]);
-      end;
+      // use Powells's method to try permutations in the current palette
 
-    Bests[AIndex] := best;
-    BestsColIdx1[AIndex] := bestColIdx1;
-    BestsColIdx2[AIndex] := bestColIdx2;
+      PowellMinimize(@PowellOP, x, 1.0, 1.0, 1.0, MaxInt, @Data);
+
+      f[AIndex] := -PowellOP(x, @Data);
+
+    finally
+      for colIdx := 0 to FPaletteSize - 1 do
+        Dispose(Data.InnerPerm[colIdx]);
+      Data.InnerPerm.Free;
+    end;
   end;
 
 var
-  iteration, palIdx, colIdx, uc: Integer;
+  palIdx, colIdx, iteration: Integer;
+  fSum, prevFSum: Double;
   r, g, b: Byte;
-  best, prevBest: Double;
-  bestPalIdx, bestColIdx1, bestColIdx2: Integer;
 begin
-  SetLength(Bests, FPaletteCount);
-  SetLength(BestsColIdx1, FPaletteCount);
-  SetLength(BestsColIdx2, FPaletteCount);
+  SetLength(f, FPaletteCount);
+  SetLength(NewPal, FPaletteCount, FPaletteSize);
 
   // mean of all palette colors
 
@@ -4327,53 +4362,44 @@ begin
   MeanB := 0;
 
   for palIdx := 0 to FPaletteCount - 1 do
-  begin
-    uc := FPalettes[palIdx].UseCount;
-
     for colIdx := 0 to FPaletteSize - 1 do
     begin
       FromRGB(FPalettes[palIdx].PaletteRGB[colIdx], r, g, b);
 
-      MeanR += r * uc;
-      MeanG += g * uc;
-      MeanB += b * uc;
+      MeanR += r;
+      MeanG += g;
+      MeanB += b;
     end;
-  end;
 
   MeanR /= FPaletteSize;
   MeanG /= FPaletteSize;
   MeanB /= FPaletteSize;
 
-  // stepwise algorithm on palette colors permutations
-
-  best := 0;
   iteration := 0;
+  prevFSum := 0;
+  fSum := 0;
+
+  // stepwise algorithm (each palette being optimized alone, needs iterations to attain global optimum)
+
   repeat
-    prevBest := best;
-
-    ProcThreadPool.DoParallelLocalProc(@DoPal, 0, FPaletteCount - 1, nil);
-
-    best := 0;
-    bestPalIdx := -1;
-    bestColIdx1 := -1;
-    bestColIdx2 := -1;
-    for palIdx := 0 to FPaletteCount - 1 do
-      if Bests[palIdx] > best then
-      begin
-        best := Bests[palIdx];
-        bestPalIdx := palIdx;
-        bestColIdx1 := BestsColIdx1[palIdx];
-        bestColIdx2 := BestsColIdx2[palIdx];
-      end;
-
-    if (best > prevBest) and (bestPalIdx >= 0) and (bestColIdx1 >= 0) and (bestColIdx2 >= 0) then
-      Exchange(FPalettes[bestPalIdx].PaletteRGB[bestColIdx1], FPalettes[bestPalIdx].PaletteRGB[bestColIdx2]);
-
+    prevFSum := max(fSum, prevFSum);
     Inc(iteration);
 
-    //WriteLn(iteration:6, bestPalIdx:6, bestColIdx1:4, bestColIdx2:4, best:12:0);
+    ProcThreadPool.DoParallelLocalProc(@DoPal, 0, FPaletteCount - 1);
 
-  until best <= prevBest;
+    fSum := 0;
+    for palIdx := 0 to FPaletteCount - 1 do
+    begin
+      fSum += f[palIdx];
+
+      for colIdx := 0 to FPaletteSize - 1 do
+        FPalettes[palIdx].PaletteRGB[colIdx] := NewPal[palIdx, colIdx];
+    end;
+    fSum /= FPaletteCount;
+
+    WriteLn(iteration:4,fSum:16:3);
+
+  until fSum <= prevFSum;
 
   WriteLn('OptimizePalettes: ', iteration, ' iterations');
 end;
