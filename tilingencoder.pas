@@ -4220,7 +4220,7 @@ type
   TPowellOPData = record
     Encoder: TTilingEncoder;
     CurPalIdx: Integer;
-    MeanR, MeanG, MeanB: Double;
+    MeanR, MeanG, MeanB: UInt64;
     PalR, PalG, PalB: array[0 .. Sqr(cTileWidth) - 1] of UInt64;
     InnerPerm: TCountIndexList;
     NewPal: TIntegerDynArray2;
@@ -4237,7 +4237,7 @@ end;
 function PowellOP(const x: TVector; data: Pointer): TScalar;
 var
   PData: ^TPowellOPData absolute data;
-  StdDevR, StdDevG, StdDevB: Double;
+  StdDevR, StdDevG, StdDevB: UInt64;
   colIdx, col: Integer;
   r, g, b: Byte;
 begin
@@ -4270,11 +4270,10 @@ begin
     StdDevG += Sqr(PData^.PalG[colIdx] + g - PData^.MeanG);
     StdDevB += Sqr(PData^.PalB[colIdx] + b - PData^.MeanB);
   end;
-  StdDevR := Sqrt(StdDevR / PData^.Encoder.FPaletteSize);
-  StdDevG := Sqrt(StdDevG / PData^.Encoder.FPaletteSize);
-  StdDevB := Sqrt(StdDevB / PData^.Encoder.FPaletteSize);
 
-  Result := (cRedMul * StdDevR + cGreenMul * StdDevG + cBlueMul * StdDevB) / cLumaDiv;
+  Result := (cRedMul * Sqrt(StdDevR / PData^.Encoder.FPaletteSize) +
+             cGreenMul * Sqrt(StdDevG / PData^.Encoder.FPaletteSize) +
+             cBlueMul * Sqrt(StdDevB / PData^.Encoder.FPaletteSize)) / cLumaDiv;
 
   Result := -Result;
 end;
@@ -4282,7 +4281,7 @@ end;
 procedure TTilingEncoder.OptimizePalettes;
 var
   f: TVector;
-  MeanR, MeanG, MeanB: Double;
+  MeanR, MeanG, MeanB: UInt64;
   NewPal: TIntegerDynArray2;
 
   procedure DoPal(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
@@ -4371,9 +4370,9 @@ begin
       MeanB += b;
     end;
 
-  MeanR /= FPaletteSize;
-  MeanG /= FPaletteSize;
-  MeanB /= FPaletteSize;
+  MeanR := MeanR div FPaletteSize;
+  MeanG := MeanG div FPaletteSize;
+  MeanB := MeanB div FPaletteSize;
 
   iteration := 0;
   prevFSum := 0;
