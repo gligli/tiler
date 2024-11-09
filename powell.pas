@@ -19,7 +19,7 @@ uses
 
 
 type
-  TScalar = Single;
+  TScalar = Double;
   TVector = array of TScalar;
   TFunction = function(x: TScalar): TScalar;
   TFunctionN = function(const x: TVector; data: Pointer): TScalar;
