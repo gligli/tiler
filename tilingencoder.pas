@@ -4417,7 +4417,7 @@ begin
     end;
     fSum /= FPaletteCount;
 
-    WriteLn(iteration:4,fSum:16:3);
+    //WriteLn(iteration:4,fSum:16:3);
 
   until fSum <= prevFSum;
 
