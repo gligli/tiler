@@ -1846,6 +1846,7 @@ begin
 
   ProgressRedraw(1, 'Palettization');
 
+  yakmo_set_num_threads(1);
   ProcThreadPool.DoParallelLocalProc(@DoQuant, 0, High(FPalettes));
 
   ProgressRedraw(2, 'Quantization');
@@ -4173,10 +4174,15 @@ begin
       SetLength(YakmoClusters, BICOClusterCount);
 
       Yakmo := yakmo_create(FPaletteCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-      yakmo_load_train_data(Yakmo, Length(ANNDataset), cFeatureCount, PPDouble(@ANNDataset[0]));
-      SetLength(ANNDataset, 0); // free up some memmory
-      yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
-      yakmo_destroy(Yakmo);
+      try
+        yakmo_set_num_threads(MaxThreadCount);
+
+        yakmo_load_train_data(Yakmo, Length(ANNDataset), cFeatureCount, PPDouble(@ANNDataset[0]));
+        SetLength(ANNDataset, 0); // free up some memmory
+        yakmo_train_on_data(Yakmo, @YakmoClusters[0]);
+      finally
+        yakmo_destroy(Yakmo);
+      end;
     end
     else
     begin
@@ -4462,13 +4468,14 @@ begin
   if AColorCount > 1 then
   begin
     Yakmo := yakmo_create(AColorCount, 1, cYakmoMaxIterations, 1, 0, 0, 0);
-    yakmo_load_train_data(Yakmo, DSLen, cFeatureCount, PPDouble(@Dataset[0]));
-
-    //SetLength(Dataset, 0); // free up some memmory
-
-    yakmo_train_on_data(Yakmo, @Clusters[0]);
-    yakmo_get_centroids(Yakmo, PPDouble(@Centroids[0]));
-    yakmo_destroy(Yakmo);
+    try
+      yakmo_load_train_data(Yakmo, DSLen, cFeatureCount, PPDouble(@Dataset[0]));
+      SetLength(Dataset, 0); // free up some memmory
+      yakmo_train_on_data(Yakmo, @Clusters[0]);
+      yakmo_get_centroids(Yakmo, PPDouble(@Centroids[0]));
+    finally
+      yakmo_destroy(Yakmo);
+    end;
   end
   else
   begin

@@ -197,6 +197,7 @@ function dl3quant(inbuf: PByte; width, height, quant_to, lookup_bpc: Integer; us
 
 function yakmo_create(k: Cardinal; restartCount: Cardinal; maxIter: Integer; initType: Integer; initSeed: Integer; doNormalize: Integer; isVerbose: Integer): PYakmo; stdcall; external 'yakmo.dll';
 procedure yakmo_destroy(ay: PYakmo); stdcall; external 'yakmo.dll';
+procedure yakmo_set_num_threads(num_threads: Integer); stdcall; external 'yakmo.dll';
 procedure yakmo_load_train_data(ay: PYakmo; rowCount: Cardinal; colCount: Cardinal; dataset: PPDouble); stdcall; external 'yakmo.dll';
 procedure yakmo_train_on_data(ay: PYakmo; pointToCluster: PInteger); stdcall; external 'yakmo.dll';
 procedure yakmo_get_centroids(ay: PYakmo; centroids: PPDouble); stdcall; external 'yakmo.dll';
