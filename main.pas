@@ -138,6 +138,7 @@ type
     procedure imgPaletteClick(Sender: TObject);
     procedure btnGeneratePNGsInputClick(Sender: TObject);
     procedure imgPaintBackground(ASender: TObject; ACanvas: TCanvas; ARect: TRect);
+    procedure imgPaletteContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
     procedure imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure imgTilesMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
     procedure imgTilesMouseWheelDown(Sender: TObject; Shift: TShiftState; MousePos: TPoint; var Handled: Boolean);
@@ -217,9 +218,20 @@ begin
 end;
 
 procedure TMainForm.btnGlobalLoadClick(Sender: TObject);
+var
+  i: Integer;
 begin
   FTilingEncoder.Run(esLoad);
   seMaxTiles.Value := FTilingEncoder.GlobalTilingTileCount;
+
+  tbFrame.HandleNeeded;
+  tbFrame.TickStyle := tsNone;
+  tbFrame.TickStyle := tsManual;
+  for i := 0 to FTilingEncoder.FrameCount - 1 do
+    if Assigned(FTilingEncoder.Frames[i]) and Assigned(FTilingEncoder.Frames[i].PKeyFrame) and
+        (FTilingEncoder.Frames[i].Index = FTilingEncoder.Frames[i].PKeyFrame.StartFrame) then
+      tbFrame.SetTick(i);
+
   UpdateVideo(nil);
 end;
 
@@ -268,6 +280,15 @@ begin
   ACanvas.Brush.Color := clBlack;
   ACanvas.Brush.Style := bsSolid;
   ACanvas.Clear;
+end;
+
+procedure TMainForm.imgPaletteContextPopup(Sender: TObject; MousePos: TPoint; var Handled: Boolean);
+begin
+  if sedPalIdx.Value >= 0 then
+  begin
+    sedPalIdx.Value := -1;
+    Handled := True;
+  end;
 end;
 
 procedure TMainForm.imgPaletteMouseMove(Sender: TObject; Shift: TShiftState; X, Y: Integer);
@@ -591,8 +612,6 @@ begin
 end;
 
 procedure TMainForm.UpdateGUI(Sender: TObject);
-var
-  i: Integer;
 begin
   if FLockChanges then
     Exit;
@@ -601,12 +620,6 @@ begin
   tbFrame.Max := FTilingEncoder.FrameCount - 1;
   IdleTimer.Interval := round(1000 / FTilingEncoder.FramesPerSecond);
   FLastIOTabSheet := pcPages.ActivePage;
-
-  tbFrame.HandleNeeded;
-  for i := 0 to FTilingEncoder.FrameCount - 1 do
-    if Assigned(FTilingEncoder.Frames[i]) and Assigned(FTilingEncoder.Frames[i].PKeyFrame) and
-        (FTilingEncoder.Frames[i].Index = FTilingEncoder.Frames[i].PKeyFrame.StartFrame) then
-      tbFrame.SetTick(i);
 
   FTilingEncoder.InputFileName := edInput.Text;
   FTilingEncoder.OutputFileName := edOutput.Text;

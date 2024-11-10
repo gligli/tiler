@@ -25,7 +25,7 @@ object MainForm: TMainForm
   ParentDoubleBuffered = False
   PopupMenu = pmProcesses
   Position = poScreenCenter
-  LCLVersion = '3.4.0.0'
+  LCLVersion = '3.6.0.0'
   object tbFrame: TTrackBar
     Left = 0
     Height = 27
@@ -121,9 +121,9 @@ object MainForm: TMainForm
     Height = 548
     Top = 40
     Width = 1028
-    ActivePage = tsSettings
+    ActivePage = tsTilesPal
     Anchors = [akTop, akLeft, akRight, akBottom]
-    TabIndex = 0
+    TabIndex = 3
     TabOrder = 5
     OnChange = UpdateVideo
     object tsSettings: TTabSheet
@@ -657,7 +657,7 @@ object MainForm: TMainForm
           Width = 256
           AntialiasingMode = amOff
           OnClick = imgPaletteClick
-          OnContextPopup = imgContextPopup
+          OnContextPopup = imgPaletteContextPopup
           OnMouseMove = imgPaletteMouseMove
           OnPaintBackground = imgPaintBackground
           PopupMenu = pmProcesses
