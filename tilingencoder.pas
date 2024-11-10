@@ -1677,8 +1677,17 @@ end;
 
 procedure TTilingEncoder.InitLuts;
 var
-  i, v, u, y, x: Int64;
+  g, i, v, u, y, x: Int64;
 begin
+  // gamma
+
+  for g := -1 to High(FGamma) do
+    for i := 0 to High(Byte) do
+      if g >= 0 then
+        FGammaCorLut[g, i] := power(i / 255.0, FGamma[g])
+      else
+        FGammaCorLut[g, i] := i / 255.0;
+
   // inverse
 
   for i := 0 to High(FVecInv) do
