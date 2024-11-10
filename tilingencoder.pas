@@ -4103,25 +4103,22 @@ var
   ANN: PANNkdtree;
   ANNClusters: TIntegerDynArray;
 
-  procedure DoDataset(ACluster: Boolean);
+  procedure DoANN(AIndex: PtrInt; AData: Pointer; AItem: TMultiThreadProcItem);
   var
-    tIdx: Integer;
     Tile: PTile;
-    DCT: array[0 .. cTileDCTSize - 1] of Double;
     ANNError: Double;
+
+    DCT: array[0 .. cTileDCTSize - 1] of Double;
   begin
-    for tIdx := 0 to High(FTiles) do
-    begin
-      Tile := FTiles[tIdx];
-      Assert(Tile^.Active);
+    if not InRange(AIndex, 0, High(FTiles)) then
+      Exit;
 
-      ComputeTilePsyVisFeatures(Tile^, DitheringMode, False, True, False, False, cColorCpns, nil, DCT);
+    Tile := FTiles[AIndex];
+    Assert(Tile^.Active);
 
-      if ACluster then
-        ANNClusters[tIdx] := ann_kdtree_search(ANN, DCT, 0.0, @ANNError)
-      else
-        bico_insert_line(BICO, DCT, Tile^.UseCount);
-    end;
+    ComputeTilePsyVisFeatures(Tile^, DitheringMode, False, True, False, False, cColorCpns, nil, DCT);
+
+    ANNClusters[AIndex] := ann_kdtree_search(ANN, DCT, 0.0, @ANNError)
   end;
 
 var
@@ -4137,6 +4134,7 @@ var
   YakmoClusters: TIntegerDynArray;
   PalIdxLUT: TIntegerDynArray;
 
+  DCT: array[0 .. cTileDCTSize - 1] of Double;
 begin
   // build dataset
 
@@ -4147,7 +4145,15 @@ begin
   try
     bico_set_num_threads(MaxThreadCount);
 
-    DoDataset(False);
+    for tIdx := 0 to High(FTiles) do
+    begin
+      Tile := FTiles[tIdx];
+      Assert(Tile^.Active);
+
+      ComputeTilePsyVisFeatures(Tile^, DitheringMode, False, True, False, False, cColorCpns, nil, DCT);
+
+      bico_insert_line(BICO, DCT, Tile^.UseCount);
+    end;
 
     SetLength(BICOCentroids, BICOClusterCount * cFeatureCount);
     SetLength(BICOWeights, BICOClusterCount);
@@ -4169,7 +4175,7 @@ begin
 
   ANN := ann_kdtree_create(@ANNDataset[0], BICOClusterCount, cFeatureCount, 32, ANN_KD_STD);
   try
-    DoDataset(True);
+    ProcThreadPool.DoParallelLocalProc(@DoANN, 0, High(FTiles));
   finally
     ann_kdtree_destroy(ANN);
   end;
