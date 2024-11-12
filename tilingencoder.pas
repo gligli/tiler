@@ -261,12 +261,11 @@ type
     FrameTilesLock: TSpinlock;
     CompressedFrameTiles: TMemoryStream;
 
-
     constructor Create(AParent: TTilingEncoder; AIndex: Integer);
     destructor Destroy; override;
 
     function PrepareInterFrameData: TFloatDynArray;
-    procedure ComputeInterFrameAndCompress;
+    procedure AsyncLoadFromImage;
 
     procedure CompressFrameTiles;
     procedure AcquireFrameTiles;
@@ -1282,22 +1281,19 @@ begin
   end;
 end;
 
-procedure DoAsyncComputeInterFrameCorrelationAndCompress(AData : Pointer);
+procedure DoAsyncLoadFromImage(AData : Pointer);
 var
   Frame: TFrame;
 begin
   Frame := TFrame(AData);
 
-  Frame.ComputeInterFrameAndCompress;
+  Frame.AsyncLoadFromImage;
 end;
 
 procedure TFrame.LoadFromImage(AImageWidth, AImageHeight: Integer; AImage: PInteger);
 var
   i, j, col, ti, tx, ty: Integer;
-  HMirror, VMirror: Boolean;
   pcol: PInteger;
-  Tile: PTile;
-  TMI: PTileMapItem;
 begin
   // create frame tiles from image data
 
@@ -1323,31 +1319,11 @@ begin
       end;
   end;
 
-  for i := 0 to Encoder.FTileMapSize - 1 do
-  begin
-    Tile := FrameTiles[i];
-    TMI := @TileMap[i div Encoder.FTileMapWidth, i mod Encoder.FTileMapWidth];
-
-    Encoder.GetTileHVMirrorHeuristics(Tile^, False, HMirror, VMirror);
-
-    Tile^.Active := True;
-    Tile^.UseCount := 1;
-    Tile^.TmpIndex := -1;
-    Tile^.HMirror_Initial := HMirror;
-    Tile^.VMirror_Initial := VMirror;
-
-    TMI^.HMirror := HMirror;
-    TMI^.VMirror := VMirror;
-
-    if HMirror then Encoder.HMirrorTile(Tile^);
-    if VMirror then Encoder.VMirrorTile(Tile^);
-  end;
-
   // moderate the number of threads
   if Index >= Encoder.MaxThreadCount then
-    WaitForSingleObject(Encoder.FFrames[Index - Encoder.MaxThreadCount].InterframeCorrelationEvent, INFINITE);
+    WaitForSingleObject(Encoder.FFrames[Index - Encoder.MaxThreadCount].LoadFromImageFinishedEvent, INFINITE);
 
-  TThread.ExecuteInThread(@DoAsyncComputeInterFrameCorrelationAndCompress, Self);
+  TThread.ExecuteInThread(@DoAsyncLoadFromImage, Self);
 end;
 
 function TFrame.PrepareInterFrameData: TFloatDynArray;
@@ -1390,8 +1366,12 @@ begin
   Assert(di = sz * cColorCpns);
 end;
 
-procedure TFrame.ComputeInterFrameAndCompress;
+procedure TFrame.AsyncLoadFromImage;
 var
+  i: Integer;
+  HMirror, VMirror: Boolean;
+  Tile: PTile;
+  TMI: PTileMapItem;
   prevFrameICD: TFloatDynArray;
 begin
   // compute inter-frame correlations
@@ -1408,18 +1388,43 @@ begin
     InterframeCorrelation := Encoder.PearsonCorrelation(prevFrameICD, InterframeCorrelationData);
   end;
 
+  // also handle tilemap H/V mirrors
+
+  for i := 0 to Encoder.FTileMapSize - 1 do
+  begin
+    Tile := FrameTiles[i];
+    TMI := @TileMap[i div Encoder.FTileMapWidth, i mod Encoder.FTileMapWidth];
+
+    Encoder.GetTileHVMirrorHeuristics(Tile^, False, HMirror, VMirror);
+
+    Tile^.Active := True;
+    Tile^.UseCount := 1;
+    Tile^.TmpIndex := -1;
+    Tile^.HMirror_Initial := HMirror;
+    Tile^.VMirror_Initial := VMirror;
+
+    TMI^.HMirror := HMirror;
+    TMI^.VMirror := VMirror;
+
+    if HMirror then Encoder.HMirrorTile(Tile^);
+    if VMirror then Encoder.VMirrorTile(Tile^);
+  end;
+
   // compress frame tiles to save memory
 
   CompressFrameTiles;
 
   Write(Index + 1:8, ' / ', Length(Encoder.FFrames):8, #13);
 
-  // wait until the next frame has finished
+  // done
+
+  SetEvent(LoadFromImageFinishedEvent);
+
+  // wait until the next frame has finished to free InterframeCorrelationData
+
   if Index < High(Encoder.FFrames) then
     WaitForSingleObject(Encoder.FFrames[Index + 1].LoadFromImageFinishedEvent, INFINITE);
   SetLength(InterframeCorrelationData, 0);
-
-  SetEvent(LoadFromImageFinishedEvent);
 end;
 
 procedure TFrame.Reconstruct(ARadius: Integer; var AFrontBuffer, ABackBuffer: TIntegerDynArray2;
@@ -3318,6 +3323,7 @@ end;
 
 procedure TTilingEncoder.LoadInputVideo;
 var
+  i: Integer;
   FFMPEG: TFFMPEG;
   PNG: TPortableNetworkGraphic;
   frmIdx: Integer;
@@ -3346,9 +3352,10 @@ begin
     end;
   end;
 
-  // wait last frame LoadFromImageFinishedEvent (ensures all frames processed)
+  // wait LoadFromImageFinishedEvent (ensures all frames processed) (MaxThreadCount concurent threads is already ensured)
 
-  WaitForSingleObject(FFrames[High(FFrames)].LoadFromImageFinishedEvent, INFINITE);
+  for i := max(0, Length(FFrames) - MaxThreadCount) to High(FFrames) do
+    WaitForSingleObject(FFrames[i].LoadFromImageFinishedEvent, INFINITE);
 end;
 
 procedure TTilingEncoder.FindKeyFrames(AManualMode: Boolean);
